@@ -29,73 +29,67 @@ Cette carte couvre tous nos besoins pour la v0 sans ajout matériel autre que :
 
 ## 2. Pinout (ESP32-P4 DevKitC v0)
 
-> ⚠ Le pinout définitif sera validé après vérification croisée avec le datasheet ESP32-P4 (capabilities GPIO, conflits avec le Function EV Board interne). Les choix ci-dessous reflètent un placement par défaut **à confirmer** lors du premier build.
+Validé contre le pinout du connecteur header officiel de la Function EV Board. Toutes les broches LED, encodeur INT et status sont sur le connecteur user-facing ; les broches RMII Ethernet (MDC/MDIO + REF_CLK + TX/RX) sont câblées en interne vers le PHY IP101GRI et ne sont pas exposées.
 
 ### 2.1 Sorties LED 16-bit parallèle (LCD_CAM)
 
-Le contrôleur LCD_CAM impose 16 GPIOs **contigus dans le routage interne** mais arbitrairement mappables sur des broches physiques via le GPIO Matrix. Nous choisissons des GPIOs contigus physiquement pour faciliter le routage du PCB v1.
+Le contrôleur LCD_CAM impose 16 GPIOs mappables arbitrairement via le GPIO Matrix. On choisit des pins disponibles sur le connecteur, en évitant les broches de strap (GPIO 0 = boot, GPIO 6 = download/normal mode, GPIO 35 = SDIO).
 
 | Bit | Signal       | GPIO | Rôle                                  |
 |----:|--------------|-----:|---------------------------------------|
-| 0   | CH1_DATA     | 36   | DATA strip 1                          |
-| 1   | CH1_CLOCK    | 37   | CLOCK strip 1 (protocoles clockés)    |
-| 2   | CH2_DATA     | 38   | DATA strip 2                          |
-| 3   | CH2_CLOCK    | 39   | CLOCK strip 2                         |
-| 4   | CH3_DATA     | 40   | DATA strip 3                          |
-| 5   | CH3_CLOCK    | 41   | CLOCK strip 3                         |
-| 6   | CH4_DATA     | 42   | DATA strip 4                          |
-| 7   | CH4_CLOCK    | 43   | CLOCK strip 4                         |
-| 8   | CH5_DATA     | 44   | DATA strip 5                          |
-| 9   | CH5_CLOCK    | 45   | CLOCK strip 5                         |
-| 10  | CH6_DATA     | 46   | DATA strip 6                          |
-| 11  | CH6_CLOCK    | 47   | CLOCK strip 6                         |
-| 12  | CH7_DATA     | 48   | DATA strip 7                          |
-| 13  | CH7_CLOCK    | 49   | CLOCK strip 7                         |
-| 14  | CH8_DATA     | 50   | DATA strip 8                          |
-| 15  | CH8_CLOCK    | 51   | CLOCK strip 8                         |
+| 0   | CH1_DATA     | 2    | DATA strip 1                          |
+| 1   | CH1_CLOCK    | 3    | CLOCK strip 1 (protocoles clockés)    |
+| 2   | CH2_DATA     | 4    | DATA strip 2                          |
+| 3   | CH2_CLOCK    | 5    | CLOCK strip 2                         |
+| 4   | CH3_DATA     | 22   | DATA strip 3                          |
+| 5   | CH3_CLOCK    | 23   | CLOCK strip 3                         |
+| 6   | CH4_DATA     | 24   | DATA strip 4                          |
+| 7   | CH4_CLOCK    | 25   | CLOCK strip 4                         |
+| 8   | CH5_DATA     | 26   | DATA strip 5                          |
+| 9   | CH5_CLOCK    | 16   | CLOCK strip 5                         |
+| 10  | CH6_DATA     | 32   | DATA strip 6                          |
+| 11  | CH6_CLOCK    | 33   | CLOCK strip 6                         |
+| 12  | CH7_DATA     | 47   | DATA strip 7                          |
+| 13  | CH7_CLOCK    | 48   | CLOCK strip 7                         |
+| 14  | CH8_DATA     | 53   | DATA strip 8                          |
+| 15  | CH8_CLOCK    | 54   | CLOCK strip 8                         |
 
-**Note** : la pin PCLK du LCD_CAM (free-running clock du bus parallèle) n'est **pas routée vers l'extérieur** — elle reste interne au SoC. C'est une horloge plus rapide qui pilote l'échantillonnage du bus DMA. Les CLOCK des protocoles clockés (APA102 etc.) sont **encodés dans les bits 1, 3, 5… du bus**, pas tirés de PCLK. Cf. `docs/PROTOCOLS.md` §3.
+**Note** : la PCLK du LCD_CAM (free-running clock du bus parallèle) n'est pas routée vers l'extérieur (`pclk_gpio_num = -1`) — elle reste interne au SoC. Les CLOCK des protocoles clockés (APA102 etc.) sont encodées dans les bits 1, 3, 5… du bus, pas tirées de PCLK. Cf. `docs/PROTOCOLS.md` §3.
 
-### 2.2 Ethernet RMII (vers PHY IP101GRI intégré au board)
+### 2.2 Ethernet RMII (interne au board)
 
-Sur le Function EV Board, ces signaux sont câblés vers le PHY interne et n'ont pas besoin d'être configurés côté pinout. Pour mémoire (datasheet ESP32-P4) :
+Les signaux RMII vers le PHY IP101GRI sont câblés sur la carte EV ; les broches MDC/MDIO sont configurées côté firmware. Aucune n'apparaît sur le connecteur header, donc aucun conflit avec les LED ci-dessus.
 
-| Signal RMII           | GPIO P4 par défaut |
-|-----------------------|--------------------|
-| EMAC_REF_CLK_O / I    | GPIO 50 ou clock    |
-| EMAC_TX_EN            | GPIO 31             |
-| EMAC_TXD0             | GPIO 32             |
-| EMAC_TXD1             | GPIO 33             |
-| EMAC_RXD0             | GPIO 34             |
-| EMAC_RXD1             | GPIO 35             |
-| EMAC_CRS_DV           | GPIO 28             |
-| MDC                   | GPIO 29             |
-| MDIO                  | GPIO 30             |
-| PHY reset             | GPIO 27             |
-
-> ⚠ **Conflit potentiel** : sur la liste §2.1 ci-dessus, certains GPIO (31-35) sont déjà utilisés par RMII. À résoudre en réassignant les LED vers d'autres GPIOs lors du premier test. Pour la v1 sur PCB custom, le PHY peut être déplacé sur d'autres GPIOs (RMII matrix-mappable sur P4).
+| Signal RMII           | GPIO P4   |
+|-----------------------|-----------|
+| EMAC_REF_CLK          | interne   |
+| EMAC_TX_EN / TXD[0:1] | interne   |
+| EMAC_RXD[0:1] / CRS_DV | interne  |
+| MDC                   | GPIO 29   |
+| MDIO                  | GPIO 30   |
+| PHY reset             | -1 (RC POR sur PHY) |
 
 ### 2.3 I2C (OLED + encodeur)
 
 | Signal | GPIO | Note                                                  |
 |--------|-----:|-------------------------------------------------------|
-| SDA    | 7    | Pull-up 4.7 kΩ vers 3.3V (à ajouter si non présent)   |
-| SCL    | 8    | Pull-up 4.7 kΩ vers 3.3V                              |
-| INT    | 9    | IRQ encodeur seesaw, active LOW                       |
+| SDA    | 7    | Marquée `SDA(GPIO7)` sur le silkscreen header         |
+| SCL    | 8    | Marquée `SCL(GPIO8)`                                  |
+| INT    | 21   | IRQ encodeur seesaw, active LOW                       |
 
 Adresses I2C :
 - SSD1306 : `0x3C` ou `0x3D` (selon module)
 - seesaw #4991 : `0x36` par défaut
 
-Fréquence I2C : **400 kHz** (Fast Mode), suffisante pour rafraîchir l'OLED à ~30 Hz.
+Fréquence I2C : **400 kHz** (Fast Mode), suffisante pour rafraîchir l'OLED à ~10 Hz.
 
 ### 2.4 Autres
 
 | Signal       | GPIO | Note                                       |
 |--------------|-----:|--------------------------------------------|
-| STATUS_LED   | 4    | LED on-board ou externe (heartbeat)        |
-| DEBUG_TX     | 21   | UART0 (console IDF)                        |
-| DEBUG_RX     | 20   | UART0                                      |
+| STATUS_LED   | 1    | LED externe (heartbeat)                    |
+| DEBUG_TX     | 37   | UART0 console (marquée TXD(GPIO37))        |
+| DEBUG_RX     | 38   | UART0 (marquée RXD(GPIO38))                |
 
 ---
 
