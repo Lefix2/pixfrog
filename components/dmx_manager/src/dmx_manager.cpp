@@ -5,6 +5,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 namespace pixfrog::dmx {
 
@@ -39,6 +40,14 @@ std::atomic<bool>   g_sync_pending{false};
 uint16_t g_universe_to_slot[32768]{};
 bool     g_universe_to_slot_valid = false;
 
+// Reverse mapping slot → channel index, populated alongside g_universe_to_slot.
+uint8_t  g_slot_to_channel[kNumUniverses]{};
+
+// Per-channel last-activity timestamp (µs). 0 = never seen.
+int64_t  g_last_activity_us[config::kNumChannels]{};
+// "Active" if last_activity within this window:
+constexpr int64_t kActivityWindowUs = 1'000'000;  // 1 second
+
 }  // namespace
 
 bool init() {
@@ -63,24 +72,44 @@ bool init() {
         g_chan_bufs[i].back = g_chan_bufs[i].b;
     }
 
-    // Build the universe → slot LUT from current config.
+    // Build the universe → slot LUT (+ reverse slot → channel) from current config.
     for (size_t i = 0; i < sizeof(g_universe_to_slot) / sizeof(g_universe_to_slot[0]); ++i) {
         g_universe_to_slot[i] = UINT16_MAX;
     }
     uint16_t slot = 0;
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& cc = config::get_channel(ch);
-        // Estimate how many universes this channel spans (max 6 for 1024 RGB pixels).
         const size_t bytes_per_pixel = led::bytes_per_pixel(cc.protocol);
         const size_t total_bytes     = cc.pixel_count * bytes_per_pixel;
         const size_t universes_used  = (total_bytes + kUniverseSize - 1) / kUniverseSize;
         for (size_t u = 0; u < universes_used && slot < kNumUniverses; ++u) {
-            g_universe_to_slot[cc.universe_start + u] = slot++;
+            g_universe_to_slot[cc.universe_start + u] = slot;
+            g_slot_to_channel[slot]                   = static_cast<uint8_t>(ch);
+            slot++;
         }
     }
     g_universe_to_slot_valid = true;
     ESP_LOGI(TAG, "init OK, allocated %u universe slots", slot);
     return true;
+}
+
+int channel_for_universe(uint16_t universe_number) {
+    if (!g_universe_to_slot_valid) return -1;
+    const uint16_t slot = g_universe_to_slot[universe_number];
+    if (slot == UINT16_MAX) return -1;
+    return static_cast<int>(g_slot_to_channel[slot]);
+}
+
+void note_channel_activity(size_t channel_index) {
+    if (channel_index >= config::kNumChannels) return;
+    g_last_activity_us[channel_index] = esp_timer_get_time();
+}
+
+bool is_channel_active(size_t channel_index) {
+    if (channel_index >= config::kNumChannels) return false;
+    const int64_t last = g_last_activity_us[channel_index];
+    if (last == 0) return false;
+    return (esp_timer_get_time() - last) < kActivityWindowUs;
 }
 
 uint8_t* universe_back_buffer_for(uint16_t universe_number) {

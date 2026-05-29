@@ -50,6 +50,19 @@ uint8_t* universe_back_buffer_for(uint16_t universe_number);
 void note_packet_rx();
 void note_packet_bad();
 
+// Note that a DMX update arrived for `channel_index` (derived from the
+// universe number by the caller via channel_for_universe).
+// Refreshes the per-channel "last activity" timestamp used by HOME render.
+void note_channel_activity(size_t channel_index);
+
+// Returns the channel index this universe was assigned to at init() time,
+// or -1 if the universe number is not mapped to any channel.
+int channel_for_universe(uint16_t universe_number);
+
+// True if `channel_index` received at least one ArtDmx packet within the
+// last second. Used by ui::set_channel_active() at HOME refresh time.
+bool is_channel_active(size_t channel_index);
+
 // Signal that an ArtSync was received (forces frame emission ASAP).
 void note_sync();
 

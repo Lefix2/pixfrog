@@ -19,6 +19,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -42,10 +43,54 @@ uint8_t                g_back_idx = 0;     // which fb is next to write into (0 
 
 SemaphoreHandle_t      g_done_sem = nullptr;
 
+// ── Item 1: HSYNC pulse width ────────────────────────────────────────────────
+// ESP-IDF v5.3 RGB panel driver rejects hsync_pulse_width == 0 on ESP32-P4
+// and forces it to >= 1. We use 1 (= 62.5 ns at PCLK=16MHz). The HSYNC pin
+// is never routed externally (hsync_gpio_num = -1) so this is harmless.
+// If hardware validation shows this 1-tick gap glitches WS2815 timing,
+// raise to 2 and re-measure.
+constexpr int kHsyncPulseWidth = 1;
+
+// ── Item 2: thresholds for swap latency warning ──────────────────────────────
+// A no-copy FB swap inside esp_lcd_panel_draw_bitmap should return in
+// well under 100 µs (just pointer juggling + cache barrier). If it's
+// slower, either the IDF is doing a copy (config mistake) or we're
+// blocked on a previous emission still in flight.
+constexpr int64_t kSwapLatencyWarnUs = 200;
+
+// ── Item 4: callback identification counters ─────────────────────────────────
+// Both on_color_trans_done and on_vsync are registered. Whichever fires
+// first wakes done_sem. Counters help diagnose post-mortem which path was
+// used in production (logged at shutdown / periodically).
+volatile uint32_t g_trans_done_count = 0;
+volatile uint32_t g_vsync_count      = 0;
+
+// ── Item 5: bandwidth / emission timing telemetry ────────────────────────────
+// Tracks the wall-clock duration between consecutive draw_bitmap kicks.
+// At steady state, this should match the expected DMA duration
+// (= h_res / pclk_hz) within a small margin. Larger deviation = PSRAM
+// contention or scheduler jitter.
+int64_t  g_last_kick_us      = 0;
+int64_t  g_emit_us_sum       = 0;
+uint32_t g_emit_us_count     = 0;
+int64_t  g_emit_us_max       = 0;
+
 bool IRAM_ATTR on_trans_done(esp_lcd_panel_handle_t /*panel*/,
                              const esp_lcd_rgb_panel_event_data_t* /*edata*/,
                              void* /*user_ctx*/) {
+    g_trans_done_count++;
     BaseType_t hp = pdFALSE;
+    xSemaphoreGiveFromISR(g_done_sem, &hp);
+    return hp == pdTRUE;
+}
+
+bool IRAM_ATTR on_vsync(esp_lcd_panel_handle_t /*panel*/,
+                        const esp_lcd_rgb_panel_event_data_t* /*edata*/,
+                        void* /*user_ctx*/) {
+    g_vsync_count++;
+    BaseType_t hp = pdFALSE;
+    // Fallback: if on_color_trans_done never fires on this IDF/HW combo,
+    // on_vsync still releases the sem so the pipeline keeps flowing.
     xSemaphoreGiveFromISR(g_done_sem, &hp);
     return hp == pdTRUE;
 }
@@ -79,6 +124,31 @@ bool init(const InitConfig& cfg) {
     g_fb_h_res = cfg.max_samples_per_frame;
     g_fb_bytes = g_fb_h_res * sizeof(uint16_t);
 
+    // ── Item 3: PSRAM sanity check ───────────────────────────────────────────
+    // We need 2 × fb_bytes plus a comfortable headroom for cache lines, the
+    // universe pool, and unforeseen allocations. Refuse boot if the largest
+    // contiguous PSRAM block can't host one FB (IDF will internally request
+    // a single contiguous allocation per FB).
+    const size_t psram_total       = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    const size_t psram_largest_blk = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    const size_t psram_required    = g_fb_bytes * 2 + (256u * 1024u);
+    if (psram_total == 0) {
+        ESP_LOGE(TAG, "no PSRAM detected; ESP32-P4 octal PSRAM is mandatory");
+        return false;
+    }
+    if (psram_largest_blk < g_fb_bytes) {
+        ESP_LOGE(TAG, "PSRAM largest free block %zu < one FB %zu — fragmentation or too small",
+                 psram_largest_blk, g_fb_bytes);
+        return false;
+    }
+    if (psram_total < psram_required) {
+        ESP_LOGE(TAG, "PSRAM too small: have %zu B, need %zu B (2 FBs + 256 kB headroom)",
+                 psram_total, psram_required);
+        return false;
+    }
+    ESP_LOGI(TAG, "PSRAM check OK: %zu MB total, %zu MB largest free, need %zu MB for 2 FBs",
+             psram_total >> 20, psram_largest_blk >> 20, (g_fb_bytes * 2) >> 20);
+
     esp_lcd_rgb_panel_config_t panel_config{};
     panel_config.data_width             = 16;
     panel_config.num_fbs                = 2;
@@ -95,7 +165,7 @@ bool init(const InitConfig& cfg) {
     panel_config.timings.pclk_hz            = cfg.pclk_hz;
     panel_config.timings.h_res              = g_fb_h_res;
     panel_config.timings.v_res              = 1;
-    panel_config.timings.hsync_pulse_width  = 1;   // IDF rejects 0; the pin is not routed anyway
+    panel_config.timings.hsync_pulse_width  = kHsyncPulseWidth;
     panel_config.timings.hsync_back_porch   = 0;
     panel_config.timings.hsync_front_porch  = 0;
     panel_config.timings.vsync_pulse_width  = 1;
@@ -112,8 +182,15 @@ bool init(const InitConfig& cfg) {
         return false;
     }
 
+    // Item 4: register BOTH callbacks. On most ESP32-P4 IDF builds in
+    // refresh_on_demand mode, on_color_trans_done is the canonical signal
+    // of "DMA emission complete". Some builds only fire on_vsync. We
+    // register both; whichever arrives first releases done_sem (second
+    // give is a no-op on a binary sem). Counters tell us at runtime which
+    // path was taken — `lcd_cam_dump_stats()` exposes them.
     esp_lcd_rgb_panel_event_callbacks_t cbs{};
     cbs.on_color_trans_done = on_trans_done;
+    cbs.on_vsync            = on_vsync;
     esp_lcd_rgb_panel_register_event_callbacks(g_panel, &cbs, nullptr);
 
     if ((err = esp_lcd_panel_reset(g_panel)) != ESP_OK) {
@@ -171,21 +248,57 @@ bool render_frame(uint32_t timeout_ms) {
     // this, GDMA could fetch stale data and emit garbage.
     esp_cache_msync(samples, g_fb_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
 
+    // Item 2: measure swap latency to confirm IDF is doing a no-copy swap.
+    const int64_t t_kick_pre = esp_timer_get_time();
+
     // Hand the back FB to the panel as the next frame to emit. With num_fbs=2
     // and `refresh_on_demand`, IDF detects that the passed buffer matches one
     // of its internal FBs and simply switches the active pointer (no copy).
     esp_err_t err = esp_lcd_panel_draw_bitmap(
         g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1, samples);
+
+    const int64_t t_kick_post = esp_timer_get_time();
+    const int64_t swap_us     = t_kick_post - t_kick_pre;
+    if (swap_us > kSwapLatencyWarnUs) {
+        ESP_LOGW(TAG,
+                 "draw_bitmap took %lld µs (expected <%lld for no-copy swap); "
+                 "check IDF version, num_fbs=2, fb_in_psram=1",
+                 swap_us, kSwapLatencyWarnUs);
+    }
+
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "draw_bitmap: %s", esp_err_to_name(err));
-        // We still gave the sem back logically; restore it so the next call doesn't deadlock.
         xSemaphoreGive(g_done_sem);
         return false;
     }
 
+    // Item 5: track inter-kick interval. At steady-state this equals the
+    // wall-clock period of the render task, which itself is bounded below
+    // by the DMA emission duration.
+    if (g_last_kick_us != 0) {
+        const int64_t interval = t_kick_post - g_last_kick_us;
+        g_emit_us_sum  += interval;
+        g_emit_us_count++;
+        if (interval > g_emit_us_max) g_emit_us_max = interval;
+    }
+    g_last_kick_us = t_kick_post;
+
     g_back_idx ^= 1;
     dmx::note_frame_emitted();
     return true;
+}
+
+void dump_stats() {
+    const int64_t expected_us =
+        static_cast<int64_t>(g_fb_h_res) * 1'000'000LL / g_cfg.pclk_hz;
+    const int64_t avg_us = (g_emit_us_count > 0) ? (g_emit_us_sum / g_emit_us_count) : 0;
+    ESP_LOGI(TAG,
+             "stats: trans_done=%lu, vsync=%lu, frames=%lu, "
+             "expected DMA=%lld µs, avg interval=%lld µs, max=%lld µs",
+             static_cast<unsigned long>(g_trans_done_count),
+             static_cast<unsigned long>(g_vsync_count),
+             static_cast<unsigned long>(g_emit_us_count),
+             expected_us, avg_us, g_emit_us_max);
 }
 
 void wait_idle() {

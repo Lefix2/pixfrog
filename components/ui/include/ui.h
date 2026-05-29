@@ -27,4 +27,13 @@ struct InitConfig {
 // Must be called after config_store::init().
 bool start(const InitConfig& cfg);
 
+// ── Item 9: IP propagation ─────────────────────────────────────────────────
+// Called from a network event handler when Ethernet acquires (or loses)
+// an address. Pass 0 for "no link" (renders as "—" on HOME).
+void     set_ip(uint32_t host_order_ip);
+uint32_t get_ip();
+
+// Per-channel activity is read directly from dmx::is_channel_active()
+// in menu.cpp — no UI-side cache needed.
+
 }  // namespace pixfrog::ui

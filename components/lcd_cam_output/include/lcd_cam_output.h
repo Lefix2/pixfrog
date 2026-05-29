@@ -40,4 +40,11 @@ void wait_idle();
 // Useful for boot-time diagnostics.
 size_t fb_bytes();
 
+// Log a one-line summary of LCD_CAM telemetry counters:
+//   on_color_trans_done / on_vsync fire counts (item 4),
+//   expected DMA duration vs measured inter-kick interval (item 5).
+// Call periodically from render_task or on a 1-Hz timer to monitor
+// PSRAM→GDMA sustained throughput in production.
+void dump_stats();
+
 }  // namespace pixfrog::lcd

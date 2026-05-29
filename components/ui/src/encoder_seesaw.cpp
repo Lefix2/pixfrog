@@ -8,6 +8,7 @@
 
 #include "ui_internal.h"
 
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 
 namespace pixfrog::ui::detail {
@@ -16,11 +17,10 @@ namespace {
 
 constexpr const char* TAG = "ENC";
 
-int      g_i2c_port  = 0;
-uint8_t  g_addr      = 0x36;
-int      g_int_gpio  = -1;
-int32_t  g_last_pos  = 0;
-bool     g_last_btn  = false;
+i2c_master_dev_handle_t g_dev      = nullptr;
+int                     g_int_gpio = -1;
+int32_t                 g_last_pos = 0;
+bool                    g_last_btn = false;
 
 // Pending events queue (simple ring) so we can drain multiple rotations
 // per wake without losing them.
@@ -51,12 +51,20 @@ bool seesaw_read_button(bool& /*pressed_out*/) {
 
 }  // namespace
 
-bool encoder_init(int i2c_port, uint8_t addr, int int_gpio) {
-    g_i2c_port = i2c_port;
-    g_addr     = addr;
+bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio) {
+    if (!bus) return false;
     g_int_gpio = int_gpio;
-    // TODO: set seesaw INT enable on encoder & button registers.
-    ESP_LOGW(TAG, "init skeleton — no I2C bring-up yet");
+    i2c_device_config_t dev_cfg{};
+    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_cfg.device_address  = addr;
+    dev_cfg.scl_speed_hz    = 400'000;
+    esp_err_t err = i2c_master_bus_add_device(bus, &dev_cfg, &g_dev);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "bus_add_device: %s", esp_err_to_name(err));
+        return false;
+    }
+    // TODO: set seesaw INT enable on encoder & button registers via i2c_master_transmit.
+    ESP_LOGI(TAG, "seesaw bus add OK at 0x%02X (register init still TODO)", addr);
     return true;
 }
 

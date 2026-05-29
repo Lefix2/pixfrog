@@ -5,6 +5,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "ui.h"
 
 namespace pixfrog::ui::detail {
 
@@ -23,7 +24,6 @@ struct State {
     Screen   screen        = Screen::Home;
     uint8_t  cursor        = 0;
     uint8_t  channel_index = 0;        // current channel when in ChannelMenu / ChannelEdit
-    bool     dirty         = true;
 };
 
 State s;
@@ -42,16 +42,38 @@ void render_home() {
 
     const auto stats = dmx::get_stats();
     oled_draw_text(0, 0, "pixfrog");
-    std::snprintf(line, sizeof(line), "IP    : %s", "—");      // TODO: wire ip
-    oled_draw_text(1, 0, line);
-    std::snprintf(line, sizeof(line), "FPS   : %lu", static_cast<unsigned long>(stats.current_fps));
+
+    // Item 9: IP from ui::set_ip(); 0 = link down / DHCP pending.
+    const uint32_t ip = ui::get_ip();
+    if (ip == 0) {
+        oled_draw_text(1, 0, "IP   : ---.---.---.---");
+    } else {
+        std::snprintf(line, sizeof(line), "IP   : %u.%u.%u.%u",
+                      (ip >> 24) & 0xFFu, (ip >> 16) & 0xFFu,
+                      (ip >>  8) & 0xFFu,  ip        & 0xFFu);
+        oled_draw_text(1, 0, line);
+    }
+
+    std::snprintf(line, sizeof(line), "FPS  : %lu", static_cast<unsigned long>(stats.current_fps));
     oled_draw_text(2, 0, line);
-    std::snprintf(line, sizeof(line), "Pkts  : %llu", static_cast<unsigned long long>(stats.artnet_packets_rx));
+
+    std::snprintf(line, sizeof(line), "Pkts : %llu",
+                  static_cast<unsigned long long>(stats.artnet_packets_rx));
     oled_draw_text(3, 0, line);
-    std::snprintf(line, sizeof(line), "CH 12345678");
-    oled_draw_text(5, 0, line);
-    std::snprintf(line, sizeof(line), "   --------");          // TODO: real per-channel status
-    oled_draw_text(6, 0, line);
+
+    // Item 10: per-channel activity strip.
+    //   '*' = received DMX recently
+    //   '-' = idle
+    //   '!' = config error (TODO: needs error flag in dmx_manager)
+    oled_draw_text(5, 0, "CH 1 2 3 4 5 6 7 8");
+    char ch_line[24];
+    ch_line[0] = ' '; ch_line[1] = ' '; ch_line[2] = ' ';
+    for (int i = 0; i < 8; ++i) {
+        ch_line[3 + i * 2]     = dmx::is_channel_active(i) ? '*' : '-';
+        ch_line[3 + i * 2 + 1] = ' ';
+    }
+    ch_line[3 + 8 * 2 - 1] = '\0';
+    oled_draw_text(6, 0, ch_line);
 }
 
 void render_main_menu() {
@@ -85,9 +107,7 @@ void render_channel_menu() {
 
 }  // namespace
 
-void menu_init()        { s = State{}; }
-bool menu_is_dirty()    { return s.dirty; }
-void menu_clear_dirty() { s.dirty = false; }
+void menu_init() { s = State{}; }
 
 void menu_render() {
     switch (s.screen) {
@@ -99,7 +119,6 @@ void menu_render() {
 }
 
 void menu_dispatch(Event e) {
-    s.dirty = true;
     switch (s.screen) {
         case Screen::Home:
             if (e == Event::Click) { s.screen = Screen::MainMenu; s.cursor = 0; }
@@ -129,7 +148,6 @@ void menu_dispatch(Event e) {
 void menu_on_idle_timeout() {
     s.screen = Screen::Home;
     s.cursor = 0;
-    s.dirty  = true;
 }
 
 }  // namespace pixfrog::ui::detail

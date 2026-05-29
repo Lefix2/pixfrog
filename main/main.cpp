@@ -32,7 +32,7 @@ constexpr const char* TAG = "MAIN";
 void init_network() {
     esp_netif_init();
     esp_event_loop_create_default();
-    // TODO: configure RMII EMAC + IP101 PHY:
+    // TODO (items 20-22): configure RMII EMAC + IP101 PHY:
     //   eth_mac_config_t mac_cfg = ETH_MAC_DEFAULT_CONFIG();
     //   eth_esp32_emac_config_t esp_cfg = ETH_ESP32_EMAC_DEFAULT_CONFIG();
     //   esp_cfg.smi_mdc_gpio_num  = pixfrog::board::kEthMdcGpio;
@@ -47,6 +47,12 @@ void init_network() {
     //   esp_eth_driver_install(&eth, &handle);
     //   …apply static IP from config if !use_dhcp…
     //   esp_eth_start(handle);
+    //
+    // Then register an IP_EVENT_ETH_GOT_IP handler that calls:
+    //   pixfrog::ui::set_ip(ntohl(event->ip_info.ip.addr));
+    // and an ETHERNET_EVENT_DISCONNECTED handler that calls:
+    //   pixfrog::ui::set_ip(0);
+    // — the HOME screen reads these via pixfrog::ui::get_ip().
     ESP_LOGW(TAG, "network bring-up TODO");
 }
 

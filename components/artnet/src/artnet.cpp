@@ -51,6 +51,10 @@ void handle_dmx(const uint8_t* buf, size_t len) {
     const size_t copy = data_len > dmx::kUniverseSize ? dmx::kUniverseSize : data_len;
     std::memcpy(dst, buf + 18, copy);
     dmx::note_packet_rx();
+
+    // Item 10: tag this channel as active for HOME render.
+    const int ch = dmx::channel_for_universe(universe);
+    if (ch >= 0) dmx::note_channel_activity(static_cast<size_t>(ch));
 }
 
 void handle_poll(const uint8_t* /*buf*/, size_t /*len*/, const sockaddr_in& /*from*/) {
