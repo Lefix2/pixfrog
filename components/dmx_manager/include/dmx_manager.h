@@ -63,6 +63,25 @@ int channel_for_universe(uint16_t universe_number);
 // last second. Used by ui::set_channel_active() at HOME refresh time.
 bool is_channel_active(size_t channel_index);
 
+// ── Configuration change propagation (item 7) ──────────────────────────────
+// The UI commits config changes from `ui_task` (core 0) but the actual
+// runtime state lives in render_task (core 1). To bridge them safely we
+// use a FreeRTOS event group:
+//   bit n (0..7)   — channel n config changed, remap LUT
+//   bit 8          — global config changed (ArtNet net/subnet, network)
+//
+// UI calls `mark_channel_dirty(n)` or `mark_global_dirty()` after each
+// successful NVS commit. render_task calls `handle_pending_remaps()` at
+// the start of every frame; that function reads the bits, rebuilds the
+// universe→channel LUT if any channel bit is set, and clears the bits.
+// Bit 8 currently triggers a global LUT rebuild as well (cheap).
+constexpr uint32_t kRemapAllChannelsMask = 0xFFu;
+constexpr uint32_t kRemapGlobalBit       = 1u << 8;
+
+void mark_channel_dirty(size_t channel_index);
+void mark_global_dirty();
+void handle_pending_remaps();
+
 // Signal that an ArtSync was received (forces frame emission ASAP).
 void note_sync();
 

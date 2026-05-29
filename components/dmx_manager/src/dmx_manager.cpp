@@ -6,6 +6,8 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 
 namespace pixfrog::dmx {
 
@@ -48,6 +50,30 @@ int64_t  g_last_activity_us[config::kNumChannels]{};
 // "Active" if last_activity within this window:
 constexpr int64_t kActivityWindowUs = 1'000'000;  // 1 second
 
+// Event group for config change propagation (item 7).
+EventGroupHandle_t g_remap_eg = nullptr;
+
+// Rebuild the universe → slot LUT (+ reverse slot → channel) from the
+// current contents of config_store. Called from init() and from
+// handle_pending_remaps() when the UI signals a config change.
+void rebuild_universe_lut() {
+    for (size_t i = 0; i < sizeof(g_universe_to_slot) / sizeof(g_universe_to_slot[0]); ++i) {
+        g_universe_to_slot[i] = UINT16_MAX;
+    }
+    uint16_t slot = 0;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        const auto& cc = config::get_channel(ch);
+        const size_t bytes_per_pixel = led::bytes_per_pixel(cc.protocol);
+        const size_t total_bytes     = cc.pixel_count * bytes_per_pixel;
+        const size_t universes_used  = (total_bytes + kUniverseSize - 1) / kUniverseSize;
+        for (size_t u = 0; u < universes_used && slot < kNumUniverses; ++u) {
+            g_universe_to_slot[cc.universe_start + u] = slot;
+            g_slot_to_channel[slot]                   = static_cast<uint8_t>(ch);
+            slot++;
+        }
+    }
+}
+
 }  // namespace
 
 bool init() {
@@ -72,25 +98,40 @@ bool init() {
         g_chan_bufs[i].back = g_chan_bufs[i].b;
     }
 
-    // Build the universe → slot LUT (+ reverse slot → channel) from current config.
-    for (size_t i = 0; i < sizeof(g_universe_to_slot) / sizeof(g_universe_to_slot[0]); ++i) {
-        g_universe_to_slot[i] = UINT16_MAX;
-    }
-    uint16_t slot = 0;
-    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        const auto& cc = config::get_channel(ch);
-        const size_t bytes_per_pixel = led::bytes_per_pixel(cc.protocol);
-        const size_t total_bytes     = cc.pixel_count * bytes_per_pixel;
-        const size_t universes_used  = (total_bytes + kUniverseSize - 1) / kUniverseSize;
-        for (size_t u = 0; u < universes_used && slot < kNumUniverses; ++u) {
-            g_universe_to_slot[cc.universe_start + u] = slot;
-            g_slot_to_channel[slot]                   = static_cast<uint8_t>(ch);
-            slot++;
-        }
-    }
+    rebuild_universe_lut();
     g_universe_to_slot_valid = true;
-    ESP_LOGI(TAG, "init OK, allocated %u universe slots", slot);
+
+    g_remap_eg = xEventGroupCreate();
+    if (!g_remap_eg) {
+        ESP_LOGE(TAG, "event group alloc failed");
+        return false;
+    }
+
+    ESP_LOGI(TAG, "init OK, universe LUT built");
     return true;
+}
+
+void mark_channel_dirty(size_t channel_index) {
+    if (channel_index >= config::kNumChannels || !g_remap_eg) return;
+    xEventGroupSetBits(g_remap_eg, 1u << channel_index);
+}
+
+void mark_global_dirty() {
+    if (!g_remap_eg) return;
+    xEventGroupSetBits(g_remap_eg, kRemapGlobalBit);
+}
+
+void handle_pending_remaps() {
+    if (!g_remap_eg) return;
+    const EventBits_t bits = xEventGroupClearBits(g_remap_eg, 0xFFFFFFFFu);
+    if (!bits) return;
+    // Any channel bit (or global) currently triggers a full LUT rebuild.
+    // The LUT covers 32k entries × 2 B = 64 kB so the rebuild is cheap
+    // (~100 µs) and runs once per UI commit — not per frame.
+    if (bits & (kRemapAllChannelsMask | kRemapGlobalBit)) {
+        rebuild_universe_lut();
+    }
+    ESP_LOGI(TAG, "remap applied, bits=0x%lx", static_cast<unsigned long>(bits));
 }
 
 int channel_for_universe(uint16_t universe_number) {

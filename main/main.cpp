@@ -60,6 +60,11 @@ void render_task(void*) {
     const TickType_t period = pdMS_TO_TICKS(1000 / pixfrog::config::get_global().refresh_rate_hz);
     TickType_t       last   = xTaskGetTickCount();
     while (true) {
+        // Item 7: apply any config changes committed by the UI since the
+        // last frame. Rebuilds universe→channel LUT, clears dirty bits.
+        // No-op when nothing is pending.
+        pixfrog::dmx::handle_pending_remaps();
+
         pixfrog::dmx::swap_universes();
         // TODO: decode each channel's front universes into pixel_back_buffer(ch)
         //       per ChannelConfig (DMX start offset, color order, brightness, …).
