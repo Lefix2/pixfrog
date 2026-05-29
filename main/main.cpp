@@ -14,6 +14,8 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/inet.h"
@@ -145,8 +147,19 @@ void init_network() {
 }
 
 void render_task(void*) {
+    // Item 3: subscribe the render task to the task watchdog. The render
+    // task is the canary for "the system is still meeting its real-time
+    // budget" — if it stops kicking the WDT, we'd rather panic-reset than
+    // ship dark/garbled frames silently.
+    esp_task_wdt_add(nullptr);
+
     const TickType_t period = pdMS_TO_TICKS(1000 / pixfrog::config::get_global().refresh_rate_hz);
     TickType_t       last   = xTaskGetTickCount();
+
+    // Item 4: rolling 1-second window FPS counter.
+    int64_t  fps_window_start_us = esp_timer_get_time();
+    uint32_t fps_frames_in_window = 0;
+
     while (true) {
         // Item 7: apply any config changes committed by the UI since the
         // last frame. Rebuilds universe→channel LUT, clears dirty bits.
@@ -154,12 +167,32 @@ void render_task(void*) {
         pixfrog::dmx::handle_pending_remaps();
 
         pixfrog::dmx::swap_universes();
-        // TODO: decode each channel's front universes into pixel_back_buffer(ch)
-        //       per ChannelConfig (DMX start offset, color order, brightness, …).
+
+        // Item 1: decode each channel's universes into its pixel back buffer
+        // (DMX start offset, multi-universe spanning), then swap the front
+        // pointer so the LCD_CAM encoder sees the new pixels. Per-pixel
+        // transformations (color order, brightness, grouping, invert) are
+        // applied later by led::encode_channel during the LCD_CAM render.
         for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch) {
+            pixfrog::dmx::decode_pixels_for_channel(ch);
             pixfrog::dmx::swap_pixels(ch);
         }
+
         pixfrog::lcd::render_frame();
+
+        // Item 4: publish FPS once per second.
+        fps_frames_in_window++;
+        const int64_t now_us = esp_timer_get_time();
+        if (now_us - fps_window_start_us >= 1'000'000) {
+            pixfrog::dmx::set_current_fps(fps_frames_in_window);
+            fps_frames_in_window = 0;
+            fps_window_start_us  = now_us;
+        }
+
+        // Item 3: kick the WDT before sleeping. If render_frame ever blocks
+        // past the WDT timeout (5 s default), we want a clean panic.
+        esp_task_wdt_reset();
+
         vTaskDelayUntil(&last, period);
     }
 }

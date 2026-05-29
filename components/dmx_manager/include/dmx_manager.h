@@ -106,6 +106,27 @@ void swap_pixels(size_t ch);
 // Read-only access to the front pixel buffer for channel `ch`.
 const uint8_t* pixel_front_buffer(size_t ch);
 
+// Copy DMX bytes for channel `ch` from the front universe bank into
+// `pixel_back_buffer(ch)`. Spans multiple universes if a channel's pixel
+// data straddles a universe boundary. Applies `dmx_start` as the per-channel
+// offset into the FIRST universe (1-based per Art-Net convention).
+// Returns true if all required universes were mapped; false otherwise (the
+// remainder of the buffer is zero-filled to keep the strip in a defined state).
+bool decode_pixels_for_channel(size_t ch);
+
+// ────────────────────────────────────────────────────────────────────────────
+// Capacity validation (per refresh rate)
+// ────────────────────────────────────────────────────────────────────────────
+
+// Returns true if channel `ch`'s configuration fits within one frame's
+// emission budget. Updated by validate_capacity() (called at init and
+// after every remap). Defaults to true.
+bool is_channel_capacity_ok(size_t ch);
+
+// Recompute per-channel capacity flags from current config + refresh rate.
+// Logs warnings for over-capacity channels.
+void validate_capacity();
+
 // ────────────────────────────────────────────────────────────────────────────
 // Telemetry
 // ────────────────────────────────────────────────────────────────────────────

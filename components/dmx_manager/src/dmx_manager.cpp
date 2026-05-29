@@ -9,6 +9,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
+#include "led_protocols.h"
+
 namespace pixfrog::dmx {
 
 namespace {
@@ -49,6 +51,11 @@ uint8_t  g_slot_to_channel[kNumUniverses]{};
 int64_t  g_last_activity_us[config::kNumChannels]{};
 // "Active" if last_activity within this window:
 constexpr int64_t kActivityWindowUs = 1'000'000;  // 1 second
+
+// Per-channel capacity flag (item 2). True if the channel's encoded frame
+// fits within one refresh period. Defaults to true (assumed OK until
+// proven otherwise by validate_capacity).
+bool g_channel_capacity_ok[config::kNumChannels]{};
 
 // Event group for config change propagation (item 7).
 EventGroupHandle_t g_remap_eg = nullptr;
@@ -107,6 +114,9 @@ bool init() {
         return false;
     }
 
+    for (size_t i = 0; i < config::kNumChannels; ++i) g_channel_capacity_ok[i] = true;
+    validate_capacity();
+
     ESP_LOGI(TAG, "init OK, universe LUT built");
     return true;
 }
@@ -130,8 +140,92 @@ void handle_pending_remaps() {
     // (~100 µs) and runs once per UI commit — not per frame.
     if (bits & (kRemapAllChannelsMask | kRemapGlobalBit)) {
         rebuild_universe_lut();
+        validate_capacity();
     }
     ESP_LOGI(TAG, "remap applied, bits=0x%lx", static_cast<unsigned long>(bits));
+}
+
+bool decode_pixels_for_channel(size_t ch) {
+    if (ch >= config::kNumChannels) return false;
+    uint8_t* dst = pixel_back_buffer(ch);
+    if (!dst) return false;
+
+    const auto& cc = config::get_channel(ch);
+    const size_t bpp         = led::bytes_per_pixel(cc.protocol);
+    const size_t total_bytes = static_cast<size_t>(cc.pixel_count) * bpp;
+    if (total_bytes == 0) return true;
+    if (total_bytes > kMaxBytesPerChan) {
+        // Shouldn't happen — pixel_count is clamped to kMaxPixelsPerChan by config.
+        return false;
+    }
+
+    // DMX channels are 1-based per Art-Net convention; convert to 0-based offset.
+    const uint16_t start_dmx = cc.dmx_start > 0 ? cc.dmx_start : 1;
+    size_t   offset_in_uni = start_dmx - 1;
+    uint16_t universe      = cc.universe_start;
+    size_t   bytes_written = 0;
+
+    while (bytes_written < total_bytes) {
+        const uint8_t* src = universe_front_buffer_for(universe);
+        if (!src) {
+            // No data for this universe yet — keep the strip in a defined
+            // state rather than emitting garbage.
+            std::memset(dst + bytes_written, 0, total_bytes - bytes_written);
+            return false;
+        }
+        const size_t available = (kUniverseSize > offset_in_uni)
+                                 ? (kUniverseSize - offset_in_uni) : 0;
+        const size_t need      = total_bytes - bytes_written;
+        const size_t copy      = need < available ? need : available;
+        if (copy == 0) {
+            // dmx_start was past the end of this universe; move to next.
+            universe++;
+            offset_in_uni = 0;
+            continue;
+        }
+        std::memcpy(dst + bytes_written, src + offset_in_uni, copy);
+        bytes_written += copy;
+        universe++;
+        offset_in_uni = 0;
+    }
+    return true;
+}
+
+bool is_channel_capacity_ok(size_t ch) {
+    if (ch >= config::kNumChannels) return false;
+    return g_channel_capacity_ok[ch];
+}
+
+void validate_capacity() {
+    const uint8_t refresh = config::get_global().refresh_rate_hz;
+    if (refresh == 0) return;
+    const uint64_t budget_us = 1'000'000ULL / refresh;
+    // Reserve ~1 ms of slack for encoding + draw_bitmap + cache flush overhead.
+    const uint64_t reserve_us = 1000;
+    const uint64_t allowance  = (budget_us > reserve_us) ? (budget_us - reserve_us) : budget_us;
+
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        const auto& cc = config::get_channel(ch);
+        led::ChannelDesc d{};
+        d.protocol    = cc.protocol;
+        d.pixel_count = cc.pixel_count;
+        d.clock_hz    = cc.clock_hz;
+        const size_t   samples = led::encoded_size_samples(d);
+        const uint64_t t_us    = static_cast<uint64_t>(samples) * 1'000'000ULL / led::kPclkHz;
+        const bool     ok      = t_us <= allowance;
+        g_channel_capacity_ok[ch] = ok;
+        if (!ok) {
+            ESP_LOGW(TAG,
+                     "ch %zu over capacity: t_dma=%llu µs > budget=%llu µs "
+                     "(refresh=%u Hz, %u px, proto=%d) — reduce pixel_count or refresh",
+                     ch,
+                     static_cast<unsigned long long>(t_us),
+                     static_cast<unsigned long long>(allowance),
+                     static_cast<unsigned>(refresh),
+                     static_cast<unsigned>(cc.pixel_count),
+                     static_cast<int>(cc.protocol));
+        }
+    }
 }
 
 int channel_for_universe(uint16_t universe_number) {
