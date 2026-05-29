@@ -1,12 +1,12 @@
 // Menu state machine for pixfrog's OLED UI.
 //
-// Convention:
-//   - Rotate-right = cursor-down in lists, value-up in edit.
-//   - Rotate-left  = cursor-up in lists, value-down in edit.
-//   - Click on list entry = enter edit or sub-screen.
-//   - Click in edit mode = commit (writes NVS, marks dmx dirty), return.
-//   - Click on a "[Back]" entry = return one level.
-//   - Idle timeout → HOME.
+// Conventions:
+//   Rotate-right = cursor-down / value-up.
+//   Rotate-left  = cursor-up   / value-down.
+//   Click on a list entry = enter edit or sub-screen.
+//   Click in edit mode = commit (writes NVS, marks dmx dirty), return.
+//   Click on a "[Back]" entry = return one level.
+//   Idle timeout → HOME.
 
 #include "ui_internal.h"
 
@@ -22,8 +22,8 @@ namespace pixfrog::ui::detail {
 
 namespace {
 
-constexpr uint8_t kRows  = 8;   // OLED text rows
-constexpr uint8_t kCols  = 21;  // chars per row
+constexpr uint8_t kRows  = 8;
+constexpr uint8_t kCols  = 21;
 
 // ── Screens ─────────────────────────────────────────────────────────────────
 enum class Screen : uint8_t {
@@ -33,6 +33,8 @@ enum class Screen : uint8_t {
     NetworkMenu,
     ChannelMenu,
     EditValue,
+    EditString,
+    EditIp,
 };
 
 // ── Editable fields ─────────────────────────────────────────────────────────
@@ -52,33 +54,84 @@ enum class Field : uint8_t {
     ChClock,
 };
 
+enum class StringField : uint8_t {
+    ArtnetShort,
+    ArtnetLong,
+};
+
+enum class IpField : uint8_t {
+    StaticIp,
+    StaticMask,
+    StaticGw,
+};
+
 enum class ValueKind : uint8_t {
-    Int,            // raw integer
-    Bool,           // 0/1 → OFF/ON
-    Protocol,       // 0..7 → led::Protocol names
-    ColorOrder,     // 0..N → led::ColorOrder names
+    Int,
+    Bool,
+    Protocol,
+    ColorOrder,
 };
 
 struct EditCtx {
-    Field       field        = Field::None;
-    ValueKind   kind         = ValueKind::Int;
-    int32_t     current      = 0;
-    int32_t     step         = 1;
-    int32_t     min          = 0;
-    int32_t     max          = 0;
-    uint8_t     channel      = 0;
+    Field       field         = Field::None;
+    ValueKind   kind          = ValueKind::Int;
+    int32_t     current       = 0;
+    int32_t     step          = 1;
+    int32_t     min           = 0;
+    int32_t     max           = 0;
+    uint8_t     channel       = 0;
     Screen      return_screen = Screen::MainMenu;
-    const char* label        = "";
+    const char* label         = "";
+};
+
+struct EditStringCtx {
+    char        buf[65]       = {};   // max(short=18, long=64) + null
+    uint8_t     max_len       = 0;
+    uint8_t     cursor        = 0;    // 0..max_len; max_len = DONE position
+    StringField field         = StringField::ArtnetShort;
+    Screen      return_screen = Screen::ArtnetMenu;
+    const char* label         = "";
+};
+
+struct EditIpCtx {
+    uint32_t    value         = 0;    // host-order
+    uint8_t     cursor        = 0;    // 0..4; 4 = DONE position
+    IpField     field         = IpField::StaticIp;
+    Screen      return_screen = Screen::NetworkMenu;
+    const char* label         = "";
 };
 
 struct State {
-    Screen  screen        = Screen::Home;
-    uint8_t cursor        = 0;
-    uint8_t channel_index = 0;
-    EditCtx edit;
+    Screen        screen        = Screen::Home;
+    uint8_t       cursor        = 0;
+    uint8_t       channel_index = 0;
+    EditCtx       edit;
+    EditStringCtx str_edit;
+    EditIpCtx     ip_edit;
 };
 
 State s;
+
+// ── Alphabet for string editing ─────────────────────────────────────────────
+constexpr const char kAlphabet[] =
+    " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789"
+    "-_.";
+constexpr int kAlphabetLen = sizeof(kAlphabet) - 1;  // 66
+
+int char_to_idx(char c) {
+    for (int i = 0; i < kAlphabetLen; ++i) {
+        if (kAlphabet[i] == c) return i;
+    }
+    return 0;  // unknown → space
+}
+
+char idx_to_char(int i) {
+    if (i < 0) i = ((i % kAlphabetLen) + kAlphabetLen) % kAlphabetLen;
+    if (i >= kAlphabetLen) i %= kAlphabetLen;
+    return kAlphabet[i];
+}
 
 // ── Helpers: enum → name ────────────────────────────────────────────────────
 
@@ -119,18 +172,10 @@ void truncate(char* dst, size_t cap, const char* src) {
 
 void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
     switch (e.kind) {
-        case ValueKind::Int:
-            std::snprintf(out, cap, "%ld", static_cast<long>(v));
-            return;
-        case ValueKind::Bool:
-            std::snprintf(out, cap, "%s", v ? "ON" : "OFF");
-            return;
-        case ValueKind::Protocol:
-            std::snprintf(out, cap, "%s", protocol_name(static_cast<led::Protocol>(v)));
-            return;
-        case ValueKind::ColorOrder:
-            std::snprintf(out, cap, "%s", color_order_name(static_cast<led::ColorOrder>(v)));
-            return;
+        case ValueKind::Int:        std::snprintf(out, cap, "%ld", static_cast<long>(v));                                 return;
+        case ValueKind::Bool:       std::snprintf(out, cap, "%s",  v ? "ON" : "OFF");                                     return;
+        case ValueKind::Protocol:   std::snprintf(out, cap, "%s",  protocol_name(static_cast<led::Protocol>(v)));         return;
+        case ValueKind::ColorOrder: std::snprintf(out, cap, "%s",  color_order_name(static_cast<led::ColorOrder>(v)));    return;
     }
 }
 
@@ -138,13 +183,12 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
 
 struct ListItem {
     const char* label;
-    const char* value;   // optional; may be ""
+    const char* value;
 };
 
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
     oled_clear();
     oled_draw_text(0, 0, title);
-    // Up to 7 visible rows (rows 1..7). Scroll so cursor is always visible.
     const uint8_t visible = kRows - 1;
     uint8_t first = 0;
     if (count > visible) {
@@ -225,18 +269,18 @@ void dispatch_main_menu(Event e) {
     if (e == Event::RotateLeft  && s.cursor > 0)                   s.cursor--;
     if (e == Event::RotateRight && s.cursor < kMainItemCount - 1)  s.cursor++;
     if (e == Event::Click) {
-        if (s.cursor == 0)                                          { s.screen = Screen::ArtnetMenu;  s.cursor = 0; }
-        else if (s.cursor == 1)                                     { s.screen = Screen::NetworkMenu; s.cursor = 0; }
-        else if (s.cursor >= 2 && s.cursor <= 9)                    {
+        if (s.cursor == 0)                          { s.screen = Screen::ArtnetMenu;  s.cursor = 0; }
+        else if (s.cursor == 1)                     { s.screen = Screen::NetworkMenu; s.cursor = 0; }
+        else if (s.cursor >= 2 && s.cursor <= 9)    {
             s.channel_index = s.cursor - 2;
             s.screen = Screen::ChannelMenu;
             s.cursor = 0;
         }
-        else                                                        { s.screen = Screen::Home; s.cursor = 0; }
+        else                                        { s.screen = Screen::Home; s.cursor = 0; }
     }
 }
 
-// ── EDIT VALUE — generic ────────────────────────────────────────────────────
+// ── EDIT VALUE — generic int / bool / enum ──────────────────────────────────
 
 void enter_edit(Field field, ValueKind kind, int32_t cur, int32_t mn, int32_t mx,
                 int32_t step, const char* label, Screen return_screen,
@@ -300,16 +344,197 @@ void dispatch_edit_value(Event e) {
     }
 }
 
+// ── EDIT STRING — char-by-char ──────────────────────────────────────────────
+
+void enter_edit_string(StringField field, const char* source, uint8_t max_len,
+                       const char* label, Screen return_screen) {
+    s.str_edit.field         = field;
+    s.str_edit.max_len       = max_len;
+    s.str_edit.cursor        = 0;
+    s.str_edit.return_screen = return_screen;
+    s.str_edit.label         = label;
+    std::memset(s.str_edit.buf, ' ', sizeof(s.str_edit.buf));
+    s.str_edit.buf[max_len]  = '\0';
+    for (uint8_t i = 0; i < max_len && source[i] != '\0'; ++i) {
+        s.str_edit.buf[i] = source[i];
+    }
+    s.screen = Screen::EditString;
+}
+
+void render_edit_string() {
+    oled_clear();
+    char title[kCols + 1];
+    if (s.str_edit.cursor < s.str_edit.max_len) {
+        std::snprintf(title, sizeof(title), "EDIT %s [%u/%u]",
+                      s.str_edit.label,
+                      static_cast<unsigned>(s.str_edit.cursor + 1),
+                      static_cast<unsigned>(s.str_edit.max_len));
+    } else {
+        std::snprintf(title, sizeof(title), "EDIT %s [end]",
+                      s.str_edit.label);
+    }
+    oled_draw_text(0, 0, title);
+
+    // Window of up to 20 chars centred on cursor.
+    constexpr int kWin = 20;
+    const uint8_t cursor = s.str_edit.cursor;
+    const uint8_t len    = s.str_edit.max_len;
+    int win_start = static_cast<int>(cursor) - 10;
+    if (win_start < 0)            win_start = 0;
+    if (win_start + kWin > len)   win_start = len - kWin;
+    if (win_start < 0)            win_start = 0;
+
+    char window[kWin + 1] = {};
+    for (int i = 0; i < kWin && win_start + i < len; ++i) {
+        char c = s.str_edit.buf[win_start + i];
+        window[i] = (c == ' ') ? '_' : c;   // visible underscore for spaces
+    }
+    oled_draw_text(2, 0, window);
+
+    // Cursor caret '^' below the char.
+    if (cursor < len) {
+        char caret[kWin + 1] = {};
+        const int col = cursor - win_start;
+        for (int i = 0; i < col && i < kWin; ++i) caret[i] = ' ';
+        if (col >= 0 && col < kWin) caret[col] = '^';
+        oled_draw_text(3, 0, caret);
+        oled_draw_text(5, 0, "rotate=change char");
+        oled_draw_text(6, 0, "click=next char");
+    } else {
+        oled_draw_text(3, 0, "[end of string]");
+        oled_draw_text(5, 0, "rotate=back to chr");
+        oled_draw_text(6, 0, "click=commit & exit");
+    }
+}
+
+void commit_edit_string() {
+    // Trim trailing spaces.
+    int end = s.str_edit.max_len;
+    while (end > 0 && s.str_edit.buf[end - 1] == ' ') --end;
+    s.str_edit.buf[end] = '\0';
+
+    auto g = config::get_global();
+    if (s.str_edit.field == StringField::ArtnetShort) {
+        std::memset(g.short_name, 0, sizeof(g.short_name));
+        std::strncpy(g.short_name, s.str_edit.buf, sizeof(g.short_name) - 1);
+    } else {
+        std::memset(g.long_name, 0, sizeof(g.long_name));
+        std::strncpy(g.long_name, s.str_edit.buf, sizeof(g.long_name) - 1);
+    }
+    config::set_global(g);
+    dmx::mark_global_dirty();
+}
+
+void dispatch_edit_string(Event e) {
+    const uint8_t len = s.str_edit.max_len;
+    if (s.str_edit.cursor < len) {
+        if (e == Event::RotateLeft || e == Event::RotateRight) {
+            int idx = char_to_idx(s.str_edit.buf[s.str_edit.cursor]);
+            idx += (e == Event::RotateRight) ? 1 : -1;
+            s.str_edit.buf[s.str_edit.cursor] = idx_to_char(idx);
+        } else if (e == Event::Click) {
+            s.str_edit.cursor++;
+        }
+    } else {
+        // At DONE position: rotate-left returns to last char; click commits.
+        if (e == Event::RotateLeft) {
+            if (s.str_edit.cursor > 0) s.str_edit.cursor--;
+        } else if (e == Event::Click) {
+            commit_edit_string();
+            s.screen = s.str_edit.return_screen;
+        }
+    }
+}
+
+// ── EDIT IP — 4 octets ──────────────────────────────────────────────────────
+
+void enter_edit_ip(IpField field, uint32_t current, const char* label, Screen return_screen) {
+    s.ip_edit.field         = field;
+    s.ip_edit.value         = current;
+    s.ip_edit.cursor        = 0;
+    s.ip_edit.label         = label;
+    s.ip_edit.return_screen = return_screen;
+    s.screen                = Screen::EditIp;
+}
+
+void render_edit_ip() {
+    oled_clear();
+    char title[kCols + 1];
+    std::snprintf(title, sizeof(title), "EDIT %s", s.ip_edit.label);
+    oled_draw_text(0, 0, title);
+
+    // Render as "192.[168].001.123" with brackets around current octet.
+    const uint32_t v = s.ip_edit.value;
+    const uint8_t  oct[4] = {
+        static_cast<uint8_t>((v >> 24) & 0xFF),
+        static_cast<uint8_t>((v >> 16) & 0xFF),
+        static_cast<uint8_t>((v >>  8) & 0xFF),
+        static_cast<uint8_t> (v        & 0xFF),
+    };
+    char line[kCols + 1] = {};
+    int pos = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (i == s.ip_edit.cursor) pos += std::snprintf(line + pos, sizeof(line) - pos, "[%u]", oct[i]);
+        else                       pos += std::snprintf(line + pos, sizeof(line) - pos, "%u",   oct[i]);
+        if (i < 3) pos += std::snprintf(line + pos, sizeof(line) - pos, ".");
+        if (pos >= static_cast<int>(sizeof(line)) - 1) break;
+    }
+    oled_draw_text(3, 0, line);
+
+    if (s.ip_edit.cursor < 4) {
+        oled_draw_text(5, 0, "rotate=change oct");
+        oled_draw_text(6, 0, "click=next octet");
+    } else {
+        oled_draw_text(5, 0, "[ready to commit]");
+        oled_draw_text(6, 0, "click=commit & exit");
+    }
+}
+
+void commit_edit_ip() {
+    auto g = config::get_global();
+    switch (s.ip_edit.field) {
+        case IpField::StaticIp:   g.static_ip      = s.ip_edit.value; break;
+        case IpField::StaticMask: g.static_mask    = s.ip_edit.value; break;
+        case IpField::StaticGw:   g.static_gateway = s.ip_edit.value; break;
+    }
+    config::set_global(g);
+    dmx::mark_global_dirty();
+}
+
+void dispatch_edit_ip(Event e) {
+    if (s.ip_edit.cursor < 4) {
+        if (e == Event::RotateLeft || e == Event::RotateRight) {
+            const int shift = (3 - s.ip_edit.cursor) * 8;
+            int32_t oct = (s.ip_edit.value >> shift) & 0xFF;
+            oct += (e == Event::RotateRight) ? 1 : -1;
+            if (oct < 0)   oct = 0;
+            if (oct > 255) oct = 255;
+            const uint32_t mask = ~(0xFFu << shift);
+            s.ip_edit.value = (s.ip_edit.value & mask) |
+                              (static_cast<uint32_t>(oct) << shift);
+        } else if (e == Event::Click) {
+            s.ip_edit.cursor++;
+        }
+    } else {
+        if (e == Event::RotateLeft) {
+            if (s.ip_edit.cursor > 0) s.ip_edit.cursor--;
+        } else if (e == Event::Click) {
+            commit_edit_ip();
+            s.screen = s.ip_edit.return_screen;
+        }
+    }
+}
+
 // ── ARTNET MENU ─────────────────────────────────────────────────────────────
 
 void render_artnet_menu() {
     char vnet[8], vsub[8];
-    char vshort[kCols + 1], vlong[kCols + 1];
+    char vshort[14], vlong[14];
     const auto& g = config::get_global();
     std::snprintf(vnet, sizeof(vnet), "%u", g.artnet_net);
     std::snprintf(vsub, sizeof(vsub), "%u", g.artnet_subnet);
-    truncate(vshort, 13, g.short_name);
-    truncate(vlong,  13, g.long_name);
+    truncate(vshort, sizeof(vshort), g.short_name);
+    truncate(vlong,  sizeof(vlong),  g.long_name);
 
     ListItem items[5] = {
         {"Net",    vnet},
@@ -325,15 +550,14 @@ void dispatch_artnet_menu(Event e) {
     constexpr uint8_t kCount = 5;
     if (e == Event::RotateLeft  && s.cursor > 0)           s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1)  s.cursor++;
-    if (e == Event::Click) {
-        const auto& g = config::get_global();
-        switch (s.cursor) {
-            case 0: enter_edit(Field::ArtnetNet,    ValueKind::Int, g.artnet_net,    0, 127, 1, "Net",    Screen::ArtnetMenu); break;
-            case 1: enter_edit(Field::ArtnetSubnet, ValueKind::Int, g.artnet_subnet, 0,  15, 1, "Sub",    Screen::ArtnetMenu); break;
-            case 2: /* short_name edit: char-by-char editor TODO */                                                            break;
-            case 3: /* long_name  edit: char-by-char editor TODO */                                                            break;
-            case 4: s.screen = Screen::MainMenu; s.cursor = 0;                                                                 break;
-        }
+    if (e != Event::Click) return;
+    const auto& g = config::get_global();
+    switch (s.cursor) {
+        case 0: enter_edit(Field::ArtnetNet,    ValueKind::Int, g.artnet_net,    0, 127, 1, "Net", Screen::ArtnetMenu); break;
+        case 1: enter_edit(Field::ArtnetSubnet, ValueKind::Int, g.artnet_subnet, 0,  15, 1, "Sub", Screen::ArtnetMenu); break;
+        case 2: enter_edit_string(StringField::ArtnetShort, g.short_name, sizeof(g.short_name) - 1, "Short", Screen::ArtnetMenu); break;
+        case 3: enter_edit_string(StringField::ArtnetLong,  g.long_name,  sizeof(g.long_name)  - 1, "Long",  Screen::ArtnetMenu); break;
+        case 4: s.screen = Screen::MainMenu; s.cursor = 0; break;
     }
 }
 
@@ -366,15 +590,14 @@ void dispatch_network_menu(Event e) {
     constexpr uint8_t kCount = 5;
     if (e == Event::RotateLeft  && s.cursor > 0)           s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1)  s.cursor++;
-    if (e == Event::Click) {
-        const auto& g = config::get_global();
-        switch (s.cursor) {
-            case 0: enter_edit(Field::NetworkDhcp, ValueKind::Bool, g.use_dhcp ? 1 : 0, 0, 1, 1, "DHCP", Screen::NetworkMenu); break;
-            case 1: /* static IP edit: 4-octet editor TODO */   break;
-            case 2: /* static mask edit: 4-octet editor TODO */ break;
-            case 3: /* static GW edit: 4-octet editor TODO */   break;
-            case 4: s.screen = Screen::MainMenu; s.cursor = 1;  break;
-        }
+    if (e != Event::Click) return;
+    const auto& g = config::get_global();
+    switch (s.cursor) {
+        case 0: enter_edit(Field::NetworkDhcp, ValueKind::Bool, g.use_dhcp ? 1 : 0, 0, 1, 1, "DHCP", Screen::NetworkMenu); break;
+        case 1: enter_edit_ip(IpField::StaticIp,   g.static_ip,      "IP",   Screen::NetworkMenu); break;
+        case 2: enter_edit_ip(IpField::StaticMask, g.static_mask,    "Mask", Screen::NetworkMenu); break;
+        case 3: enter_edit_ip(IpField::StaticGw,   g.static_gateway, "GW",   Screen::NetworkMenu); break;
+        case 4: s.screen = Screen::MainMenu; s.cursor = 1; break;
     }
 }
 
@@ -384,8 +607,6 @@ constexpr size_t kColorOrderCount = static_cast<size_t>(led::ColorOrder::COUNT);
 constexpr size_t kProtocolCount   = static_cast<size_t>(led::Protocol::COUNT);
 
 uint8_t channel_item_count() {
-    // Base 9 fields (Proto, Uni, DMX, Pix, Order, Bri, Group, Invert) + Back = 9.
-    // Clock only shown for clocked protocols → +1.
     const auto& cc = config::get_channel(s.channel_index);
     return led::is_clocked(cc.protocol) ? 10 : 9;
 }
@@ -423,7 +644,6 @@ void render_channel_menu() {
     if (led::is_clocked(cc.protocol)) {
         render_list(title, items, 10, s.cursor);
     } else {
-        // Skip Clock row: shift "[Back]" up.
         items[8] = items[9];
         render_list(title, items, 9, s.cursor);
     }
@@ -439,8 +659,6 @@ void dispatch_channel_menu(Event e) {
     const Screen ret = Screen::ChannelMenu;
     const uint8_t ch = s.channel_index;
     const bool clocked = led::is_clocked(cc.protocol);
-
-    // When non-clocked, the Clock row is hidden and [Back] is at index 8.
     const uint8_t back_idx = clocked ? 9 : 8;
 
     if (s.cursor == back_idx) { s.screen = Screen::MainMenu; s.cursor = 2 + ch; return; }
@@ -472,6 +690,8 @@ void menu_render() {
         case Screen::NetworkMenu: render_network_menu(); break;
         case Screen::ChannelMenu: render_channel_menu(); break;
         case Screen::EditValue:   render_edit_value();   break;
+        case Screen::EditString:  render_edit_string();  break;
+        case Screen::EditIp:      render_edit_ip();      break;
     }
 }
 
@@ -485,6 +705,8 @@ void menu_dispatch(Event e) {
         case Screen::NetworkMenu: dispatch_network_menu(e); break;
         case Screen::ChannelMenu: dispatch_channel_menu(e); break;
         case Screen::EditValue:   dispatch_edit_value(e);   break;
+        case Screen::EditString:  dispatch_edit_string(e);  break;
+        case Screen::EditIp:      dispatch_edit_ip(e);      break;
     }
 }
 

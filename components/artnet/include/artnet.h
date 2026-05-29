@@ -22,4 +22,9 @@ void start();
 // Stop the receiver (rarely useful in v0; provided for tests).
 void stop();
 
+// Item 7 wiring: tell the ArtNet module the local IP so it can populate
+// ArtPollReply correctly. Called from the network event handler.
+// Pass 0 to indicate "no link".
+void set_local_ip(uint32_t host_order_ip);
+
 }  // namespace pixfrog::artnet

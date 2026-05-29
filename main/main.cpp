@@ -1,19 +1,22 @@
 // pixfrog — main entry point.
+//
 // Boot sequence:
-//   1. NVS init + load config
-//   2. Pixel buffers + universe pool allocation (dmx_manager)
-//   3. LCD_CAM driver init (lcd_cam_output)
-//   4. UI init (ui)        — needs config_store for default home_timeout
-//   5. Network init (Ethernet + lwIP)
-//   6. ArtNet receiver start
+//   1. NVS init + load config            (config_store)
+//   2. Universe pool + pixel buffers     (dmx_manager)
+//   3. LCD_CAM driver                    (lcd_cam_output)
+//   4. UI (OLED + encoder)               (ui)
+//   5. Network: Ethernet + lwIP + events (main::init_network)
+//   6. ArtNet UDP receiver               (artnet)
 //   7. render_task spawn
 
 #include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lwip/inet.h"
 #include "nvs_flash.h"
 
 #include "esp32_p4_devkit.h"
@@ -29,31 +32,116 @@ namespace {
 
 constexpr const char* TAG = "MAIN";
 
+esp_netif_t*     g_eth_netif  = nullptr;
+esp_eth_handle_t g_eth_handle = nullptr;
+
+void publish_ip(uint32_t host_order_ip) {
+    pixfrog::ui::set_ip(host_order_ip);
+    pixfrog::artnet::set_local_ip(host_order_ip);
+}
+
+// Item 7: IP_EVENT_ETH_GOT_IP handler — fires after DHCP completes (or
+// immediately when a static IP is configured + accepted by lwIP).
+extern "C" void on_got_ip(void* /*arg*/, esp_event_base_t /*base*/,
+                          int32_t /*id*/, void* event_data) {
+    auto* event = static_cast<ip_event_got_ip_t*>(event_data);
+    const uint32_t host_ip = lwip_ntohl(event->ip_info.ip.addr);
+    publish_ip(host_ip);
+    ESP_LOGI(TAG, "GOT_IP %u.%u.%u.%u",
+             static_cast<unsigned>((host_ip >> 24) & 0xFFu),
+             static_cast<unsigned>((host_ip >> 16) & 0xFFu),
+             static_cast<unsigned>((host_ip >>  8) & 0xFFu),
+             static_cast<unsigned>( host_ip        & 0xFFu));
+}
+
+extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/,
+                             int32_t event_id, void* /*event_data*/) {
+    switch (event_id) {
+        case ETHERNET_EVENT_START:        ESP_LOGI(TAG, "Ethernet driver started");  break;
+        case ETHERNET_EVENT_STOP:         ESP_LOGI(TAG, "Ethernet driver stopped");  break;
+        case ETHERNET_EVENT_CONNECTED:    ESP_LOGI(TAG, "Ethernet link UP");         break;
+        case ETHERNET_EVENT_DISCONNECTED:
+            ESP_LOGW(TAG, "Ethernet link DOWN");
+            publish_ip(0);
+            break;
+        default: break;
+    }
+}
+
+// Items 5+6: bring up the MAC + IP101 PHY, attach to a netif, apply
+// static IP or wait for DHCP, register event handlers, start the driver.
+// Failures are logged but never abort boot — the UI still works without
+// a network link, so the user can fix the config from the panel.
 void init_network() {
     esp_netif_init();
     esp_event_loop_create_default();
-    // TODO (items 20-22): configure RMII EMAC + IP101 PHY:
-    //   eth_mac_config_t mac_cfg = ETH_MAC_DEFAULT_CONFIG();
-    //   eth_esp32_emac_config_t esp_cfg = ETH_ESP32_EMAC_DEFAULT_CONFIG();
-    //   esp_cfg.smi_mdc_gpio_num  = pixfrog::board::kEthMdcGpio;
-    //   esp_cfg.smi_mdio_gpio_num = pixfrog::board::kEthMdioGpio;
-    //   eth_phy_config_t phy_cfg = ETH_PHY_DEFAULT_CONFIG();
-    //   phy_cfg.phy_addr   = pixfrog::board::kEthPhyAddress;
-    //   phy_cfg.reset_gpio_num = pixfrog::board::kEthPhyResetGpio;
-    //   esp_eth_mac_t* mac = esp_eth_mac_new_esp32(&esp_cfg, &mac_cfg);
-    //   esp_eth_phy_t* phy = esp_eth_phy_new_ip101(&phy_cfg);
-    //   esp_eth_config_t eth = ETH_DEFAULT_CONFIG(mac, phy);
-    //   esp_eth_handle_t handle = nullptr;
-    //   esp_eth_driver_install(&eth, &handle);
-    //   …apply static IP from config if !use_dhcp…
-    //   esp_eth_start(handle);
-    //
-    // Then register an IP_EVENT_ETH_GOT_IP handler that calls:
-    //   pixfrog::ui::set_ip(ntohl(event->ip_info.ip.addr));
-    // and an ETHERNET_EVENT_DISCONNECTED handler that calls:
-    //   pixfrog::ui::set_ip(0);
-    // — the HOME screen reads these via pixfrog::ui::get_ip().
-    ESP_LOGW(TAG, "network bring-up TODO");
+
+    esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
+    g_eth_netif = esp_netif_new(&netif_cfg);
+    if (!g_eth_netif) {
+        ESP_LOGE(TAG, "esp_netif_new failed");
+        return;
+    }
+
+    // MAC config — RMII, MDC/MDIO pins from the board file.
+    eth_mac_config_t mac_cfg = ETH_MAC_DEFAULT_CONFIG();
+    mac_cfg.rx_task_stack_size = 4096;
+    eth_esp32_emac_config_t esp_emac_cfg = ETH_ESP32_EMAC_DEFAULT_CONFIG();
+    esp_emac_cfg.smi_mdc_gpio_num  = pixfrog::board::kEthMdcGpio;
+    esp_emac_cfg.smi_mdio_gpio_num = pixfrog::board::kEthMdioGpio;
+    esp_eth_mac_t* mac = esp_eth_mac_new_esp32(&esp_emac_cfg, &mac_cfg);
+    if (!mac) {
+        ESP_LOGE(TAG, "esp_eth_mac_new_esp32 failed");
+        return;
+    }
+
+    eth_phy_config_t phy_cfg = ETH_PHY_DEFAULT_CONFIG();
+    phy_cfg.phy_addr       = pixfrog::board::kEthPhyAddress;
+    phy_cfg.reset_gpio_num = pixfrog::board::kEthPhyResetGpio;
+    esp_eth_phy_t* phy = esp_eth_phy_new_ip101(&phy_cfg);
+    if (!phy) {
+        ESP_LOGE(TAG, "esp_eth_phy_new_ip101 failed");
+        return;
+    }
+
+    esp_eth_config_t eth_cfg = ETH_DEFAULT_CONFIG(mac, phy);
+    if (esp_eth_driver_install(&eth_cfg, &g_eth_handle) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_eth_driver_install failed");
+        return;
+    }
+
+    esp_netif_attach(g_eth_netif, esp_eth_new_netif_glue(g_eth_handle));
+
+    // Item 6: static vs DHCP. If static is requested AND the static IP is
+    // non-zero, stop DHCP and install the IP info ahead of link-up so
+    // there's no transient DHCP attempt.
+    const auto& g = pixfrog::config::get_global();
+    if (!g.use_dhcp && g.static_ip != 0) {
+        esp_netif_dhcpc_stop(g_eth_netif);
+        esp_netif_ip_info_t ip_info{};
+        ip_info.ip.addr      = lwip_htonl(g.static_ip);
+        ip_info.netmask.addr = lwip_htonl(g.static_mask ? g.static_mask : 0xFFFFFF00u);
+        ip_info.gw.addr      = lwip_htonl(g.static_gateway);
+        esp_netif_set_ip_info(g_eth_netif, &ip_info);
+        // No GOT_IP event fires in pure-static mode, so publish ourselves.
+        publish_ip(g.static_ip);
+        ESP_LOGI(TAG, "static IP %u.%u.%u.%u configured",
+                 static_cast<unsigned>((g.static_ip >> 24) & 0xFFu),
+                 static_cast<unsigned>((g.static_ip >> 16) & 0xFFu),
+                 static_cast<unsigned>((g.static_ip >>  8) & 0xFFu),
+                 static_cast<unsigned>( g.static_ip        & 0xFFu));
+    } else {
+        ESP_LOGI(TAG, "DHCP enabled, awaiting lease");
+    }
+
+    esp_event_handler_register(IP_EVENT,  IP_EVENT_ETH_GOT_IP,    on_got_ip,    nullptr);
+    esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID,       on_eth_event, nullptr);
+
+    if (esp_eth_start(g_eth_handle) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_eth_start failed");
+        return;
+    }
+    ESP_LOGI(TAG, "Ethernet started");
 }
 
 void render_task(void*) {
