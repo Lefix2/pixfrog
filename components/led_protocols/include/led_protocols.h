@@ -62,6 +62,16 @@ enum class ColorOrder : uint8_t {
 // Changing this requires recomputing every Timing::samples_* constant.
 constexpr uint32_t kPclkHz = 16'000'000;
 
+// Worst-case sample count for one frame, used to size the PSRAM frame buffer.
+// 1024 px × 32 bits (RGBW) × 40 samples (WS2811-slow) + 4480 (TRESET).
+// At 2 bytes per sample, this gives ~2.6 MB per FB → ~5.2 MB total for 2 FBs.
+constexpr uint32_t kMaxPixelsPerChannel = 1024;
+constexpr uint32_t kMaxBitsPerPixel     = 32;
+constexpr uint32_t kMaxSamplesPerBit    = 40;
+constexpr uint32_t kMaxResetSamples     = 4480;
+constexpr uint32_t kMaxSamplesPerFrame  =
+    kMaxPixelsPerChannel * kMaxBitsPerPixel * kMaxSamplesPerBit + kMaxResetSamples;
+
 // Samples per logical "thing" — varies by protocol family.
 struct Timing {
     // For 1-wire NRZ: samples high to encode '0' and '1', total samples per bit.

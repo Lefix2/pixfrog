@@ -169,9 +169,15 @@ End frame   : 0xFF × ceil(N/2)/8                    (padding pour propagation, 
 
 ### 4.3 Latch / Reset
 
-Pour les protocoles 1-fil, après le dernier pixel, on doit maintenir DATA à 0 pendant TRESET (≥ 280 µs pour WS2815). À 16 MHz, c'est 4 480 samples bas. On les insère en tail du buffer DMA et on stoppe la chaîne ensuite.
+Pour les protocoles 1-fil, après le dernier pixel, on doit maintenir DATA à 0 pendant TRESET (≥ 280 µs pour WS2815). À 16 MHz, c'est 4 480 samples bas. Ils sont insérés en queue du frame buffer ; à la fin de l'émission GDMA, le bus reste figé sur ces zéros jusqu'à la prochaine `esp_lcd_panel_draw_bitmap`.
 
 Pour les protocoles clockés, pas de latch — on laisse simplement le bus inactif après l'end frame.
+
+### 4.4 Frame buffer unique en PSRAM, pas de chunks
+
+L'encodage produit **un seul frame buffer complet en PSRAM** par frame, pas une chaîne de chunks. `esp_lcd_new_rgb_panel(flags.fb_in_psram=true, num_fbs=2)` alloue deux buffers PSRAM en interne ; le `render_task` écrit dans le back, sync le cache, appelle `esp_lcd_panel_draw_bitmap` qui swap le pointeur de FB actif. GDMA tape ensuite directement le PSRAM sans intervention CPU.
+
+Conséquence pour l'encodeur : **aucune contrainte temps-réel sous-trame**. Il a toute la durée d'émission de la frame courante (jusqu'à 30 ms à 30 Hz avec 1024 px WS2815) pour produire la suivante.
 
 ---
 
@@ -179,15 +185,38 @@ Pour les protocoles clockés, pas de latch — on laisse simplement le bus inact
 
 Tous les canaux partagent le même PCLK = 16 MHz. Conséquences :
 
-- Si **tous les canaux sont 1-fil**, la trame DMA est dimensionnée pour le canal au plus grand pixel count.
-- Si **un canal est clocké** et les autres 1-fil, la durée DMA est dictée par le plus long des deux :
-   - Durée 1-fil = `pixels × 24 (ou 32) × samples_per_bit × T_PCLK`
-   - Durée clockée = `(start + pixels × pixel_bits + end) × samples_per_clock × T_PCLK`
-- Les canaux courts émettent des `0` après leur dernier bit utile (sans effet sur les strips déjà latchés).
+- Les 8 canaux sont émis **simultanément** sur les 16 bits du bus parallèle ; la durée d'émission DMA est donc dictée par le canal le plus long, pas par la somme des canaux.
+- Durée 1-fil = `pixels × bits_per_pixel × samples_per_bit / f_PCLK + T_reset`
+- Durée clockée = `(start_bytes + pixels × bytes_per_pixel + end_bytes) × 8 × samples_per_clock / f_PCLK`
+- Les canaux courts émettent des samples nuls après leur dernier bit utile (sans effet sur les strips déjà latchés).
 
-Exemple chiffré : 8 canaux WS2815 × 600 px = 8 × 600 × 24 × 20 / 16e6 = **14.4 ms** de DMA pure, plus 280 µs de reset → ~14.7 ms par frame. À 60 Hz on a 16.67 ms budget → marge ~1.97 ms (12 %).
+### 5.1 Limites pratiques par protocole
 
-→ **Limite pratique** : 1024 px par canal en WS2815 à 60 Hz est faisable mais sans marge. À 30 Hz le confort est total.
+Le bit rate de chaque protocole pose une borne physique indépendante du CPU. Au-delà, **aucune optimisation logicielle ne peut faire tenir la frame dans le budget**.
+
+| Protocole       | Bit rate utile | Bits/px | Max pixels @ 60 Hz | Max pixels @ 30 Hz |
+|-----------------|---------------:|--------:|-------------------:|-------------------:|
+| WS2815 / WS2814 | 800 kbps       | 24 (RGB) ou 32 (RGBW) | **555** RGB / 416 RGBW | 1024 (avec marge) |
+| WS2812B         | 800 kbps       | 24      | **555**            | 1024               |
+| WS2811-fast     | 800 kbps       | 24      | **555**            | 1024               |
+| WS2811-slow     | 400 kbps       | 24      | **277**            | **555**            |
+| SK6812 (RGBW)   | 800 kbps       | 32      | **416**            | **833**            |
+| APA102 / SK9822 @ 4 MHz CLOCK | 4 Mbps | 32 | **5208**         | (trivial)          |
+| APA102 / SK9822 @ 8 MHz CLOCK | 8 Mbps | 32 | **10416**        | (trivial)          |
+| LPD8806 @ 4 MHz | 4 Mbps         | 24      | **6944**           | (trivial)          |
+
+Formule : `max_pixels = (1/f_refresh − T_reset) × bit_rate / bits_per_pixel`
+
+### 5.2 Exemple chiffré
+
+8 canaux WS2815 × 600 px émis en parallèle = **600 × 24 × 20 / 16e6 = 18 ms de DMA pure**, plus 280 µs de TRESET → **~18.3 ms par frame**.
+
+- À 60 Hz (budget 16.67 ms) : **ne tient pas**. Max 555 px par canal pour rester sous 16.67 ms.
+- À 30 Hz (budget 33.33 ms) : confort total, encore 15 ms de slack pour l'encodage de la frame suivante en parallèle.
+
+### 5.3 Sanity check au boot
+
+`dmx_manager::init` calcule pour chaque canal `t_dma = pixel_count × bits_per_pixel × samples_per_bit / f_PCLK + T_reset` puis vérifie `max(t_dma) + marge_encode ≤ 1/refresh_rate`. Si la config persistée dépasse, le boot loggue un warning et clamp pixel_count au max admissible (le canal continue de fonctionner sur les N premiers pixels). L'UI affiche un badge d'erreur sur le canal incriminé.
 
 ---
 

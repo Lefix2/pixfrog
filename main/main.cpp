@@ -77,10 +77,9 @@ extern "C" void app_main() {
     }
 
     pixfrog::lcd::InitConfig lcd_cfg{
-        .bus_gpio_16     = pixfrog::board::kLedBusGpio,
-        .pclk_hz         = pixfrog::led::kPclkHz,
-        .dma_chunk_pixels = 16,
-        .dma_chunk_count  = 3,
+        .bus_gpio_16           = pixfrog::board::kLedBusGpio,
+        .pclk_hz               = pixfrog::led::kPclkHz,
+        .max_samples_per_frame = pixfrog::led::kMaxSamplesPerFrame,
     };
     if (!pixfrog::lcd::init(lcd_cfg)) {
         ESP_LOGE(TAG, "lcd_cam init failed — aborting");
