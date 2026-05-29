@@ -1,5 +1,6 @@
 // Board definition: Espressif ESP32-P4 Function EV Board
-// (datasheet: https://www.espressif.com/sites/default/files/documentation/esp32-p4_datasheet_en.pdf)
+// (datasheet:
+// https://www.espressif.com/sites/default/files/documentation/esp32-p4_datasheet_en.pdf)
 //
 // Pinout source: official Function EV Board header connector pinout
 // (only GPIOs exposed on the user-facing header are candidates here).
@@ -37,14 +38,16 @@ constexpr const char* kBoardRev  = "v0";
 // Bit position on the parallel bus → physical GPIO.
 // Bit 0 = CH1 DATA, Bit 1 = CH1 CLOCK, Bit 2 = CH2 DATA, etc.
 
-constexpr int kLedDataGpio [8] = {  2,  4, 22, 24, 26, 32, 47, 53 };
-constexpr int kLedClockGpio[8] = {  3,  5, 23, 25, 16, 33, 48, 54 };
+constexpr int kLedDataGpio[8]  = { 2, 4, 22, 24, 26, 32, 47, 53 };
+constexpr int kLedClockGpio[8] = { 3, 5, 23, 25, 16, 33, 48, 54 };
 
 // Full 16-pin bus in bit order (DATA0, CLK0, DATA1, CLK1, ...).
+// clang-format off
 constexpr int kLedBusGpio[16] = {
      2,  3,   4,  5,  22, 23,  24, 25,
     26, 16,  32, 33,  47, 48,  53, 54,
 };
+// clang-format on
 
 // ────────────────────────────────────────────────────────────────────────────
 // Ethernet — RMII to on-board IP101GRI PHY
@@ -58,23 +61,23 @@ constexpr int kLedBusGpio[16] = {
 // Espressif Function EV Board reference build; revalidate against the
 // board schematic before flashing on a different revision.
 
-constexpr int kEthMdcGpio       = 29;
-constexpr int kEthMdioGpio      = 30;
-constexpr int kEthPhyResetGpio  = -1;   // PHY has its own RC reset on the EV Board
-constexpr int kEthPhyAddress    = 0x01; // strap-determined on IP101GRI
+constexpr int kEthMdcGpio      = 29;
+constexpr int kEthMdioGpio     = 30;
+constexpr int kEthPhyResetGpio = -1;    // PHY has its own RC reset on the EV Board
+constexpr int kEthPhyAddress   = 0x01;  // strap-determined on IP101GRI
 
 // ────────────────────────────────────────────────────────────────────────────
 // I2C — shared bus for OLED + seesaw encoder
 // ────────────────────────────────────────────────────────────────────────────
 
-constexpr int      kI2cPort    = 0;
-constexpr int      kI2cSdaGpio = 7;     // header pin SDA(GPIO7)
-constexpr int      kI2cSclGpio = 8;     // header pin SCL(GPIO8)
-constexpr uint32_t kI2cFreqHz  = 400'000;
+constexpr int kI2cPort        = 0;
+constexpr int kI2cSdaGpio     = 7;  // header pin SDA(GPIO7)
+constexpr int kI2cSclGpio     = 8;  // header pin SCL(GPIO8)
+constexpr uint32_t kI2cFreqHz = 400'000;
 
-constexpr uint8_t  kOledI2cAddr    = 0x3C;
-constexpr uint8_t  kEncoderI2cAddr = 0x36;   // Adafruit seesaw 4991 default
-constexpr int      kEncoderIntGpio = 21;     // active-LOW IRQ from seesaw
+constexpr uint8_t kOledI2cAddr    = 0x3C;
+constexpr uint8_t kEncoderI2cAddr = 0x36;  // Adafruit seesaw 4991 default
+constexpr int kEncoderIntGpio     = 21;    // active-LOW IRQ from seesaw
 
 // ────────────────────────────────────────────────────────────────────────────
 // Miscellaneous

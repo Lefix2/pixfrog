@@ -19,10 +19,10 @@ namespace {
 
 constexpr const char* TAG = "ARTNET";
 
-TaskHandle_t g_task     = nullptr;
-int          g_sock     = -1;
-bool         g_run      = false;
-uint32_t     g_local_ip = 0;
+TaskHandle_t g_task = nullptr;
+int g_sock          = -1;
+bool g_run          = false;
+uint32_t g_local_ip = 0;
 
 void handle_dmx(const uint8_t* buf, size_t len) {
     parser::DmxFields f{};
@@ -34,7 +34,7 @@ void handle_dmx(const uint8_t* buf, size_t len) {
     // Item 4: filter by configured net/subnet.
     const auto& g = config::get_global();
     if (!parser::universe_matches(f.universe, g.artnet_net, g.artnet_subnet)) {
-        return;   // legitimate Art-Net for another node — silently drop
+        return;  // legitimate Art-Net for another node — silently drop
     }
 
     uint8_t* dst = dmx::universe_back_buffer_for(f.universe);
@@ -60,12 +60,12 @@ void send_poll_reply(uint32_t target_addr_net_order) {
     dst.sin_port        = htons(kArtnetPort);
 
     uint8_t pkt[parser::kPollReplySize];
-    char    node_report[64];
+    char node_report[64];
 
     const auto& g = config::get_global();
     for (uint8_t bind = 1; bind <= 2; ++bind) {
-        std::snprintf(node_report, sizeof(node_report),
-                      "#0001 [%u] pixfrog OK", static_cast<unsigned>(bind));
+        std::snprintf(node_report, sizeof(node_report), "#0001 [%u] pixfrog OK",
+                      static_cast<unsigned>(bind));
 
         parser::PollReplyInputs in{};
         in.local_ip_host = g_local_ip;
@@ -80,14 +80,13 @@ void send_poll_reply(uint32_t target_addr_net_order) {
         const uint8_t base_ch = (bind - 1) * 4;
         for (uint8_t p = 0; p < 4; ++p) {
             const size_t ch = base_ch + p;
-            in.sw_out[p] = (ch < config::kNumChannels)
-                ? static_cast<uint8_t>(config::get_channel(ch).universe_start & 0x0F)
-                : 0;
+            in.sw_out[p]    = (ch < config::kNumChannels)
+                                ? static_cast<uint8_t>(config::get_channel(ch).universe_start & 0x0F)
+                                : 0;
         }
 
         parser::build_poll_reply(pkt, in);
-        int n = sendto(g_sock, pkt, sizeof(pkt), 0,
-                       reinterpret_cast<sockaddr*>(&dst), sizeof(dst));
+        int n = sendto(g_sock, pkt, sizeof(pkt), 0, reinterpret_cast<sockaddr*>(&dst), sizeof(dst));
         if (n < 0) {
             ESP_LOGW(TAG, "ArtPollReply bind %u sendto failed", bind);
             return;
@@ -96,12 +95,15 @@ void send_poll_reply(uint32_t target_addr_net_order) {
 }
 
 void handle_poll(const uint8_t* /*buf*/, size_t len, const sockaddr_in& from) {
-    if (len < 14) { dmx::note_packet_bad(); return; }
+    if (len < 14) {
+        dmx::note_packet_bad();
+        return;
+    }
     // Item B1: choose broadcast (default) vs unicast back to the poller's IP.
-    const auto& g = config::get_global();
+    const auto& g         = config::get_global();
     const uint32_t target = g.artnet_poll_reply_unicast
-        ? from.sin_addr.s_addr            // already network-order
-        : htonl(INADDR_BROADCAST);
+                              ? from.sin_addr.s_addr  // already network-order
+                              : htonl(INADDR_BROADCAST);
     send_poll_reply(target);
 }
 
@@ -137,9 +139,8 @@ void task_main(void*) {
     uint8_t buf[1500];
     while (g_run) {
         sockaddr_in from{};
-        socklen_t   fl  = sizeof(from);
-        int n = recvfrom(g_sock, buf, sizeof(buf), 0,
-                        reinterpret_cast<sockaddr*>(&from), &fl);
+        socklen_t fl = sizeof(from);
+        int n = recvfrom(g_sock, buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&from), &fl);
         if (n <= 0) continue;
         uint16_t op = 0;
         if (!parser::parse_header(buf, n, &op)) {
@@ -147,10 +148,10 @@ void task_main(void*) {
             continue;
         }
         switch (op) {
-            case parser::kOpDmx:  handle_dmx (buf, n);       break;
-            case parser::kOpPoll: handle_poll(buf, n, from); break;
-            case parser::kOpSync: handle_sync(buf, n);       break;
-            default:                                          break;
+        case parser::kOpDmx: handle_dmx(buf, n); break;
+        case parser::kOpPoll: handle_poll(buf, n, from); break;
+        case parser::kOpSync: handle_sync(buf, n); break;
+        default: break;
         }
     }
 

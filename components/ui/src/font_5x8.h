@@ -14,11 +14,11 @@
 
 namespace pixfrog::ui::detail {
 
-constexpr uint8_t kFontWidth      = 5;
-constexpr uint8_t kFontCellWidth  = 6;   // glyph + 1 trailing blank column
-constexpr uint8_t kFontHeight     = 8;
-constexpr char    kFontFirstChar  = 0x20;
-constexpr char    kFontLastChar   = 0x7E;
+constexpr uint8_t kFontWidth     = 5;
+constexpr uint8_t kFontCellWidth = 6;  // glyph + 1 trailing blank column
+constexpr uint8_t kFontHeight    = 8;
+constexpr char kFontFirstChar    = 0x20;
+constexpr char kFontLastChar     = 0x7E;
 
 extern const uint8_t kFont5x8[][kFontWidth];
 

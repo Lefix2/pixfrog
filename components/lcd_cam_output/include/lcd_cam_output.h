@@ -18,8 +18,8 @@ namespace pixfrog::lcd {
 
 struct InitConfig {
     const int* bus_gpio_16;          // bit k of the bus → GPIO bus_gpio_16[k]
-    uint32_t   pclk_hz;              // PCLK frequency; must match led_protocols::kPclkHz
-    uint32_t   max_samples_per_frame; // sizes the PSRAM frame buffers; cf. led::encoded_size_samples
+    uint32_t pclk_hz;                // PCLK frequency; must match led_protocols::kPclkHz
+    uint32_t max_samples_per_frame;  // sizes the PSRAM frame buffers; cf. led::encoded_size_samples
 };
 
 // Initialize the LCD_CAM peripheral and allocate the two PSRAM frame buffers
@@ -63,7 +63,7 @@ bool emit_calibration_pattern(uint8_t pattern_id);
 // rendering, or to 0..2 to make render_task continuously emit the chosen
 // calibration pattern instead. The flag is sampled at the start of every
 // render iteration; switching modes takes effect on the next frame.
-void   set_calibration_mode(int8_t pattern_id);
+void set_calibration_mode(int8_t pattern_id);
 int8_t get_calibration_mode();
 
 }  // namespace pixfrog::lcd

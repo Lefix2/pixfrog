@@ -11,22 +11,27 @@ using namespace pixfrog::dmx::logic;
 static int g_pass = 0;
 static int g_fail = 0;
 
-#define EXPECT_EQ(a, b)                                                                  \
-    do {                                                                                 \
-        long long va = static_cast<long long>(a);                                        \
-        long long vb = static_cast<long long>(b);                                        \
-        if (va == vb) { g_pass++; }                                                      \
-        else {                                                                           \
-            g_fail++;                                                                    \
-            std::fprintf(stderr, "FAIL %s:%d: %s != %s (%lld vs %lld)\n",                \
-                         __FILE__, __LINE__, #a, #b, va, vb);                            \
-        }                                                                                \
+#define EXPECT_EQ(a, b)                                                                            \
+    do {                                                                                           \
+        long long va = static_cast<long long>(a);                                                  \
+        long long vb = static_cast<long long>(b);                                                  \
+        if (va == vb) {                                                                            \
+            g_pass++;                                                                              \
+        } else {                                                                                   \
+            g_fail++;                                                                              \
+            std::fprintf(stderr, "FAIL %s:%d: %s != %s (%lld vs %lld)\n", __FILE__, __LINE__, #a,  \
+                         #b, va, vb);                                                              \
+        }                                                                                          \
     } while (0)
 
-#define EXPECT_TRUE(a)                                                                   \
-    do {                                                                                 \
-        if (a) { g_pass++; }                                                             \
-        else { g_fail++; std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #a); } \
+#define EXPECT_TRUE(a)                                                                             \
+    do {                                                                                           \
+        if (a) {                                                                                   \
+            g_pass++;                                                                              \
+        } else {                                                                                   \
+            g_fail++;                                                                              \
+            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #a);                      \
+        }                                                                                          \
     } while (0)
 
 // ── Sizing helpers ──────────────────────────────────────────────────────────
@@ -50,13 +55,13 @@ static void test_universes_used() {
     cc.protocol = led::Protocol::WS2815;
 
     cc.pixel_count = 100;
-    EXPECT_EQ(channel_universes_used(cc), 1);   // 300 bytes → 1 universe
+    EXPECT_EQ(channel_universes_used(cc), 1);  // 300 bytes → 1 universe
 
     cc.pixel_count = 200;
-    EXPECT_EQ(channel_universes_used(cc), 2);   // 600 bytes → 2
+    EXPECT_EQ(channel_universes_used(cc), 2);  // 600 bytes → 2
 
     cc.pixel_count = 1024;
-    EXPECT_EQ(channel_universes_used(cc), 6);   // 3072 bytes → 6
+    EXPECT_EQ(channel_universes_used(cc), 6);  // 3072 bytes → 6
 }
 
 // ── t_dma + capacity ────────────────────────────────────────────────────────
@@ -71,9 +76,9 @@ static void test_t_dma_ws2815() {
 }
 
 static void test_emission_budget() {
-    EXPECT_EQ(emission_budget_us(60), 1000000ULL / 60 - 1000);   // 15666
-    EXPECT_EQ(emission_budget_us(30), 1000000ULL / 30 - 1000);   // 32333
-    EXPECT_EQ(emission_budget_us(0),  0);
+    EXPECT_EQ(emission_budget_us(60), 1000000ULL / 60 - 1000);  // 15666
+    EXPECT_EQ(emission_budget_us(30), 1000000ULL / 30 - 1000);  // 32333
+    EXPECT_EQ(emission_budget_us(0), 0);
 }
 
 static void test_capacity_check() {
@@ -103,17 +108,19 @@ static void test_decode_single_universe() {
     cc.dmx_start      = 1;
 
     uint8_t universe1[512];
-    for (int i = 0; i < 512; ++i) universe1[i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 512; ++i)
+        universe1[i] = static_cast<uint8_t>(i);
 
     auto get_universe = [&](uint16_t u) -> const uint8_t* {
         return (u == 1) ? universe1 : nullptr;
     };
 
     uint8_t pixels[32] = {};
-    const bool ok = decode_pixels(pixels, sizeof(pixels), cc, get_universe);
+    const bool ok      = decode_pixels(pixels, sizeof(pixels), cc, get_universe);
     EXPECT_TRUE(ok);
     // 5 px × 3 bytes = 15 bytes copied from offset 0.
-    for (int i = 0; i < 15; ++i) EXPECT_EQ(pixels[i], static_cast<uint8_t>(i));
+    for (int i = 0; i < 15; ++i)
+        EXPECT_EQ(pixels[i], static_cast<uint8_t>(i));
 }
 
 // ── Decoder: dmx_start offset ───────────────────────────────────────────────
@@ -123,10 +130,11 @@ static void test_decode_dmx_start_offset() {
     cc.protocol       = led::Protocol::WS2815;
     cc.pixel_count    = 2;
     cc.universe_start = 1;
-    cc.dmx_start      = 10;       // 1-based → offset 9
+    cc.dmx_start      = 10;  // 1-based → offset 9
 
     uint8_t universe1[512];
-    for (int i = 0; i < 512; ++i) universe1[i] = static_cast<uint8_t>(i);
+    for (int i = 0; i < 512; ++i)
+        universe1[i] = static_cast<uint8_t>(i);
 
     auto get_universe = [&](uint16_t u) -> const uint8_t* {
         return (u == 1) ? universe1 : nullptr;
@@ -135,7 +143,8 @@ static void test_decode_dmx_start_offset() {
     uint8_t pixels[16] = {};
     EXPECT_TRUE(decode_pixels(pixels, sizeof(pixels), cc, get_universe));
     // 6 bytes copied from offset 9.
-    for (int i = 0; i < 6; ++i) EXPECT_EQ(pixels[i], static_cast<uint8_t>(9 + i));
+    for (int i = 0; i < 6; ++i)
+        EXPECT_EQ(pixels[i], static_cast<uint8_t>(9 + i));
 }
 
 // ── Decoder: multi-universe spanning ────────────────────────────────────────
@@ -143,7 +152,7 @@ static void test_decode_dmx_start_offset() {
 static void test_decode_multi_universe() {
     config::ChannelConfig cc{};
     cc.protocol       = led::Protocol::WS2815;
-    cc.pixel_count    = 200;      // 600 bytes → spans 2 universes
+    cc.pixel_count    = 200;  // 600 bytes → spans 2 universes
     cc.universe_start = 5;
     cc.dmx_start      = 1;
 
@@ -160,7 +169,7 @@ static void test_decode_multi_universe() {
 
     uint8_t pixels[800] = {};
     EXPECT_TRUE(decode_pixels(pixels, sizeof(pixels), cc, get_universe));
-    EXPECT_EQ(pixels[0],   0);
+    EXPECT_EQ(pixels[0], 0);
     EXPECT_EQ(pixels[511], static_cast<uint8_t>(255));
     EXPECT_EQ(pixels[512], 0x80);
     EXPECT_EQ(pixels[599], static_cast<uint8_t>(0x80 | 87));
@@ -180,7 +189,8 @@ static void test_decode_missing_universe() {
     uint8_t pixels[700];
     std::memset(pixels, 0xFF, sizeof(pixels));
     EXPECT_TRUE(!decode_pixels(pixels, sizeof(pixels), cc, get_universe));
-    for (int i = 0; i < 600; ++i) EXPECT_EQ(pixels[i], 0);
+    for (int i = 0; i < 600; ++i)
+        EXPECT_EQ(pixels[i], 0);
 }
 
 // ── Decoder: dst_capacity overflow → return false ───────────────────────────
@@ -188,14 +198,14 @@ static void test_decode_missing_universe() {
 static void test_decode_dst_too_small() {
     config::ChannelConfig cc{};
     cc.protocol       = led::Protocol::WS2815;
-    cc.pixel_count    = 100;     // 300 bytes
+    cc.pixel_count    = 100;  // 300 bytes
     cc.universe_start = 1;
     cc.dmx_start      = 1;
 
     uint8_t universe[512] = {};
-    auto get_universe = [&](uint16_t) -> const uint8_t* { return universe; };
+    auto get_universe     = [&](uint16_t) -> const uint8_t* { return universe; };
 
-    uint8_t pixels[16];   // too small
+    uint8_t pixels[16];  // too small
     EXPECT_TRUE(!decode_pixels(pixels, sizeof(pixels), cc, get_universe));
 }
 
@@ -204,9 +214,9 @@ static void test_decode_dst_too_small() {
 static void test_decode_dmx_start_in_second_universe() {
     config::ChannelConfig cc{};
     cc.protocol       = led::Protocol::WS2815;
-    cc.pixel_count    = 1;        // 3 bytes
+    cc.pixel_count    = 1;  // 3 bytes
     cc.universe_start = 1;
-    cc.dmx_start      = 513;      // exactly past universe 1
+    cc.dmx_start      = 513;  // exactly past universe 1
 
     uint8_t universe1[512], universe2[512];
     std::memset(universe1, 0xAA, sizeof(universe1));

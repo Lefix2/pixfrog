@@ -6,6 +6,19 @@ on:
   pull_request:
 
 jobs:
+  format-check:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format 18
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: clang-format --dry-run -Werror on every C/C++ source
+        run: |
+          files=$(git ls-files '*.cpp' '*.h')
+          echo "Checking $(echo "$files" | wc -l) files..."
+          echo "$files" | xargs clang-format --dry-run -Werror --style=file
+
   host-tests:
     name: Host unit tests
     runs-on: ubuntu-latest

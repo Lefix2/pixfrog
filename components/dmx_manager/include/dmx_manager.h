@@ -15,8 +15,8 @@
 
 namespace pixfrog::dmx {
 
-constexpr size_t kUniverseSize     = 512;          // bytes per DMX universe
-constexpr size_t kNumUniverses     = 48;           // 8 channels × 6 max
+constexpr size_t kUniverseSize     = 512;  // bytes per DMX universe
+constexpr size_t kNumUniverses     = 48;   // 8 channels × 6 max
 constexpr size_t kMaxPixelsPerChan = 1024;
 constexpr size_t kMaxBytesPerChan  = kMaxPixelsPerChan * 4;  // RGBW worst case
 
@@ -139,8 +139,8 @@ void validate_capacity();
 // ────────────────────────────────────────────────────────────────────────────
 
 Stats get_stats();
-void  set_current_fps(uint32_t fps);
-void  note_frame_emitted();
-void  note_dma_underrun();
+void set_current_fps(uint32_t fps);
+void note_frame_emitted();
+void note_dma_underrun();
 
 }  // namespace pixfrog::dmx

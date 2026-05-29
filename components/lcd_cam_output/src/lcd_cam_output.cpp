@@ -33,18 +33,18 @@ namespace {
 
 constexpr const char* TAG = "LCD_CAM";
 
-InitConfig             g_cfg{};
+InitConfig g_cfg{};
 esp_lcd_panel_handle_t g_panel = nullptr;
-void*                  g_fb_a  = nullptr;
-void*                  g_fb_b  = nullptr;
-size_t                 g_fb_bytes = 0;
-size_t                 g_fb_h_res = 0;     // samples per "line" (= total samples per frame)
-uint8_t                g_back_idx = 0;     // which fb is next to write into (0 → write fb_a)
+void* g_fb_a                   = nullptr;
+void* g_fb_b                   = nullptr;
+size_t g_fb_bytes              = 0;
+size_t g_fb_h_res              = 0;  // samples per "line" (= total samples per frame)
+uint8_t g_back_idx             = 0;  // which fb is next to write into (0 → write fb_a)
 
-SemaphoreHandle_t      g_done_sem = nullptr;
+SemaphoreHandle_t g_done_sem = nullptr;
 
 // Persistent calibration mode (TODO B5). -1 = normal pixel rendering.
-volatile int8_t        g_cal_mode = -1;
+volatile int8_t g_cal_mode = -1;
 
 // ── Item 1: HSYNC pulse width ────────────────────────────────────────────────
 // ESP-IDF v5.3 RGB panel driver rejects hsync_pulse_width == 0 on ESP32-P4
@@ -73,14 +73,13 @@ volatile uint32_t g_vsync_count      = 0;
 // At steady state, this should match the expected DMA duration
 // (= h_res / pclk_hz) within a small margin. Larger deviation = PSRAM
 // contention or scheduler jitter.
-int64_t  g_last_kick_us      = 0;
-int64_t  g_emit_us_sum       = 0;
-uint32_t g_emit_us_count     = 0;
-int64_t  g_emit_us_max       = 0;
+int64_t g_last_kick_us   = 0;
+int64_t g_emit_us_sum    = 0;
+uint32_t g_emit_us_count = 0;
+int64_t g_emit_us_max    = 0;
 
 bool IRAM_ATTR on_trans_done(esp_lcd_panel_handle_t /*panel*/,
-                             const esp_lcd_rgb_panel_event_data_t* /*edata*/,
-                             void* /*user_ctx*/) {
+                             const esp_lcd_rgb_panel_event_data_t* /*edata*/, void* /*user_ctx*/) {
     g_trans_done_count++;
     BaseType_t hp = pdFALSE;
     xSemaphoreGiveFromISR(g_done_sem, &hp);
@@ -88,8 +87,7 @@ bool IRAM_ATTR on_trans_done(esp_lcd_panel_handle_t /*panel*/,
 }
 
 bool IRAM_ATTR on_vsync(esp_lcd_panel_handle_t /*panel*/,
-                        const esp_lcd_rgb_panel_event_data_t* /*edata*/,
-                        void* /*user_ctx*/) {
+                        const esp_lcd_rgb_panel_event_data_t* /*edata*/, void* /*user_ctx*/) {
     g_vsync_count++;
     BaseType_t hp = pdFALSE;
     // Fallback: if on_color_trans_done never fires on this IDF/HW combo,
@@ -153,31 +151,31 @@ bool init(const InitConfig& cfg) {
              psram_total >> 20, psram_largest_blk >> 20, (g_fb_bytes * 2) >> 20);
 
     esp_lcd_rgb_panel_config_t panel_config{};
-    panel_config.data_width             = 16;
-    panel_config.num_fbs                = 2;
-    panel_config.bounce_buffer_size_px  = 0;
-    panel_config.clk_src                = LCD_CLK_SRC_DEFAULT;
-    panel_config.disp_gpio_num          = -1;
-    panel_config.pclk_gpio_num          = -1;
-    panel_config.hsync_gpio_num         = -1;
-    panel_config.vsync_gpio_num         = -1;
-    panel_config.de_gpio_num            = -1;
+    panel_config.data_width            = 16;
+    panel_config.num_fbs               = 2;
+    panel_config.bounce_buffer_size_px = 0;
+    panel_config.clk_src               = LCD_CLK_SRC_DEFAULT;
+    panel_config.disp_gpio_num         = -1;
+    panel_config.pclk_gpio_num         = -1;
+    panel_config.hsync_gpio_num        = -1;
+    panel_config.vsync_gpio_num        = -1;
+    panel_config.de_gpio_num           = -1;
     for (int i = 0; i < 16; ++i) {
         panel_config.data_gpio_nums[i] = cfg.bus_gpio_16[i];
     }
-    panel_config.timings.pclk_hz            = cfg.pclk_hz;
-    panel_config.timings.h_res              = g_fb_h_res;
-    panel_config.timings.v_res              = 1;
-    panel_config.timings.hsync_pulse_width  = kHsyncPulseWidth;
-    panel_config.timings.hsync_back_porch   = 0;
-    panel_config.timings.hsync_front_porch  = 0;
-    panel_config.timings.vsync_pulse_width  = 1;
-    panel_config.timings.vsync_back_porch   = 0;
-    panel_config.timings.vsync_front_porch  = 0;
+    panel_config.timings.pclk_hz               = cfg.pclk_hz;
+    panel_config.timings.h_res                 = g_fb_h_res;
+    panel_config.timings.v_res                 = 1;
+    panel_config.timings.hsync_pulse_width     = kHsyncPulseWidth;
+    panel_config.timings.hsync_back_porch      = 0;
+    panel_config.timings.hsync_front_porch     = 0;
+    panel_config.timings.vsync_pulse_width     = 1;
+    panel_config.timings.vsync_back_porch      = 0;
+    panel_config.timings.vsync_front_porch     = 0;
     panel_config.timings.flags.pclk_active_neg = 0;
-    panel_config.flags.fb_in_psram          = 1;
-    panel_config.flags.refresh_on_demand    = 1;
-    panel_config.flags.bb_invalidate_cache  = 0;   // we manage cache ourselves
+    panel_config.flags.fb_in_psram             = 1;
+    panel_config.flags.refresh_on_demand       = 1;
+    panel_config.flags.bb_invalidate_cache     = 0;  // we manage cache ourselves
 
     esp_err_t err = esp_lcd_new_rgb_panel(&panel_config, &g_panel);
     if (err != ESP_OK) {
@@ -215,10 +213,10 @@ bool init(const InitConfig& cfg) {
 
     g_done_sem = xSemaphoreCreateBinary();
     if (!g_done_sem) return false;
-    xSemaphoreGive(g_done_sem);   // start idle so the first render_frame doesn't block
+    xSemaphoreGive(g_done_sem);  // start idle so the first render_frame doesn't block
 
-    ESP_LOGI(TAG, "init OK: fb_a=%p fb_b=%p, %zu bytes each, h_res=%zu @ %lu Hz",
-             g_fb_a, g_fb_b, g_fb_bytes, g_fb_h_res, static_cast<unsigned long>(cfg.pclk_hz));
+    ESP_LOGI(TAG, "init OK: fb_a=%p fb_b=%p, %zu bytes each, h_res=%zu @ %lu Hz", g_fb_a, g_fb_b,
+             g_fb_bytes, g_fb_h_res, static_cast<unsigned long>(cfg.pclk_hz));
     return true;
 }
 
@@ -232,7 +230,7 @@ bool render_frame(uint32_t timeout_ms) {
         return false;
     }
 
-    void* back = (g_back_idx == 0) ? g_fb_a : g_fb_b;
+    void* back        = (g_back_idx == 0) ? g_fb_a : g_fb_b;
     uint16_t* samples = static_cast<uint16_t*>(back);
 
     // Zero the buffer so unused bus bits stay LOW (TRESET-compliant tail) and
@@ -242,7 +240,7 @@ bool render_frame(uint32_t timeout_ms) {
     // Encode each channel. Channels share the buffer via OR on their bus bits.
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const led::ChannelDesc d = desc_for_channel(ch);
-        const uint8_t* px = dmx::pixel_front_buffer(ch);
+        const uint8_t* px        = dmx::pixel_front_buffer(ch);
         if (!px) continue;
         led::encode_channel(d, px, samples, g_fb_h_res);
     }
@@ -257,8 +255,8 @@ bool render_frame(uint32_t timeout_ms) {
     // Hand the back FB to the panel as the next frame to emit. With num_fbs=2
     // and `refresh_on_demand`, IDF detects that the passed buffer matches one
     // of its internal FBs and simply switches the active pointer (no copy).
-    esp_err_t err = esp_lcd_panel_draw_bitmap(
-        g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1, samples);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1,
+                                              samples);
 
     const int64_t t_kick_post = esp_timer_get_time();
     const int64_t swap_us     = t_kick_post - t_kick_pre;
@@ -279,8 +277,8 @@ bool render_frame(uint32_t timeout_ms) {
     // wall-clock period of the render task, which itself is bounded below
     // by the DMA emission duration.
     if (g_last_kick_us != 0) {
-        const int64_t interval = t_kick_post - g_last_kick_us;
-        g_emit_us_sum  += interval;
+        const int64_t interval  = t_kick_post - g_last_kick_us;
+        g_emit_us_sum          += interval;
         g_emit_us_count++;
         if (interval > g_emit_us_max) g_emit_us_max = interval;
     }
@@ -295,44 +293,42 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
     if (!g_panel) return false;
     if (xSemaphoreTake(g_done_sem, pdMS_TO_TICKS(100)) != pdTRUE) return false;
 
-    void*     back    = (g_back_idx == 0) ? g_fb_a : g_fb_b;
+    void* back        = (g_back_idx == 0) ? g_fb_a : g_fb_b;
     uint16_t* samples = static_cast<uint16_t*>(back);
 
     switch (pattern_id) {
-        case 0: {
-            // 1 kHz square wave on all 16 bits: half-period = pclk/1000/2 samples.
-            const size_t half = g_cfg.pclk_hz / 2000;
-            for (size_t i = 0; i < g_fb_h_res; ++i) {
-                const bool high = ((i / half) & 1) == 0;
-                samples[i] = high ? 0xFFFFu : 0x0000u;
-            }
-            break;
+    case 0: {
+        // 1 kHz square wave on all 16 bits: half-period = pclk/1000/2 samples.
+        const size_t half = g_cfg.pclk_hz / 2000;
+        for (size_t i = 0; i < g_fb_h_res; ++i) {
+            const bool high = ((i / half) & 1) == 0;
+            samples[i]      = high ? 0xFFFFu : 0x0000u;
         }
-        case 1: {
-            // Walking-1 across the 16 bits, holding each high for 256 samples
-            // (= 16 µs at PCLK=16 MHz — comfortably scope-able).
-            constexpr size_t per_bit = 256;
-            for (size_t i = 0; i < g_fb_h_res; ++i) {
-                samples[i] = static_cast<uint16_t>(1u << ((i / per_bit) % 16));
-            }
-            break;
+        break;
+    }
+    case 1: {
+        // Walking-1 across the 16 bits, holding each high for 256 samples
+        // (= 16 µs at PCLK=16 MHz — comfortably scope-able).
+        constexpr size_t per_bit = 256;
+        for (size_t i = 0; i < g_fb_h_res; ++i) {
+            samples[i] = static_cast<uint16_t>(1u << ((i / per_bit) % 16));
         }
-        case 2: {
-            // 0xAAAA on even samples, 0x5555 on odd samples — every sample
-            // flips every bit, useful to see if PCLK is correct.
-            for (size_t i = 0; i < g_fb_h_res; ++i) {
-                samples[i] = (i & 1) ? 0x5555u : 0xAAAAu;
-            }
-            break;
+        break;
+    }
+    case 2: {
+        // 0xAAAA on even samples, 0x5555 on odd samples — every sample
+        // flips every bit, useful to see if PCLK is correct.
+        for (size_t i = 0; i < g_fb_h_res; ++i) {
+            samples[i] = (i & 1) ? 0x5555u : 0xAAAAu;
         }
-        default:
-            std::memset(samples, 0, g_fb_bytes);
-            break;
+        break;
+    }
+    default: std::memset(samples, 0, g_fb_bytes); break;
     }
 
     esp_cache_msync(samples, g_fb_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
-    esp_err_t err = esp_lcd_panel_draw_bitmap(
-        g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1, samples);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1,
+                                              samples);
     if (err != ESP_OK) {
         xSemaphoreGive(g_done_sem);
         return false;
@@ -342,15 +338,13 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
 }
 
 void dump_stats() {
-    const int64_t expected_us =
-        static_cast<int64_t>(g_fb_h_res) * 1'000'000LL / g_cfg.pclk_hz;
-    const int64_t avg_us = (g_emit_us_count > 0) ? (g_emit_us_sum / g_emit_us_count) : 0;
+    const int64_t expected_us = static_cast<int64_t>(g_fb_h_res) * 1'000'000LL / g_cfg.pclk_hz;
+    const int64_t avg_us      = (g_emit_us_count > 0) ? (g_emit_us_sum / g_emit_us_count) : 0;
     ESP_LOGI(TAG,
              "stats: trans_done=%lu, vsync=%lu, frames=%lu, "
              "expected DMA=%lld µs, avg interval=%lld µs, max=%lld µs",
              static_cast<unsigned long>(g_trans_done_count),
-             static_cast<unsigned long>(g_vsync_count),
-             static_cast<unsigned long>(g_emit_us_count),
+             static_cast<unsigned long>(g_vsync_count), static_cast<unsigned long>(g_emit_us_count),
              expected_us, avg_us, g_emit_us_max);
 }
 
@@ -360,9 +354,15 @@ void wait_idle() {
     }
 }
 
-size_t fb_bytes() { return g_fb_bytes; }
+size_t fb_bytes() {
+    return g_fb_bytes;
+}
 
-void   set_calibration_mode(int8_t pattern_id) { g_cal_mode = pattern_id; }
-int8_t get_calibration_mode()                  { return g_cal_mode; }
+void set_calibration_mode(int8_t pattern_id) {
+    g_cal_mode = pattern_id;
+}
+int8_t get_calibration_mode() {
+    return g_cal_mode;
+}
 
 }  // namespace pixfrog::lcd

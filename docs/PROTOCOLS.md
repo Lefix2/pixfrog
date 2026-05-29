@@ -1,235 +1,232 @@
-# Protocoles LED — pixfrog
+# LED protocols — pixfrog
 
-Référence des timings, formules d'horloge et schémas d'encodage DMA pour tous les protocoles supportés par pixfrog.
+Reference for timings, clock formulas and DMA encoding for every protocol pixfrog supports.
 
-> Toute déviation par rapport aux valeurs de ce document doit être justifiée et validée à l'oscilloscope.
-
----
-
-## 1. Protocoles supportés
-
-| Protocole | Type      | Bit rate / CLOCK max | Order par défaut | Bits par pixel | Note                            |
-|-----------|-----------|----------------------|------------------|---------------:|---------------------------------|
-| WS2815    | 1-fil NRZ | 800 kbps             | GRB              | 24             | Cible prioritaire, signal robuste |
-| WS2812B   | 1-fil NRZ | 800 kbps             | GRB              | 24             | Quasi identique WS2815          |
-| WS2811    | 1-fil NRZ | 400 ou 800 kbps      | RGB              | 24             | Variante slow ou fast           |
-| SK6812    | 1-fil NRZ | 800 kbps             | GRB ou GRBW      | 24 ou 32       | Variante RGBW courante          |
-| WS2814    | 1-fil NRZ | 800 kbps             | RGBW             | 32             | RGBW + canal blanc dédié        |
-| APA102    | SPI-like  | 1–30 MHz CLOCK       | BGR              | 32 (start+brightness+BGR) | Brightness 5-bit intégré |
-| SK9822    | SPI-like  | 1–30 MHz CLOCK       | BGR              | 32                       | Compatible APA102 timing |
-| LPD8806   | SPI-like  | 1–20 MHz CLOCK       | GRB              | 24                       | MSB de chaque octet = 1  |
+> Any deviation from the values in this document must be justified and verified on a scope.
 
 ---
 
-## 2. Timings 1-fil NRZ (référence datasheet)
+## 1. Supported protocols
 
-Valeurs typiques en nanosecondes. T0H = niveau haut pour coder un '0', T1H = haut pour '1', etc. TRESET = temps bas requis entre frames pour latch.
-
-| Protocole | T0H  | T0L  | T1H  | T1L  | TDATA (T0H+T0L = T1H+T1L) | TRESET   |
-|-----------|-----:|-----:|-----:|-----:|--------------------------:|---------:|
-| WS2815    | 300  | 950  | 950  | 300  | 1 250                     | ≥ 280 µs |
-| WS2812B   | 350  | 800  | 700  | 600  | 1 250                     | ≥ 50 µs  |
-| WS2811-fast | 350 | 800  | 700  | 600  | 1 250                     | ≥ 50 µs  |
-| WS2811-slow | 700 | 1 600 | 1 200 | 1 300 | ~2 500                  | ≥ 50 µs  |
-| SK6812    | 300  | 900  | 600  | 600  | 1 200                     | ≥ 80 µs  |
-| WS2814    | 300  | 950  | 950  | 300  | 1 250                     | ≥ 280 µs |
-
-Tolérance constructeur : typiquement ±150 ns sur chaque sous-temps. pixfrog vise un centrage **à mi-tolérance** pour rester compatible cross-batch.
+| Protocol | Family    | Bit-rate / max CLOCK | Default order | Bits/pixel | Notes                       |
+|----------|-----------|----------------------|---------------|-----------:|-----------------------------|
+| WS2815   | 1-wire NRZ | 800 kbps             | GRB           | 24         | Primary target, robust signal |
+| WS2812B  | 1-wire NRZ | 800 kbps             | GRB           | 24         | Near-identical to WS2815    |
+| WS2811   | 1-wire NRZ | 400 or 800 kbps      | RGB           | 24         | Slow or fast variant        |
+| SK6812   | 1-wire NRZ | 800 kbps             | GRB or GRBW   | 24 or 32   | Common RGBW variant         |
+| WS2814   | 1-wire NRZ | 800 kbps             | RGBW          | 32         | Dedicated white channel     |
+| APA102   | SPI-like   | 1–30 MHz CLOCK       | BGR           | 32 (start + brightness + BGR) | 5-bit hardware brightness |
+| SK9822   | SPI-like   | 1–30 MHz CLOCK       | BGR           | 32         | APA102-compatible timing    |
+| LPD8806  | SPI-like   | 1–20 MHz CLOCK       | GRB           | 24         | MSB of every byte must be 1 |
 
 ---
 
-## 3. Formule d'horloge LCD_CAM
+## 2. 1-wire NRZ timings
 
-### 3.1 Chaîne d'horloges
+Typical values in nanoseconds. T0H = high time encoding a `0`, T1H = high time encoding a `1`, etc. TRESET = low time required between frames for the strip to latch.
+
+| Protocol      | T0H  | T0L  | T1H  | T1L  | TDATA (T0H+T0L = T1H+T1L) | TRESET   |
+|---------------|-----:|-----:|-----:|-----:|---------------------------:|---------:|
+| WS2815        | 300  | 950  | 950  | 300  | 1 250                      | ≥ 280 µs |
+| WS2812B       | 350  | 800  | 700  | 600  | 1 250                      | ≥ 50 µs  |
+| WS2811-fast   | 350  | 800  | 700  | 600  | 1 250                      | ≥ 50 µs  |
+| WS2811-slow   | 700  | 1 600 | 1 200 | 1 300 | ~2 500                  | ≥ 50 µs  |
+| SK6812        | 300  | 900  | 600  | 600  | 1 200                      | ≥ 80 µs  |
+| WS2814        | 300  | 950  | 950  | 300  | 1 250                      | ≥ 280 µs |
+
+Datasheet tolerance is typically ±150 ns per sub-time. pixfrog aims for the middle of the tolerance window for cross-batch compatibility.
+
+---
+
+## 3. LCD_CAM clock formula
+
+### 3.1 Clock tree
 
 ```
-PLL160M (source) ──► CLK_DIV (entier) ──► PCLK ──► DMA samples ──► 16 GPIOs
+PLL160M (source) ──► CLK_DIV (integer) ──► PCLK ──► DMA samples ──► 16 GPIOs
 ```
 
-Formules :
+Formulas:
 
 ```
-f_PCLK   = f_PLL_source / CLK_DIV         avec CLK_DIV ∈ {2, 3, …, 256}
-T_PCLK   = 1 / f_PCLK                     période d'un sample DMA
-T_bit    = samples_per_bit × T_PCLK       durée d'un bit DATA pour un protocole 1-fil
+f_PCLK   = f_PLL_source / CLK_DIV         CLK_DIV ∈ {2, 3, …, 256}
+T_PCLK   = 1 / f_PCLK                     period of one DMA sample
+T_bit    = samples_per_bit × T_PCLK       duration of one 1-wire DATA bit
 ```
 
-Pour un protocole clocké, on dérive en plus :
+For clocked protocols:
 
 ```
 T_clock_cycle = samples_per_clock × T_PCLK
 f_clock_out   = 1 / T_clock_cycle = f_PCLK / samples_per_clock
 ```
 
-où `samples_per_clock` doit être un entier **pair** ≥ 2 (moitié low, moitié high).
+where `samples_per_clock` is even and ≥ 2 (half low, half high).
 
-### 3.2 Choix PCLK pour pixfrog
+### 3.2 PCLK choice for pixfrog
 
-Critère 1 : couvrir précisément le timing WS2815 (T0H = 300 ns, T1H = 950 ns) avec une granularité fine. T_PCLK doit diviser 300 ns et 950 ns avec un reste acceptable.
+Criterion 1: cover WS2815 timing (T0H = 300 ns, T1H = 950 ns) with tight granularity.
+Criterion 2: support useful APA102 CLOCK rates (≥ 1 MHz, ideally 6+ MHz).
+Criterion 3: keep the DMA bus load below 30 % of PSRAM bandwidth.
 
-Critère 2 : permettre des CLOCK rates utiles pour APA102 (au moins 1 MHz, idéalement 6+ MHz).
+**Chosen value**: `f_PCLK = 16 MHz`, so `T_PCLK = 62.5 ns`.
 
-Critère 3 : rester sous une charge DMA raisonnable (< 30 % bus PSRAM).
+1-wire verification:
 
-**Choix retenu** : `f_PCLK = 16 MHz` (donc `T_PCLK = 62.5 ns`).
+| Target (ns) | Ideal samples | Chosen samples | Realised (ns) | Error    |
+|-------------|--------------:|---------------:|--------------:|---------:|
+| T0H = 300   | 4.8           | 5              | 312.5         | +12.5 ns |
+| T0L = 950   | 15.2          | 15             | 937.5         | −12.5 ns |
+| T1H = 950   | 15.2          | 15             | 937.5         | −12.5 ns |
+| T1L = 300   | 4.8           | 5              | 312.5         | +12.5 ns |
+| TDATA       | 20            | 20 (= T0H+T0L) | 1 250         | 0        |
 
-Vérification 1-fil :
+→ `samples_per_bit = 20` for WS2815, total bit = 1 250 ns. ✓
 
-| Cible (ns) | Samples idéaux | Samples retenus | Réalisé (ns) | Erreur     |
-|------------|---------------:|----------------:|-------------:|-----------:|
-| T0H = 300  | 4.8            | 5               | 312.5        | +12.5 ns   |
-| T0L = 950  | 15.2           | 15              | 937.5        | −12.5 ns   |
-| T1H = 950  | 15.2           | 15              | 937.5        | −12.5 ns   |
-| T1L = 300  | 4.8            | 5               | 312.5        | +12.5 ns   |
-| TDATA      | 20             | 20 (= T0H+T0L)  | 1 250        | 0          |
-
-→ `samples_per_bit = 20` pour le WS2815, total bit = 1 250 ns exact. ✓
-
-Vérification clocké :
+Clocked verification:
 
 ```
-samples_per_clock = 2   → f_clock = 8 MHz   (APA102 à 8 MHz, OK)
+samples_per_clock = 2   → f_clock = 8 MHz   (APA102 at 8 MHz, OK)
 samples_per_clock = 4   → f_clock = 4 MHz
 samples_per_clock = 8   → f_clock = 2 MHz
 samples_per_clock = 16  → f_clock = 1 MHz
 ```
 
-Plage CLOCK exploitable : **125 kHz à 8 MHz** par pas correspondant aux diviseurs entiers. Suffisant pour tous les usages réels (APA102 stable à 4-8 MHz sur ~100 LEDs).
+Reachable CLOCK range: **125 kHz to 8 MHz** in integer divisor steps. Plenty for real-world use (APA102 is reliable at 4–8 MHz on ~100 LED strings).
 
-### 3.3 Autres protocoles 1-fil avec PCLK=16 MHz
+### 3.3 Other 1-wire protocols at PCLK = 16 MHz
 
-| Protocole | T0H cible | T1H cible | Samples T0H | Samples T1H | Samples bit | Erreur max |
-|-----------|----------:|----------:|------------:|------------:|------------:|-----------:|
-| WS2815    | 300       | 950       | 5           | 15          | 20          | ±13 ns     |
-| WS2812B   | 350       | 700       | 6           | 11          | 20          | ±25 ns     |
-| WS2811-fast | 350    | 700       | 6           | 11          | 20          | ±25 ns     |
-| WS2811-slow | 700    | 1 200     | 11          | 19          | 40          | ±25 ns     |
-| SK6812    | 300       | 600       | 5           | 10          | 19 (~1 187 ns) | ±13 ns  |
-| WS2814    | 300       | 950       | 5           | 15          | 20          | ±13 ns     |
+| Protocol     | T0H target | T1H target | Samples T0H | Samples T1H | Samples / bit | Max error |
+|--------------|----------:|-----------:|------------:|------------:|--------------:|----------:|
+| WS2815       | 300       | 950        | 5           | 15          | 20            | ±13 ns    |
+| WS2812B      | 350       | 700        | 6           | 11          | 20            | ±25 ns    |
+| WS2811-fast  | 350       | 700        | 6           | 11          | 20            | ±25 ns    |
+| WS2811-slow  | 700       | 1 200      | 11          | 19          | 40            | ±25 ns    |
+| SK6812       | 300       | 600        | 5           | 10          | 19 (~1 187 ns) | ±13 ns   |
+| WS2814       | 300       | 950        | 5           | 15          | 20            | ±13 ns    |
 
-Toutes les erreurs sont sous le seuil ±150 ns datasheet → ✓.
+All errors are under the ±150 ns datasheet tolerance. ✓
 
 ---
 
-## 4. Encodage DMA (1-fil vs clocké)
+## 4. DMA encoding (1-wire vs clocked)
 
-Le buffer DMA est une séquence de samples 16-bit. Pour chaque sample, chaque bit représente l'état d'un GPIO à cet instant PCLK.
+The DMA buffer is a stream of 16-bit samples. In each sample, each bit is the state of one GPIO at that PCLK tick.
 
 ```
 sample[t] = (CH8_CLOCK << 15) | (CH8_DATA << 14) | … | (CH1_CLOCK << 1) | CH1_DATA
 ```
 
-### 4.1 Encodage 1-fil NRZ (exemple WS2815, samples_per_bit=20)
+### 4.1 1-wire NRZ encoding (WS2815, samples_per_bit = 20)
 
-Pour encoder le bit `1` sur la voie CH1_DATA :
+To encode a `1` on CH1_DATA:
 
 ```
-sample[0]  : CH1_DATA = 1
-sample[1]  : CH1_DATA = 1
+sample[0]   : CH1_DATA = 1
+sample[1]   : CH1_DATA = 1
 …
-sample[14] : CH1_DATA = 1   // 15 samples HIGH = 937.5 ns ≈ T1H
-sample[15] : CH1_DATA = 0
+sample[14]  : CH1_DATA = 1   // 15 HIGH samples = 937.5 ns ≈ T1H
+sample[15]  : CH1_DATA = 0
 …
-sample[19] : CH1_DATA = 0   // 5 samples LOW = 312.5 ns ≈ T1L
+sample[19]  : CH1_DATA = 0   // 5 LOW samples = 312.5 ns ≈ T1L
 ```
 
-Pour encoder le bit `0` :
+To encode a `0`:
 
 ```
-sample[0]  : CH1_DATA = 1
+sample[0]   : CH1_DATA = 1
 …
-sample[4]  : CH1_DATA = 1   // 5 samples HIGH = 312.5 ns ≈ T0H
-sample[5]  : CH1_DATA = 0
+sample[4]   : CH1_DATA = 1   // 5 HIGH samples = 312.5 ns ≈ T0H
+sample[5]   : CH1_DATA = 0
 …
-sample[19] : CH1_DATA = 0   // 15 samples LOW = 937.5 ns ≈ T0L
+sample[19]  : CH1_DATA = 0   // 15 LOW samples = 937.5 ns ≈ T0L
 ```
 
-CH1_CLOCK reste à 0 sur les 20 samples (le pin CLOCK existe mais n'est jamais connecté à un strip 1-fil).
+CH1_CLOCK stays 0 for all 20 samples (the CLOCK pin exists on the bus but is never connected to a 1-wire strip).
 
-Optimisation : on précalcule deux templates 16-bit (`tpl_bit0`, `tpl_bit1`) par protocole et on les copie par mémo, plus rapide qu'un `if` par sample.
+### 4.2 Clocked SPI-like encoding (APA102, samples_per_clock = 4 → 4 MHz)
 
-### 4.2 Encodage clocké SPI-like (exemple APA102, samples_per_clock=4 → 4 MHz)
-
-Pour transmettre 1 bit DATA cadencé sur 1 cycle CLOCK :
+To transmit 1 DATA bit clocked on 1 CLOCK cycle:
 
 ```
-sample[0]  : CH1_CLOCK = 0, CH1_DATA = bit  // setup
-sample[1]  : CH1_CLOCK = 0, CH1_DATA = bit  // continue setup
-sample[2]  : CH1_CLOCK = 1, CH1_DATA = bit  // rising edge — strip latches DATA
-sample[3]  : CH1_CLOCK = 1, CH1_DATA = bit  // hold
+sample[0]   : CH1_CLOCK = 0, CH1_DATA = bit  // setup
+sample[1]   : CH1_CLOCK = 0, CH1_DATA = bit  // setup
+sample[2]   : CH1_CLOCK = 1, CH1_DATA = bit  // rising edge — strip latches
+sample[3]   : CH1_CLOCK = 1, CH1_DATA = bit  // hold
 ```
 
-Pour la séquence d'octets APA102 :
+APA102 byte sequence:
 
 ```
-Start frame : 0x00 0x00 0x00 0x00                   (4 octets, 32 bits → 32 cycles CLOCK)
-Pixel       : 0xE0|brightness  +  B  +  G  +  R     (4 octets par pixel)
-End frame   : 0xFF × ceil(N/2)/8                    (padding pour propagation, cf datasheet)
+Start frame : 0x00 0x00 0x00 0x00                   (4 bytes, 32 bits → 32 CLOCK cycles)
+Pixel       : 0xE0|brightness  +  B  +  G  +  R     (4 bytes per pixel)
+End frame   : 0xFF × ceil(N/2)/8                    (propagation padding, see datasheet)
 ```
 
-### 4.3 Latch / Reset
+### 4.3 Latch / reset
 
-Pour les protocoles 1-fil, après le dernier pixel, on doit maintenir DATA à 0 pendant TRESET (≥ 280 µs pour WS2815). À 16 MHz, c'est 4 480 samples bas. Ils sont insérés en queue du frame buffer ; à la fin de l'émission GDMA, le bus reste figé sur ces zéros jusqu'à la prochaine `esp_lcd_panel_draw_bitmap`.
+For 1-wire protocols, after the last pixel, DATA must stay LOW for TRESET (≥ 280 µs for WS2815). At 16 MHz that's 4 480 zero samples. They sit at the tail of the frame buffer; once GDMA finishes, the bus stays parked on those zeros until the next `esp_lcd_panel_draw_bitmap`.
 
-Pour les protocoles clockés, pas de latch — on laisse simplement le bus inactif après l'end frame.
+For clocked protocols there's no latch — the bus simply goes idle after the end frame.
 
-### 4.4 Frame buffer unique en PSRAM, pas de chunks
+### 4.4 Single PSRAM frame buffer, no chunks
 
-L'encodage produit **un seul frame buffer complet en PSRAM** par frame, pas une chaîne de chunks. `esp_lcd_new_rgb_panel(flags.fb_in_psram=true, num_fbs=2)` alloue deux buffers PSRAM en interne ; le `render_task` écrit dans le back, sync le cache, appelle `esp_lcd_panel_draw_bitmap` qui swap le pointeur de FB actif. GDMA tape ensuite directement le PSRAM sans intervention CPU.
+The encoder produces **one complete PSRAM frame buffer** per frame, not a chain of small chunks. `esp_lcd_new_rgb_panel(flags.fb_in_psram = true, num_fbs = 2)` allocates two PSRAM buffers internally; the render task writes into the back buffer, flushes the cache, calls `esp_lcd_panel_draw_bitmap` (which swaps the active FB pointer), and GDMA streams the PSRAM directly without any CPU involvement.
 
-Conséquence pour l'encodeur : **aucune contrainte temps-réel sous-trame**. Il a toute la durée d'émission de la frame courante (jusqu'à 30 ms à 30 Hz avec 1024 px WS2815) pour produire la suivante.
+Consequence for the encoder: **no sub-frame real-time deadline**. It has the full DMA emission window of the current frame (up to ~30 ms at 30 Hz with 1024 px WS2815) to produce the next one.
 
 ---
 
-## 5. Stratégie multi-canaux mixtes
+## 5. Mixed multi-channel strategy
 
-Tous les canaux partagent le même PCLK = 16 MHz. Conséquences :
+All channels share the same PCLK = 16 MHz. Consequences:
 
-- Les 8 canaux sont émis **simultanément** sur les 16 bits du bus parallèle ; la durée d'émission DMA est donc dictée par le canal le plus long, pas par la somme des canaux.
-- Durée 1-fil = `pixels × bits_per_pixel × samples_per_bit / f_PCLK + T_reset`
-- Durée clockée = `(start_bytes + pixels × bytes_per_pixel + end_bytes) × 8 × samples_per_clock / f_PCLK`
-- Les canaux courts émettent des samples nuls après leur dernier bit utile (sans effet sur les strips déjà latchés).
+- The 8 channels are emitted **in parallel** on the 16 bus bits; total DMA duration is dictated by the longest channel, not the sum.
+- 1-wire duration  = `pixels × bits_per_pixel × samples_per_bit / f_PCLK + T_reset`
+- Clocked duration = `(start_bytes + pixels × bytes_per_pixel + end_bytes) × 8 × samples_per_clock / f_PCLK`
+- Shorter channels emit zero samples after their last useful bit (no effect on strips that have already latched).
 
-### 5.1 Limites pratiques par protocole
+### 5.1 Practical limits per protocol
 
-Le bit rate de chaque protocole pose une borne physique indépendante du CPU. Au-delà, **aucune optimisation logicielle ne peut faire tenir la frame dans le budget**.
+Each protocol's bit-rate sets a physical floor that no software optimization can bypass.
 
-| Protocole       | Bit rate utile | Bits/px | Max pixels @ 60 Hz | Max pixels @ 30 Hz |
-|-----------------|---------------:|--------:|-------------------:|-------------------:|
-| WS2815 / WS2814 | 800 kbps       | 24 (RGB) ou 32 (RGBW) | **555** RGB / 416 RGBW | 1024 (avec marge) |
-| WS2812B         | 800 kbps       | 24      | **555**            | 1024               |
-| WS2811-fast     | 800 kbps       | 24      | **555**            | 1024               |
-| WS2811-slow     | 400 kbps       | 24      | **277**            | **555**            |
-| SK6812 (RGBW)   | 800 kbps       | 32      | **416**            | **833**            |
-| APA102 / SK9822 @ 4 MHz CLOCK | 4 Mbps | 32 | **5208**         | (trivial)          |
-| APA102 / SK9822 @ 8 MHz CLOCK | 8 Mbps | 32 | **10416**        | (trivial)          |
-| LPD8806 @ 4 MHz | 4 Mbps         | 24      | **6944**           | (trivial)          |
+| Protocol           | Useful bit rate | Bits/px | Max pixels @ 60 Hz | Max pixels @ 30 Hz |
+|--------------------|----------------:|--------:|-------------------:|-------------------:|
+| WS2815 / WS2814    | 800 kbps        | 24 (RGB) or 32 (RGBW) | **555** RGB / 416 RGBW | 1024 (with margin) |
+| WS2812B            | 800 kbps        | 24      | **555**            | 1024               |
+| WS2811-fast        | 800 kbps        | 24      | **555**            | 1024               |
+| WS2811-slow        | 400 kbps        | 24      | **277**            | **555**            |
+| SK6812 (RGBW)      | 800 kbps        | 32      | **416**            | **833**            |
+| APA102 / SK9822 @ 4 MHz CLOCK | 4 Mbps | 32 | **5208**          | (trivial)          |
+| APA102 / SK9822 @ 8 MHz CLOCK | 8 Mbps | 32 | **10416**         | (trivial)          |
+| LPD8806 @ 4 MHz    | 4 Mbps          | 24      | **6944**           | (trivial)          |
 
-Formule : `max_pixels = (1/f_refresh − T_reset) × bit_rate / bits_per_pixel`
+Formula: `max_pixels = (1/f_refresh − T_reset) × bit_rate / bits_per_pixel`
 
-### 5.2 Exemple chiffré
+### 5.2 Worked example
 
-8 canaux WS2815 × 600 px émis en parallèle = **600 × 24 × 20 / 16e6 = 18 ms de DMA pure**, plus 280 µs de TRESET → **~18.3 ms par frame**.
+8 channels × 600 px WS2815, in parallel = **600 × 24 × 20 / 16e6 = 18 ms of pure DMA**, plus 280 µs TRESET → **~18.3 ms per frame**.
 
-- À 60 Hz (budget 16.67 ms) : **ne tient pas**. Max 555 px par canal pour rester sous 16.67 ms.
-- À 30 Hz (budget 33.33 ms) : confort total, encore 15 ms de slack pour l'encodage de la frame suivante en parallèle.
+- At 60 Hz (budget 16.67 ms): **does not fit**. Hard ceiling at 555 px per channel.
+- At 30 Hz (budget 33.33 ms): comfortable, ~15 ms of slack left for encoding the next frame in parallel.
 
-### 5.3 Sanity check au boot
+### 5.3 Boot-time sanity check
 
-`dmx_manager::init` calcule pour chaque canal `t_dma = pixel_count × bits_per_pixel × samples_per_bit / f_PCLK + T_reset` puis vérifie `max(t_dma) + marge_encode ≤ 1/refresh_rate`. Si la config persistée dépasse, le boot loggue un warning et clamp pixel_count au max admissible (le canal continue de fonctionner sur les N premiers pixels). L'UI affiche un badge d'erreur sur le canal incriminé.
+`dmx_manager::validate_capacity` computes `t_dma = pixel_count × bits × samples / PCLK + T_reset` for each channel and verifies `max(t_dma) ≤ 1/refresh_rate − 1 ms`. Channels that don't fit are flagged (`is_channel_capacity_ok(ch) = false`); HOME shows `!` next to them. Logs include the actual µs vs the budget µs so the operator can fix from the panel — pixel_count is never silently modified.
 
 ---
 
-## 6. Vérification
+## 6. Verification
 
-Tests unitaires (`components/led_protocols/test/`) :
+Unit tests (`components/led_protocols/test/`):
 
-1. Pour chaque protocole 1-fil : encoder un buffer de 1 pixel `(0xFF, 0x80, 0x00)`, vérifier que les samples produits respectent les timings cible à ±0 sample près.
-2. Pour APA102 : encoder un buffer de 1 pixel `(R=0xFF, G=0x80, B=0x00, brightness=31)`, vérifier la structure start+frame+end et la valeur de `samples_per_clock`.
-3. Test de bornes : pixel count = 1, pixel count = 1024 — vérifier que la taille DMA ne dépasse pas la borne configurée.
+1. For each 1-wire protocol: encode one pixel `(0xFF, 0x80, 0x00)`, verify the produced samples match the target timings within ±0 sample.
+2. APA102: encode one pixel `(R=0xFF, G=0x80, B=0x00, brightness=31)`, verify start+frame+end structure and `samples_per_clock`.
+3. Bounds: pixel_count = 1 and pixel_count = 1024 — verify the DMA size never exceeds the configured ceiling.
+4. Throughput: encoding 1024 px WS2815 (worst case) must complete in ≤ 20 ms on a reference CI runner.
 
-Tests d'intégration (`components/lcd_cam_output/test/`) :
+Integration tests (hardware required):
 
-1. Émission d'une frame de calibration (DATA = pattern carré 1 kHz) sur chacun des 16 GPIOs, mesure à l'oscilloscope.
-2. Vérifier que CLOCK est strictement synchrone avec DATA sur le même canal (delta < 5 ns).
-3. Vérifier l'absence de glitch sur des transitions back-to-back.
+1. Emit a calibration pattern (1 kHz square wave) on each of the 16 GPIOs, observe on scope (`lcd::emit_calibration_pattern(0)`).
+2. Verify CLOCK is strictly synchronous with DATA on the same channel (delta < 5 ns).
+3. Verify there are no glitches on back-to-back transitions.

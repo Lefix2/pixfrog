@@ -15,22 +15,27 @@ using namespace pixfrog::led;
 static int g_pass = 0;
 static int g_fail = 0;
 
-#define EXPECT_EQ(a, b)                                                                  \
-    do {                                                                                 \
-        long long va = static_cast<long long>(a);                                        \
-        long long vb = static_cast<long long>(b);                                        \
-        if (va == vb) { g_pass++; }                                                      \
-        else {                                                                           \
-            g_fail++;                                                                    \
-            std::fprintf(stderr, "FAIL %s:%d: %s != %s (%lld vs %lld)\n",                \
-                         __FILE__, __LINE__, #a, #b, va, vb);                            \
-        }                                                                                \
+#define EXPECT_EQ(a, b)                                                                            \
+    do {                                                                                           \
+        long long va = static_cast<long long>(a);                                                  \
+        long long vb = static_cast<long long>(b);                                                  \
+        if (va == vb) {                                                                            \
+            g_pass++;                                                                              \
+        } else {                                                                                   \
+            g_fail++;                                                                              \
+            std::fprintf(stderr, "FAIL %s:%d: %s != %s (%lld vs %lld)\n", __FILE__, __LINE__, #a,  \
+                         #b, va, vb);                                                              \
+        }                                                                                          \
     } while (0)
 
-#define EXPECT_TRUE(a)                                                                   \
-    do {                                                                                 \
-        if (a) { g_pass++; }                                                             \
-        else { g_fail++; std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #a); } \
+#define EXPECT_TRUE(a)                                                                             \
+    do {                                                                                           \
+        if (a) {                                                                                   \
+            g_pass++;                                                                              \
+        } else {                                                                                   \
+            g_fail++;                                                                              \
+            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #a);                      \
+        }                                                                                          \
     } while (0)
 
 // ── Timings ─────────────────────────────────────────────────────────────────
@@ -67,10 +72,10 @@ static void test_timing_apa102_clock() {
 // ── Bytes per pixel ─────────────────────────────────────────────────────────
 
 static void test_bytes_per_pixel() {
-    EXPECT_EQ(bytes_per_pixel(Protocol::WS2815),  3);
+    EXPECT_EQ(bytes_per_pixel(Protocol::WS2815), 3);
     EXPECT_EQ(bytes_per_pixel(Protocol::WS2812B), 3);
-    EXPECT_EQ(bytes_per_pixel(Protocol::SK6812),  4);
-    EXPECT_EQ(bytes_per_pixel(Protocol::WS2814),  4);
+    EXPECT_EQ(bytes_per_pixel(Protocol::SK6812), 4);
+    EXPECT_EQ(bytes_per_pixel(Protocol::WS2814), 4);
 }
 
 // ── NRZ encoder: one pixel, verify exact bit layout ────────────────────────
@@ -87,9 +92,9 @@ static void test_nrz_one_pixel_ws2815() {
     d.bus_bit_clock    = 1;
 
     const uint8_t pixels[3] = { 0x80, 0x00, 0x00 };  // R=128, G=B=0
-    const size_t  cap       = encoded_size_samples(d);
+    const size_t cap        = encoded_size_samples(d);
     std::vector<uint16_t> out(cap, 0);
-    const size_t written    = encode_channel(d, pixels, out.data(), cap);
+    const size_t written = encode_channel(d, pixels, out.data(), cap);
 
     EXPECT_EQ(written, cap);
 
@@ -97,29 +102,32 @@ static void test_nrz_one_pixel_ws2815() {
     // Each bit takes 20 samples (samples_bit). Bit '1' → 15 high, 5 low.
     // We check the first 20 samples (bit 7 of R).
     int high_count = 0;
-    for (int i = 0; i < 20; ++i) high_count += (out[i] & 1) ? 1 : 0;
-    EXPECT_EQ(high_count, 15);     // T1H = 15 samples
+    for (int i = 0; i < 20; ++i)
+        high_count += (out[i] & 1) ? 1 : 0;
+    EXPECT_EQ(high_count, 15);  // T1H = 15 samples
 
     // Bits 6..0 of R are '0' → 5 high, 15 low each.
     high_count = 0;
-    for (int i = 20; i < 40; ++i) high_count += (out[i] & 1) ? 1 : 0;
-    EXPECT_EQ(high_count, 5);      // T0H = 5 samples
+    for (int i = 20; i < 40; ++i)
+        high_count += (out[i] & 1) ? 1 : 0;
+    EXPECT_EQ(high_count, 5);  // T0H = 5 samples
 
     // CLOCK bit (bit 1) must stay 0 on all samples for 1-wire.
-    for (size_t i = 0; i < cap; ++i) EXPECT_EQ(out[i] & 2, 0);
+    for (size_t i = 0; i < cap; ++i)
+        EXPECT_EQ(out[i] & 2, 0);
 }
 
 // ── NRZ encoder: OR-into-buffer must preserve other channels' bits ─────────
 
 static void test_nrz_or_into_buffer() {
     ChannelDesc d{};
-    d.protocol         = Protocol::WS2815;
-    d.color_order      = ColorOrder::RGB;
-    d.pixel_count      = 1;
-    d.brightness       = 255;
-    d.grouping         = 1;
-    d.bus_bit_data     = 4;   // some other channel
-    d.bus_bit_clock    = 5;
+    d.protocol      = Protocol::WS2815;
+    d.color_order   = ColorOrder::RGB;
+    d.pixel_count   = 1;
+    d.brightness    = 255;
+    d.grouping      = 1;
+    d.bus_bit_data  = 4;  // some other channel
+    d.bus_bit_clock = 5;
 
     const uint8_t pixels[3] = { 0xFF, 0xFF, 0xFF };
     const size_t cap        = encoded_size_samples(d);
@@ -127,7 +135,8 @@ static void test_nrz_or_into_buffer() {
 
     // Pre-fill some bits owned by "another channel" (bits 0, 2, 14).
     const uint16_t foreign_mask = (1u << 0) | (1u << 2) | (1u << 14);
-    for (auto& s : out) s = foreign_mask;
+    for (auto& s : out)
+        s = foreign_mask;
 
     encode_channel(d, pixels, out.data(), cap);
 
@@ -178,18 +187,18 @@ static void test_perf_encode_ws2815_1024() {
     std::vector<uint16_t> samples(cap, 0);
 
     constexpr int kReps = 10;
-    auto t0 = std::chrono::high_resolution_clock::now();
+    auto t0             = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < kReps; ++i) {
-        std::fill(samples.begin(), samples.end(), uint16_t{0});
+        std::fill(samples.begin(), samples.end(), uint16_t{ 0 });
         encode_channel(d, pixels.data(), samples.data(), cap);
     }
     auto t1 = std::chrono::high_resolution_clock::now();
 
-    const double per_ms =
-        std::chrono::duration<double, std::milli>(t1 - t0).count() / kReps;
+    const double per_ms = std::chrono::duration<double, std::milli>(t1 - t0).count() / kReps;
     std::printf("perf: encode WS2815 1024 px (incl. zero-fill) = %.3f ms/call\n", per_ms);
 
-    if (per_ms < 20.0) g_pass++;
+    if (per_ms < 20.0)
+        g_pass++;
     else {
         g_fail++;
         std::fprintf(stderr, "FAIL perf: %.3f ms >= 20 ms\n", per_ms);

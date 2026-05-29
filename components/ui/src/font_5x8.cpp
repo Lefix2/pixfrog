@@ -10,6 +10,7 @@
 
 namespace pixfrog::ui::detail {
 
+// clang-format off
 const uint8_t kFont5x8[][kFontWidth] = {
     {0x00, 0x00, 0x00, 0x00, 0x00},  // 0x20 ' '
     {0x00, 0x00, 0x5F, 0x00, 0x00},  // 0x21 '!'
@@ -107,15 +108,15 @@ const uint8_t kFont5x8[][kFontWidth] = {
     {0x00, 0x41, 0x36, 0x08, 0x00},  // 0x7D '}'
     {0x08, 0x04, 0x08, 0x10, 0x08},  // 0x7E '~'
 };
+// clang-format on
 
 namespace {
-constexpr uint8_t kFallback[kFontWidth] = {0x7F, 0x41, 0x41, 0x41, 0x7F};  // outlined box
+constexpr uint8_t kFallback[kFontWidth] = { 0x7F, 0x41, 0x41, 0x41, 0x7F };  // outlined box
 }
 
 const uint8_t* font_glyph_for(char c) {
     const uint8_t uc = static_cast<uint8_t>(c);
-    if (uc < static_cast<uint8_t>(kFontFirstChar) ||
-        uc > static_cast<uint8_t>(kFontLastChar)) {
+    if (uc < static_cast<uint8_t>(kFontFirstChar) || uc > static_cast<uint8_t>(kFontLastChar)) {
         return kFallback;
     }
     return kFont5x8[uc - static_cast<uint8_t>(kFontFirstChar)];

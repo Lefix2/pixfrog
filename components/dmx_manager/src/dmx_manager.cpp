@@ -10,8 +10,8 @@
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
 
-#include "led_protocols.h"
 #include "dmx_logic.h"
+#include "led_protocols.h"
 
 namespace pixfrog::dmx {
 
@@ -22,8 +22,8 @@ constexpr const char* TAG = "DMX";
 // Two universe banks, each `kNumUniverses * kUniverseSize` bytes, in PSRAM.
 uint8_t* g_uni_bank_a = nullptr;
 uint8_t* g_uni_bank_b = nullptr;
-std::atomic<uint8_t*> g_uni_front{nullptr};
-uint8_t*              g_uni_back = nullptr;
+std::atomic<uint8_t*> g_uni_front{ nullptr };
+uint8_t* g_uni_back = nullptr;
 
 // Per-channel pixel buffers in internal SRAM, double-buffered.
 struct ChanBufs {
@@ -34,8 +34,8 @@ struct ChanBufs {
 };
 ChanBufs g_chan_bufs[config::kNumChannels]{};
 
-Stats               g_stats{};
-std::atomic<bool>   g_sync_pending{false};
+Stats g_stats{};
+std::atomic<bool> g_sync_pending{ false };
 
 // Map a universe number to a slot in the bank. For v0 we use a simple
 // flat allocation: universe N → slot (N % kNumUniverses). On boot, the
@@ -44,13 +44,13 @@ std::atomic<bool>   g_sync_pending{false};
 //
 // TODO(v1): replace with a hash map keyed by (net, subnet, universe).
 uint16_t g_universe_to_slot[32768]{};
-bool     g_universe_to_slot_valid = false;
+bool g_universe_to_slot_valid = false;
 
 // Reverse mapping slot → channel index, populated alongside g_universe_to_slot.
-uint8_t  g_slot_to_channel[kNumUniverses]{};
+uint8_t g_slot_to_channel[kNumUniverses]{};
 
 // Per-channel last-activity timestamp (µs). 0 = never seen.
-int64_t  g_last_activity_us[config::kNumChannels]{};
+int64_t g_last_activity_us[config::kNumChannels]{};
 // "Active" if last_activity within this window:
 constexpr int64_t kActivityWindowUs = 1'000'000;  // 1 second
 
@@ -63,7 +63,7 @@ bool g_channel_capacity_ok[config::kNumChannels]{};
 EventGroupHandle_t g_remap_eg = nullptr;
 
 // Binary semaphore for ArtSync → render_task fast-path (TODO B2).
-SemaphoreHandle_t  g_sync_sem = nullptr;
+SemaphoreHandle_t g_sync_sem = nullptr;
 
 // Rebuild the universe → slot LUT (+ reverse slot → channel) from the
 // current contents of config_store. Called from init() and from
@@ -74,7 +74,7 @@ void rebuild_universe_lut() {
     }
     uint16_t slot = 0;
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        const auto& cc = config::get_channel(ch);
+        const auto& cc              = config::get_channel(ch);
         const size_t universes_used = logic::channel_universes_used(cc);
         for (size_t u = 0; u < universes_used && slot < kNumUniverses; ++u) {
             g_universe_to_slot[cc.universe_start + u] = slot;
@@ -95,11 +95,13 @@ bool init() {
         return false;
     }
     g_uni_front.store(g_uni_bank_a, std::memory_order_release);
-    g_uni_back  = g_uni_bank_b;
+    g_uni_back = g_uni_bank_b;
 
     for (size_t i = 0; i < config::kNumChannels; ++i) {
-        g_chan_bufs[i].a = static_cast<uint8_t*>(heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        g_chan_bufs[i].b = static_cast<uint8_t*>(heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        g_chan_bufs[i].a = static_cast<uint8_t*>(
+            heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        g_chan_bufs[i].b = static_cast<uint8_t*>(
+            heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         if (!g_chan_bufs[i].a || !g_chan_bufs[i].b) {
             ESP_LOGE(TAG, "SRAM alloc for channel %u failed", static_cast<unsigned>(i));
             return false;
@@ -123,7 +125,8 @@ bool init() {
         return false;
     }
 
-    for (size_t i = 0; i < config::kNumChannels; ++i) g_channel_capacity_ok[i] = true;
+    for (size_t i = 0; i < config::kNumChannels; ++i)
+        g_channel_capacity_ok[i] = true;
     validate_capacity();
 
     ESP_LOGI(TAG, "init OK, universe LUT built");
@@ -158,9 +161,8 @@ bool decode_pixels_for_channel(size_t ch) {
     if (ch >= config::kNumChannels) return false;
     uint8_t* dst = pixel_back_buffer(ch);
     if (!dst) return false;
-    return logic::decode_pixels(
-        dst, kMaxBytesPerChan, config::get_channel(ch),
-        [](uint16_t u) { return universe_front_buffer_for(u); });
+    return logic::decode_pixels(dst, kMaxBytesPerChan, config::get_channel(ch),
+                                [](uint16_t u) { return universe_front_buffer_for(u); });
 }
 
 bool is_channel_capacity_ok(size_t ch) {
@@ -174,20 +176,17 @@ void validate_capacity() {
     const uint64_t allowance = logic::emission_budget_us(refresh);
 
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        const auto& cc = config::get_channel(ch);
-        const bool ok = logic::channel_fits_budget(cc, led::kPclkHz, allowance);
+        const auto& cc            = config::get_channel(ch);
+        const bool ok             = logic::channel_fits_budget(cc, led::kPclkHz, allowance);
         g_channel_capacity_ok[ch] = ok;
         if (!ok) {
             const uint64_t t_us = logic::channel_t_dma_us(cc, led::kPclkHz);
             ESP_LOGW(TAG,
                      "ch %zu over capacity: t_dma=%llu µs > budget=%llu µs "
                      "(refresh=%u Hz, %u px, proto=%d) — reduce pixel_count or refresh",
-                     ch,
-                     static_cast<unsigned long long>(t_us),
-                     static_cast<unsigned long long>(allowance),
-                     static_cast<unsigned>(refresh),
-                     static_cast<unsigned>(cc.pixel_count),
-                     static_cast<int>(cc.protocol));
+                     ch, static_cast<unsigned long long>(t_us),
+                     static_cast<unsigned long long>(allowance), static_cast<unsigned>(refresh),
+                     static_cast<unsigned>(cc.pixel_count), static_cast<int>(cc.protocol));
         }
     }
 }
@@ -225,8 +224,12 @@ const uint8_t* universe_front_buffer_for(uint16_t universe_number) {
     return g_uni_front.load(std::memory_order_acquire) + slot * kUniverseSize;
 }
 
-void note_packet_rx()  { __atomic_add_fetch(&g_stats.artnet_packets_rx, 1, __ATOMIC_RELAXED); }
-void note_packet_bad() { __atomic_add_fetch(&g_stats.artnet_bad_packets, 1, __ATOMIC_RELAXED); }
+void note_packet_rx() {
+    __atomic_add_fetch(&g_stats.artnet_packets_rx, 1, __ATOMIC_RELAXED);
+}
+void note_packet_bad() {
+    __atomic_add_fetch(&g_stats.artnet_bad_packets, 1, __ATOMIC_RELAXED);
+}
 void note_sync() {
     g_sync_pending.store(true, std::memory_order_release);
     if (g_sync_sem) xSemaphoreGive(g_sync_sem);
@@ -242,7 +245,7 @@ bool wait_for_sync_or_period(uint32_t period_ticks) {
 
 void swap_universes() {
     uint8_t* new_front = g_uni_back;
-    g_uni_back = g_uni_front.exchange(new_front, std::memory_order_acq_rel);
+    g_uni_back         = g_uni_front.exchange(new_front, std::memory_order_acq_rel);
     // After swap, copy the now-back into a clean state? No: we keep stale data
     // around so a channel that has not received an update keeps its previous
     // value. This matches stage-lighting conventions.
@@ -260,7 +263,7 @@ const uint8_t* pixel_front_buffer(size_t ch) {
 
 void swap_pixels(size_t ch) {
     if (ch >= config::kNumChannels) return;
-    uint8_t* new_front = g_chan_bufs[ch].back;
+    uint8_t* new_front   = g_chan_bufs[ch].back;
     g_chan_bufs[ch].back = g_chan_bufs[ch].front.exchange(new_front, std::memory_order_acq_rel);
 }
 
@@ -269,8 +272,14 @@ Stats get_stats() {
     return s;
 }
 
-void set_current_fps(uint32_t fps) { g_stats.current_fps = fps; }
-void note_frame_emitted()          { __atomic_add_fetch(&g_stats.frames_emitted, 1, __ATOMIC_RELAXED); }
-void note_dma_underrun()           { __atomic_add_fetch(&g_stats.dma_underruns, 1, __ATOMIC_RELAXED); }
+void set_current_fps(uint32_t fps) {
+    g_stats.current_fps = fps;
+}
+void note_frame_emitted() {
+    __atomic_add_fetch(&g_stats.frames_emitted, 1, __ATOMIC_RELAXED);
+}
+void note_dma_underrun() {
+    __atomic_add_fetch(&g_stats.dma_underruns, 1, __ATOMIC_RELAXED);
+}
 
 }  // namespace pixfrog::dmx

@@ -49,8 +49,15 @@ constexpr size_t bytes_per_pixel(Protocol p) {
 // ────────────────────────────────────────────────────────────────────────────
 
 enum class ColorOrder : uint8_t {
-    RGB, RBG, GRB, GBR, BRG, BGR,
-    RGBW, GRBW, RGBWW,
+    RGB,
+    RBG,
+    GRB,
+    GBR,
+    BRG,
+    BGR,
+    RGBW,
+    GRBW,
+    RGBWW,
     COUNT,
 };
 
@@ -69,15 +76,16 @@ constexpr uint32_t kMaxPixelsPerChannel = 1024;
 constexpr uint32_t kMaxBitsPerPixel     = 32;
 constexpr uint32_t kMaxSamplesPerBit    = 40;
 constexpr uint32_t kMaxResetSamples     = 4480;
-constexpr uint32_t kMaxSamplesPerFrame  =
-    kMaxPixelsPerChannel * kMaxBitsPerPixel * kMaxSamplesPerBit + kMaxResetSamples;
+constexpr uint32_t kMaxSamplesPerFrame  = kMaxPixelsPerChannel * kMaxBitsPerPixel *
+                                             kMaxSamplesPerBit +
+                                         kMaxResetSamples;
 
 // Samples per logical "thing" — varies by protocol family.
 struct Timing {
     // For 1-wire NRZ: samples high to encode '0' and '1', total samples per bit.
     uint16_t samples_t0h;
     uint16_t samples_t1h;
-    uint16_t samples_bit;       // = T0H + T0L = T1H + T1L (within ±1 sample)
+    uint16_t samples_bit;  // = T0H + T0L = T1H + T1L (within ±1 sample)
 
     // For clocked SPI-like: samples per full CLOCK cycle (must be even, ≥ 2).
     uint16_t samples_per_clock;
@@ -95,15 +103,15 @@ Timing timing_for(Protocol p, uint32_t requested_clock_hz = 4'000'000);
 // ────────────────────────────────────────────────────────────────────────────
 
 struct ChannelDesc {
-    Protocol   protocol;
+    Protocol protocol;
     ColorOrder color_order;
-    uint16_t   pixel_count;     // logical pixels in the source buffer
-    uint8_t    brightness;      // 0..255, applied at encode time
-    uint8_t    grouping;        // 1..8; N source pixels share one output pixel
-    bool       invert_direction;
-    uint8_t    bus_bit_data;    // which bit of the 16-bit bus carries DATA   (0..15)
-    uint8_t    bus_bit_clock;   // which bit carries CLOCK (clocked protocols only)
-    uint32_t   clock_hz;        // requested CLOCK rate (clocked only)
+    uint16_t pixel_count;  // logical pixels in the source buffer
+    uint8_t brightness;    // 0..255, applied at encode time
+    uint8_t grouping;      // 1..8; N source pixels share one output pixel
+    bool invert_direction;
+    uint8_t bus_bit_data;   // which bit of the 16-bit bus carries DATA   (0..15)
+    uint8_t bus_bit_clock;  // which bit carries CLOCK (clocked protocols only)
+    uint32_t clock_hz;      // requested CLOCK rate (clocked only)
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -117,10 +125,8 @@ struct ChannelDesc {
 // allowing 8 channels to share the same DMA buffer.
 //
 // Returns the number of samples actually written.
-size_t encode_channel(const ChannelDesc& desc,
-                      const uint8_t*     pixels,
-                      uint16_t*          out_samples,
-                      size_t             out_samples_capacity);
+size_t encode_channel(const ChannelDesc& desc, const uint8_t* pixels, uint16_t* out_samples,
+                      size_t out_samples_capacity);
 
 // Worst-case sample count for `desc`, used for buffer sizing.
 size_t encoded_size_samples(const ChannelDesc& desc);

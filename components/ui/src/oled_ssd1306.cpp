@@ -27,15 +27,16 @@ constexpr const char* TAG = "OLED";
 
 constexpr uint8_t kCols     = 128;
 constexpr uint8_t kPages    = 8;
-constexpr uint8_t kTextCols = 21;   // = 128 / kFontCellWidth (= 6), rounded down
+constexpr uint8_t kTextCols = 21;  // = 128 / kFontCellWidth (= 6), rounded down
 constexpr uint8_t kTextRows = 8;
-constexpr int     kI2cTimeoutMs = 50;
+constexpr int kI2cTimeoutMs = 50;
 
 // SSD1306 control-byte prefixes for I2C transactions.
-constexpr uint8_t kPrefixCmdStream  = 0x00;   // Co=0, D/C=0 → next bytes = commands
-constexpr uint8_t kPrefixDataStream = 0x40;   // Co=0, D/C=1 → next bytes = display data
+constexpr uint8_t kPrefixCmdStream  = 0x00;  // Co=0, D/C=0 → next bytes = commands
+constexpr uint8_t kPrefixDataStream = 0x40;  // Co=0, D/C=1 → next bytes = display data
 
 // Init sequence (128×64, internal charge pump, horizontal addressing).
+// clang-format off
 constexpr uint8_t kInitCmds[] = {
     kPrefixCmdStream,
     0xAE,             // display off
@@ -56,11 +57,12 @@ constexpr uint8_t kInitCmds[] = {
     0x2E,             // deactivate scroll
     0xAF,             // display on
 };
+// clang-format on
 
-i2c_master_dev_handle_t g_dev   = nullptr;
-uint8_t                 g_fb[kPages][kCols]      = {};   // next-to-flush framebuffer
-uint8_t                 g_fb_prev[kPages][kCols] = {};   // last-flushed (for diff)
-char                    g_text_buf[kTextRows][kTextCols + 1] = {};
+i2c_master_dev_handle_t g_dev             = nullptr;
+uint8_t g_fb[kPages][kCols]               = {};  // next-to-flush framebuffer
+uint8_t g_fb_prev[kPages][kCols]          = {};  // last-flushed (for diff)
+char g_text_buf[kTextRows][kTextCols + 1] = {};
 
 bool send_cmds(const uint8_t* data, size_t len) {
     if (!g_dev) return false;
@@ -78,7 +80,7 @@ void rasterise_row(uint8_t row) {
         const char c = g_text_buf[row][tc];
         if (c == '\0') break;
         const uint8_t* glyph = font_glyph_for(c);
-        const size_t base = static_cast<size_t>(tc) * kFontCellWidth;
+        const size_t base    = static_cast<size_t>(tc) * kFontCellWidth;
         for (uint8_t gc = 0; gc < kFontWidth; ++gc) {
             if (base + gc < kCols) page[base + gc] = glyph[gc];
         }
@@ -97,7 +99,7 @@ bool oled_init(i2c_master_bus_handle_t bus, uint8_t addr) {
     dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
     dev_cfg.device_address  = addr;
     dev_cfg.scl_speed_hz    = 400'000;
-    esp_err_t err = i2c_master_bus_add_device(bus, &dev_cfg, &g_dev);
+    esp_err_t err           = i2c_master_bus_add_device(bus, &dev_cfg, &g_dev);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "bus_add_device: %s", esp_err_to_name(err));
         return false;
@@ -133,7 +135,7 @@ void oled_flush() {
     if (!g_dev) return;
     // Diff-based: only push pages whose rendered bytes differ from what's
     // currently on screen. At idle (no text change) zero bytes go over I2C.
-    uint8_t page_cmds[4] = {kPrefixCmdStream, 0xB0, 0x00, 0x10};
+    uint8_t page_cmds[4] = { kPrefixCmdStream, 0xB0, 0x00, 0x10 };
     uint8_t page_data[1 + kCols];
     page_data[0] = kPrefixDataStream;
 

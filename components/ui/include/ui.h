@@ -14,13 +14,13 @@
 namespace pixfrog::ui {
 
 struct InitConfig {
-    int      i2c_port;
-    int      i2c_sda_gpio;
-    int      i2c_scl_gpio;
+    int i2c_port;
+    int i2c_sda_gpio;
+    int i2c_scl_gpio;
     uint32_t i2c_freq_hz;
-    int      encoder_int_gpio;
-    uint8_t  oled_addr;
-    uint8_t  encoder_addr;
+    int encoder_int_gpio;
+    uint8_t oled_addr;
+    uint8_t encoder_addr;
 };
 
 // Initialize I2C, OLED, seesaw, GPIO ISR. Spawns ui_task on core 0 prio 4.
@@ -30,7 +30,7 @@ bool start(const InitConfig& cfg);
 // ── Item 9: IP propagation ─────────────────────────────────────────────────
 // Called from a network event handler when Ethernet acquires (or loses)
 // an address. Pass 0 for "no link" (renders as "—" on HOME).
-void     set_ip(uint32_t host_order_ip);
+void set_ip(uint32_t host_order_ip);
 uint32_t get_ip();
 
 // ── Item B4: Ethernet link state ───────────────────────────────────────────

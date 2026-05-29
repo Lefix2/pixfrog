@@ -28,21 +28,21 @@ constexpr size_t kArtnetNameLongMax  = 64;
 
 struct GlobalConfig {
     // Network
-    bool     use_dhcp;
-    uint32_t static_ip;        // host-order; 0 if use_dhcp
+    bool use_dhcp;
+    uint32_t static_ip;  // host-order; 0 if use_dhcp
     uint32_t static_mask;
     uint32_t static_gateway;
 
     // ArtNet identity
-    uint8_t  artnet_net;                  // 0..127
-    uint8_t  artnet_subnet;               // 0..15
-    char     short_name[kArtnetNameShortMax];
-    char     long_name [kArtnetNameLongMax];
-    bool     artnet_poll_reply_unicast;   // false=broadcast (default), true=unicast to poller
+    uint8_t artnet_net;     // 0..127
+    uint8_t artnet_subnet;  // 0..15
+    char short_name[kArtnetNameShortMax];
+    char long_name[kArtnetNameLongMax];
+    bool artnet_poll_reply_unicast;  // false=broadcast (default), true=unicast to poller
 
     // System
-    uint8_t  refresh_rate_hz;  // 30 or 60
-    uint16_t home_timeout_s;   // 30 by default
+    uint8_t refresh_rate_hz;  // 30 or 60
+    uint16_t home_timeout_s;  // 30 by default
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -50,15 +50,15 @@ struct GlobalConfig {
 // ────────────────────────────────────────────────────────────────────────────
 
 struct ChannelConfig {
-    led::Protocol   protocol;
+    led::Protocol protocol;
     led::ColorOrder color_order;
-    uint16_t        universe_start;     // 1..32767
-    uint16_t        dmx_start;          // 1..512
-    uint16_t        pixel_count;        // 1..1024
-    uint8_t         brightness;         // 0..255
-    uint8_t         grouping;           // 1..8
-    bool            invert_direction;
-    uint32_t        clock_hz;           // only for clocked protocols
+    uint16_t universe_start;  // 1..32767
+    uint16_t dmx_start;       // 1..512
+    uint16_t pixel_count;     // 1..1024
+    uint8_t brightness;       // 0..255
+    uint8_t grouping;         // 1..8
+    bool invert_direction;
+    uint32_t clock_hz;  // only for clocked protocols
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -70,12 +70,12 @@ struct ChannelConfig {
 void init();
 
 // Read-only access to current cached config (returns reference into static storage).
-const GlobalConfig&  get_global();
+const GlobalConfig& get_global();
 const ChannelConfig& get_channel(size_t channel_index);
 
 // Mutating helpers — write to NVS and update the cache atomically.
 // Return true on success.
-bool set_global (const GlobalConfig&  cfg);
+bool set_global(const GlobalConfig& cfg);
 bool set_channel(size_t channel_index, const ChannelConfig& cfg);
 
 // Restore defaults (factory reset). Does NOT reboot.

@@ -19,13 +19,13 @@ namespace {
 
 constexpr const char* TAG = "UI";
 
-SemaphoreHandle_t       g_wakeup_sem = nullptr;
-TaskHandle_t            g_task       = nullptr;
-InitConfig              g_cfg{};
-i2c_master_bus_handle_t g_bus        = nullptr;
+SemaphoreHandle_t g_wakeup_sem = nullptr;
+TaskHandle_t g_task            = nullptr;
+InitConfig g_cfg{};
+i2c_master_bus_handle_t g_bus = nullptr;
 
-uint32_t                g_ip_host       = 0;            // host-order IPv4; 0 = no link
-bool                    g_link_up       = false;        // ETH_EVENT_CONNECTED state
+uint32_t g_ip_host = 0;      // host-order IPv4; 0 = no link
+bool g_link_up     = false;  // ETH_EVENT_CONNECTED state
 
 void IRAM_ATTR encoder_isr(void*) {
     BaseType_t hp = pdFALSE;
@@ -41,7 +41,7 @@ bool create_i2c_bus(const InitConfig& cfg) {
     bus_cfg.sda_io_num                   = static_cast<gpio_num_t>(cfg.i2c_sda_gpio);
     bus_cfg.glitch_ignore_cnt            = 7;
     bus_cfg.flags.enable_internal_pullup = 1;
-    esp_err_t err = i2c_new_master_bus(&bus_cfg, &g_bus);
+    esp_err_t err                        = i2c_new_master_bus(&bus_cfg, &g_bus);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2c_new_master_bus: %s", esp_err_to_name(err));
         return false;
@@ -55,9 +55,9 @@ void task_main(void*) {
     detail::oled_flush();
 
     const TickType_t home_refresh = pdMS_TO_TICKS(100);  // 10 Hz HOME refresh
-    const uint32_t   idle_ms      = config::get_global().home_timeout_s * 1000u;
+    const uint32_t idle_ms        = config::get_global().home_timeout_s * 1000u;
     const TickType_t idle_ticks   = pdMS_TO_TICKS(idle_ms ? idle_ms : 30000u);
-    TickType_t       last_event   = xTaskGetTickCount();
+    TickType_t last_event         = xTaskGetTickCount();
 
     while (true) {
         if (xSemaphoreTake(g_wakeup_sem, home_refresh) == pdTRUE) {
@@ -81,7 +81,7 @@ void task_main(void*) {
 }  // namespace
 
 bool start(const InitConfig& cfg) {
-    g_cfg = cfg;
+    g_cfg        = cfg;
     g_wakeup_sem = xSemaphoreCreateBinary();
     if (!g_wakeup_sem) return false;
 
@@ -97,11 +97,11 @@ bool start(const InitConfig& cfg) {
     }
 
     gpio_config_t io = {};
-    io.pin_bit_mask = 1ULL << cfg.encoder_int_gpio;
-    io.mode         = GPIO_MODE_INPUT;
-    io.pull_up_en   = GPIO_PULLUP_ENABLE;
-    io.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io.intr_type    = GPIO_INTR_NEGEDGE;
+    io.pin_bit_mask  = 1ULL << cfg.encoder_int_gpio;
+    io.mode          = GPIO_MODE_INPUT;
+    io.pull_up_en    = GPIO_PULLUP_ENABLE;
+    io.pull_down_en  = GPIO_PULLDOWN_DISABLE;
+    io.intr_type     = GPIO_INTR_NEGEDGE;
     gpio_config(&io);
     gpio_install_isr_service(0);
     gpio_isr_handler_add(static_cast<gpio_num_t>(cfg.encoder_int_gpio), encoder_isr, nullptr);

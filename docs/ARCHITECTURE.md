@@ -1,14 +1,14 @@
-# Architecture pixfrog
+# pixfrog architecture
 
-Document de référence pour l'architecture logicielle de **pixfrog**, un contrôleur LED 8 canaux haute performance basé sur ESP32-P4, piloté par ArtNet sur Ethernet.
+Reference for the software architecture of **pixfrog**, a high-performance 8-channel LED controller built on ESP32-P4 and driven by ArtNet over Ethernet.
 
-> Ce document est normatif : tout module doit le respecter ou amender ce fichier avant tout changement de design.
+> Normative document: every module respects what's described here, or amends this file before changing the design.
 
 ---
 
-## 1. Vue d'ensemble
+## 1. Overview
 
-pixfrog est conçu autour d'un principe central : **découpler la réception réseau (jitter, bursts) du rendu LED (rigueur temporelle)** via plusieurs étages double-bufferisés. Chaque étage tourne sur un cœur dédié, ne partage que des pointeurs atomiques, et n'alloue jamais en chemin chaud.
+pixfrog is built around one principle: **decouple network ingest (bursty, jittery) from LED rendering (strict timing)** via multiple double-buffered stages. Each stage runs on a pinned core, shares only atomic pointers, and never allocates on the hot path.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -24,7 +24,7 @@ pixfrog est conçu autour d'un principe central : **découpler la réception ré
 │  │   │ writes             │           │   │    frame into      │             │
 │  │   ▼                    │           │   │    fb_back (PSRAM) │             │
 │  │ universe_pool[2][N]    │ ───────►  │   │ 3. esp_cache_msync │             │
-│  │ (PSRAM, swap atomic)   │           │   │ 4. draw_bitmap →   │             │
+│  │ (PSRAM, atomic swap)   │           │   │ 4. draw_bitmap →   │             │
 │  │                        │           │   │    swap fb_active  │             │
 │  │ ui_task                │           │   │ 5. wait done_sem   │             │
 │  │   prio 4               │           │   │                    │             │
@@ -40,227 +40,195 @@ pixfrog est conçu autour d'un principe central : **découpler la réception ré
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Principe clé** : la frame N+1 s'encode dans `frame_buf[back]` (PSRAM) pendant que GDMA pulse la frame N depuis `frame_buf[front]`. Le swap est un échange de pointeur après `esp_cache_msync` et `esp_lcd_panel_draw_bitmap`. Aucun risque d'underrun car l'encodeur n'a pas de contrainte temps-réel par-chunk : il a toute la durée d'émission de la frame courante pour produire la suivante.
+**Key idea**: frame N+1 is encoded into `frame_buf[back]` (PSRAM) while GDMA streams frame N out of `frame_buf[front]`. The swap is a pointer exchange after `esp_cache_msync` + `esp_lcd_panel_draw_bitmap`. No underrun risk because the encoder has no sub-frame deadline: it has the full DMA emission window of the current frame to produce the next one.
 
 ---
 
-## 2. Choix du framework de build
+## 2. Build framework
 
-**ESP-IDF v5.3+ natif (CMake + `idf.py`).**
+**Native ESP-IDF v5.3+ (CMake + `idf.py`).**
 
-Justifications :
+1. **Stable ESP32-P4 support** in upstream IDF. PlatformIO historically lags new targets by months.
+2. **Low-level LCD_CAM access** through the `esp_lcd` RGB panel API — no abstraction in the way.
+3. **Granular `sdkconfig`** for PSRAM, FreeRTOS, lwIP, IRAM ISR placement.
+4. **Reproducible CI** via the official `espressif/idf:vX.Y` docker images.
 
-1. **Support ESP32-P4 stable** : PlatformIO a historiquement plusieurs mois de retard sur le support des nouvelles cibles. ESP32-P4 (HiFive E24 + RV64) requiert un toolchain RISC-V récent que seule l'IDF officielle maintient.
-2. **LCD_CAM bas niveau** : nous accédons à des registres non couverts par les drivers HAL et toute couche d'abstraction PlatformIO complique le débogage.
-3. **`sdkconfig` granulaire** : tuning lwIP, FreeRTOS, PSRAM octal, IRAM pour ISR — tous accessibles via `idf.py menuconfig`.
-4. **Composants tiers** : ESP-IDF Component Registry (`espressif/esp_eth_driver_*`, `espressif/esp_lcd_panel_io`) est natif IDF.
-5. **CI reproductible** : un Dockerfile officiel `espressif/idf:v5.3` rend les builds bit-perfect.
-
-Conséquence : l'arborescence respecte la convention IDF (`main/`, `components/`, `sdkconfig.defaults`, `CMakeLists.txt` à la racine).
+Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, root `CMakeLists.txt`.
 
 ---
 
-## 3. Topologie des tâches FreeRTOS
+## 3. FreeRTOS task topology
 
-| Tâche                | Cœur | Priorité | Pile  | Source de réveil              | Rôle                                              |
-|----------------------|:----:|:--------:|:-----:|-------------------------------|---------------------------------------------------|
-| `lwip_tcpip_thread`  | 0    | 18       | 4 ko  | mailbox lwIP                  | Stack TCP/IP IDF (fourni)                         |
-| `eth_rx_task`        | 0    | 19       | 2 ko  | IRQ Ethernet                  | RMII → lwIP (fourni)                              |
-| `artnet_rx_task`     | 0    | 10       | 4 ko  | `lwip_recvfrom` bloquant      | Parse paquets, écrit `universe_pool[back]`        |
-| `render_task`        | 1    | 20       | 8 ko  | Timer 60 Hz + `ArtSync`       | Swap universes, encode frame complète → `fb_back` (PSRAM), kick LCD_CAM, attend `done_sem` |
-| `ui_task`            | 0    | 4        | 4 ko  | IRQ encodeur (INT) + timer 1s | Lit encodeur, met à jour OLED, écrit NVS          |
-| `idle_0` / `idle_1`  | 0/1  | 0        | 1 ko  | (FreeRTOS)                    | Power-save hooks                                  |
+| Task                 | Core | Prio | Stack | Wake source                   | Role                                              |
+|----------------------|:----:|:----:|:-----:|-------------------------------|---------------------------------------------------|
+| `lwip_tcpip_thread`  | 0    | 18   | 4 kB  | lwIP mailbox                  | IDF TCP/IP stack (provided)                       |
+| `eth_rx_task`        | 0    | 19   | 2 kB  | Ethernet IRQ                  | RMII → lwIP (provided)                            |
+| `artnet_rx_task`     | 0    | 10   | 4 kB  | blocking `lwip_recvfrom`      | Parse packets, write `universe_pool[back]`        |
+| `render_task`        | 1    | 20   | 8 kB  | 60 Hz timer + `ArtSync`       | Swap universes, encode full frame to `fb_back`, draw_bitmap, wait `done_sem` |
+| `ui_task`            | 0    | 4    | 4 kB  | encoder IRQ + 100 ms tick     | Read encoder, render OLED, persist NVS            |
+| `idle_0` / `idle_1`  | 0/1  | 0    | 1 kB  | (FreeRTOS)                    | Power-save hooks                                  |
 
-> **Note** : il n'y a **pas** de tâche `lcd_cam_refill_task`. Le frame buffer complet vit en PSRAM ; GDMA balaie ce buffer en une transaction, l'ISR `on_color_trans_done` libère `done_sem` à la fin. L'encodeur n'a aucune contrainte temps-réel sous-trame.
-
-**Règles d'affinité strictes** :
-
-- Tout ce qui touche au DMA LCD_CAM ou à un buffer DMA → cœur 1.
-- Tout ce qui touche à lwIP ou à un syscall réseau → cœur 0.
-- L'UI est sur le cœur 0 mais en priorité basse — elle ne bloque jamais le réseau parce qu'elle attend une IRQ ou un timer.
-
-**Aucune tâche ne fait `vTaskDelay` dans le chemin chaud**. Les attentes sont toujours sur des primitives de synchronisation IDF (sémaphores, event groups, queues).
+> **Note**: no `lcd_cam_refill_task`. The full frame buffer lives in PSRAM; GDMA scans it in one transaction, the `on_color_trans_done` ISR releases `done_sem` at the end. The encoder has no sub-frame deadline.
 
 ---
 
-## 4. Cycle de vie d'une frame
+## 4. Frame lifecycle
 
-Une « frame » est l'intervalle entre deux rendus LED (33.33 ms à 30 Hz, 16.67 ms à 60 Hz).
+A frame is the interval between two LED renders (33.33 ms at 30 Hz, 16.67 ms at 60 Hz).
 
 ```
-t = 0 ms       : render_task est réveillé par le timer
-                 a) swap atomique universe_front ↔ universe_back
-                 b) pour chaque canal :
-                    décode universes → pixels (DMX offset, color order, brightness,
-                    grouping, invert) dans son pixel_buf interne,
-                    puis encode pixels → samples directement dans fb_back (PSRAM)
-                 c) esp_cache_msync(fb_back, ..., DIR_C2M)   // writeback cache
-                 d) esp_lcd_panel_draw_bitmap(panel, fb_back) // déclenche swap + GDMA
-                 e) xSemaphoreTake(done_sem)                  // attend fin émission précédente
-t = 0..encode  : core 1 encode la frame entière (~5-15 ms typique selon pixel count)
-t = encode..   : GDMA pull continu depuis PSRAM vers LCD_CAM FIFO → 16 GPIOs
-                 Pendant ce temps, core 1 peut être réveillé pour la frame N+1 du timer suivant.
-t = encode + T_dma : ISR on_color_trans_done → xSemaphoreGiveFromISR(done_sem)
-                 GPIO reste figé sur les derniers samples (zéros = TRESET pour 1-fil)
+t = 0 ms        : render_task wakes up
+                  a) atomic swap universe_front ↔ universe_back
+                  b) for each channel:
+                     decode universes → pixels (DMX offset, multi-universe spanning)
+                     into pixel_back_buffer(ch), then swap_pixels(ch)
+                  c) lcd::render_frame()
+                     - zero fb_back
+                     - encode every channel into fb_back (color order,
+                       brightness, grouping, invert applied here)
+                     - esp_cache_msync(fb_back, ..., DIR_C2M)
+                     - esp_lcd_panel_draw_bitmap(panel, fb_back) → swap + GDMA kick
+                  d) dmx::wait_for_sync_or_period(remaining)
+                     - blocks until end-of-period OR an ArtSync arrives
 
-Pendant toute la frame, en parallèle sur core 0 :
-   artnet_rx_task accumule des paquets dans universe_pool[back]
-   ArtSync (optionnel) → note_sync() → swap anticipé au prochain tick
+In parallel on core 0 across the whole frame:
+  artnet_rx_task drains UDP into universe_pool[back]
+  ArtSync received → dmx::note_sync() → render_task wakes early via semaphore
 ```
 
-**Latence totale réseau → photons** : 2 frames typique (1 frame d'attente + 1 frame d'émission). À 30 Hz = ~66 ms, à 60 Hz = ~33 ms — acceptable pour du lighting.
+**Total wire-to-photon latency**: typically 2 frames (one frame of wait + one frame of emission). At 30 Hz that's ~66 ms; at 60 Hz, ~33 ms — well below human perception for lighting.
 
-**Garantie de cohérence** : un `ArtDmx` reçu pendant l'encodage de la frame N est intégré à la frame N+1, jamais panaché.
-
----
-
-## 5. Budget mémoire
-
-### SRAM interne (768 ko, dont ~512 ko utilisables)
-
-| Poste                                    | Taille      | Justification                                  |
-|------------------------------------------|------------:|------------------------------------------------|
-| FreeRTOS + lwIP + drivers IDF            | ~120 ko     | Mesuré sur projets similaires                  |
-| `pixel_buf[8]` (1 buffer par canal)      | 8 × 4 ko    | 1024 px × 4 octets RGBW, intermédiaire encode  |
-| Stacks toutes tâches                     | ~30 ko      | Cf. table §3                                   |
-| Heap général                             | ~330 ko     | Marge pour init Ethernet, NVS, OLED            |
-
-`pixel_buf` est un buffer scratch interne au `render_task` pour stocker les pixels décodés (après application DMX offset / color order / brightness) avant l'encodage final dans le frame buffer PSRAM. Pas besoin de double-bufferiser : c'est éphémère par frame.
-
-### PSRAM octal externe (32 Mo)
-
-| Poste                              | Taille      | Justification                                        |
-|------------------------------------|------------:|------------------------------------------------------|
-| `frame_buf[2]` (PSRAM)             | 2 × ~2.6 Mo | 1024 px × 32 bits × 40 samples × 2 octets (worst case WS2811-slow RGBW) |
-| `universe_pool[2][N]`              | 2 × 48 ko   | 48 univers × 512 octets × 2 buffers                  |
-| Logs circulaires                   | 64 ko       | Debug post-mortem                                    |
-| Marge applicative                  | ~27 Mo      | Disponible pour évolutions (sequencer, FX engine…)   |
-
-**GDMA depuis PSRAM** : supporté nativement par `esp_lcd_new_rgb_panel(flags.fb_in_psram=true)` sur ESP32-P4. Le bus DMA partagé tolère 32 MB/s sustained sur le PSRAM octal 200 MHz (peak ~200 MB/s, partagé avec cache et autres maîtres DMA — marge confortable). Une `esp_cache_msync(DIR_C2M)` est requise après écriture CPU et avant kick DMA.
-
-Pour des configs plus modestes (par exemple aucun canal en WS2811-slow / RGBW), `frame_buf` peut être taillé plus petit dynamiquement — cf. `lcd::init()`.
-
-### Configuration NVS
-
-| Poste                              | Taille      |
-|------------------------------------|------------:|
-| Config globale (IP, ArtNet, names) | ~256 octets |
-| Config par canal × 8               | 8 × 64 octets ≈ 512 octets |
-| Total                              | < 1 ko      |
-
-Partition NVS standard 24 ko largement suffisante.
+**Consistency guarantee**: an ArtDmx received mid-encode lands in frame N+1, never half-and-half.
 
 ---
 
-## 6. Stratégie de synchronisation
+## 5. Memory budget
 
-Pixfrog évite délibérément les mutex dans le chemin chaud. Toutes les synchronisations data-plane reposent sur **swap atomique de pointeurs**.
+### Internal SRAM (768 kB total, ~512 kB usable)
 
-### 6.1 Swap pointeur (universe_pool)
+| Item                                     | Size      | Note                                            |
+|------------------------------------------|----------:|-------------------------------------------------|
+| FreeRTOS + lwIP + IDF drivers            | ~120 kB   | Measured on similar projects                    |
+| `pixel_buf[8]` (one scratch buf/channel) | 8 × 4 kB  | 1024 px × 4 bytes RGBW worst case               |
+| All task stacks                          | ~30 kB    | cf. §3                                          |
+| General heap                             | ~330 kB   | Ethernet init, NVS, OLED                        |
+
+`pixel_buf` is a per-frame scratch buffer holding decoded DMX pixels before they're encoded into the PSRAM FB. No double-buffering needed: it's ephemeral.
+
+### Octal PSRAM (32 MB)
+
+| Item                              | Size       | Note                                                |
+|-----------------------------------|-----------:|-----------------------------------------------------|
+| `frame_buf[2]` (PSRAM)            | 2 × ~2.6 MB | 1024 px × 32 bits × 40 samples worst case (WS2811-slow RGBW) |
+| `universe_pool[2][N]`             | 2 × 48 kB  | 48 universes × 512 bytes × 2 buffers                |
+| Circular logs                     | 64 kB      | Post-mortem debug                                   |
+| Application headroom              | ~27 MB     | Future sequencer / FX engine / ...                  |
+
+**GDMA from PSRAM** is supported natively by `esp_lcd_new_rgb_panel(flags.fb_in_psram=true)` on ESP32-P4. The shared DMA bus tolerates 32 MB/s sustained on 200 MHz octal PSRAM (peak ~200 MB/s, shared with cache and other masters — comfortable headroom). One `esp_cache_msync(DIR_C2M)` is required after CPU writes and before the GDMA kick.
+
+For configs without WS2811-slow / RGBW, `frame_buf` could be sized smaller — left as a future optimization.
+
+### NVS
+
+| Item                               | Size      |
+|------------------------------------|----------:|
+| Global config (IP, ArtNet, names)  | ~260 B    |
+| Per-channel × 8                    | 8 × 64 B  |
+| Total                              | < 1 kB    |
+
+The standard 24 kB NVS partition is plenty.
+
+---
+
+## 6. Synchronization
+
+pixfrog deliberately avoids mutexes on the hot path. All data-plane handoffs are **atomic pointer swaps**.
+
+### 6.1 Pointer swap (universe_pool)
 
 ```cpp
-// shared state
-std::atomic<UniverseBank*> universe_front;  // lu par render_task
-UniverseBank* universe_back;                // écrit par artnet_rx_task
+std::atomic<UniverseBank*> universe_front;   // read by render_task
+UniverseBank*              universe_back;    // written by artnet_rx_task
 
-// render_task, à chaque tick :
+// render_task once per frame:
 UniverseBank* new_front = universe_back;
 universe_back = universe_front.exchange(new_front, std::memory_order_acq_rel);
-// new_front est maintenant la lecture cohérente pour cette frame
+// new_front is now the consistent snapshot for this frame
 ```
 
-Aucun verrou. Le « back » étant écrit par un seul writer (`artnet_rx_task`) et lu par un seul reader (`render_task`) après swap, la cohérence est garantie par l'ordre acquire/release.
+No locks. With one writer (`artnet_rx_task`) and one reader (`render_task` after swap), acquire/release ordering provides correctness.
 
-### 6.2 Sémaphore binaire (fin d'émission DMA)
+### 6.2 Binary semaphore (end of DMA emission)
 
-- ISR `on_color_trans_done` LCD_CAM → `xSemaphoreGiveFromISR(done_sem)`
-- `render_task` → `xSemaphoreTake(done_sem, timeout)` avant de kicker la frame suivante
+- LCD_CAM `on_color_trans_done` ISR → `xSemaphoreGiveFromISR(done_sem)`
+- `render_task` → `xSemaphoreTake(done_sem, timeout)` before kicking the next frame
 
-Si le `take` time out, on incrémente `dma_underruns` mais on continue avec la frame d'après — pas de cascade d'erreurs. Le swap de `frame_buf` est géré par le périphérique LCD_CAM lui-même via `esp_lcd_panel_draw_bitmap` qui retourne quasi-immédiatement (il enregistre juste le pointeur pour la prochaine émission).
+If the take times out, `dma_underruns` is incremented and we proceed with the next frame anyway — no error cascade.
 
-### 6.3 Event groups (config change pending)
+### 6.3 ArtSync wake
 
-L'UI signale un changement via un bit d'event group. Le `render_task` lit le bit en début de tick ; s'il est positionné, il reconfigure le canal concerné (potentiellement reset du protocole, recalcul des samples par bit) entre deux frames. Le bit est consommé par `xEventGroupClearBits`.
+- `dmx::note_sync()` is called from `artnet_rx_task` on ArtSync receipt; it gives `g_sync_sem`.
+- `render_task::dmx::wait_for_sync_or_period(remaining)` blocks on the semaphore with a timeout; an ArtSync interrupts the wait so the next frame goes out immediately.
 
-```
-       ui_task          render_task
-         │                  │
-   set CHANNEL_3_DIRTY      │
-         │   ───────────►   │ (au prochain tick)
-                            │ reconfigure channel 3
-                            │ clear CHANNEL_3_DIRTY
-```
+### 6.4 Event group (config dirty bits)
 
-### 6.4 NVS
+UI commits set bits in `g_remap_eg` (bit `n` per channel, bit 8 for global). `render_task` consumes them at the start of every frame via `dmx::handle_pending_remaps()`, which rebuilds the universe → channel LUT when needed.
 
-Accès NVS strictement depuis `ui_task` (cœur 0, basse prio). Une écriture NVS peut bloquer plusieurs ms — c'est acceptable parce que l'UI tolère la latence.
+### 6.5 NVS
 
-Le `render_task` lit la config via un cache RAM mis à jour par l'UI lors d'un commit (cf. §6.3).
+NVS writes happen only from `ui_task` (low-prio, core 0). They can block for a few ms; the UI tolerates that latency. `render_task` reads the config via `config::get_channel()` which returns a reference to the RAM cache — never blocks.
 
 ---
 
-## 7. ISR et IRAM
+## 7. ISRs and IRAM
 
-Toutes les ISR sont marquées `IRAM_ATTR` :
+All ISRs are `IRAM_ATTR`:
 
-- LCD_CAM `on_color_trans_done` ISR (uniquement `xSemaphoreGiveFromISR`)
-- IRQ encodeur seesaw (idem)
-- Ethernet RX (géré par IDF, déjà en IRAM)
+- LCD_CAM `on_color_trans_done` (only `xSemaphoreGiveFromISR`)
+- seesaw encoder IRQ (same)
+- Ethernet RX (IDF, already in IRAM)
 
-Conséquence : `CONFIG_LCD_CAM_ISR_IRAM_SAFE=y`, `CONFIG_GDMA_ISR_IRAM_SAFE=y`, `CONFIG_FREERTOS_INTERRUPT_BACKTRACE=y`.
+Required sdkconfig flags: `CONFIG_LCD_CAM_ISR_IRAM_SAFE=y`, `CONFIG_GDMA_ISR_IRAM_SAFE=y`.
 
-> Le frame buffer en PSRAM passe par le cache CPU, mais la chaîne DMA elle-même tape directement le PSRAM via le contrôleur cache (sans CPU). Ce qui est IRAM-sensible est uniquement le code ISR ; le buffer peut résider en PSRAM sans contrainte particulière.
-
-Aucune ISR ne fait d'appel pouvant déclencher un cache miss flash : pas de `printf`, pas de logique fancy, juste give-semaphore et retour.
+> The frame buffer lives in PSRAM (which goes through the CPU cache), but GDMA itself talks directly to PSRAM via the cache controller without CPU involvement. PSRAM placement is fine for the buffer; only the ISR code needs to be in IRAM.
 
 ---
 
-## 8. Stratégie de reconfiguration à chaud (Q4)
+## 8. Hot reconfiguration
 
-Changer le protocole d'un canal modifie potentiellement :
+Changing a channel's protocol can change:
 
-1. Le nombre de samples par bit (encodage NRZ vs clocké)
-2. La fréquence PCLK requise (PCLK est globale au LCD_CAM)
-3. La taille des buffers pixels (RGB vs RGBW)
+1. Samples per bit (NRZ vs clocked encoding)
+2. Required PCLK frequency (PCLK is global to LCD_CAM)
+3. Pixel buffer size (RGB vs RGBW)
 
-**Solution adoptée** : la fréquence PCLK est **fixée au boot** à une valeur compromis (cf. `docs/PROTOCOLS.md` §3). Le nombre de samples par bit est dérivé par canal sans recompiler la PCLK. Les protocoles clockés tournent à PCLK/N où N est calculé pour viser la fréquence CLOCK demandée par l'UI.
+**Decision**: PCLK is **fixed at boot** to a compromise value (see `docs/PROTOCOLS.md` §3). Samples per bit are derived per channel without changing PCLK. Clocked protocols run at PCLK/N where N is computed to hit the requested CLOCK rate.
 
-Conséquence : **changer de protocole à chaud ne nécessite jamais de réinitialiser le LCD_CAM**. Le `render_task` met simplement à jour l'encodeur du canal concerné entre deux frames :
-
-```
-1. UI valide une nouvelle config (event group set + commit NVS)
-2. render_task voit le bit dirty en début de tick
-3. render_task termine la frame courante normalement (déjà queued)
-4. render_task remplace l'encodeur du canal (changement de fonction ptr)
-5. render_task réalloue le pixel_buf si la taille a changé (depuis pool pré-alloué)
-6. render_task efface le bit dirty
-```
-
-Le pool pixel_buf est dimensionné pour le pire cas (1024 px × 4 octets RGBW) — aucune `malloc` n'est faite à chaud.
+Consequence: **changing protocol at runtime never reinitializes LCD_CAM**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffer is sized for the worst case at boot, so no allocation is needed.
 
 ---
 
-## 9. Modules et frontières
+## 9. Module map
 
-| Composant            | Responsabilité                                     | Dépend de                |
-|----------------------|----------------------------------------------------|--------------------------|
-| `lcd_cam_output`     | Driver LCD_CAM 16-bit, GDMA, ISR refill            | (HAL IDF uniquement)     |
-| `led_protocols`      | Encodeurs par protocole (NRZ, SPI-like)            | (libre)                  |
-| `artnet`             | Parser UDP ArtNet, ArtPollReply, écrit pool        | `lwip`                   |
-| `dmx_manager`        | Pool d'univers + mapping canal → univers + offset  | `artnet`, `config_store` |
-| `config_store`       | Wrappers NVS + cache RAM                           | IDF NVS                  |
-| `ui`                 | OLED + encodeur seesaw + menu state machine        | IDF I2C, `config_store`  |
-| `boards/<hw>.h`      | Pinout, capacités hardware                         | (header only)            |
+| Component            | Responsibility                                      | Depends on              |
+|----------------------|-----------------------------------------------------|-------------------------|
+| `lcd_cam_output`     | LCD_CAM 16-bit driver, PSRAM FBs, GDMA, ISR        | IDF HAL only            |
+| `led_protocols`      | Per-protocol encoders (NRZ, SPI-like)              | (free)                  |
+| `artnet`             | UDP parser, ArtPollReply, writes universe pool     | `lwip`                  |
+| `dmx_manager`        | Universe pool + channel mapping + capacity check   | `artnet`, `config_store` |
+| `config_store`       | NVS wrappers + RAM cache                           | IDF NVS                 |
+| `ui`                 | OLED + seesaw + menu FSM                           | IDF I2C, `config_store` |
+| `boards/<hw>.h`      | Pinout, hardware capabilities                      | (header-only)           |
 
-**Règle de dépendance** : `lcd_cam_output` ne connaît rien d'ArtNet, et `artnet` ne connaît rien du LCD_CAM. Ils se rencontrent dans `main.cpp` via `dmx_manager` qui orchestre les pointeurs.
+**Dependency rule**: `lcd_cam_output` knows nothing about ArtNet; `artnet` knows nothing about LCD_CAM. They meet in `main.cpp` via `dmx_manager`, which owns the pointer dance.
 
 ---
 
-## 10. Logging et télémétrie
+## 10. Logging and telemetry
 
-Tags `ESP_LOG` par module (`ARTNET`, `LCD_CAM`, `UI`, `DMX`, `CFG`, `MAIN`). Niveau par défaut `INFO`, ajustable à la compilation.
+Per-module ESP_LOG tags: `ARTNET`, `LCD_CAM`, `UI`, `DMX`, `CFG`, `MAIN`. Default level `INFO`, tunable at build time.
 
-Compteurs internes exposés via `dmx_manager_get_stats()` :
+Internal counters exposed by `dmx_manager_get_stats()`:
 
 ```cpp
 struct DmxStats {
@@ -272,22 +240,22 @@ struct DmxStats {
 };
 ```
 
-Lus par l'écran HOME. Pas de serveur web, pas de Prometheus — la philosophie est zéro surface réseau hors ArtNet.
+Read by HOME. No web server, no Prometheus — by design the only network surface is ArtNet.
 
 ---
 
-## 11. Sécurité / robustesse
+## 11. Security / robustness
 
-- Pas de WiFi → pas de surface RF
-- ArtNet : aucun écrit possible sur la config depuis le réseau, uniquement réception DMX
-- NVS chiffré désactivé volontairement (pas d'enjeu de secret)
-- Watchdog matériel activé, kick depuis `render_task` (la tâche temps réel critique)
+- No WiFi → no RF attack surface.
+- ArtNet exposes no configuration channel; the network can write DMX bytes only.
+- NVS encryption deliberately off (no secrets stored).
+- Hardware watchdog enabled; `render_task` is subscribed and kicks every frame.
 
 ---
 
-## 12. Évolutions hors scope v1
+## 12. Out of scope for v0
 
-- Sequencer interne (FX engine)
-- sACN E1.31 (envisageable, structure univers identique)
-- Web UI (nécessiterait WiFi via co-MCU)
-- Sync trame inter-contrôleurs (PTP)
+- Internal sequencer / FX engine
+- sACN E1.31 (would slot in next to ArtNet)
+- Web UI (would require a WiFi co-MCU)
+- Inter-controller frame sync (PTP)

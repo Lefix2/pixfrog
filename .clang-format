@@ -1,0 +1,64 @@
+# clang-format config for pixfrog.
+# Goal: match the existing style; preserve aligned assignment / init / comment blocks.
+
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+ColumnLimit: 100
+
+# Pointer style: `Type* p`, not `Type *p`.
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# Braces, blocks.
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+IndentCaseLabels: false
+
+# Namespaces are flat.
+NamespaceIndentation: None
+FixNamespaceComments: true
+CompactNamespaces: false
+
+# Keep our aligned `.field = X` and trailing-comment blocks readable.
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+  AlignCompound: true
+  PadOperators: true
+AlignConsecutiveDeclarations:
+  Enabled: false
+AlignTrailingComments: true
+AlignAfterOpenBracket: Align
+AlignOperands: AlignAfterOperator
+SpacesBeforeTrailingComments: 2
+
+# Includes: keep the project-author groupings (system / IDF / project) the
+# files already use — do not reorder across blank lines.
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive
+
+# Misc.
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SpaceBeforeParens: ControlStatements
+BinPackParameters: true
+BinPackArguments: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowAllArgumentsOnNextLine: true
+Cpp11BracedListStyle: false
+PenaltyBreakAssignment: 100
+PenaltyReturnTypeOnItsOwnLine: 200
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: NextLine

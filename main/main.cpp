@@ -34,7 +34,7 @@ namespace {
 
 constexpr const char* TAG = "MAIN";
 
-esp_netif_t*     g_eth_netif  = nullptr;
+esp_netif_t* g_eth_netif      = nullptr;
 esp_eth_handle_t g_eth_handle = nullptr;
 
 void publish_ip(uint32_t host_order_ip) {
@@ -44,33 +44,31 @@ void publish_ip(uint32_t host_order_ip) {
 
 // Item 7: IP_EVENT_ETH_GOT_IP handler — fires after DHCP completes (or
 // immediately when a static IP is configured + accepted by lwIP).
-extern "C" void on_got_ip(void* /*arg*/, esp_event_base_t /*base*/,
-                          int32_t /*id*/, void* event_data) {
-    auto* event = static_cast<ip_event_got_ip_t*>(event_data);
+extern "C" void on_got_ip(void* /*arg*/, esp_event_base_t /*base*/, int32_t /*id*/,
+                          void* event_data) {
+    auto* event            = static_cast<ip_event_got_ip_t*>(event_data);
     const uint32_t host_ip = lwip_ntohl(event->ip_info.ip.addr);
     publish_ip(host_ip);
-    ESP_LOGI(TAG, "GOT_IP %u.%u.%u.%u",
-             static_cast<unsigned>((host_ip >> 24) & 0xFFu),
+    ESP_LOGI(TAG, "GOT_IP %u.%u.%u.%u", static_cast<unsigned>((host_ip >> 24) & 0xFFu),
              static_cast<unsigned>((host_ip >> 16) & 0xFFu),
-             static_cast<unsigned>((host_ip >>  8) & 0xFFu),
-             static_cast<unsigned>( host_ip        & 0xFFu));
+             static_cast<unsigned>((host_ip >> 8) & 0xFFu), static_cast<unsigned>(host_ip & 0xFFu));
 }
 
-extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/,
-                             int32_t event_id, void* /*event_data*/) {
+extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/, int32_t event_id,
+                             void* /*event_data*/) {
     switch (event_id) {
-        case ETHERNET_EVENT_START:        ESP_LOGI(TAG, "Ethernet driver started");  break;
-        case ETHERNET_EVENT_STOP:         ESP_LOGI(TAG, "Ethernet driver stopped");  break;
-        case ETHERNET_EVENT_CONNECTED:
-            ESP_LOGI(TAG, "Ethernet link UP");
-            pixfrog::ui::set_link_up(true);
-            break;
-        case ETHERNET_EVENT_DISCONNECTED:
-            ESP_LOGW(TAG, "Ethernet link DOWN");
-            pixfrog::ui::set_link_up(false);
-            publish_ip(0);
-            break;
-        default: break;
+    case ETHERNET_EVENT_START: ESP_LOGI(TAG, "Ethernet driver started"); break;
+    case ETHERNET_EVENT_STOP: ESP_LOGI(TAG, "Ethernet driver stopped"); break;
+    case ETHERNET_EVENT_CONNECTED:
+        ESP_LOGI(TAG, "Ethernet link UP");
+        pixfrog::ui::set_link_up(true);
+        break;
+    case ETHERNET_EVENT_DISCONNECTED:
+        ESP_LOGW(TAG, "Ethernet link DOWN");
+        pixfrog::ui::set_link_up(false);
+        publish_ip(0);
+        break;
+    default: break;
     }
 }
 
@@ -83,28 +81,28 @@ void init_network() {
     esp_event_loop_create_default();
 
     esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
-    g_eth_netif = esp_netif_new(&netif_cfg);
+    g_eth_netif                  = esp_netif_new(&netif_cfg);
     if (!g_eth_netif) {
         ESP_LOGE(TAG, "esp_netif_new failed");
         return;
     }
 
     // MAC config — RMII, MDC/MDIO pins from the board file.
-    eth_mac_config_t mac_cfg = ETH_MAC_DEFAULT_CONFIG();
-    mac_cfg.rx_task_stack_size = 4096;
+    eth_mac_config_t mac_cfg             = ETH_MAC_DEFAULT_CONFIG();
+    mac_cfg.rx_task_stack_size           = 4096;
     eth_esp32_emac_config_t esp_emac_cfg = ETH_ESP32_EMAC_DEFAULT_CONFIG();
-    esp_emac_cfg.smi_mdc_gpio_num  = pixfrog::board::kEthMdcGpio;
-    esp_emac_cfg.smi_mdio_gpio_num = pixfrog::board::kEthMdioGpio;
-    esp_eth_mac_t* mac = esp_eth_mac_new_esp32(&esp_emac_cfg, &mac_cfg);
+    esp_emac_cfg.smi_mdc_gpio_num        = pixfrog::board::kEthMdcGpio;
+    esp_emac_cfg.smi_mdio_gpio_num       = pixfrog::board::kEthMdioGpio;
+    esp_eth_mac_t* mac                   = esp_eth_mac_new_esp32(&esp_emac_cfg, &mac_cfg);
     if (!mac) {
         ESP_LOGE(TAG, "esp_eth_mac_new_esp32 failed");
         return;
     }
 
     eth_phy_config_t phy_cfg = ETH_PHY_DEFAULT_CONFIG();
-    phy_cfg.phy_addr       = pixfrog::board::kEthPhyAddress;
-    phy_cfg.reset_gpio_num = pixfrog::board::kEthPhyResetGpio;
-    esp_eth_phy_t* phy = esp_eth_phy_new_ip101(&phy_cfg);
+    phy_cfg.phy_addr         = pixfrog::board::kEthPhyAddress;
+    phy_cfg.reset_gpio_num   = pixfrog::board::kEthPhyResetGpio;
+    esp_eth_phy_t* phy       = esp_eth_phy_new_ip101(&phy_cfg);
     if (!phy) {
         ESP_LOGE(TAG, "esp_eth_phy_new_ip101 failed");
         return;
@@ -134,14 +132,14 @@ void init_network() {
         ESP_LOGI(TAG, "static IP %u.%u.%u.%u configured",
                  static_cast<unsigned>((g.static_ip >> 24) & 0xFFu),
                  static_cast<unsigned>((g.static_ip >> 16) & 0xFFu),
-                 static_cast<unsigned>((g.static_ip >>  8) & 0xFFu),
-                 static_cast<unsigned>( g.static_ip        & 0xFFu));
+                 static_cast<unsigned>((g.static_ip >> 8) & 0xFFu),
+                 static_cast<unsigned>(g.static_ip & 0xFFu));
     } else {
         ESP_LOGI(TAG, "DHCP enabled, awaiting lease");
     }
 
-    esp_event_handler_register(IP_EVENT,  IP_EVENT_ETH_GOT_IP,    on_got_ip,    nullptr);
-    esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID,       on_eth_event, nullptr);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, on_got_ip, nullptr);
+    esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, on_eth_event, nullptr);
 
     if (esp_eth_start(g_eth_handle) != ESP_OK) {
         ESP_LOGE(TAG, "esp_eth_start failed");
@@ -160,15 +158,14 @@ void render_task(void*) {
     TickType_t last = xTaskGetTickCount();
 
     // Item 4: rolling 1-second window FPS counter.
-    int64_t  fps_window_start_us  = esp_timer_get_time();
+    int64_t fps_window_start_us   = esp_timer_get_time();
     uint32_t fps_frames_in_window = 0;
 
     while (true) {
         // Item A5: recompute the period every frame so a UI commit of
         // refresh_rate_hz takes effect on the next frame without a reboot.
-        const uint8_t rate_hz = pixfrog::config::get_global().refresh_rate_hz;
-        const TickType_t period =
-            pdMS_TO_TICKS(rate_hz ? (1000u / rate_hz) : 33u);
+        const uint8_t rate_hz   = pixfrog::config::get_global().refresh_rate_hz;
+        const TickType_t period = pdMS_TO_TICKS(rate_hz ? (1000u / rate_hz) : 33u);
         // Item 7: apply any config changes committed by the UI since the
         // last frame. Rebuilds universe→channel LUT, clears dirty bits.
         // No-op when nothing is pending.
@@ -215,9 +212,9 @@ void render_task(void*) {
         // is `last + period`. If render itself ate most of the period, we
         // wait for the leftover only; if it ate the whole period, we don't
         // wait at all. wait_for_sync_or_period(0) returns immediately.
-        const TickType_t now      = xTaskGetTickCount();
-        const TickType_t elapsed  = now - last;
-        const TickType_t wait     = (elapsed < period) ? (period - elapsed) : 0;
+        const TickType_t now     = xTaskGetTickCount();
+        const TickType_t elapsed = now - last;
+        const TickType_t wait    = (elapsed < period) ? (period - elapsed) : 0;
         pixfrog::dmx::wait_for_sync_or_period(wait);
         last = xTaskGetTickCount();
     }

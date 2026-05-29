@@ -45,8 +45,8 @@ inline uint64_t emission_budget_us(uint8_t refresh_rate_hz, uint64_t reserve_us 
     return (period > reserve_us) ? (period - reserve_us) : period;
 }
 
-inline bool channel_fits_budget(const config::ChannelConfig& cc,
-                                uint32_t pclk_hz, uint64_t budget_us) {
+inline bool channel_fits_budget(const config::ChannelConfig& cc, uint32_t pclk_hz,
+                                uint64_t budget_us) {
     return channel_t_dma_us(cc, pclk_hz) <= budget_us;
 }
 
@@ -59,17 +59,16 @@ inline bool channel_fits_budget(const config::ChannelConfig& cc,
 // function returns false (the strip stays in a defined state).
 
 template <typename GetUniverseFn>
-inline bool decode_pixels(uint8_t* dst, size_t dst_capacity,
-                          const config::ChannelConfig& cc,
+inline bool decode_pixels(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
                           GetUniverseFn get_universe) {
     const size_t total = channel_total_bytes(cc);
     if (total > dst_capacity) return false;
     if (total == 0) return true;
 
     const uint16_t start_dmx = cc.dmx_start > 0 ? cc.dmx_start : 1;
-    size_t   offset_in_uni = start_dmx - 1;
-    uint16_t universe      = cc.universe_start;
-    size_t   bytes_written = 0;
+    size_t offset_in_uni     = start_dmx - 1;
+    uint16_t universe        = cc.universe_start;
+    size_t bytes_written     = 0;
 
     while (bytes_written < total) {
         const uint8_t* src = get_universe(universe);
@@ -77,10 +76,10 @@ inline bool decode_pixels(uint8_t* dst, size_t dst_capacity,
             std::memset(dst + bytes_written, 0, total - bytes_written);
             return false;
         }
-        const size_t available = (kUniverseSize > offset_in_uni)
-                                 ? (kUniverseSize - offset_in_uni) : 0;
-        const size_t need = total - bytes_written;
-        const size_t copy = need < available ? need : available;
+        const size_t available = (kUniverseSize > offset_in_uni) ? (kUniverseSize - offset_in_uni)
+                                                                 : 0;
+        const size_t need      = total - bytes_written;
+        const size_t copy      = need < available ? need : available;
         if (copy == 0) {
             universe++;
             offset_in_uni = 0;
