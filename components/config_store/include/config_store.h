@@ -34,10 +34,11 @@ struct GlobalConfig {
     uint32_t static_gateway;
 
     // ArtNet identity
-    uint8_t  artnet_net;       // 0..127
-    uint8_t  artnet_subnet;    // 0..15
+    uint8_t  artnet_net;                  // 0..127
+    uint8_t  artnet_subnet;               // 0..15
     char     short_name[kArtnetNameShortMax];
     char     long_name [kArtnetNameLongMax];
+    bool     artnet_poll_reply_unicast;   // false=broadcast (default), true=unicast to poller
 
     // System
     uint8_t  refresh_rate_hz;  // 30 or 60

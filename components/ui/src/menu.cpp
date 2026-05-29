@@ -15,6 +15,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "lcd_cam_output.h"
 #include "led_protocols.h"
 #include "ui.h"
 
@@ -32,6 +33,7 @@ enum class Screen : uint8_t {
     ArtnetMenu,
     NetworkMenu,
     ChannelMenu,
+    TestPatternMenu,
     EditValue,
     EditString,
     EditIp,
@@ -42,6 +44,7 @@ enum class Field : uint8_t {
     None,
     ArtnetNet,
     ArtnetSubnet,
+    ArtnetReplyUnicast,
     GlobalRefresh,
     NetworkDhcp,
     ChProtocol,
@@ -77,6 +80,7 @@ struct EditCtx {
     Field       field         = Field::None;
     ValueKind   kind          = ValueKind::Int;
     int32_t     current       = 0;
+    int32_t     original      = 0;    // captured at enter_edit; shown when current differs
     int32_t     step          = 1;
     int32_t     min           = 0;
     int32_t     max           = 0;
@@ -216,7 +220,13 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 void render_home() {
     char line[kCols + 1];
     oled_clear();
-    oled_draw_text(0, 0, "pixfrog");
+
+    // Item B6: warn loudly when NVS is broken (config does NOT persist).
+    if (!config::is_persistence_ok()) {
+        oled_draw_text(0, 0, "pixfrog       [!NVS]");
+    } else {
+        oled_draw_text(0, 0, "pixfrog");
+    }
 
     const uint32_t ip = ui::get_ip();
     if (ip == 0) {
@@ -228,13 +238,16 @@ void render_home() {
         oled_draw_text(1, 0, line);
     }
 
+    // Item B4: link state, distinct from IP since DHCP can be pending.
+    oled_draw_text(2, 0, ui::is_link_up() ? "LINK : UP" : "LINK : DOWN");
+
     const auto stats = dmx::get_stats();
     std::snprintf(line, sizeof(line), "FPS  : %lu",
                   static_cast<unsigned long>(stats.current_fps));
-    oled_draw_text(2, 0, line);
+    oled_draw_text(3, 0, line);
     std::snprintf(line, sizeof(line), "Pkts : %llu",
                   static_cast<unsigned long long>(stats.artnet_packets_rx));
-    oled_draw_text(3, 0, line);
+    oled_draw_text(4, 0, line);
 
     oled_draw_text(5, 0, "CH 1 2 3 4 5 6 7 8");
     char ch_line[kCols + 1];
@@ -253,11 +266,12 @@ void render_home() {
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
 
-constexpr uint8_t kMainItemCount = 11;
+constexpr uint8_t kMainItemCount = 12;
 constexpr const char* kMainLabels[kMainItemCount] = {
     "ArtNet",  "Network",
     "Channel 1", "Channel 2", "Channel 3", "Channel 4",
     "Channel 5", "Channel 6", "Channel 7", "Channel 8",
+    "Test pattern",
     "[Back to HOME]",
 };
 
@@ -274,14 +288,57 @@ void dispatch_main_menu(Event e) {
     if (e == Event::RotateLeft  && s.cursor > 0)                   s.cursor--;
     if (e == Event::RotateRight && s.cursor < kMainItemCount - 1)  s.cursor++;
     if (e == Event::Click) {
-        if (s.cursor == 0)                          { s.screen = Screen::ArtnetMenu;  s.cursor = 0; }
-        else if (s.cursor == 1)                     { s.screen = Screen::NetworkMenu; s.cursor = 0; }
+        if (s.cursor == 0)                          { s.screen = Screen::ArtnetMenu;     s.cursor = 0; }
+        else if (s.cursor == 1)                     { s.screen = Screen::NetworkMenu;    s.cursor = 0; }
         else if (s.cursor >= 2 && s.cursor <= 9)    {
             s.channel_index = s.cursor - 2;
             s.screen = Screen::ChannelMenu;
             s.cursor = 0;
         }
-        else                                        { s.screen = Screen::Home; s.cursor = 0; }
+        else if (s.cursor == 10)                    { s.screen = Screen::TestPatternMenu; s.cursor = 0; }
+        else                                        { s.screen = Screen::Home;            s.cursor = 0; }
+    }
+}
+
+// ── TEST PATTERN MENU (TODO B5) ─────────────────────────────────────────────
+
+constexpr uint8_t kTestPatternItemCount = 4;
+constexpr const char* kTestPatternLabels[kTestPatternItemCount] = {
+    "Pat 0 sq 1kHz",
+    "Pat 1 walk-1",
+    "Pat 2 altern.",
+    "[Stop & Back]",
+};
+
+void render_test_pattern_menu() {
+    const int8_t active = lcd::get_calibration_mode();
+    char marked[kTestPatternItemCount][kCols + 1] = {};
+    ListItem items[kTestPatternItemCount];
+    for (uint8_t i = 0; i < kTestPatternItemCount; ++i) {
+        if (i < 3 && active == static_cast<int8_t>(i)) {
+            std::snprintf(marked[i], sizeof(marked[i]), "%s *", kTestPatternLabels[i]);
+            items[i].label = marked[i];
+        } else {
+            items[i].label = kTestPatternLabels[i];
+        }
+        items[i].value = "";
+    }
+    render_list("TEST PATTERN", items, kTestPatternItemCount, s.cursor);
+}
+
+void dispatch_test_pattern_menu(Event e) {
+    if (e == Event::RotateLeft  && s.cursor > 0)                           s.cursor--;
+    if (e == Event::RotateRight && s.cursor < kTestPatternItemCount - 1)   s.cursor++;
+    if (e != Event::Click) return;
+    if (s.cursor < 3) {
+        // Activate the chosen pattern; stay in the menu so the user can
+        // switch between patterns or stop without leaving.
+        lcd::set_calibration_mode(static_cast<int8_t>(s.cursor));
+    } else {
+        // Stop calibration and return.
+        lcd::set_calibration_mode(-1);
+        s.screen = Screen::MainMenu;
+        s.cursor = 10;
     }
 }
 
@@ -293,6 +350,7 @@ void enter_edit(Field field, ValueKind kind, int32_t cur, int32_t mn, int32_t mx
     s.edit.field         = field;
     s.edit.kind          = kind;
     s.edit.current       = cur;
+    s.edit.original      = cur;
     s.edit.min           = mn;
     s.edit.max           = mx;
     s.edit.step          = step;
@@ -313,6 +371,16 @@ void render_edit_value() {
     std::snprintf(line, sizeof(line), "  %s", val);
     oled_draw_text(3, 0, line);
 
+    // Item B3: show the original (pre-edit) value when the user has moved
+    // away from it, so it's clear the change is not yet committed.
+    if (s.edit.current != s.edit.original) {
+        char orig[kCols + 1];
+        format_value(s.edit, s.edit.original, orig, sizeof(orig));
+        char was[kCols + 1];
+        std::snprintf(was, sizeof(was), "  was: %s", orig);
+        oled_draw_text(4, 0, was);
+    }
+
     oled_draw_text(5, 0, "rotate to change");
     oled_draw_text(6, 0, "click to commit");
 }
@@ -322,6 +390,7 @@ void commit_edit() {
     switch (s.edit.field) {
         case Field::ArtnetNet:    { auto g = config::get_global(); g.artnet_net    = static_cast<uint8_t>(v); config::set_global(g); dmx::mark_global_dirty(); break; }
         case Field::ArtnetSubnet: { auto g = config::get_global(); g.artnet_subnet = static_cast<uint8_t>(v); config::set_global(g); dmx::mark_global_dirty(); break; }
+        case Field::ArtnetReplyUnicast: { auto g = config::get_global(); g.artnet_poll_reply_unicast = (v != 0); config::set_global(g); dmx::mark_global_dirty(); break; }
         case Field::GlobalRefresh:{ auto g = config::get_global(); g.refresh_rate_hz = static_cast<uint8_t>(v); config::set_global(g); dmx::mark_global_dirty(); break; }
         case Field::NetworkDhcp:  { auto g = config::get_global(); g.use_dhcp      = (v != 0);               config::set_global(g); dmx::mark_global_dirty(); break; }
 
@@ -534,28 +603,30 @@ void dispatch_edit_ip(Event e) {
 // ── ARTNET MENU ─────────────────────────────────────────────────────────────
 
 void render_artnet_menu() {
-    char vnet[8], vsub[8], vrefresh[8];
+    char vnet[8], vsub[8], vrefresh[8], vunicast[8];
     char vshort[14], vlong[14];
     const auto& g = config::get_global();
     std::snprintf(vnet,     sizeof(vnet),     "%u",   g.artnet_net);
     std::snprintf(vsub,     sizeof(vsub),     "%u",   g.artnet_subnet);
     std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
+    std::snprintf(vunicast, sizeof(vunicast), "%s",   g.artnet_poll_reply_unicast ? "ON" : "OFF");
     truncate(vshort, sizeof(vshort), g.short_name);
     truncate(vlong,  sizeof(vlong),  g.long_name);
 
-    ListItem items[6] = {
+    ListItem items[7] = {
         {"Net",     vnet},
         {"Sub",     vsub},
         {"Short",   vshort},
         {"Long",    vlong},
         {"Refresh", vrefresh},
+        {"Unicast", vunicast},
         {"[Back]",  ""},
     };
-    render_list("ARTNET", items, 6, s.cursor);
+    render_list("ARTNET", items, 7, s.cursor);
 }
 
 void dispatch_artnet_menu(Event e) {
-    constexpr uint8_t kCount = 6;
+    constexpr uint8_t kCount = 7;
     if (e == Event::RotateLeft  && s.cursor > 0)           s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1)  s.cursor++;
     if (e != Event::Click) return;
@@ -566,8 +637,9 @@ void dispatch_artnet_menu(Event e) {
         case 2: enter_edit_string(StringField::ArtnetShort, g.short_name, sizeof(g.short_name) - 1, "Short", Screen::ArtnetMenu); break;
         case 3: enter_edit_string(StringField::ArtnetLong,  g.long_name,  sizeof(g.long_name)  - 1, "Long",  Screen::ArtnetMenu); break;
         // Refresh: step 30 → only [30, 60] reachable; satisfies spec §4.
-        case 4: enter_edit(Field::GlobalRefresh, ValueKind::Int, g.refresh_rate_hz, 30, 60, 30, "Refresh", Screen::ArtnetMenu); break;
-        case 5: s.screen = Screen::MainMenu; s.cursor = 0; break;
+        case 4: enter_edit(Field::GlobalRefresh,      ValueKind::Int,  g.refresh_rate_hz,                30, 60, 30, "Refresh", Screen::ArtnetMenu); break;
+        case 5: enter_edit(Field::ArtnetReplyUnicast, ValueKind::Bool, g.artnet_poll_reply_unicast ? 1 : 0, 0,  1,  1, "Unicast", Screen::ArtnetMenu); break;
+        case 6: s.screen = Screen::MainMenu; s.cursor = 0; break;
     }
 }
 
@@ -694,14 +766,15 @@ void menu_init() { s = State{}; }
 
 void menu_render() {
     switch (s.screen) {
-        case Screen::Home:        render_home();         break;
-        case Screen::MainMenu:    render_main_menu();    break;
-        case Screen::ArtnetMenu:  render_artnet_menu();  break;
-        case Screen::NetworkMenu: render_network_menu(); break;
-        case Screen::ChannelMenu: render_channel_menu(); break;
-        case Screen::EditValue:   render_edit_value();   break;
-        case Screen::EditString:  render_edit_string();  break;
-        case Screen::EditIp:      render_edit_ip();      break;
+        case Screen::Home:             render_home();              break;
+        case Screen::MainMenu:         render_main_menu();         break;
+        case Screen::ArtnetMenu:       render_artnet_menu();       break;
+        case Screen::NetworkMenu:      render_network_menu();      break;
+        case Screen::ChannelMenu:      render_channel_menu();      break;
+        case Screen::TestPatternMenu:  render_test_pattern_menu(); break;
+        case Screen::EditValue:        render_edit_value();        break;
+        case Screen::EditString:       render_edit_string();       break;
+        case Screen::EditIp:           render_edit_ip();           break;
     }
 }
 
@@ -710,13 +783,14 @@ void menu_dispatch(Event e) {
         case Screen::Home:
             if (e == Event::Click) { s.screen = Screen::MainMenu; s.cursor = 0; }
             break;
-        case Screen::MainMenu:    dispatch_main_menu(e);    break;
-        case Screen::ArtnetMenu:  dispatch_artnet_menu(e);  break;
-        case Screen::NetworkMenu: dispatch_network_menu(e); break;
-        case Screen::ChannelMenu: dispatch_channel_menu(e); break;
-        case Screen::EditValue:   dispatch_edit_value(e);   break;
-        case Screen::EditString:  dispatch_edit_string(e);  break;
-        case Screen::EditIp:      dispatch_edit_ip(e);      break;
+        case Screen::MainMenu:         dispatch_main_menu(e);         break;
+        case Screen::ArtnetMenu:       dispatch_artnet_menu(e);       break;
+        case Screen::NetworkMenu:      dispatch_network_menu(e);      break;
+        case Screen::ChannelMenu:      dispatch_channel_menu(e);      break;
+        case Screen::TestPatternMenu:  dispatch_test_pattern_menu(e); break;
+        case Screen::EditValue:        dispatch_edit_value(e);        break;
+        case Screen::EditString:       dispatch_edit_string(e);       break;
+        case Screen::EditIp:           dispatch_edit_ip(e);           break;
     }
 }
 

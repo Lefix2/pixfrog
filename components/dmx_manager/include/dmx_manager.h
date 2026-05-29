@@ -85,6 +85,13 @@ void handle_pending_remaps();
 // Signal that an ArtSync was received (forces frame emission ASAP).
 void note_sync();
 
+// Block until either `period_ticks` elapse or an ArtSync arrives,
+// whichever happens first. Returns true if a sync interrupted the wait,
+// false if the timeout elapsed normally. Used by render_task to pace
+// itself at refresh_rate_hz while still reacting to ArtSync within a
+// few hundred microseconds.
+bool wait_for_sync_or_period(uint32_t period_ticks);
+
 // ────────────────────────────────────────────────────────────────────────────
 // Render side (render_task on core 1)
 // ────────────────────────────────────────────────────────────────────────────

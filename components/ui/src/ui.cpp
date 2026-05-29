@@ -25,6 +25,7 @@ InitConfig              g_cfg{};
 i2c_master_bus_handle_t g_bus        = nullptr;
 
 uint32_t                g_ip_host       = 0;            // host-order IPv4; 0 = no link
+bool                    g_link_up       = false;        // ETH_EVENT_CONNECTED state
 
 void IRAM_ATTR encoder_isr(void*) {
     BaseType_t hp = pdFALSE;
@@ -116,6 +117,14 @@ void set_ip(uint32_t host_order_ip) {
 
 uint32_t get_ip() {
     return g_ip_host;
+}
+
+void set_link_up(bool up) {
+    g_link_up = up;
+}
+
+bool is_link_up() {
+    return g_link_up;
 }
 
 }  // namespace pixfrog::ui

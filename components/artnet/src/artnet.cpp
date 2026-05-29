@@ -48,7 +48,7 @@ void handle_dmx(const uint8_t* buf, size_t len) {
     if (ch >= 0) dmx::note_channel_activity(static_cast<size_t>(ch));
 }
 
-void send_poll_reply() {
+void send_poll_reply(uint32_t target_addr_net_order) {
     if (g_sock < 0 || g_local_ip == 0) return;
 
     uint8_t mac[6] = {};
@@ -56,7 +56,7 @@ void send_poll_reply() {
 
     sockaddr_in dst{};
     dst.sin_family      = AF_INET;
-    dst.sin_addr.s_addr = htonl(0xFFFFFFFFu);
+    dst.sin_addr.s_addr = target_addr_net_order;
     dst.sin_port        = htons(kArtnetPort);
 
     uint8_t pkt[parser::kPollReplySize];
@@ -95,9 +95,14 @@ void send_poll_reply() {
     }
 }
 
-void handle_poll(const uint8_t* /*buf*/, size_t len, const sockaddr_in& /*from*/) {
+void handle_poll(const uint8_t* /*buf*/, size_t len, const sockaddr_in& from) {
     if (len < 14) { dmx::note_packet_bad(); return; }
-    send_poll_reply();
+    // Item B1: choose broadcast (default) vs unicast back to the poller's IP.
+    const auto& g = config::get_global();
+    const uint32_t target = g.artnet_poll_reply_unicast
+        ? from.sin_addr.s_addr            // already network-order
+        : htonl(INADDR_BROADCAST);
+    send_poll_reply(target);
 }
 
 void handle_sync(const uint8_t* /*buf*/, size_t /*len*/) {

@@ -59,4 +59,11 @@ void dump_stats();
 // Returns false if a previous emission has not yet completed.
 bool emit_calibration_pattern(uint8_t pattern_id);
 
+// Persistent calibration mode (TODO B5). Set to -1 to resume normal LED
+// rendering, or to 0..2 to make render_task continuously emit the chosen
+// calibration pattern instead. The flag is sampled at the start of every
+// render iteration; switching modes takes effect on the next frame.
+void   set_calibration_mode(int8_t pattern_id);
+int8_t get_calibration_mode();
+
 }  // namespace pixfrog::lcd

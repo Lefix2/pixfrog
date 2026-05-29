@@ -33,6 +33,12 @@ bool start(const InitConfig& cfg);
 void     set_ip(uint32_t host_order_ip);
 uint32_t get_ip();
 
+// ── Item B4: Ethernet link state ───────────────────────────────────────────
+// Fed by ETH_EVENT CONNECTED/DISCONNECTED handlers. Distinct from get_ip()
+// since the link can be UP while DHCP is still pending an address.
+void set_link_up(bool up);
+bool is_link_up();
+
 // Per-channel activity is read directly from dmx::is_channel_active()
 // in menu.cpp — no UI-side cache needed.
 

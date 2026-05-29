@@ -25,6 +25,7 @@ GlobalConfig make_default_global() {
     g.artnet_subnet   = 0;
     std::strncpy(g.short_name, "pixfrog",        kArtnetNameShortMax - 1);
     std::strncpy(g.long_name,  "pixfrog LED controller", kArtnetNameLongMax - 1);
+    g.artnet_poll_reply_unicast = false;
     g.refresh_rate_hz = 60;
     g.home_timeout_s  = 30;
     return g;

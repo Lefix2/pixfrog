@@ -43,6 +43,9 @@ uint8_t                g_back_idx = 0;     // which fb is next to write into (0 
 
 SemaphoreHandle_t      g_done_sem = nullptr;
 
+// Persistent calibration mode (TODO B5). -1 = normal pixel rendering.
+volatile int8_t        g_cal_mode = -1;
+
 // ── Item 1: HSYNC pulse width ────────────────────────────────────────────────
 // ESP-IDF v5.3 RGB panel driver rejects hsync_pulse_width == 0 on ESP32-P4
 // and forces it to >= 1. We use 1 (= 62.5 ns at PCLK=16MHz). The HSYNC pin
@@ -358,5 +361,8 @@ void wait_idle() {
 }
 
 size_t fb_bytes() { return g_fb_bytes; }
+
+void   set_calibration_mode(int8_t pattern_id) { g_cal_mode = pattern_id; }
+int8_t get_calibration_mode()                  { return g_cal_mode; }
 
 }  // namespace pixfrog::lcd

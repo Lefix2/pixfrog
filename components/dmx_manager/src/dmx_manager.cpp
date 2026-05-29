@@ -8,6 +8,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 
 #include "led_protocols.h"
 #include "dmx_logic.h"
@@ -61,6 +62,9 @@ bool g_channel_capacity_ok[config::kNumChannels]{};
 // Event group for config change propagation (item 7).
 EventGroupHandle_t g_remap_eg = nullptr;
 
+// Binary semaphore for ArtSync → render_task fast-path (TODO B2).
+SemaphoreHandle_t  g_sync_sem = nullptr;
+
 // Rebuild the universe → slot LUT (+ reverse slot → channel) from the
 // current contents of config_store. Called from init() and from
 // handle_pending_remaps() when the UI signals a config change.
@@ -110,6 +114,12 @@ bool init() {
     g_remap_eg = xEventGroupCreate();
     if (!g_remap_eg) {
         ESP_LOGE(TAG, "event group alloc failed");
+        return false;
+    }
+
+    g_sync_sem = xSemaphoreCreateBinary();
+    if (!g_sync_sem) {
+        ESP_LOGE(TAG, "sync semaphore alloc failed");
         return false;
     }
 
@@ -217,7 +227,18 @@ const uint8_t* universe_front_buffer_for(uint16_t universe_number) {
 
 void note_packet_rx()  { __atomic_add_fetch(&g_stats.artnet_packets_rx, 1, __ATOMIC_RELAXED); }
 void note_packet_bad() { __atomic_add_fetch(&g_stats.artnet_bad_packets, 1, __ATOMIC_RELAXED); }
-void note_sync()       { g_sync_pending.store(true, std::memory_order_release); }
+void note_sync() {
+    g_sync_pending.store(true, std::memory_order_release);
+    if (g_sync_sem) xSemaphoreGive(g_sync_sem);
+}
+
+bool wait_for_sync_or_period(uint32_t period_ticks) {
+    if (!g_sync_sem) {
+        vTaskDelay(period_ticks);
+        return false;
+    }
+    return xSemaphoreTake(g_sync_sem, period_ticks) == pdTRUE;
+}
 
 void swap_universes() {
     uint8_t* new_front = g_uni_back;

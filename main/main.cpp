@@ -61,9 +61,13 @@ extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/,
     switch (event_id) {
         case ETHERNET_EVENT_START:        ESP_LOGI(TAG, "Ethernet driver started");  break;
         case ETHERNET_EVENT_STOP:         ESP_LOGI(TAG, "Ethernet driver stopped");  break;
-        case ETHERNET_EVENT_CONNECTED:    ESP_LOGI(TAG, "Ethernet link UP");         break;
+        case ETHERNET_EVENT_CONNECTED:
+            ESP_LOGI(TAG, "Ethernet link UP");
+            pixfrog::ui::set_link_up(true);
+            break;
         case ETHERNET_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "Ethernet link DOWN");
+            pixfrog::ui::set_link_up(false);
             publish_ip(0);
             break;
         default: break;
@@ -172,17 +176,26 @@ void render_task(void*) {
 
         pixfrog::dmx::swap_universes();
 
-        // Item 1: decode each channel's universes into its pixel back buffer
-        // (DMX start offset, multi-universe spanning), then swap the front
-        // pointer so the LCD_CAM encoder sees the new pixels. Per-pixel
-        // transformations (color order, brightness, grouping, invert) are
-        // applied later by led::encode_channel during the LCD_CAM render.
-        for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch) {
-            pixfrog::dmx::decode_pixels_for_channel(ch);
-            pixfrog::dmx::swap_pixels(ch);
+        // TODO B5: when the UI has selected a calibration pattern, the
+        // render loop emits that pattern instead of pixel data. This
+        // makes scope debugging persistent across many frames without
+        // requiring a recompile.
+        const int8_t cal_mode = pixfrog::lcd::get_calibration_mode();
+        if (cal_mode >= 0) {
+            pixfrog::lcd::emit_calibration_pattern(static_cast<uint8_t>(cal_mode));
+        } else {
+            // Item 1: decode each channel's universes into its pixel back
+            // buffer (DMX start offset, multi-universe spanning), then
+            // swap the front pointer so the LCD_CAM encoder sees the new
+            // pixels. Per-pixel transformations (color order, brightness,
+            // grouping, invert) are applied later by led::encode_channel
+            // during the LCD_CAM render.
+            for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch) {
+                pixfrog::dmx::decode_pixels_for_channel(ch);
+                pixfrog::dmx::swap_pixels(ch);
+            }
+            pixfrog::lcd::render_frame();
         }
-
-        pixfrog::lcd::render_frame();
 
         // Item 4: publish FPS once per second.
         fps_frames_in_window++;
@@ -197,7 +210,16 @@ void render_task(void*) {
         // past the WDT timeout (5 s default), we want a clean panic.
         esp_task_wdt_reset();
 
-        vTaskDelayUntil(&last, period);
+        // TODO B2: drift-corrected wait that returns early on ArtSync.
+        // `last` is the timestamp at the start of this frame; the deadline
+        // is `last + period`. If render itself ate most of the period, we
+        // wait for the leftover only; if it ate the whole period, we don't
+        // wait at all. wait_for_sync_or_period(0) returns immediately.
+        const TickType_t now      = xTaskGetTickCount();
+        const TickType_t elapsed  = now - last;
+        const TickType_t wait     = (elapsed < period) ? (period - elapsed) : 0;
+        pixfrog::dmx::wait_for_sync_or_period(wait);
+        last = xTaskGetTickCount();
     }
 }
 
