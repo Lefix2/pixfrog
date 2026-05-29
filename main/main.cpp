@@ -153,14 +153,18 @@ void render_task(void*) {
     // ship dark/garbled frames silently.
     esp_task_wdt_add(nullptr);
 
-    const TickType_t period = pdMS_TO_TICKS(1000 / pixfrog::config::get_global().refresh_rate_hz);
-    TickType_t       last   = xTaskGetTickCount();
+    TickType_t last = xTaskGetTickCount();
 
     // Item 4: rolling 1-second window FPS counter.
-    int64_t  fps_window_start_us = esp_timer_get_time();
+    int64_t  fps_window_start_us  = esp_timer_get_time();
     uint32_t fps_frames_in_window = 0;
 
     while (true) {
+        // Item A5: recompute the period every frame so a UI commit of
+        // refresh_rate_hz takes effect on the next frame without a reboot.
+        const uint8_t rate_hz = pixfrog::config::get_global().refresh_rate_hz;
+        const TickType_t period =
+            pdMS_TO_TICKS(rate_hz ? (1000u / rate_hz) : 33u);
         // Item 7: apply any config changes committed by the UI since the
         // last frame. Rebuilds universe→channel LUT, clears dirty bits.
         // No-op when nothing is pending.

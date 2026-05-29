@@ -80,4 +80,11 @@ bool set_channel(size_t channel_index, const ChannelConfig& cfg);
 // Restore defaults (factory reset). Does NOT reboot.
 void reset_to_defaults();
 
+// True if config_store successfully opened the NVS namespace at boot and
+// is able to persist subsequent set_global/set_channel writes. False if
+// NVS was corrupt beyond recovery and we're running on hard-coded RAM
+// defaults — in that mode all setters update the cache but return false
+// because nothing is written to flash.
+bool is_persistence_ok();
+
 }  // namespace pixfrog::config

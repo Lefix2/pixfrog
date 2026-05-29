@@ -18,6 +18,7 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
+#include "esp_timer.h"
 
 namespace pixfrog::ui::detail {
 
@@ -52,6 +53,12 @@ i2c_master_dev_handle_t g_dev      = nullptr;
 int                     g_int_gpio = -1;
 int32_t                 g_last_pos = 0;
 bool                    g_last_btn = false;
+
+// Item A3: debounce for the push button. Any transition closer than this
+// to the previous one is silently ignored, suppressing the multi-click
+// echoes the seesaw can emit on a noisy mechanical switch contact.
+constexpr int64_t kBtnDebounceUs    = 20'000;   // 20 ms
+int64_t           g_last_btn_change_us = 0;
 
 // ── Pending event ring ──────────────────────────────────────────────────────
 constexpr size_t kEvtQ = 8;
@@ -208,8 +215,16 @@ Event encoder_poll() {
 
     if (seesaw_read_button(btn)) {
         any_read = true;
-        if (btn && !g_last_btn) push_evt(Event::Click);
-        g_last_btn = btn;
+        if (btn != g_last_btn) {
+            const int64_t now = esp_timer_get_time();
+            if (now - g_last_btn_change_us >= kBtnDebounceUs) {
+                if (btn && !g_last_btn) push_evt(Event::Click);
+                g_last_btn           = btn;
+                g_last_btn_change_us = now;
+            }
+            // Else: bounce, ignore the transition; the next poll will see
+            // either the stable new state or a return to old state.
+        }
     }
 
     if (any_read) seesaw_clear_ints();

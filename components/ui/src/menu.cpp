@@ -42,6 +42,7 @@ enum class Field : uint8_t {
     None,
     ArtnetNet,
     ArtnetSubnet,
+    GlobalRefresh,
     NetworkDhcp,
     ChProtocol,
     ChColorOrder,
@@ -239,7 +240,11 @@ void render_home() {
     char ch_line[kCols + 1];
     ch_line[0] = ' '; ch_line[1] = ' '; ch_line[2] = ' ';
     for (int i = 0; i < 8; ++i) {
-        ch_line[3 + i * 2]     = dmx::is_channel_active(i) ? '*' : '-';
+        // Priority: ! (config over-capacity) > * (recent DMX) > - (idle).
+        char glyph = '-';
+        if      (!dmx::is_channel_capacity_ok(i)) glyph = '!';
+        else if ( dmx::is_channel_active(i))      glyph = '*';
+        ch_line[3 + i * 2]     = glyph;
         ch_line[3 + i * 2 + 1] = ' ';
     }
     ch_line[3 + 8 * 2 - 1] = '\0';
@@ -317,6 +322,7 @@ void commit_edit() {
     switch (s.edit.field) {
         case Field::ArtnetNet:    { auto g = config::get_global(); g.artnet_net    = static_cast<uint8_t>(v); config::set_global(g); dmx::mark_global_dirty(); break; }
         case Field::ArtnetSubnet: { auto g = config::get_global(); g.artnet_subnet = static_cast<uint8_t>(v); config::set_global(g); dmx::mark_global_dirty(); break; }
+        case Field::GlobalRefresh:{ auto g = config::get_global(); g.refresh_rate_hz = static_cast<uint8_t>(v); config::set_global(g); dmx::mark_global_dirty(); break; }
         case Field::NetworkDhcp:  { auto g = config::get_global(); g.use_dhcp      = (v != 0);               config::set_global(g); dmx::mark_global_dirty(); break; }
 
         case Field::ChProtocol:   { auto c = config::get_channel(s.edit.channel); c.protocol         = static_cast<led::Protocol>(v);   config::set_channel(s.edit.channel, c); dmx::mark_channel_dirty(s.edit.channel); break; }
@@ -528,36 +534,40 @@ void dispatch_edit_ip(Event e) {
 // ── ARTNET MENU ─────────────────────────────────────────────────────────────
 
 void render_artnet_menu() {
-    char vnet[8], vsub[8];
+    char vnet[8], vsub[8], vrefresh[8];
     char vshort[14], vlong[14];
     const auto& g = config::get_global();
-    std::snprintf(vnet, sizeof(vnet), "%u", g.artnet_net);
-    std::snprintf(vsub, sizeof(vsub), "%u", g.artnet_subnet);
+    std::snprintf(vnet,     sizeof(vnet),     "%u",   g.artnet_net);
+    std::snprintf(vsub,     sizeof(vsub),     "%u",   g.artnet_subnet);
+    std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
     truncate(vshort, sizeof(vshort), g.short_name);
     truncate(vlong,  sizeof(vlong),  g.long_name);
 
-    ListItem items[5] = {
-        {"Net",    vnet},
-        {"Sub",    vsub},
-        {"Short",  vshort},
-        {"Long",   vlong},
-        {"[Back]", ""},
+    ListItem items[6] = {
+        {"Net",     vnet},
+        {"Sub",     vsub},
+        {"Short",   vshort},
+        {"Long",    vlong},
+        {"Refresh", vrefresh},
+        {"[Back]",  ""},
     };
-    render_list("ARTNET", items, 5, s.cursor);
+    render_list("ARTNET", items, 6, s.cursor);
 }
 
 void dispatch_artnet_menu(Event e) {
-    constexpr uint8_t kCount = 5;
+    constexpr uint8_t kCount = 6;
     if (e == Event::RotateLeft  && s.cursor > 0)           s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1)  s.cursor++;
     if (e != Event::Click) return;
     const auto& g = config::get_global();
     switch (s.cursor) {
-        case 0: enter_edit(Field::ArtnetNet,    ValueKind::Int, g.artnet_net,    0, 127, 1, "Net", Screen::ArtnetMenu); break;
-        case 1: enter_edit(Field::ArtnetSubnet, ValueKind::Int, g.artnet_subnet, 0,  15, 1, "Sub", Screen::ArtnetMenu); break;
+        case 0: enter_edit(Field::ArtnetNet,     ValueKind::Int, g.artnet_net,      0, 127, 1, "Net", Screen::ArtnetMenu); break;
+        case 1: enter_edit(Field::ArtnetSubnet,  ValueKind::Int, g.artnet_subnet,   0,  15, 1, "Sub", Screen::ArtnetMenu); break;
         case 2: enter_edit_string(StringField::ArtnetShort, g.short_name, sizeof(g.short_name) - 1, "Short", Screen::ArtnetMenu); break;
         case 3: enter_edit_string(StringField::ArtnetLong,  g.long_name,  sizeof(g.long_name)  - 1, "Long",  Screen::ArtnetMenu); break;
-        case 4: s.screen = Screen::MainMenu; s.cursor = 0; break;
+        // Refresh: step 30 → only [30, 60] reachable; satisfies spec §4.
+        case 4: enter_edit(Field::GlobalRefresh, ValueKind::Int, g.refresh_rate_hz, 30, 60, 30, "Refresh", Screen::ArtnetMenu); break;
+        case 5: s.screen = Screen::MainMenu; s.cursor = 0; break;
     }
 }
 

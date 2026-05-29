@@ -16,6 +16,7 @@ constexpr const char* kKeyGlobal = "global";
 
 GlobalConfig  g_global{};
 ChannelConfig g_channels[kNumChannels]{};
+bool          g_nvs_ok = false;
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
@@ -60,20 +61,67 @@ void channel_key(size_t idx, char buf[8]) {
 
 }  // namespace
 
+namespace {
+
+// Try a hard reset of the NVS partition (erase + re-init). Returns true if
+// it succeeds. Used both at boot (to recover from any first-time failure)
+// and as a last-ditch repair when nvs_open keeps failing.
+bool nvs_hard_reset() {
+    ESP_LOGW(TAG, "performing nvs_flash_erase + reinit");
+    esp_err_t err = nvs_flash_erase();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_flash_erase failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    err = nvs_flash_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_flash_init after erase failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+void fill_ram_defaults() {
+    g_global = make_default_global();
+    for (size_t i = 0; i < kNumChannels; ++i) g_channels[i] = make_default_channel(i);
+}
+
+}  // namespace
+
 void init() {
     esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGW(TAG, "nvs needs erase, doing it now");
-        nvs_flash_erase();
-        nvs_flash_init();
+    if (err != ESP_OK) {
+        // Any first-init error → erase + retry (covers NO_FREE_PAGES,
+        // NEW_VERSION_FOUND, partition corruption, etc.).
+        if (!nvs_hard_reset()) {
+            ESP_LOGE(TAG,
+                     "NVS unrecoverable at boot — running with hard-coded "
+                     "defaults; config changes WILL NOT PERSIST. "
+                     "Check the partition table and `factory_test_nvs.bin`.");
+            fill_ram_defaults();
+            g_nvs_ok = false;
+            return;
+        }
     }
 
     nvs_handle_t h;
-    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) {
-        ESP_LOGE(TAG, "nvs_open failed, using defaults in RAM only");
-        g_global = make_default_global();
-        for (size_t i = 0; i < kNumChannels; ++i) g_channels[i] = make_default_channel(i);
-        return;
+    err = nvs_open(kNamespace, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        // Namespace can't be opened — perform a hard reset and try once more.
+        ESP_LOGW(TAG, "nvs_open(%s) failed (%s); attempting recovery",
+                 kNamespace, esp_err_to_name(err));
+        if (nvs_hard_reset()) {
+            err = nvs_open(kNamespace, NVS_READWRITE, &h);
+        }
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "NVS namespace still not openable (%s) after erase — "
+                     "running with hard-coded defaults; config changes "
+                     "WILL NOT PERSIST.", esp_err_to_name(err));
+            fill_ram_defaults();
+            g_nvs_ok = false;
+            return;
+        }
     }
 
     if (!nvs_load_blob(h, kKeyGlobal, &g_global, sizeof(g_global))) {
@@ -92,14 +140,19 @@ void init() {
 
     nvs_commit(h);
     nvs_close(h);
-    ESP_LOGI(TAG, "loaded %u channels + global config", static_cast<unsigned>(kNumChannels));
+    g_nvs_ok = true;
+    ESP_LOGI(TAG, "loaded %u channels + global config from NVS",
+             static_cast<unsigned>(kNumChannels));
 }
+
+bool is_persistence_ok() { return g_nvs_ok; }
 
 const GlobalConfig&  get_global()                          { return g_global; }
 const ChannelConfig& get_channel(size_t i)                 { return g_channels[i]; }
 
 bool set_global(const GlobalConfig& cfg) {
     g_global = cfg;
+    if (!g_nvs_ok) return false;   // RAM-only: cache updated, no persistence
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
     nvs_save_blob(h, kKeyGlobal, &g_global, sizeof(g_global));
@@ -111,6 +164,7 @@ bool set_global(const GlobalConfig& cfg) {
 bool set_channel(size_t i, const ChannelConfig& cfg) {
     if (i >= kNumChannels) return false;
     g_channels[i] = cfg;
+    if (!g_nvs_ok) return false;
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
     char key[8];
@@ -122,8 +176,8 @@ bool set_channel(size_t i, const ChannelConfig& cfg) {
 }
 
 void reset_to_defaults() {
-    g_global = make_default_global();
-    for (size_t i = 0; i < kNumChannels; ++i) g_channels[i] = make_default_channel(i);
+    fill_ram_defaults();
+    if (!g_nvs_ok) return;
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
     nvs_save_blob(h, kKeyGlobal, &g_global, sizeof(g_global));
