@@ -1,0 +1,5 @@
+idf_component_register(
+    SRCS "src/artnet.cpp"
+    INCLUDE_DIRS "include"
+    REQUIRES lwip dmx_manager config_store esp_common
+)

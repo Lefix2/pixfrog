@@ -1,0 +1,83 @@
+// config_store — persistent configuration for pixfrog.
+//
+// Two flavors:
+//   GlobalConfig   : IP/DHCP, ArtNet identity, refresh rate
+//   ChannelConfig  : per-LED-channel settings (×8)
+//
+// All accessors are blocking on NVS. They are expected to be called only
+// from `ui_task` and once during boot from `app_main`. The render path
+// reads a RAM-cached snapshot instead — see `config_get_runtime_snapshot()`.
+
+#pragma once
+
+#include <array>
+#include <stdint.h>
+
+#include "led_protocols.h"
+
+namespace pixfrog::config {
+
+constexpr size_t kNumChannels = 8;
+
+constexpr size_t kArtnetNameShortMax = 18;
+constexpr size_t kArtnetNameLongMax  = 64;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Network + ArtNet identity
+// ────────────────────────────────────────────────────────────────────────────
+
+struct GlobalConfig {
+    // Network
+    bool     use_dhcp;
+    uint32_t static_ip;        // host-order; 0 if use_dhcp
+    uint32_t static_mask;
+    uint32_t static_gateway;
+
+    // ArtNet identity
+    uint8_t  artnet_net;       // 0..127
+    uint8_t  artnet_subnet;    // 0..15
+    char     short_name[kArtnetNameShortMax];
+    char     long_name [kArtnetNameLongMax];
+
+    // System
+    uint8_t  refresh_rate_hz;  // 30 or 60
+    uint16_t home_timeout_s;   // 30 by default
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// Per-channel configuration
+// ────────────────────────────────────────────────────────────────────────────
+
+struct ChannelConfig {
+    led::Protocol   protocol;
+    led::ColorOrder color_order;
+    uint16_t        universe_start;     // 1..32767
+    uint16_t        dmx_start;          // 1..512
+    uint16_t        pixel_count;        // 1..1024
+    uint8_t         brightness;         // 0..255
+    uint8_t         grouping;           // 1..8
+    bool            invert_direction;
+    uint32_t        clock_hz;           // only for clocked protocols
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// API
+// ────────────────────────────────────────────────────────────────────────────
+
+// Must be called once before any other API. Initializes NVS partition and
+// loads defaults if the namespace is empty.
+void init();
+
+// Read-only access to current cached config (returns reference into static storage).
+const GlobalConfig&  get_global();
+const ChannelConfig& get_channel(size_t channel_index);
+
+// Mutating helpers — write to NVS and update the cache atomically.
+// Return true on success.
+bool set_global (const GlobalConfig&  cfg);
+bool set_channel(size_t channel_index, const ChannelConfig& cfg);
+
+// Restore defaults (factory reset). Does NOT reboot.
+void reset_to_defaults();
+
+}  // namespace pixfrog::config

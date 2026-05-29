@@ -1,0 +1,83 @@
+// Adafruit seesaw 4991 (I2C rotary encoder) — minimal client.
+//
+// Two seesaw registers are relevant:
+//   ENCODER_POSITION (4 bytes, signed) — read & diff to detect rotation
+//   GPIO_PIN_24 (button on default board) — read to detect press
+//
+// We poll the seesaw on each INT-driven wake and emit Events.
+
+#include "ui_internal.h"
+
+#include "esp_log.h"
+
+namespace pixfrog::ui::detail {
+
+namespace {
+
+constexpr const char* TAG = "ENC";
+
+int      g_i2c_port  = 0;
+uint8_t  g_addr      = 0x36;
+int      g_int_gpio  = -1;
+int32_t  g_last_pos  = 0;
+bool     g_last_btn  = false;
+
+// Pending events queue (simple ring) so we can drain multiple rotations
+// per wake without losing them.
+constexpr size_t kEvtQ = 8;
+Event    g_q[kEvtQ];
+size_t   g_qh = 0, g_qt = 0;
+
+void push_evt(Event e) {
+    g_q[g_qh] = e;
+    g_qh = (g_qh + 1) % kEvtQ;
+    if (g_qh == g_qt) g_qt = (g_qt + 1) % kEvtQ;  // drop oldest on overflow
+}
+Event pop_evt() {
+    if (g_qh == g_qt) return Event::None;
+    Event e = g_q[g_qt];
+    g_qt = (g_qt + 1) % kEvtQ;
+    return e;
+}
+
+bool seesaw_read_position(int32_t& /*pos_out*/) {
+    // TODO: I2C write reg(0x11, 0x30) then read 4 bytes; combine BE.
+    return false;
+}
+bool seesaw_read_button(bool& /*pressed_out*/) {
+    // TODO: I2C write reg(0x01, 0x04) then read 4 bytes; bit24.
+    return false;
+}
+
+}  // namespace
+
+bool encoder_init(int i2c_port, uint8_t addr, int int_gpio) {
+    g_i2c_port = i2c_port;
+    g_addr     = addr;
+    g_int_gpio = int_gpio;
+    // TODO: set seesaw INT enable on encoder & button registers.
+    ESP_LOGW(TAG, "init skeleton — no I2C bring-up yet");
+    return true;
+}
+
+Event encoder_poll() {
+    // Drain queued events first.
+    Event e = pop_evt();
+    if (e != Event::None) return e;
+
+    int32_t pos = g_last_pos;
+    bool    btn = g_last_btn;
+    if (seesaw_read_position(pos)) {
+        const int32_t delta = pos - g_last_pos;
+        g_last_pos = pos;
+        for (int i = 0; i < delta;  ++i) push_evt(Event::RotateRight);
+        for (int i = 0; i < -delta; ++i) push_evt(Event::RotateLeft);
+    }
+    if (seesaw_read_button(btn)) {
+        if (btn && !g_last_btn) push_evt(Event::Click);
+        g_last_btn = btn;
+    }
+    return pop_evt();
+}
+
+}  // namespace pixfrog::ui::detail

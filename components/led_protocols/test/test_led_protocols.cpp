@@ -1,0 +1,168 @@
+// Host-side unit tests for led_protocols.
+// Verify that timings derived from PCLK = 16 MHz match docs/PROTOCOLS.md §3.3
+// and that encode_channel correctly OR-s into the destination buffer.
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
+#include "led_protocols.h"
+
+using namespace pixfrog::led;
+
+static int g_pass = 0;
+static int g_fail = 0;
+
+#define EXPECT_EQ(a, b)                                                                  \
+    do {                                                                                 \
+        long long va = static_cast<long long>(a);                                        \
+        long long vb = static_cast<long long>(b);                                        \
+        if (va == vb) { g_pass++; }                                                      \
+        else {                                                                           \
+            g_fail++;                                                                    \
+            std::fprintf(stderr, "FAIL %s:%d: %s != %s (%lld vs %lld)\n",                \
+                         __FILE__, __LINE__, #a, #b, va, vb);                            \
+        }                                                                                \
+    } while (0)
+
+#define EXPECT_TRUE(a)                                                                   \
+    do {                                                                                 \
+        if (a) { g_pass++; }                                                             \
+        else { g_fail++; std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #a); } \
+    } while (0)
+
+// ── Timings ─────────────────────────────────────────────────────────────────
+
+static void test_timing_ws2815() {
+    const auto t = timing_for(Protocol::WS2815);
+    EXPECT_EQ(t.samples_t0h, 5);
+    EXPECT_EQ(t.samples_t1h, 15);
+    EXPECT_EQ(t.samples_bit, 20);
+    EXPECT_EQ(t.samples_reset, 4480);
+}
+
+static void test_timing_ws2812b() {
+    const auto t = timing_for(Protocol::WS2812B);
+    EXPECT_EQ(t.samples_t0h, 6);
+    EXPECT_EQ(t.samples_t1h, 11);
+    EXPECT_EQ(t.samples_bit, 20);
+}
+
+static void test_timing_apa102_clock() {
+    // 4 MHz CLOCK → samples_per_clock = 4 at PCLK=16MHz.
+    auto t = timing_for(Protocol::APA102, 4'000'000);
+    EXPECT_EQ(t.samples_per_clock, 4);
+
+    // 8 MHz CLOCK → samples_per_clock = 2.
+    t = timing_for(Protocol::APA102, 8'000'000);
+    EXPECT_EQ(t.samples_per_clock, 2);
+
+    // 1 MHz CLOCK → samples_per_clock = 16.
+    t = timing_for(Protocol::APA102, 1'000'000);
+    EXPECT_EQ(t.samples_per_clock, 16);
+}
+
+// ── Bytes per pixel ─────────────────────────────────────────────────────────
+
+static void test_bytes_per_pixel() {
+    EXPECT_EQ(bytes_per_pixel(Protocol::WS2815),  3);
+    EXPECT_EQ(bytes_per_pixel(Protocol::WS2812B), 3);
+    EXPECT_EQ(bytes_per_pixel(Protocol::SK6812),  4);
+    EXPECT_EQ(bytes_per_pixel(Protocol::WS2814),  4);
+}
+
+// ── NRZ encoder: one pixel, verify exact bit layout ────────────────────────
+
+static void test_nrz_one_pixel_ws2815() {
+    ChannelDesc d{};
+    d.protocol         = Protocol::WS2815;
+    d.color_order      = ColorOrder::RGB;
+    d.pixel_count      = 1;
+    d.brightness       = 255;
+    d.grouping         = 1;
+    d.invert_direction = false;
+    d.bus_bit_data     = 0;
+    d.bus_bit_clock    = 1;
+
+    const uint8_t pixels[3] = { 0x80, 0x00, 0x00 };  // R=128, G=B=0
+    const size_t  cap       = encoded_size_samples(d);
+    std::vector<uint16_t> out(cap, 0);
+    const size_t written    = encode_channel(d, pixels, out.data(), cap);
+
+    EXPECT_EQ(written, cap);
+
+    // R=0x80 = 0b10000000 → first bit '1', next 7 bits '0'
+    // Each bit takes 20 samples (samples_bit). Bit '1' → 15 high, 5 low.
+    // We check the first 20 samples (bit 7 of R).
+    int high_count = 0;
+    for (int i = 0; i < 20; ++i) high_count += (out[i] & 1) ? 1 : 0;
+    EXPECT_EQ(high_count, 15);     // T1H = 15 samples
+
+    // Bits 6..0 of R are '0' → 5 high, 15 low each.
+    high_count = 0;
+    for (int i = 20; i < 40; ++i) high_count += (out[i] & 1) ? 1 : 0;
+    EXPECT_EQ(high_count, 5);      // T0H = 5 samples
+
+    // CLOCK bit (bit 1) must stay 0 on all samples for 1-wire.
+    for (size_t i = 0; i < cap; ++i) EXPECT_EQ(out[i] & 2, 0);
+}
+
+// ── NRZ encoder: OR-into-buffer must preserve other channels' bits ─────────
+
+static void test_nrz_or_into_buffer() {
+    ChannelDesc d{};
+    d.protocol         = Protocol::WS2815;
+    d.color_order      = ColorOrder::RGB;
+    d.pixel_count      = 1;
+    d.brightness       = 255;
+    d.grouping         = 1;
+    d.bus_bit_data     = 4;   // some other channel
+    d.bus_bit_clock    = 5;
+
+    const uint8_t pixels[3] = { 0xFF, 0xFF, 0xFF };
+    const size_t cap        = encoded_size_samples(d);
+    std::vector<uint16_t> out(cap, 0);
+
+    // Pre-fill some bits owned by "another channel" (bits 0, 2, 14).
+    const uint16_t foreign_mask = (1u << 0) | (1u << 2) | (1u << 14);
+    for (auto& s : out) s = foreign_mask;
+
+    encode_channel(d, pixels, out.data(), cap);
+
+    // All samples must still have the foreign bits set (OR-only semantics).
+    for (size_t i = 0; i < cap; ++i) {
+        EXPECT_TRUE((out[i] & foreign_mask) == foreign_mask);
+    }
+}
+
+// ── SPI encoder size ────────────────────────────────────────────────────────
+
+static void test_spi_size() {
+    ChannelDesc d{};
+    d.protocol      = Protocol::APA102;
+    d.color_order   = ColorOrder::BGR;
+    d.pixel_count   = 16;
+    d.brightness    = 255;
+    d.grouping      = 1;
+    d.bus_bit_data  = 2;
+    d.bus_bit_clock = 3;
+    d.clock_hz      = 4'000'000;
+
+    const size_t sz = encoded_size_samples(d);
+    // start(4) + 16 pixels × 4 bytes + end(2) = 70 bytes → 560 bits → ×4 samples = 2240
+    EXPECT_EQ(sz, 70 * 8 * 4);
+}
+
+int main() {
+    test_timing_ws2815();
+    test_timing_ws2812b();
+    test_timing_apa102_clock();
+    test_bytes_per_pixel();
+    test_nrz_one_pixel_ws2815();
+    test_nrz_or_into_buffer();
+    test_spi_size();
+
+    std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
+    return g_fail == 0 ? 0 : 1;
+}
