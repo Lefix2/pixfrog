@@ -2,6 +2,7 @@
 // Verify that timings derived from PCLK = 16 MHz match docs/PROTOCOLS.md §3.3
 // and that encode_channel correctly OR-s into the destination buffer.
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -154,6 +155,47 @@ static void test_spi_size() {
     EXPECT_EQ(sz, 70 * 8 * 4);
 }
 
+// ── Perf: WS2815 1024 px must encode ≤ 20 ms on a reference CI runner ──────
+//
+// 20 ms is the budget for a single frame at ~50 Hz target on the ESP32-P4
+// (the actual hardware runs at 400 MHz; a typical CI runner at 2-4 GHz
+// will be 5-10× faster, so this is a generous ceiling that still catches
+// regressions where the encoder accidentally becomes O(n^2) or similar).
+
+static void test_perf_encode_ws2815_1024() {
+    ChannelDesc d{};
+    d.protocol         = Protocol::WS2815;
+    d.color_order      = ColorOrder::GRB;
+    d.pixel_count      = 1024;
+    d.brightness       = 255;
+    d.grouping         = 1;
+    d.invert_direction = false;
+    d.bus_bit_data     = 0;
+    d.bus_bit_clock    = 1;
+
+    std::vector<uint8_t> pixels(1024 * 3, 0xAA);
+    const size_t cap = encoded_size_samples(d);
+    std::vector<uint16_t> samples(cap, 0);
+
+    constexpr int kReps = 10;
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < kReps; ++i) {
+        std::fill(samples.begin(), samples.end(), uint16_t{0});
+        encode_channel(d, pixels.data(), samples.data(), cap);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    const double per_ms =
+        std::chrono::duration<double, std::milli>(t1 - t0).count() / kReps;
+    std::printf("perf: encode WS2815 1024 px (incl. zero-fill) = %.3f ms/call\n", per_ms);
+
+    if (per_ms < 20.0) g_pass++;
+    else {
+        g_fail++;
+        std::fprintf(stderr, "FAIL perf: %.3f ms >= 20 ms\n", per_ms);
+    }
+}
+
 int main() {
     test_timing_ws2815();
     test_timing_ws2812b();
@@ -162,6 +204,7 @@ int main() {
     test_nrz_one_pixel_ws2815();
     test_nrz_or_into_buffer();
     test_spi_size();
+    test_perf_encode_ws2815_1024();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  host-tests:
+    name: Host unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: led_protocols (timings, encoders, perf)
+        run: |
+          cd components/led_protocols/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_led_protocols
+
+      - name: dmx_logic (sizing, capacity, decoder)
+        run: |
+          cd components/dmx_manager/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_dmx_logic
+
+      - name: artnet_parser (header, dmx, filter, PollReply)
+        run: |
+          cd components/artnet/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_artnet_parser
+
+  idf-build:
+    name: ESP-IDF build for esp32p4
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        idf_version: ['v5.3', 'v5.4']
+    container:
+      # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
+      image: espressif/idf:${{ matrix.idf_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache managed_components + esp tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            managed_components
+            ~/.espressif
+          key: idf-${{ matrix.idf_version }}-${{ hashFiles('main/CMakeLists.txt', 'components/**/CMakeLists.txt', 'sdkconfig.defaults') }}
+          restore-keys: |
+            idf-${{ matrix.idf_version }}-
+
+      - name: idf.py set-target esp32p4 && idf.py build
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py --version
+          idf.py set-target esp32p4
+          idf.py build
+
+      - name: Show binary size
+        if: always()
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py size || true

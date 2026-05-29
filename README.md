@@ -22,6 +22,27 @@ idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
+### Tests host
+
+Trois suites de tests pures (sans IDF), exécutables sur n'importe quelle machine :
+
+```bash
+# Encodeurs LED + timings + perf
+cd components/led_protocols/test && cmake -B build && cmake --build build && ./build/test_led_protocols
+
+# Logique dmx_manager (sizing, capacity, decoder multi-univers)
+cd components/dmx_manager/test && cmake -B build && cmake --build build && ./build/test_dmx_logic
+
+# Parser ArtNet (header, ArtDmx, filtre net/subnet, ArtPollReply)
+cd components/artnet/test && cmake -B build && cmake --build build && ./build/test_artnet_parser
+```
+
+### CI
+
+`.github/workflows/ci.yml` lance sur chaque push :
+- les trois suites host
+- `idf.py build` pour `esp32p4` sous `espressif/idf:v5.3` et `v5.4`
+
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — topologie tâches, frame lifecycle, budget mémoire
