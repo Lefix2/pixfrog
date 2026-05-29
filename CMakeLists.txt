@@ -1,4 +1,4 @@
-# pixfrog top-level CMake — ESP-IDF v5.3+ on ESP32-P4
+# pixfrog top-level CMake — ESP-IDF v5.5+ on ESP32-P4
 cmake_minimum_required(VERSION 3.16)
 
 set(EXTRA_COMPONENT_DIRS
@@ -13,5 +13,7 @@ project(pixfrog
 )
 
 # Strict C++17 across the project, no exceptions, no RTTI.
-idf_build_set_property(CXX_STANDARD 17 APPEND)
-idf_build_set_property(COMPILE_OPTIONS "-fno-exceptions;-fno-rtti" APPEND)
+# These flags are C++-only; applying them to C sources (e.g. mbedtls) fails
+# under -Werror with "option is valid for C++ ... but not for C".
+idf_build_set_property(CXX_STANDARD 17)
+idf_build_set_property(CXX_COMPILE_OPTIONS "-fno-exceptions;-fno-rtti" APPEND)

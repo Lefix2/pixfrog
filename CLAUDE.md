@@ -40,7 +40,7 @@ cd components/artnet/test       && cmake -B build && cmake --build build && ./bu
 
 When you change anything in `led_protocols`, `dmx_manager`, or `artnet`, the matching suite must still pass.
 
-When you refactor IDF-bound code, the canonical proof is `idf.py build` — locally if IDF is installed, otherwise let CI verify (`.github/workflows/ci.yml` runs `idf.py build` against v5.3 and v5.4).
+When you refactor IDF-bound code, the canonical proof is `idf.py build` — locally if IDF is installed, otherwise let CI verify (`.github/workflows/ci.yml` runs `idf.py build` against v5.5). ESP32-P4 requires IDF v5.5+ (the P4 LCD_CAM RGB panel driver is unavailable before then).
 
 ## Formatting
 

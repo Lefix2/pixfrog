@@ -5,6 +5,7 @@ idf_component_register(
         esp_eth
         esp_event
         esp_netif
+        esp_timer
         esp_lcd
         nvs_flash
         led_protocols

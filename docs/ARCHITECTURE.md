@@ -46,7 +46,7 @@ pixfrog is built around one principle: **decouple network ingest (bursty, jitter
 
 ## 2. Build framework
 
-**Native ESP-IDF v5.3+ (CMake + `idf.py`).**
+**Native ESP-IDF v5.5+ (CMake + `idf.py`).**
 
 1. **Stable ESP32-P4 support** in upstream IDF. PlatformIO historically lags new targets by months.
 2. **Low-level LCD_CAM access** through the `esp_lcd` RGB panel API — no abstraction in the way.

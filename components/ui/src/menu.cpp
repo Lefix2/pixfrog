@@ -221,7 +221,10 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 // ── HOME ────────────────────────────────────────────────────────────────────
 
 void render_home() {
-    char line[kCols + 1];
+    // Oversized vs. kCols: a full "IP   : 255.255.255.255" is 22 chars and
+    // oled_draw_text() clips to the display width, so we build the whole
+    // string here to keep -Wformat-truncation happy.
+    char line[32];
     oled_clear();
 
     // Item B6: warn loudly when NVS is broken (config does NOT persist).
@@ -235,8 +238,10 @@ void render_home() {
     if (ip == 0) {
         oled_draw_text(1, 0, "IP   : ---.---.---.---");
     } else {
-        std::snprintf(line, sizeof(line), "IP   : %u.%u.%u.%u", (ip >> 24) & 0xFFu,
-                      (ip >> 16) & 0xFFu, (ip >> 8) & 0xFFu, ip & 0xFFu);
+        std::snprintf(line, sizeof(line), "IP   : %u.%u.%u.%u",
+                      static_cast<unsigned>((ip >> 24) & 0xFFu),
+                      static_cast<unsigned>((ip >> 16) & 0xFFu),
+                      static_cast<unsigned>((ip >> 8) & 0xFFu), static_cast<unsigned>(ip & 0xFFu));
         oled_draw_text(1, 0, line);
     }
 
@@ -371,7 +376,9 @@ void enter_edit(Field field, ValueKind kind, int32_t cur, int32_t mn, int32_t mx
 
 void render_edit_value() {
     oled_clear();
-    char line[kCols + 1];
+    // Buffers are sized to hold the prefix plus a full kCols-wide value;
+    // oled_draw_text() clips to the display width on output.
+    char line[kCols + 4];
     std::snprintf(line, sizeof(line), "EDIT %s", s.edit.label);
     oled_draw_text(0, 0, line);
 
@@ -385,7 +392,7 @@ void render_edit_value() {
     if (s.edit.current != s.edit.original) {
         char orig[kCols + 1];
         format_value(s.edit, s.edit.original, orig, sizeof(orig));
-        char was[kCols + 1];
+        char was[kCols + 8];
         std::snprintf(was, sizeof(was), "  was: %s", orig);
         oled_draw_text(4, 0, was);
     }
@@ -760,8 +767,9 @@ void render_network_menu() {
     const auto& g = config::get_global();
     std::snprintf(vdhcp, sizeof(vdhcp), "%s", g.use_dhcp ? "ON" : "OFF");
     auto fmt_ip = [](char* buf, size_t cap, uint32_t v) {
-        std::snprintf(buf, cap, "%u.%u.%u.%u", (v >> 24) & 0xFFu, (v >> 16) & 0xFFu,
-                      (v >> 8) & 0xFFu, v & 0xFFu);
+        std::snprintf(buf, cap, "%u.%u.%u.%u", static_cast<unsigned>((v >> 24) & 0xFFu),
+                      static_cast<unsigned>((v >> 16) & 0xFFu),
+                      static_cast<unsigned>((v >> 8) & 0xFFu), static_cast<unsigned>(v & 0xFFu));
     };
     fmt_ip(vip, sizeof(vip), g.static_ip);
     fmt_ip(vmsk, sizeof(vmsk), g.static_mask);

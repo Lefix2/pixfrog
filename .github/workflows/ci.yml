@@ -52,7 +52,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        idf_version: ['v5.3', 'v5.4']
+        # ESP32-P4 needs IDF v5.5+: the LCD_CAM RGB panel driver used by
+        # lcd_cam_output is gated behind SOC_LCD_RGB_SUPPORTED, which is only
+        # enabled for the P4 from v5.4 (IDF-7465), and the v5.4 esp_eth
+        # ETH_ESP32_EMAC_DEFAULT_CONFIG() macro uses out-of-order designated
+        # initializers that g++ rejects (fixed in v5.5).
+        idf_version: ['v5.5']
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}

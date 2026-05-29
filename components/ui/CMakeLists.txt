@@ -7,5 +7,5 @@ idf_component_register(
         "src/font_5x8.cpp"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
-    REQUIRES driver esp_common config_store dmx_manager lcd_cam_output freertos
+    REQUIRES driver esp_common esp_timer config_store dmx_manager lcd_cam_output freertos
 )

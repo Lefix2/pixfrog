@@ -22,7 +22,9 @@ Any other ESP32-P4 board with octal PSRAM and an MII/RMII PHY works; just clone 
 
 ## Build
 
-ESP-IDF v5.3 or v5.4 with ESP32-P4 support (`idf.py set-target esp32p4`).
+ESP-IDF v5.5+ with ESP32-P4 support (`idf.py set-target esp32p4`). The P4
+LCD_CAM RGB panel driver that `lcd_cam_output` relies on is only available
+from v5.5.
 
 ```bash
 idf.py set-target esp32p4
@@ -51,7 +53,7 @@ cd components/artnet/test       && cmake -B build && cmake --build build && ./bu
 `.github/workflows/ci.yml` runs on every push:
 
 - the three host suites above
-- `idf.py build` for `esp32p4` in `espressif/idf:v5.3` and `v5.4` containers
+- `idf.py build` for `esp32p4` in the `espressif/idf:v5.5` container
 - `clang-format --dry-run` against `.clang-format` on every tracked C/C++ file
 
 ## Documentation
@@ -63,7 +65,7 @@ cd components/artnet/test       && cmake -B build && cmake --build build && ./bu
 
 ## Status
 
-Firmware feature-complete against the spec. The IDF-side surface (LCD_CAM, SSD1306, seesaw, Ethernet) is written against documented IDF v5.3+ APIs but has not been validated on silicon — CI builds the binary for both IDF versions on every push.
+Firmware feature-complete against the spec. The IDF-side surface (LCD_CAM, SSD1306, seesaw, Ethernet) is written against documented IDF v5.5 APIs but has not been validated on silicon — CI builds the binary on every push.
 
 ## License
 
