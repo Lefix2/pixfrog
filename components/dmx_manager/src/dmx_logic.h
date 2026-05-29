@@ -1,0 +1,97 @@
+// dmx_logic — pure (header-only) helpers shared between dmx_manager.cpp
+// and its host-side unit tests.
+//
+// Everything here is constexpr/inline-eligible and depends only on
+// led_protocols and config_store struct definitions. No IDF symbols.
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+#include "config_store.h"
+#include "led_protocols.h"
+
+namespace pixfrog::dmx::logic {
+
+constexpr size_t kUniverseSize = 512;
+
+// ── Sizing helpers ──────────────────────────────────────────────────────────
+
+inline size_t channel_total_bytes(const config::ChannelConfig& cc) {
+    return static_cast<size_t>(cc.pixel_count) * led::bytes_per_pixel(cc.protocol);
+}
+
+inline size_t channel_universes_used(const config::ChannelConfig& cc) {
+    const size_t total = channel_total_bytes(cc);
+    return (total + kUniverseSize - 1) / kUniverseSize;
+}
+
+// ── Capacity check ──────────────────────────────────────────────────────────
+
+inline uint64_t channel_t_dma_us(const config::ChannelConfig& cc, uint32_t pclk_hz) {
+    led::ChannelDesc d{};
+    d.protocol    = cc.protocol;
+    d.pixel_count = cc.pixel_count;
+    d.clock_hz    = cc.clock_hz;
+    if (pclk_hz == 0) return 0;
+    return static_cast<uint64_t>(led::encoded_size_samples(d)) * 1'000'000ULL / pclk_hz;
+}
+
+inline uint64_t emission_budget_us(uint8_t refresh_rate_hz, uint64_t reserve_us = 1000) {
+    if (refresh_rate_hz == 0) return 0;
+    const uint64_t period = 1'000'000ULL / refresh_rate_hz;
+    return (period > reserve_us) ? (period - reserve_us) : period;
+}
+
+inline bool channel_fits_budget(const config::ChannelConfig& cc,
+                                uint32_t pclk_hz, uint64_t budget_us) {
+    return channel_t_dma_us(cc, pclk_hz) <= budget_us;
+}
+
+// ── Pixel decoder ───────────────────────────────────────────────────────────
+//
+// Copies bytes from one or more universes into the destination buffer,
+// applying `cc.dmx_start` as the 1-based offset into the first universe.
+// `get_universe(universe_number)` must return a 512-byte buffer or nullptr.
+// On any missing universe, the remainder of `dst` is zero-filled and the
+// function returns false (the strip stays in a defined state).
+
+template <typename GetUniverseFn>
+inline bool decode_pixels(uint8_t* dst, size_t dst_capacity,
+                          const config::ChannelConfig& cc,
+                          GetUniverseFn get_universe) {
+    const size_t total = channel_total_bytes(cc);
+    if (total > dst_capacity) return false;
+    if (total == 0) return true;
+
+    const uint16_t start_dmx = cc.dmx_start > 0 ? cc.dmx_start : 1;
+    size_t   offset_in_uni = start_dmx - 1;
+    uint16_t universe      = cc.universe_start;
+    size_t   bytes_written = 0;
+
+    while (bytes_written < total) {
+        const uint8_t* src = get_universe(universe);
+        if (!src) {
+            std::memset(dst + bytes_written, 0, total - bytes_written);
+            return false;
+        }
+        const size_t available = (kUniverseSize > offset_in_uni)
+                                 ? (kUniverseSize - offset_in_uni) : 0;
+        const size_t need = total - bytes_written;
+        const size_t copy = need < available ? need : available;
+        if (copy == 0) {
+            universe++;
+            offset_in_uni = 0;
+            continue;
+        }
+        std::memcpy(dst + bytes_written, src + offset_in_uni, copy);
+        bytes_written += copy;
+        universe++;
+        offset_in_uni = 0;
+    }
+    return true;
+}
+
+}  // namespace pixfrog::dmx::logic

@@ -47,4 +47,16 @@ size_t fb_bytes();
 // PSRAM→GDMA sustained throughput in production.
 void dump_stats();
 
+// Emit a calibration pattern instead of pixel data. Used at bring-up to
+// validate LCD_CAM GPIO routing, PCLK timing, and PSRAM→GDMA throughput
+// with an oscilloscope. Pattern IDs:
+//   0  — 1 kHz square wave on every bus bit. Each GPIO should toggle at
+//        exactly 1 kHz; use to verify pin assignments and check for shorts.
+//   1  — walking-1 across bits 0..15. Only one GPIO is HIGH at any time;
+//        use to verify bit ordering matches kLedBusGpio.
+//   2  — alternating 0xAAAA / 0x5555 per sample. Verifies that PCLK
+//        ticks match the configured rate and that no bits are stuck.
+// Returns false if a previous emission has not yet completed.
+bool emit_calibration_pattern(uint8_t pattern_id);
+
 }  // namespace pixfrog::lcd

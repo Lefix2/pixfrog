@@ -288,6 +288,56 @@ bool render_frame(uint32_t timeout_ms) {
     return true;
 }
 
+bool emit_calibration_pattern(uint8_t pattern_id) {
+    if (!g_panel) return false;
+    if (xSemaphoreTake(g_done_sem, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+
+    void*     back    = (g_back_idx == 0) ? g_fb_a : g_fb_b;
+    uint16_t* samples = static_cast<uint16_t*>(back);
+
+    switch (pattern_id) {
+        case 0: {
+            // 1 kHz square wave on all 16 bits: half-period = pclk/1000/2 samples.
+            const size_t half = g_cfg.pclk_hz / 2000;
+            for (size_t i = 0; i < g_fb_h_res; ++i) {
+                const bool high = ((i / half) & 1) == 0;
+                samples[i] = high ? 0xFFFFu : 0x0000u;
+            }
+            break;
+        }
+        case 1: {
+            // Walking-1 across the 16 bits, holding each high for 256 samples
+            // (= 16 µs at PCLK=16 MHz — comfortably scope-able).
+            constexpr size_t per_bit = 256;
+            for (size_t i = 0; i < g_fb_h_res; ++i) {
+                samples[i] = static_cast<uint16_t>(1u << ((i / per_bit) % 16));
+            }
+            break;
+        }
+        case 2: {
+            // 0xAAAA on even samples, 0x5555 on odd samples — every sample
+            // flips every bit, useful to see if PCLK is correct.
+            for (size_t i = 0; i < g_fb_h_res; ++i) {
+                samples[i] = (i & 1) ? 0x5555u : 0xAAAAu;
+            }
+            break;
+        }
+        default:
+            std::memset(samples, 0, g_fb_bytes);
+            break;
+    }
+
+    esp_cache_msync(samples, g_fb_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(
+        g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1, samples);
+    if (err != ESP_OK) {
+        xSemaphoreGive(g_done_sem);
+        return false;
+    }
+    g_back_idx ^= 1;
+    return true;
+}
+
 void dump_stats() {
     const int64_t expected_us =
         static_cast<int64_t>(g_fb_h_res) * 1'000'000LL / g_cfg.pclk_hz;
