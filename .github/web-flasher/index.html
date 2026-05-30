@@ -8,346 +8,22 @@
       name="description"
       content="Flash the pixfrog LED-pixel controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
     />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="pixfrog — ESP32-P4 LED-pixel firmware" />
+    <meta
+      property="og:description"
+      content="Flash the pixfrog LED-pixel controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
+    />
+    <meta property="og:url" content="https://lefix2.github.io/pixfrog/" />
+    <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B8%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./style.css" />
     <!-- esp-web-tools: Web Serial flasher (desktop Chrome / Edge). -->
     <script
       type="module"
       src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
     ></script>
-    <style>
-      :root {
-        --bg: #ffffff;
-        --bg-soft: #f6f8f7;
-        --fg: #11201a;
-        --fg-soft: #5b6b64;
-        --border: #e4eae7;
-        --brand: #1f9d55;
-        --brand-strong: #167a41;
-        --brand-ink: #ffffff;
-        --accent: #7bdcb5;
-        --radius: 16px;
-        --shadow: 0 10px 30px -12px rgba(16, 60, 40, 0.25);
-        --maxw: 1080px;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0c100e;
-          --bg-soft: #111815;
-          --fg: #eaf3ee;
-          --fg-soft: #9bb0a6;
-          --border: #1f2c26;
-          --brand: #34c66f;
-          --brand-strong: #2aa85d;
-          --accent: #1f5b3f;
-          --shadow: 0 14px 40px -16px rgba(0, 0, 0, 0.7);
-        }
-      }
-      * {
-        box-sizing: border-box;
-      }
-      html {
-        scroll-behavior: smooth;
-      }
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        color: var(--fg);
-        background: var(--bg);
-        line-height: 1.6;
-        -webkit-font-smoothing: antialiased;
-      }
-      a {
-        color: var(--brand-strong);
-        text-decoration: none;
-      }
-      a:hover {
-        text-decoration: underline;
-      }
-      .wrap {
-        max-width: var(--maxw);
-        margin: 0 auto;
-        padding: 0 1.5rem;
-      }
-
-      /* Nav */
-      header.nav {
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        backdrop-filter: saturate(180%) blur(12px);
-        background: color-mix(in srgb, var(--bg) 82%, transparent);
-        border-bottom: 1px solid var(--border);
-      }
-      .nav-inner {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        height: 64px;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        font-weight: 700;
-        font-size: 1.15rem;
-        color: var(--fg);
-      }
-      .brand .logo {
-        font-size: 1.5rem;
-      }
-      .nav-links {
-        display: flex;
-        gap: 1.4rem;
-        align-items: center;
-        font-size: 0.95rem;
-        font-weight: 500;
-      }
-      .nav-links a {
-        color: var(--fg-soft);
-      }
-      .nav-links a:hover {
-        color: var(--fg);
-        text-decoration: none;
-      }
-      .nav-links .gh {
-        color: var(--fg);
-      }
-      @media (max-width: 640px) {
-        .nav-links a:not(.gh) {
-          display: none;
-        }
-      }
-
-      /* Hero */
-      .hero {
-        position: relative;
-        overflow: hidden;
-        padding: 5.5rem 0 4.5rem;
-        text-align: center;
-        background: radial-gradient(
-            900px 420px at 50% -10%,
-            color-mix(in srgb, var(--brand) 22%, transparent),
-            transparent 70%
-          ),
-          var(--bg);
-      }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.3rem 0.8rem;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        background: var(--bg-soft);
-        color: var(--fg-soft);
-        font-size: 0.85rem;
-        font-weight: 500;
-        margin-bottom: 1.5rem;
-      }
-      .badge .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--brand);
-        box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 25%, transparent);
-      }
-      .hero h1 {
-        font-size: clamp(2.6rem, 7vw, 4.5rem);
-        line-height: 1.05;
-        letter-spacing: -0.03em;
-        margin: 0 0 1rem;
-        font-weight: 800;
-        background: linear-gradient(180deg, var(--fg), var(--fg-soft));
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-      .hero p.lead {
-        font-size: clamp(1.05rem, 2.4vw, 1.35rem);
-        color: var(--fg-soft);
-        max-width: 38rem;
-        margin: 0 auto 2.2rem;
-      }
-      .cta {
-        display: flex;
-        gap: 0.9rem;
-        justify-content: center;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      esp-web-install-button {
-        --esp-tools-button-color: var(--brand-ink);
-        --esp-tools-button-background-color: var(--brand);
-        --esp-tools-button-border-radius: 12px;
-      }
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.8rem 1.4rem;
-        border-radius: 12px;
-        font-weight: 600;
-        font-size: 1rem;
-        border: 1px solid var(--border);
-        background: var(--bg-soft);
-        color: var(--fg);
-        cursor: pointer;
-        transition: transform 0.08s ease, border-color 0.15s ease;
-      }
-      .btn:hover {
-        text-decoration: none;
-        border-color: var(--brand);
-        transform: translateY(-1px);
-      }
-      .hint {
-        margin-top: 1.4rem;
-        font-size: 0.88rem;
-        color: var(--fg-soft);
-      }
-
-      /* Sections */
-      section.block {
-        padding: 4rem 0;
-        border-top: 1px solid var(--border);
-      }
-      .block h2 {
-        font-size: clamp(1.6rem, 3.5vw, 2.2rem);
-        letter-spacing: -0.02em;
-        text-align: center;
-        margin: 0 0 0.6rem;
-      }
-      .block .sub {
-        text-align: center;
-        color: var(--fg-soft);
-        max-width: 36rem;
-        margin: 0 auto 2.6rem;
-      }
-      .grid {
-        display: grid;
-        gap: 1.2rem;
-        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      }
-      .card {
-        background: var(--bg-soft);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.5rem;
-      }
-      .card .ic {
-        font-size: 1.6rem;
-        margin-bottom: 0.6rem;
-        display: block;
-      }
-      .card h3 {
-        margin: 0 0 0.35rem;
-        font-size: 1.1rem;
-      }
-      .card p {
-        margin: 0;
-        color: var(--fg-soft);
-        font-size: 0.95rem;
-      }
-
-      /* Steps */
-      .steps {
-        counter-reset: step;
-        display: grid;
-        gap: 1.2rem;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      }
-      .step {
-        position: relative;
-        background: var(--bg-soft);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.6rem 1.5rem 1.5rem;
-      }
-      .step::before {
-        counter-increment: step;
-        content: counter(step);
-        display: grid;
-        place-items: center;
-        width: 2rem;
-        height: 2rem;
-        border-radius: 50%;
-        background: var(--brand);
-        color: var(--brand-ink);
-        font-weight: 700;
-        margin-bottom: 0.8rem;
-      }
-      .step h3 {
-        margin: 0 0 0.3rem;
-        font-size: 1.05rem;
-      }
-      .step p {
-        margin: 0;
-        color: var(--fg-soft);
-        font-size: 0.95rem;
-      }
-      code {
-        background: color-mix(in srgb, var(--brand) 14%, transparent);
-        color: var(--brand-strong);
-        padding: 0.12rem 0.4rem;
-        border-radius: 6px;
-        font-size: 0.9em;
-      }
-      @media (prefers-color-scheme: dark) {
-        code {
-          color: var(--accent);
-        }
-      }
-
-      .callout {
-        display: flex;
-        gap: 1rem;
-        align-items: flex-start;
-        background: color-mix(in srgb, var(--brand) 10%, var(--bg));
-        border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--border));
-        border-radius: var(--radius);
-        padding: 1.2rem 1.4rem;
-        color: var(--fg-soft);
-        font-size: 0.95rem;
-      }
-      .callout strong {
-        color: var(--fg);
-      }
-
-      .downloads {
-        display: flex;
-        gap: 0.8rem;
-        flex-wrap: wrap;
-        justify-content: center;
-        margin-top: 1.5rem;
-      }
-      .pill {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.85rem;
-        padding: 0.45rem 0.9rem;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        background: var(--bg);
-        color: var(--fg-soft);
-      }
-      .pill:hover {
-        border-color: var(--brand);
-        text-decoration: none;
-      }
-
-      footer {
-        border-top: 1px solid var(--border);
-        padding: 2.5rem 0 3rem;
-        color: var(--fg-soft);
-        font-size: 0.9rem;
-      }
-      .foot-inner {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        flex-wrap: wrap;
-        align-items: center;
-      }
-    </style>
   </head>
   <body>
     <header class="nav">
@@ -356,7 +32,7 @@
         <nav class="nav-links">
           <a href="#flash">Flash</a>
           <a href="#features">Features</a>
-          <a href="#cli">CLI</a>
+          <a href="./docs.html">Docs</a>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>
@@ -378,13 +54,7 @@
           </p>
           <div class="cta">
             <esp-web-install-button manifest="./manifest.json">
-              <button slot="activate" class="btn" style="
-                  background: var(--brand);
-                  color: var(--brand-ink);
-                  border-color: var(--brand);
-                  font-size: 1.05rem;
-                  padding: 0.9rem 1.6rem;
-                ">
+              <button slot="activate" class="btn primary" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
                 ⚡ Connect &amp; Install
               </button>
               <span slot="unsupported">
@@ -401,11 +71,20 @@
             <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
               📦 Releases
             </a>
+            <a class="btn" href="./docs.html">📖 Documentation</a>
           </div>
           <p class="hint">
             Works in desktop Chrome &amp; Edge (Web Serial). The chip is erased
             and reflashed — settings stored in NVS are reset.
           </p>
+          <!-- Optional product/UI shot; hidden until docs/img/board-hero.jpg exists. -->
+          <img
+            class="shot"
+            src="./img/board-hero.jpg"
+            alt="pixfrog running on an ESP32-P4 dev board with its OLED UI"
+            loading="lazy"
+            onerror="this.style.display='none'"
+          />
         </div>
       </section>
 
@@ -454,20 +133,20 @@
             <div class="card">
               <span class="ic">🌐</span>
               <h3>Art-Net ingest</h3>
-              <p>UDP Art-Net over Ethernet with universe mapping, PollReply and
-                a lwIP stack tuned for high packet rates.</p>
+              <p>UDP Art-Net over Ethernet with universe mapping, ArtPollReply
+                and a lwIP stack tuned for high packet rates.</p>
             </div>
             <div class="card">
               <span class="ic">⚡</span>
               <h3>LCD_CAM parallel out</h3>
-              <p>The ESP32-P4 LCD_CAM peripheral clocks pixel data out of PSRAM
-                frame buffers via DMA for rock-steady refresh.</p>
+              <p>The ESP32-P4 LCD_CAM peripheral clocks 8 parallel channels out
+                of PSRAM frame buffers via GDMA for rock-steady refresh.</p>
             </div>
             <div class="card">
               <span class="ic">🖥️</span>
               <h3>On-device UI</h3>
-              <p>SSD1306 OLED menu driven by a rotary encoder — live FPS, IP,
-                link state and full configuration, no laptop needed.</p>
+              <p>SSD1306 OLED menu driven by a seesaw rotary encoder — live FPS,
+                IP, link state and full configuration, no laptop needed.</p>
             </div>
             <div class="card">
               <span class="ic">💾</span>
@@ -482,6 +161,9 @@
                 DMA-capable SRAM keeps the output path fast.</p>
             </div>
           </div>
+          <p style="text-align: center; margin-top: 2rem">
+            <a class="btn" href="./docs.html#architecture">Read the architecture →</a>
+          </p>
         </div>
       </section>
 
@@ -501,7 +183,7 @@
               bootloader <code>0x2000</code>, partition table
               <code>0x8000</code>, app <code>0x10000</code>.
               <div class="downloads">
-                <a class="pill" id="dl-merged" href="./pixfrog-merged.bin">pixfrog-merged.bin</a>
+                <a class="pill" href="./pixfrog-merged.bin">pixfrog-merged.bin</a>
                 <a class="pill" href="./bootloader.bin">bootloader.bin</a>
                 <a class="pill" href="./partition-table.bin">partition-table.bin</a>
                 <a class="pill" href="./pixfrog.bin">pixfrog.bin</a>
@@ -514,9 +196,10 @@
 
     <footer>
       <div class="wrap foot-inner">
-        <span>🐸 pixfrog · <span id="version-foot">latest</span></span>
+        <span>🐸 pixfrog · <span id="version-foot">latest</span> · MIT licensed</span>
         <span>
           <a href="https://github.com/Lefix2/pixfrog">Source</a> ·
+          <a href="./docs.html">Docs</a> ·
           <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a> ·
           built with <a href="https://esphome.github.io/esp-web-tools/">esp-web-tools</a>
         </span>

@@ -52,7 +52,17 @@ jobs:
           cp build/bootloader/bootloader.bin           site/
           cp build/partition_table/partition-table.bin site/
           cp build/pixfrog.bin                         site/
-          cp .github/web-flasher/index.html            site/index.html
+          # Static site assets (flasher + docs viewer + shared theme).
+          cp .github/web-flasher/index.html  site/index.html
+          cp .github/web-flasher/docs.html   site/docs.html
+          cp .github/web-flasher/style.css   site/style.css
+          # Technical docs, rendered client-side by docs.html.
+          mkdir -p site/docs
+          cp docs/ARCHITECTURE.md site/docs/architecture.md
+          cp docs/HARDWARE.md     site/docs/hardware.md
+          cp docs/PROTOCOLS.md    site/docs/protocols.md
+          # Diagrams / screenshots (optional; pages hide any that are absent).
+          if [ -d docs/img ]; then mkdir -p site/img && cp -r docs/img/. site/img/; fi
           # esp-web-tools manifest (single merged part at 0x0).
           cat > site/manifest.json <<EOF
           {

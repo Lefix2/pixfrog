@@ -73,6 +73,8 @@ workflow also attempts to enable it automatically).
 
 ## Documentation
 
+Rendered online (with the browser flasher) at **<https://lefix2.github.io/pixfrog/>**:
+
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — task topology, frame lifecycle, memory budget
 - [docs/HARDWARE.md](docs/HARDWARE.md) — pinout, PHY, level shifters, encoder + OLED wiring
 - [docs/PROTOCOLS.md](docs/PROTOCOLS.md) — per-protocol timings, PCLK formula, DMA encoding
@@ -84,4 +86,4 @@ Firmware feature-complete against the spec. The IDF-side surface (LCD_CAM, SSD13
 
 ## License
 
-TBD.
+pixfrog is released under the [MIT License](LICENSE) — © 2026 Lefix2.
