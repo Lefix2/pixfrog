@@ -91,8 +91,8 @@ void init_network() {
     eth_mac_config_t mac_cfg             = ETH_MAC_DEFAULT_CONFIG();
     mac_cfg.rx_task_stack_size           = 4096;
     eth_esp32_emac_config_t esp_emac_cfg = ETH_ESP32_EMAC_DEFAULT_CONFIG();
-    esp_emac_cfg.smi_mdc_gpio_num        = pixfrog::board::kEthMdcGpio;
-    esp_emac_cfg.smi_mdio_gpio_num       = pixfrog::board::kEthMdioGpio;
+    esp_emac_cfg.smi_gpio.mdc_num        = pixfrog::board::kEthMdcGpio;
+    esp_emac_cfg.smi_gpio.mdio_num       = pixfrog::board::kEthMdioGpio;
     esp_eth_mac_t* mac                   = esp_eth_mac_new_esp32(&esp_emac_cfg, &mac_cfg);
     if (!mac) {
         ESP_LOGE(TAG, "esp_eth_mac_new_esp32 failed");

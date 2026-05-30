@@ -80,15 +80,16 @@ int64_t g_emit_us_max    = 0;
 
 bool IRAM_ATTR on_trans_done(esp_lcd_panel_handle_t /*panel*/,
                              const esp_lcd_rgb_panel_event_data_t* /*edata*/, void* /*user_ctx*/) {
-    g_trans_done_count++;
-    BaseType_t hp = pdFALSE;
+    // Plain read-modify-write: C++20 deprecates ++ on a volatile lvalue.
+    g_trans_done_count = g_trans_done_count + 1;
+    BaseType_t hp      = pdFALSE;
     xSemaphoreGiveFromISR(g_done_sem, &hp);
     return hp == pdTRUE;
 }
 
 bool IRAM_ATTR on_vsync(esp_lcd_panel_handle_t /*panel*/,
                         const esp_lcd_rgb_panel_event_data_t* /*edata*/, void* /*user_ctx*/) {
-    g_vsync_count++;
+    g_vsync_count = g_vsync_count + 1;
     BaseType_t hp = pdFALSE;
     // Fallback: if on_color_trans_done never fires on this IDF/HW combo,
     // on_vsync still releases the sem so the pipeline keeps flowing.
