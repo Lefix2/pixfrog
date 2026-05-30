@@ -1,0 +1,115 @@
+name: Release
+
+# Build a flashable firmware image on every version tag, publish it as a
+# GitHub Release, and deploy a browser-based flasher (esp-web-tools) to Pages.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build firmware + flasher site
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: idf.py build (esp32p4)
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32p4
+          idf.py build
+
+      - name: Assemble web-flasher site
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          . $IDF_PATH/export.sh
+          mkdir -p site
+          # Single image flashable at offset 0x0 — what the browser flasher uses.
+          # Absolute -o: idf.py runs esptool from build/, so a relative path
+          # would land in build/site/ instead of the repo-root site/.
+          idf.py merge-bin -f raw -o "$PWD/site/pixfrog-merged.bin"
+          # Individual parts for CLI / advanced flashing.
+          cp build/bootloader/bootloader.bin           site/
+          cp build/partition_table/partition-table.bin site/
+          cp build/pixfrog.bin                         site/
+          cp .github/web-flasher/index.html            site/index.html
+          # esp-web-tools manifest (single merged part at 0x0).
+          cat > site/manifest.json <<EOF
+          {
+            "name": "pixfrog",
+            "version": "${VERSION}",
+            "new_install_prompt_erase": true,
+            "builds": [
+              {
+                "chipFamily": "ESP32-P4",
+                "parts": [
+                  { "path": "pixfrog-merged.bin", "offset": 0 }
+                ]
+              }
+            ]
+          }
+          EOF
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy-pages:
+    name: Deploy browser flasher to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Enable Pages (GitHub Actions source)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: site
+      - name: Create release with firmware assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "pixfrog $GITHUB_REF_NAME" \
+            --generate-notes \
+            site/pixfrog-merged.bin \
+            site/bootloader.bin \
+            site/partition-table.bin \
+            site/pixfrog.bin

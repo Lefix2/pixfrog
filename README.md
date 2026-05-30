@@ -50,11 +50,26 @@ cd components/artnet/test       && cmake -B build && cmake --build build && ./bu
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push:
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests
+targeting `main`:
 
 - the three host suites above
 - `idf.py build` for `esp32p4` in the `espressif/idf:v5.5` container
 - `clang-format --dry-run` against `.clang-format` on every tracked C/C++ file
+
+## Releases & browser flashing
+
+`.github/workflows/release.yml` runs on every `v*` tag (e.g. `git tag v0.1.0
+&& git push origin v0.1.0`). It builds the firmware, then:
+
+- publishes a GitHub Release with `pixfrog-merged.bin` (flash at `0x0`) and the
+  individual bootloader / partition-table / app parts;
+- deploys a [esp-web-tools](https://esphome.github.io/esp-web-tools/) flasher to
+  GitHub Pages so the board can be flashed from desktop Chrome/Edge over USB —
+  no toolchain required.
+
+One-time setup: enable **Settings → Pages → Source: GitHub Actions** (the
+workflow also attempts to enable it automatically).
 
 ## Documentation
 
