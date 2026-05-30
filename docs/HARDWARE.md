@@ -30,7 +30,7 @@ External components added for pixfrog:
 
 ## 2. Pinout
 
-Validated against the Waveshare ESP32-P4 Module DEV-KIT header silkscreen. Strapping pins to avoid at boot: **GPIO 0** (bootloader entry), **GPIO 6** (download/normal mode), **GPIO 35** (SDIO).
+Validated against the Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin header). Strapping pins to avoid at boot: **GPIO 0** (bootloader entry), **GPIO 6** (download/normal mode), **GPIO 35** (SDIO). GPIO 16 is not exposed on P6 and must not be used.
 
 ### 2.1 LED 16-bit parallel bus (LCD_CAM)
 
@@ -47,7 +47,7 @@ ESP32-P4 routes every peripheral signal through the GPIO matrix, including the 1
 | 6       | CH4_DATA  | 24   |                             |
 | 7       | CH4_CLOCK | 25   |                             |
 | 8       | CH5_DATA  | 26   |                             |
-| 9       | CH5_CLOCK | 16   |                             |
+| 9       | CH5_CLOCK | 46   | P6 pin 33 (adj. to CH5_DATA)|
 | 10      | CH6_DATA  | 32   |                             |
 | 11      | CH6_CLOCK | 33   |                             |
 | 12      | CH7_DATA  | 47   |                             |
