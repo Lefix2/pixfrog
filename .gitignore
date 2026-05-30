@@ -19,3 +19,6 @@ __pycache__/
 # Logs
 *.log
 log/
+
+# ccache (CI compiler cache, also used in local docker runs)
+.ccache/

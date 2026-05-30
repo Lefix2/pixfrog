@@ -16,8 +16,19 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: espressif/idf:v5.5
+    env:
+      IDF_CCACHE_ENABLE: '1'
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v5
+
+      - name: Cache ccache objects
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-v5.5-${{ github.sha }}
+          restore-keys: |
+            ccache-v5.5-
 
       - name: idf.py build (esp32p4)
         shell: bash

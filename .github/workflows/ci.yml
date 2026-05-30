@@ -62,13 +62,23 @@ jobs:
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
+    env:
+      # idf.py wraps the compilers with ccache; persisting CCACHE_DIR across runs
+      # turns a full IDF recompile into ~99% cache hits (cuts most of the build).
+      IDF_CCACHE_ENABLE: '1'
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v5
 
-      # No managed_components (no idf_component.yml deps) and the toolchain
-      # ships in the image at /opt/esp, so there is nothing project-specific
-      # worth caching here (the old cache step only emitted a "path does not
-      # exist" warning). A ccache cache could speed up IDF recompiles later.
+      - name: Cache ccache objects
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          # New key every commit so the cache is always re-saved; restore-keys
+          # falls back to the most recent prior cache to stay warm.
+          key: ccache-${{ matrix.idf_version }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.idf_version }}-
 
       - name: idf.py set-target esp32p4 && idf.py build
         shell: bash
@@ -78,9 +88,10 @@ jobs:
           idf.py set-target esp32p4
           idf.py build
 
-      - name: Show binary size
+      - name: Show binary size & ccache stats
         if: always()
         shell: bash
         run: |
           . $IDF_PATH/export.sh
           idf.py size || true
+          ccache -s || true
