@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pixfrog — documentation</title>
+    <meta
+      name="description"
+      content="Technical documentation for pixfrog: architecture, hardware and LED protocols on the ESP32-P4."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B8%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./style.css" />
+    <!-- Syntax highlighting themes (light / dark). -->
+    <link
+      rel="stylesheet"
+      media="(prefers-color-scheme: light)"
+      href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github.min.css"
+    />
+    <link
+      rel="stylesheet"
+      media="(prefers-color-scheme: dark)"
+      href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark.min.css"
+    />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="./index.html"><span class="logo">🐸</span> pixfrog</a>
+        <nav class="nav-links">
+          <a class="keep" href="./index.html#flash">Flash</a>
+          <a class="keep active" href="./docs.html">Docs</a>
+          <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap docs">
+      <aside class="sidebar">
+        <h4>Documentation</h4>
+        <nav id="doc-nav">
+          <a href="#architecture" data-doc="architecture">Architecture</a>
+          <a href="#hardware" data-doc="hardware">Hardware</a>
+          <a href="#protocols" data-doc="protocols">LED protocols</a>
+        </nav>
+        <h4>On this page</h4>
+        <nav id="toc" class="toc"></nav>
+      </aside>
+
+      <article id="content" class="prose">
+        <p>Loading…</p>
+      </article>
+    </main>
+
+    <footer>
+      <div class="wrap foot-inner">
+        <span>🐸 pixfrog · <span id="version-foot">docs</span> · MIT licensed</span>
+        <span>
+          <a href="./index.html">Flasher</a> ·
+          <a href="https://github.com/Lefix2/pixfrog">Source</a>
+        </span>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
+    <script>
+      const DOCS = {
+        architecture: { title: "Architecture", file: "./docs/architecture.md" },
+        hardware: { title: "Hardware", file: "./docs/hardware.md" },
+        protocols: { title: "LED protocols", file: "./docs/protocols.md" },
+      };
+
+      const slug = (s) =>
+        s
+          .toLowerCase()
+          .replace(/[^\w\s-]/g, "")
+          .trim()
+          .replace(/\s+/g, "-");
+
+      function currentKey() {
+        const k = location.hash.replace(/^#/, "");
+        return DOCS[k] ? k : "architecture";
+      }
+
+      async function render(key) {
+        const content = document.getElementById("content");
+        const meta = DOCS[key];
+        // Highlight active doc in the sidebar.
+        document.querySelectorAll("#doc-nav a").forEach((a) => {
+          a.classList.toggle("active", a.dataset.doc === key);
+        });
+        content.innerHTML = "<p>Loading…</p>";
+        let md;
+        try {
+          const res = await fetch(meta.file);
+          if (!res.ok) throw new Error(res.status);
+          md = await res.text();
+        } catch (e) {
+          content.innerHTML =
+            "<p>Couldn't load this document. It is published with each release — " +
+            'see <a href="https://github.com/Lefix2/pixfrog/tree/main/docs">the docs on GitHub</a>.</p>';
+          document.getElementById("toc").innerHTML = "";
+          return;
+        }
+
+        marked.setOptions({ gfm: true, breaks: false });
+        content.innerHTML = marked.parse(md);
+
+        // marked v12 dropped the built-in highlight hook — colour code blocks
+        // ourselves after rendering.
+        content.querySelectorAll("pre code").forEach((el) => {
+          try {
+            hljs.highlightElement(el);
+          } catch (_) {}
+        });
+
+        // Assign ids to headings + build a table of contents.
+        const toc = document.getElementById("toc");
+        toc.innerHTML = "";
+        const seen = {};
+        content.querySelectorAll("h2, h3").forEach((h) => {
+          let id = slug(h.textContent);
+          if (seen[id]) id += "-" + ++seen[id];
+          else seen[id] = 1;
+          h.id = id;
+          const a = document.createElement("a");
+          a.href = "#" + key;
+          a.textContent = h.textContent;
+          if (h.tagName === "H3") a.className = "lvl3";
+          a.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            h.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+          toc.appendChild(a);
+        });
+
+        // Hide images that aren't published yet (see docs/img/).
+        content.querySelectorAll("img").forEach((img) => {
+          img.addEventListener("error", () => (img.style.display = "none"));
+        });
+
+        document.title = "pixfrog — " + meta.title;
+        window.scrollTo({ top: 0 });
+      }
+
+      window.addEventListener("hashchange", () => render(currentKey()));
+      render(currentKey());
+
+      // Live version in the footer.
+      fetch("./manifest.json")
+        .then((r) => r.json())
+        .then((m) => {
+          if (m.version)
+            document.getElementById("version-foot").textContent = m.version;
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>
