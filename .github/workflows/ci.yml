@@ -10,7 +10,7 @@ jobs:
     name: clang-format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install clang-format 18
         run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: clang-format --dry-run -Werror on every C/C++ source
@@ -23,7 +23,7 @@ jobs:
     name: Host unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: led_protocols (timings, encoders, perf)
         run: |
@@ -62,17 +62,12 @@ jobs:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Cache managed_components + esp tools
-        uses: actions/cache@v4
-        with:
-          path: |
-            managed_components
-            ~/.espressif
-          key: idf-${{ matrix.idf_version }}-${{ hashFiles('main/CMakeLists.txt', 'components/**/CMakeLists.txt', 'sdkconfig.defaults') }}
-          restore-keys: |
-            idf-${{ matrix.idf_version }}-
+      # No managed_components (no idf_component.yml deps) and the toolchain
+      # ships in the image at /opt/esp, so there is nothing project-specific
+      # worth caching here (the old cache step only emitted a "path does not
+      # exist" warning). A ccache cache could speed up IDF recompiles later.
 
       - name: idf.py set-target esp32p4 && idf.py build
         shell: bash
