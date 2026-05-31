@@ -10,6 +10,8 @@ Reference for the software architecture of **pixfrog**, a high-performance 8-cha
 
 pixfrog is built around one principle: **decouple network ingest (bursty, jittery) from LED rendering (strict timing)** via multiple double-buffered stages. Each stage runs on a pinned core, shares only atomic pointers, and never allocates on the hot path.
 
+![pixfrog system overview](img/architecture-overview.svg)
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              ESP32-P4 dual-core                              │
@@ -59,6 +61,8 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 
 ## 3. FreeRTOS task topology
 
+![FreeRTOS task topology across the two cores](img/task-topology.svg)
+
 | Task                 | Core | Prio | Stack | Wake source                   | Role                                              |
 |----------------------|:----:|:----:|:-----:|-------------------------------|---------------------------------------------------|
 | `lwip_tcpip_thread`  | 0    | 18   | 4 kB  | lwIP mailbox                  | IDF TCP/IP stack (provided)                       |
@@ -75,6 +79,8 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 ## 4. Frame lifecycle
 
 A frame is the interval between two LED renders (33.33 ms at 30 Hz, 16.67 ms at 60 Hz).
+
+![Frame lifecycle — render_task stages with GDMA and network in parallel](img/frame-pipeline.svg)
 
 ```
 t = 0 ms        : render_task wakes up

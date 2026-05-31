@@ -32,6 +32,8 @@ External components added for pixfrog:
 
 ## 2. Pinout
 
+![Waveshare ESP32-P4 Module DEV-KIT — labelled header and interfaces](img/hardware-pinout.jpg)
+
 Validated against the Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin header). Strapping pins to avoid at boot: **GPIO 0** (bootloader entry), **GPIO 6** (download/normal mode), **GPIO 35** (SDIO). GPIO 16 is not exposed on P6 and must not be used.
 
 ### 2.1 LED 16-bit parallel bus (LCD_CAM)
@@ -160,6 +162,8 @@ The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
 **Part**: **74HCT245** (8 bits per package, two packages cover all 16 GPIOs). The `HCT` (not HC) variant is critical: Vih = 2.0 V (CMOS-to-TTL threshold), guarantees clean switching from 3.3 V CMOS into a 5 V CMOS strip.
 
+![3.3 V → 5 V level shifting with a 74HCT245 buffer](img/level-shifter.svg)
+
 Typical 74HCT245 wiring:
 
 ```
@@ -176,6 +180,8 @@ B0..B7    : 5 V outputs to strips
 ---
 
 ## 7. Encoder wiring (Adafruit seesaw 4991)
+
+![OLED and seesaw encoder on the shared I²C bus](img/peripherals-wiring.svg)
 
 Everything is over I2C:
 
@@ -209,6 +215,8 @@ Reference: [Adafruit Learn — I2C QT Rotary Encoder](https://learn.adafruit.com
 ---
 
 ## 8. OLED wiring (SSD1306)
+
+![SSD1306 home screen mockup](img/oled-ui.svg)
 
 ```
 SSD1306 128×64    ESP32-P4

@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 600" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#5b6b64"/>
+    </marker>
+    <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#1f9d55"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="600" fill="#ffffff"/>
+  <text x="32" y="42" font-size="26" font-weight="700" fill="#11201a">pixfrog — system overview</text>
+  <text x="32" y="64" font-size="14" fill="#5b6b64">Decouple bursty network ingest from strict-timing LED rendering via double-buffered, core-pinned stages.</text>
+
+  <!-- Chip outline -->
+  <rect x="24" y="84" width="1192" height="436" rx="14" fill="#fbfdfc" stroke="#cfdbd5" stroke-width="1.5"/>
+  <text x="44" y="112" font-size="15" font-weight="700" fill="#167a41">ESP32-P4 · dual-core RISC-V @ 400 MHz</text>
+
+  <!-- Column dividers / headers -->
+  <text x="60" y="146" font-size="13" font-weight="700" fill="#5b6b64" letter-spacing="1">CORE 0 — NETWORK + UI</text>
+  <text x="664" y="146" font-size="13" font-weight="700" fill="#5b6b64" letter-spacing="1">CORE 1 — RENDER + DMA</text>
+  <line x1="628" y1="128" x2="628" y2="500" stroke="#e4eae7" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+  <!-- LEFT column -->
+  <g font-family="'DejaVu Sans Mono', ui-monospace, monospace">
+    <rect x="60" y="160" width="520" height="48" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="80" y="189" font-size="15" fill="#11201a">Ethernet RMII  →  lwIP UDP</text>
+
+    <rect x="60" y="232" width="520" height="60" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="80" y="258" font-size="15" fill="#11201a">artnet_rx_task — prio 10</text>
+    <text x="80" y="278" font-size="13" fill="#5b6b64">parse ArtDmx → write universe_pool[back]</text>
+
+    <rect x="60" y="316" width="520" height="62" rx="8" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
+    <text x="80" y="342" font-size="15" font-weight="700" fill="#11201a">universe_pool[2][N] — PSRAM</text>
+    <text x="80" y="362" font-size="13" fill="#167a41">double-buffered · atomic pointer swap</text>
+
+    <rect x="60" y="408" width="250" height="76" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="80" y="434" font-size="15" fill="#11201a">ui_task — prio 4</text>
+    <text x="80" y="454" font-size="13" fill="#5b6b64">OLED + rotary</text>
+    <text x="80" y="472" font-size="13" fill="#5b6b64">encoder</text>
+
+    <rect x="330" y="408" width="250" height="76" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="350" y="434" font-size="15" fill="#11201a">config_store</text>
+    <text x="350" y="454" font-size="13" fill="#5b6b64">NVS · persisted</text>
+    <text x="350" y="472" font-size="13" fill="#5b6b64">settings</text>
+  </g>
+
+  <!-- LEFT arrows -->
+  <line x1="320" y1="208" x2="320" y2="232" stroke="#5b6b64" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="320" y1="292" x2="320" y2="316" stroke="#5b6b64" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- RIGHT column -->
+  <g font-family="'DejaVu Sans Mono', ui-monospace, monospace">
+    <rect x="664" y="160" width="528" height="112" rx="8" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
+    <text x="684" y="186" font-size="15" font-weight="700" fill="#11201a">render_task — prio 20</text>
+    <text x="684" y="208" font-size="13" fill="#167a41">1 · swap universes (front ↔ back)</text>
+    <text x="684" y="226" font-size="13" fill="#167a41">2 · encode full frame → fb_back</text>
+    <text x="684" y="244" font-size="13" fill="#167a41">3 · esp_cache_msync + draw_bitmap</text>
+    <text x="684" y="262" font-size="13" fill="#167a41">4 · wait done_sem</text>
+
+    <rect x="664" y="300" width="528" height="48" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="684" y="329" font-size="15" fill="#11201a">frame_buf[2] — PSRAM (double-buffered)</text>
+
+    <rect x="664" y="372" width="528" height="48" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="684" y="401" font-size="15" fill="#11201a">LCD_CAM + GDMA — streams at PCLK</text>
+
+    <rect x="664" y="444" width="528" height="48" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="684" y="473" font-size="15" fill="#11201a">16 GPIOs → 8 × (DATA + CLOCK)</text>
+  </g>
+
+  <!-- RIGHT arrows -->
+  <line x1="928" y1="272" x2="928" y2="300" stroke="#5b6b64" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="928" y1="348" x2="928" y2="372" stroke="#5b6b64" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="928" y1="420" x2="928" y2="444" stroke="#5b6b64" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- Cross arrow: universe_pool → render_task -->
+  <path d="M580 347 H612 V216 H660" fill="none" stroke="#1f9d55" stroke-width="2" marker-end="url(#arg)"/>
+  <rect x="600" y="268" width="24" height="20" rx="4" fill="#ffffff"/>
+  <text x="612" y="283" font-size="12" font-weight="700" fill="#167a41" text-anchor="middle" font-family="system-ui, sans-serif">frames</text>
+
+  <!-- Output to strips -->
+  <line x1="928" y1="492" x2="928" y2="540" stroke="#5b6b64" stroke-width="1.6" marker-end="url(#ar)"/>
+  <rect x="664" y="540" width="528" height="44" rx="8" fill="#11201a"/>
+  <text x="928" y="567" font-size="14" fill="#eafff3" text-anchor="middle" font-family="'DejaVu Sans Mono', monospace">LED strips — WS2815 · WS2812B · APA102 · SK9822 · …</text>
+</svg>

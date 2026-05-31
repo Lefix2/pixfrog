@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 340" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <marker id="ct-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#5b6b64"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="340" fill="#ffffff"/>
+  <text x="32" y="40" font-size="24" font-weight="700" fill="#11201a">LCD_CAM clock tree</text>
+  <text x="32" y="62" font-size="14" fill="#5b6b64">An integer divider sets PCLK; every DMA sample is one PCLK tick clocked out across the 16-bit bus.</text>
+
+  <!-- chain -->
+  <g font-family="'DejaVu Sans Mono', ui-monospace, monospace">
+    <rect x="32" y="96" width="190" height="72" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="127" y="128" text-anchor="middle" font-size="15" font-weight="700" fill="#11201a">PLL source</text>
+    <text x="127" y="148" text-anchor="middle" font-size="12.5" fill="#5b6b64">f_PLL (e.g. 160 MHz)</text>
+
+    <rect x="282" y="96" width="190" height="72" rx="8" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
+    <text x="377" y="128" text-anchor="middle" font-size="15" font-weight="700" fill="#11201a">÷ CLK_DIV</text>
+    <text x="377" y="148" text-anchor="middle" font-size="12.5" fill="#167a41">integer, 2 … 256</text>
+
+    <rect x="532" y="96" width="190" height="72" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="627" y="128" text-anchor="middle" font-size="15" font-weight="700" fill="#11201a">PCLK</text>
+    <text x="627" y="148" text-anchor="middle" font-size="12.5" fill="#5b6b64">1 sample / tick</text>
+
+    <rect x="782" y="96" width="200" height="72" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="882" y="128" text-anchor="middle" font-size="15" font-weight="700" fill="#11201a">DMA samples</text>
+    <text x="882" y="148" text-anchor="middle" font-size="12.5" fill="#5b6b64">from PSRAM, via GDMA</text>
+
+    <rect x="1042" y="96" width="166" height="72" rx="8" fill="#11201a"/>
+    <text x="1125" y="128" text-anchor="middle" font-size="15" font-weight="700" fill="#eafff3">16 GPIOs</text>
+    <text x="1125" y="148" text-anchor="middle" font-size="12.5" fill="#7bdcb5">8×(DATA+CLK)</text>
+  </g>
+
+  <g stroke="#5b6b64" stroke-width="1.8">
+    <line x1="222" y1="132" x2="282" y2="132" marker-end="url(#ct-ar)"/>
+    <line x1="472" y1="132" x2="532" y2="132" marker-end="url(#ct-ar)"/>
+    <line x1="722" y1="132" x2="782" y2="132" marker-end="url(#ct-ar)"/>
+    <line x1="982" y1="132" x2="1042" y2="132" marker-end="url(#ct-ar)"/>
+  </g>
+
+  <!-- formulas -->
+  <rect x="32" y="206" width="1176" height="108" rx="10" fill="#fbfdfc" stroke="#cfdbd5"/>
+  <g font-family="'DejaVu Sans Mono', ui-monospace, monospace" font-size="15" fill="#11201a">
+    <text x="56" y="240">f_PCLK   = f_PLL / CLK_DIV</text>
+    <text x="56" y="268">T_bit    = samples_per_bit   × T_PCLK        <tspan fill="#5b6b64">// one 1-wire DATA bit</tspan></text>
+    <text x="56" y="296">f_clock  = f_PCLK / samples_per_clock        <tspan fill="#5b6b64">// clocked protocols, samples_per_clock even ≥ 2</tspan></text>
+  </g>
+</svg>
