@@ -12,36 +12,6 @@ pixfrog is built around one principle: **decouple network ingest (bursty, jitter
 
 ![pixfrog system overview](img/architecture-overview.svg)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              ESP32-P4 dual-core                              │
-│                                                                              │
-│  Core 0 (NETWORK + UI)                Core 1 (RENDER + DMA)                  │
-│  ┌────────────────────────┐           ┌────────────────────────┐             │
-│  │ lwIP / Ethernet RMII   │           │ render_task            │             │
-│  │   │                    │           │   prio 20              │             │
-│  │   ▼                    │           │   │                    │             │
-│  │ artnet_rx_task         │           │   │ 1. swap universes  │             │
-│  │   prio 10              │           │   │ 2. encode FULL     │             │
-│  │   │ writes             │           │   │    frame into      │             │
-│  │   ▼                    │           │   │    fb_back (PSRAM) │             │
-│  │ universe_pool[2][N]    │ ───────►  │   │ 3. esp_cache_msync │             │
-│  │ (PSRAM, atomic swap)   │           │   │ 4. draw_bitmap →   │             │
-│  │                        │           │   │    swap fb_active  │             │
-│  │ ui_task                │           │   │ 5. wait done_sem   │             │
-│  │   prio 4               │           │   │                    │             │
-│  │   (idle when no event) │           │   ▼                    │             │
-│  │                        │           │ frame_buf[2] (PSRAM)   │             │
-│  │ config_store           │           │   ▲                    │             │
-│  │ (NVS, called from UI)  │           │   │ GDMA pulls bytes   │             │
-│  │                        │           │   │ at PCLK rate       │             │
-│  │                        │           │ LCD_CAM peripheral     │             │
-│  │                        │           │   │ → 16 GPIOs         │             │
-│  └────────────────────────┘           └────────────────────────┘             │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
 **Key idea**: frame N+1 is encoded into `frame_buf[back]` (PSRAM) while GDMA streams frame N out of `frame_buf[front]`. The swap is a pointer exchange after `esp_cache_msync` + `esp_lcd_panel_draw_bitmap`. No underrun risk because the encoder has no sub-frame deadline: it has the full DMA emission window of the current frame to produce the next one.
 
 ---
@@ -82,25 +52,14 @@ A frame is the interval between two LED renders (33.33 ms at 30 Hz, 16.67 ms at 
 
 ![Frame lifecycle — render_task stages with GDMA and network in parallel](img/frame-pipeline.svg)
 
-```
-t = 0 ms        : render_task wakes up
-                  a) atomic swap universe_front ↔ universe_back
-                  b) for each channel:
-                     decode universes → pixels (DMX offset, multi-universe spanning)
-                     into pixel_back_buffer(ch), then swap_pixels(ch)
-                  c) lcd::render_frame()
-                     - zero fb_back
-                     - encode every channel into fb_back (color order,
-                       brightness, grouping, invert applied here)
-                     - esp_cache_msync(fb_back, ..., DIR_C2M)
-                     - esp_lcd_panel_draw_bitmap(panel, fb_back) → swap + GDMA kick
-                  d) dmx::wait_for_sync_or_period(remaining)
-                     - blocks until end-of-period OR an ArtSync arrives
+When `render_task` wakes (t = 0), it runs, in order:
 
-In parallel on core 0 across the whole frame:
-  artnet_rx_task drains UDP into universe_pool[back]
-  ArtSync received → dmx::note_sync() → render_task wakes early via semaphore
-```
+1. Atomic swap `universe_front ↔ universe_back`.
+2. Per channel: decode universes → pixels (DMX offset, multi-universe spanning) into `pixel_back_buffer(ch)`, then `swap_pixels(ch)`.
+3. `lcd::render_frame()`: zero `fb_back`, encode every channel (color order, brightness, grouping, invert), `esp_cache_msync(…, DIR_C2M)`, then `esp_lcd_panel_draw_bitmap(panel, fb_back)` — which swaps the active FB and kicks GDMA.
+4. `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
+
+In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]`; an ArtSync calls `dmx::note_sync()`, which wakes `render_task` early via the semaphore.
 
 **Total wire-to-photon latency**: typically 2 frames (one frame of wait + one frame of emission). At 30 Hz that's ~66 ms; at 60 Hz, ~33 ms — well below human perception for lighting.
 
