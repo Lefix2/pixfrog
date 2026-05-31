@@ -46,10 +46,6 @@ Datasheet tolerance is typically ±150 ns per sub-time. pixfrog aims for the mid
 
 ![LCD_CAM clock tree and the PCLK/bit/clock formulas](img/clock-tree.svg)
 
-```
-PLL160M (source) ──► CLK_DIV (integer) ──► PCLK ──► DMA samples ──► 16 GPIOs
-```
-
 Formulas:
 
 ```

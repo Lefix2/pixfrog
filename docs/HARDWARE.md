@@ -164,17 +164,6 @@ The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
 ![3.3 V → 5 V level shifting with a 74HCT245 buffer](img/level-shifter.svg)
 
-Typical 74HCT245 wiring:
-
-```
-Vcc       : 5 V (strip side)
-GND       : common MCU/strip ground
-DIR       : high (A → B)
-/OE       : low (always enabled)
-A0..A7    : 3.3 V inputs from ESP32-P4
-B0..B7    : 5 V outputs to strips
-```
-
 > Alternatives: **SN74LVC1T45** per GPIO (overkill but very clean), or **TXS0108E** (avoid — its auto-direction is too slow for fast clocked protocols).
 
 ---
