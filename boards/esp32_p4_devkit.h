@@ -9,11 +9,16 @@
 // the 16 data lines of the LCD_CAM bus and PCLK — is routed through the
 // GPIO matrix. Any free GPIO is therefore a valid LCD_CAM data line, so
 // the only constraints on the assignment below are:
-//   - strapping pins to avoid at boot:
-//       GPIO 0  — bootloader entry
-//       GPIO 6  — download/normal mode select
-//       GPIO 35 — SDIO mode (not on this connector anyway)
-//   - pins reserved for I2C / UART / Ethernet RMII (internal) elsewhere.
+//   - strapping pins, latched at reset (ESP32-P4 datasheet §3.3):
+//       GPIO 35 — boot/download select; LOW at reset = serial bootloader.
+//                 Driven by the on-board BOOT button + auto-program circuit,
+//                 and doubles as RMII TXD1 (see Ethernet). Not on P6.
+//       GPIO 36 — must read HIGH for a reliable serial-download boot.
+//       GPIO 34 — selects the JTAG signal source at boot.
+//                 GPIO 37/38 are strappable too but serve as the UART0
+//                 console here; latches free them once reset is released.
+//                 None of the LED pins below land on a strapping pin.
+//   - pins reserved for I2C / UART / Ethernet RMII elsewhere.
 //
 // All assignments below sit on the exposed header and avoid the strapping
 // pins above. Pin pairs are grouped logically for routing convenience.
@@ -53,18 +58,22 @@ constexpr int kLedBusGpio[16] = {
 // Ethernet — RMII to on-board IP101GRI PHY
 // ────────────────────────────────────────────────────────────────────────────
 //
-// The PHY's RMII pins are wired directly to the SoC inside the Function
-// EV Board and are NOT brought out to the header connector, so they do
-// not constrain our LED pinout above.
+// Verified against the Waveshare DEV-KIT schematic (PHY U7 = IP101GRI) and
+// the official board pinout. The PHY's RMII + management pins use fixed SoC
+// GPIOs (28-35, 49-52) and PHY RESET is GPIO51; none are on the P6 header,
+// so they do not constrain the LED pinout above.
 //
-// MDC, MDIO and PHY_RST below are the values used by the official
-// Espressif Function EV Board reference build; revalidate against the
-// board schematic before flashing on a different revision.
+// RMII data/clock equal the ESP32-P4 ETH_ESP32_EMAC_DEFAULT_CONFIG() defaults
+// (IDF v5.5), so main/init_network() only has to override MDC/MDIO:
+//   TXD0=34  TXD1=35  TX_EN=49  RXD0=29  RXD1=30  CRS_DV=28  REF_CLK(50M)=50
+//
+// Management bus + reset are read straight off U7:
+//   MDC = pin 22, MDIO = pin 23, RESET = pin 32.
 
-constexpr int kEthMdcGpio      = 29;
-constexpr int kEthMdioGpio     = 30;
-constexpr int kEthPhyResetGpio = -1;    // PHY has its own RC reset on the EV Board
-constexpr int kEthPhyAddress   = 0x01;  // strap-determined on IP101GRI
+constexpr int kEthMdcGpio      = 31;
+constexpr int kEthMdioGpio     = 52;
+constexpr int kEthPhyResetGpio = 51;    // drive HIGH to release U7 from reset
+constexpr int kEthPhyAddress   = 0x01;  // IP101GRI strap (AD0/AD3); verify if link fails
 
 // ────────────────────────────────────────────────────────────────────────────
 // I2C — shared bus for OLED + seesaw encoder
