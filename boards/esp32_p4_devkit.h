@@ -1,9 +1,9 @@
-// Board definition: Espressif ESP32-P4 Function EV Board
+// Board definition: Waveshare ESP32-P4 Module DEV-KIT
 // (datasheet:
 // https://www.espressif.com/sites/default/files/documentation/esp32-p4_datasheet_en.pdf)
 //
-// Pinout source: official Function EV Board header connector pinout
-// (only GPIOs exposed on the user-facing header are candidates here).
+// Pinout source: Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin header).
+// Only GPIOs exposed on P6 are candidates here.
 //
 // GPIO matrix capability: on ESP32-P4 every peripheral signal — including
 // the 16 data lines of the LCD_CAM bus and PCLK — is routed through the
@@ -39,13 +39,13 @@ constexpr const char* kBoardRev  = "v0";
 // Bit 0 = CH1 DATA, Bit 1 = CH1 CLOCK, Bit 2 = CH2 DATA, etc.
 
 constexpr int kLedDataGpio[8]  = { 2, 4, 22, 24, 26, 32, 47, 53 };
-constexpr int kLedClockGpio[8] = { 3, 5, 23, 25, 16, 33, 48, 54 };
+constexpr int kLedClockGpio[8] = { 3, 5, 23, 25, 46, 33, 48, 54 };
 
 // Full 16-pin bus in bit order (DATA0, CLK0, DATA1, CLK1, ...).
 // clang-format off
 constexpr int kLedBusGpio[16] = {
      2,  3,   4,  5,  22, 23,  24, 25,
-    26, 16,  32, 33,  47, 48,  53, 54,
+    26, 46,  32, 33,  47, 48,  53, 54,
 };
 // clang-format on
 
