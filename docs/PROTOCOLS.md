@@ -25,6 +25,8 @@ Reference for timings, clock formulas and DMA encoding for every protocol pixfro
 
 Typical values in nanoseconds. T0H = high time encoding a `0`, T1H = high time encoding a `1`, etc. TRESET = low time required between frames for the strip to latch.
 
+![1-wire NRZ encoding: a `0` and a `1` differ only by the high time inside a fixed bit period; TRESET latches the frame](img/nrz-encoding.png)
+
 | Protocol      | T0H  | T0L  | T1H  | T1L  | TDATA (T0H+T0L = T1H+T1L) | TRESET   |
 |---------------|-----:|-----:|-----:|-----:|---------------------------:|---------:|
 | WS2815        | 300  | 950  | 950  | 300  | 1 250                      | ≥ 280 µs |
@@ -145,6 +147,8 @@ sample[19]  : CH1_DATA = 0   // 15 LOW samples = 937.5 ns ≈ T0L
 CH1_CLOCK stays 0 for all 20 samples (the CLOCK pin exists on the bus but is never connected to a 1-wire strip).
 
 ### 4.2 Clocked SPI-like encoding (APA102, samples_per_clock = 4 → 4 MHz)
+
+![Clocked SPI-like encoding: DATA (DIN) is sampled on each CLOCK (CKI) rising edge, MSB first](img/clocked-encoding.png)
 
 To transmit 1 DATA bit clocked on 1 CLOCK cycle:
 

@@ -22,3 +22,6 @@ log/
 
 # ccache (CI compiler cache, also used in local docker runs)
 .ccache/
+
+# Windows NTFS alternate-data-stream metadata (WSL downloads)
+*:Zone.Identifier
