@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 440" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <marker id="fp-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#5b6b64"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="440" fill="#ffffff"/>
+  <text x="32" y="40" font-size="24" font-weight="700" fill="#11201a">Frame lifecycle — one render period</text>
+  <text x="32" y="62" font-size="14" fill="#5b6b64">16.67 ms @ 60 Hz · 33.3 ms @ 30 Hz. Encoder has the whole DMA window to build the next frame — no underrun.</text>
+
+  <!-- time axis -->
+  <line x1="120" y1="86" x2="1180" y2="86" stroke="#cfdbd5" stroke-width="1.5"/>
+  <text x="120" y="80" font-size="12" fill="#5b6b64">t = 0</text>
+  <text x="1180" y="80" font-size="12" fill="#5b6b64" text-anchor="end">t = period</text>
+
+  <!-- lane labels -->
+  <g font-size="12" font-weight="700" fill="#5b6b64" font-family="system-ui, sans-serif">
+    <text x="24" y="138">render_task</text>
+    <text x="24" y="152" font-weight="400" font-size="11">core 1 · prio 20</text>
+    <text x="24" y="232">GDMA / LCD_CAM</text>
+    <text x="24" y="320">artnet_rx_task</text>
+    <text x="24" y="334" font-weight="400" font-size="11">core 0 · prio 10</text>
+  </g>
+
+  <!-- render_task stages -->
+  <g font-family="'DejaVu Sans Mono', ui-monospace, monospace" font-size="12.5">
+    <rect x="120" y="108" width="92" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="166" y="140" text-anchor="middle" fill="#11201a">wake</text>
+    <rect x="216" y="108" width="120" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="276" y="133" text-anchor="middle" fill="#11201a">swap</text>
+    <text x="276" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">universes</text>
+    <rect x="340" y="108" width="150" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="415" y="133" text-anchor="middle" fill="#11201a">decode</text>
+    <text x="415" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">→ pixels</text>
+    <rect x="494" y="108" width="250" height="56" rx="6" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
+    <text x="619" y="133" text-anchor="middle" fill="#11201a" font-weight="700">encode → fb_back</text>
+    <text x="619" y="150" text-anchor="middle" fill="#167a41" font-size="11">color · brightness · grouping</text>
+    <rect x="748" y="108" width="170" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="833" y="133" text-anchor="middle" fill="#11201a">msync + draw</text>
+    <text x="833" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">swap + GDMA kick</text>
+    <rect x="922" y="108" width="258" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="1051" y="133" text-anchor="middle" fill="#11201a">wait done_sem / period</text>
+    <text x="1051" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">blocks until end-of-period or ArtSync</text>
+  </g>
+
+  <!-- GDMA lane -->
+  <rect x="120" y="204" width="1060" height="48" rx="6" fill="#eef3fb" stroke="#9bb6e0"/>
+  <text x="650" y="233" text-anchor="middle" font-size="13" fill="#274b80" font-family="'DejaVu Sans Mono', monospace">GDMA streams the active frame → LCD_CAM → 16 GPIOs (continuous, at PCLK)</text>
+  <line x1="833" y1="164" x2="833" y2="204" stroke="#5b6b64" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#fp-ar)"/>
+
+  <!-- core 0 lane -->
+  <rect x="120" y="292" width="1060" height="48" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
+  <text x="640" y="321" text-anchor="middle" font-size="13" fill="#11201a" font-family="'DejaVu Sans Mono', monospace">artnet_rx_task drains UDP → universe_pool[back]   (all frame long, in parallel)</text>
+
+  <!-- ArtSync early-wake marker -->
+  <g>
+    <line x1="1051" y1="292" x2="1051" y2="170" stroke="#1f9d55" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#fp-ar)"/>
+    <rect x="980" y="356" width="200" height="26" rx="6" fill="#e6f6ec" stroke="#1f9d55"/>
+    <text x="1080" y="373" text-anchor="middle" font-size="12" fill="#167a41" font-family="system-ui, sans-serif">ArtSync ↯ wakes render early</text>
+  </g>
+
+  <text x="32" y="410" font-size="13" fill="#5b6b64">Wire-to-photon latency ≈ 2 frames (one wait + one emission). An ArtDmx mid-encode lands in frame N+1 — never half-and-half.</text>
+</svg>

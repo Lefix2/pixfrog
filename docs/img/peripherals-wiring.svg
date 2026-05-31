@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 360" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <rect width="980" height="360" fill="#ffffff"/>
+  <text x="32" y="40" font-size="24" font-weight="700" fill="#11201a">UI peripherals — shared I²C bus</text>
+  <text x="32" y="62" font-size="14" fill="#5b6b64">The OLED and the rotary encoder share one 3.3 V I²C bus (SDA = GPIO7, SCL = GPIO8) at different addresses.</text>
+
+  <!-- ESP32-P4 -->
+  <rect x="40" y="130" width="200" height="150" rx="10" fill="#f1f5f3" stroke="#cfdbd5"/>
+  <text x="140" y="168" text-anchor="middle" font-size="16" font-weight="700" fill="#11201a">ESP32-P4</text>
+  <g font-family="'DejaVu Sans Mono', ui-monospace, monospace" font-size="13" fill="#11201a">
+    <text x="140" y="206" text-anchor="middle">SDA → GPIO7</text>
+    <text x="140" y="228" text-anchor="middle">SCL → GPIO8</text>
+    <text x="140" y="254" text-anchor="middle" fill="#5b6b64">3.3 V</text>
+  </g>
+
+  <!-- I2C bus trunk (both signals shown as one labeled bus) -->
+  <path d="M240 205 H540" fill="none" stroke="#1f9d55" stroke-width="6" stroke-linecap="round"/>
+  <text x="384" y="195" text-anchor="middle" font-size="13" font-weight="700" fill="#167a41" font-family="'DejaVu Sans Mono', monospace">I²C bus · SDA + SCL</text>
+
+  <!-- pull-ups -->
+  <line x1="300" y1="205" x2="300" y2="150" stroke="#cfdbd5" stroke-width="1.6"/>
+  <line x1="330" y1="205" x2="330" y2="150" stroke="#cfdbd5" stroke-width="1.6"/>
+  <text x="315" y="142" text-anchor="middle" font-size="11.5" fill="#5b6b64">4.7 kΩ → 3V3</text>
+
+  <!-- junction + branches to both devices -->
+  <path d="M540 205 V148 M540 205 V262" fill="none" stroke="#1f9d55" stroke-width="6" stroke-linecap="round"/>
+  <path d="M540 148 H600" fill="none" stroke="#1f9d55" stroke-width="6" stroke-linecap="round"/>
+  <path d="M540 262 H600" fill="none" stroke="#1f9d55" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="540" cy="205" r="5" fill="#167a41"/>
+
+  <!-- OLED device -->
+  <rect x="600" y="104" width="340" height="92" rx="10" fill="#16324a" stroke="#0e2233"/>
+  <text x="620" y="134" font-size="15" font-weight="700" fill="#dff3ec">SSD1306 OLED</text>
+  <text x="620" y="158" font-size="13" fill="#9fc7e6" font-family="'DejaVu Sans Mono', monospace">128 × 64 · addr 0x3C</text>
+  <text x="620" y="180" font-size="12.5" fill="#9fc7e6">home screen · menus</text>
+
+  <!-- Encoder device -->
+  <rect x="600" y="218" width="340" height="92" rx="10" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.4"/>
+  <text x="620" y="248" font-size="15" font-weight="700" fill="#11201a">seesaw rotary encoder</text>
+  <text x="620" y="272" font-size="13" fill="#167a41" font-family="'DejaVu Sans Mono', monospace">Adafruit #4991 · addr 0x36</text>
+  <text x="620" y="294" font-size="12.5" fill="#167a41">rotate = navigate · click = select</text>
+</svg>
