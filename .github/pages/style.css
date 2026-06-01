@@ -1,29 +1,31 @@
 /* pixfrog site — shared theme for index.html (flasher) and docs.html. */
+/* Brand accent: Collecti'Frog saffron #F8C662 on a dark-green canvas. */
 :root {
   --bg: #ffffff;
-  --bg-soft: #f6f8f7;
+  --bg-soft: #faf6ec;
   --fg: #11201a;
   --fg-soft: #5b6b64;
-  --border: #e4eae7;
-  --brand: #1f9d55;
-  --brand-strong: #167a41;
-  --brand-ink: #ffffff;
-  --accent: #7bdcb5;
+  --border: #ece4d0;
+  --brand: #f8c662;
+  --brand-strong: #c98f23;
+  --brand-ink: #1d3a2c;
+  --accent: #1d3a2c;
   --radius: 16px;
-  --shadow: 0 10px 30px -12px rgba(16, 60, 40, 0.25);
+  --shadow: 0 10px 30px -12px rgba(29, 58, 44, 0.25);
   --maxw: 1080px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0c100e;
-    --bg-soft: #111815;
+    --bg: #0f1a14;
+    --bg-soft: #16221b;
     --fg: #eaf3ee;
-    --fg-soft: #9bb0a6;
-    --border: #1f2c26;
-    --brand: #34c66f;
-    --brand-strong: #2aa85d;
-    --accent: #1f5b3f;
+    --fg-soft: #a5b2a8;
+    --border: #243228;
+    --brand: #f8c662;
+    --brand-strong: #f0b53b;
+    --brand-ink: #1d3a2c;
+    --accent: #f8c662;
     --shadow: 0 14px 40px -16px rgba(0, 0, 0, 0.7);
   }
 }
@@ -85,7 +87,7 @@ header.nav {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: #eafff3;
+  background: #1d3a2c;
   padding: 3px;
   box-sizing: border-box;
 }

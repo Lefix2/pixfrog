@@ -37,7 +37,7 @@ jobs:
           idf.py set-target esp32p4
           idf.py build
 
-      - name: Assemble web-flasher site
+      - name: Assemble pages site
         shell: bash
         env:
           VERSION: ${{ github.ref_name }}
@@ -53,10 +53,10 @@ jobs:
           cp build/partition_table/partition-table.bin site/
           cp build/pixfrog.bin                         site/
           # Static site assets (flasher + docs viewer + about + shared theme).
-          cp .github/web-flasher/index.html  site/index.html
-          cp .github/web-flasher/docs.html   site/docs.html
-          cp .github/web-flasher/about.html  site/about.html
-          cp .github/web-flasher/style.css   site/style.css
+          cp .github/pages/index.html  site/index.html
+          cp .github/pages/docs.html   site/docs.html
+          cp .github/pages/about.html  site/about.html
+          cp .github/pages/style.css   site/style.css
           # Technical docs, rendered client-side by docs.html.
           mkdir -p site/docs
           cp docs/ARCHITECTURE.md site/docs/architecture.md
@@ -123,15 +123,30 @@ jobs:
         with:
           name: firmware
           path: site
-      - name: Create release with firmware assets
+      - name: Create or update release with firmware assets
         env:
           GH_TOKEN: ${{ github.token }}
+        # Idempotent: if the release was pre-created from the GitHub UI (or by
+        # a previous workflow run), just upload/overwrite the firmware assets
+        # on it. Otherwise create it from scratch.
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "pixfrog $GITHUB_REF_NAME" \
-            --generate-notes \
-            site/pixfrog-merged.bin \
-            site/bootloader.bin \
-            site/partition-table.bin \
+          assets=(
+            site/pixfrog-merged.bin
+            site/bootloader.bin
+            site/partition-table.bin
             site/pixfrog.bin
+          )
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists — uploading assets."
+            gh release upload "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber \
+              "${assets[@]}"
+          else
+            echo "Creating release $GITHUB_REF_NAME."
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "pixfrog $GITHUB_REF_NAME" \
+              --generate-notes \
+              "${assets[@]}"
+          fi
