@@ -18,29 +18,27 @@
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
     <link rel="stylesheet" href="./style.css" />
     <style>
-      /* ── Animated CollectiFrog logo (white on black) ───────────────── */
+      /* ── Animated Collecti'Frog logo (saffron on dark green) ───────── */
       :root {
-        --frog-line: #ffffff;
-        --frog-bg: #0a0a0b;
+        --frog-line: #f8c662;
+        --frog-bg: #1d3a2c;
         --frog-t: 1;
-        --frog-rise-dist: 310px;
+        --frog-rise-dist: 440px;
         --frog-rise-dur: 1.7s;
         --frog-rise-ease: cubic-bezier(0.18, 0.78, 0.26, 1);
-        --frog-wave-amp: 4px;
+        --frog-wave-amp: 6.5px;
         --frog-wave-dur: 4.2s;
-        --frog-water-start: 0.1;
-        --frog-water-dur: 1.3s;
-        --frog-tangle: 22;
-        --frog-blink-period: 4.2s;
-        --frog-bob-amp: 6px;
+        --frog-water-start: 0.05;
+        --frog-water-dur: 1.1s;
+        --frog-blink-period: 4s;
       }
 
       .logo-hero {
         background: radial-gradient(
           120% 95% at 50% 40%,
-          color-mix(in srgb, var(--frog-bg), #ffffff 9%) 0%,
+          color-mix(in srgb, var(--frog-bg), #ffffff 6%) 0%,
           var(--frog-bg) 55%,
-          #000 100%
+          #0c1d15 100%
         );
         color: #fff;
         padding: 4rem 0 3.5rem;
@@ -60,30 +58,6 @@
         display: flex;
         align-items: center;
         justify-content: center;
-      }
-      .surface-glow {
-        position: absolute;
-        left: 50%;
-        top: 62%;
-        width: 70%;
-        height: 15%;
-        transform: translate(-50%, -50%);
-        background: radial-gradient(
-          60% 70% at 50% 50%,
-          rgba(255, 255, 255, 0.08),
-          transparent 70%
-        );
-        opacity: 0;
-        pointer-events: none;
-      }
-      .scene.go .surface-glow {
-        animation: frog-glow calc(3.4s * var(--frog-t)) ease-out
-          calc(1.1s * var(--frog-t)) both;
-      }
-      @keyframes frog-glow {
-        0% { opacity: 0; }
-        40% { opacity: 1; }
-        100% { opacity: 0.55; }
       }
       .scene svg {
         width: 100%;
@@ -108,34 +82,18 @@
         transform-origin: 440px 546px;
       }
       @keyframes frog-untangle {
-        0% {
-          transform: rotate(calc(var(--frog-tangle) * var(--rot) * 1deg))
-            scale(var(--frog-water-start));
-          opacity: 0;
-        }
+        0% { transform: scale(var(--frog-water-start)); opacity: 0; }
         28% { opacity: 1; }
-        100% { transform: rotate(0deg) scale(1); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
       }
       .scene.go .wvIntro {
         animation: frog-untangle calc(var(--frog-water-dur) * var(--frog-t))
           cubic-bezier(0.22, 0.8, 0.25, 1) calc(0.2s * var(--frog-t)) both;
       }
-      .scene.go .wv:nth-child(1) .wvIntro {
-        --rot: 1.15;
-        animation-delay: calc(0.2s * var(--frog-t));
-      }
-      .scene.go .wv:nth-child(2) .wvIntro {
-        --rot: -0.85;
-        animation-delay: calc(0.32s * var(--frog-t));
-      }
-      .scene.go .wv:nth-child(3) .wvIntro {
-        --rot: 0.7;
-        animation-delay: calc(0.26s * var(--frog-t));
-      }
-      .scene.go .wv:nth-child(4) .wvIntro {
-        --rot: -1.3;
-        animation-delay: calc(0.14s * var(--frog-t));
-      }
+      .scene.go .wv:nth-child(1) .wvIntro { animation-delay: calc(0.20s * var(--frog-t)); }
+      .scene.go .wv:nth-child(2) .wvIntro { animation-delay: calc(0.32s * var(--frog-t)); }
+      .scene.go .wv:nth-child(3) .wvIntro { animation-delay: calc(0.26s * var(--frog-t)); }
+      .scene.go .wv:nth-child(4) .wvIntro { animation-delay: calc(0.14s * var(--frog-t)); }
 
       .wv {
         transform-box: fill-box;
@@ -179,17 +137,6 @@
         100% { transform: translateY(0); }
       }
 
-      .scene.go .bob {
-        transform-box: fill-box;
-        transform-origin: center;
-        animation: frog-bob calc(4.6s * var(--frog-t)) ease-in-out
-          calc(3.6s * var(--frog-t)) infinite both;
-      }
-      @keyframes frog-bob {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(calc(-1 * var(--frog-bob-amp))); }
-      }
-
       .pupil {
         transform-box: fill-box;
         transform-origin: center;
@@ -204,21 +151,6 @@
         8% { transform: scaleY(1); }
         100% { transform: scaleY(1); }
       }
-
-      .logo-wordmark {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        font-weight: 500;
-        font-size: 0.95rem;
-        letter-spacing: 0.42em;
-        text-transform: uppercase;
-        color: rgba(255, 255, 255, 0.65);
-        opacity: 0;
-        margin: 0;
-        transition: opacity 1s ease;
-      }
-      .scene.go ~ .logo-wordmark,
-      .logo-hero .logo-wordmark.show { opacity: 1; }
 
       .replay-btn {
         appearance: none;
@@ -248,11 +180,8 @@
       @media (prefers-reduced-motion: reduce) {
         .scene.go .wvIntro,
         .scene.go .creature,
-        .scene.go .bob,
         .scene.go .pupil,
-        .scene.go .wv,
-        .scene.go .surface-glow { animation: none !important; }
-        .logo-wordmark { opacity: 1 !important; }
+        .scene.go .wv { animation: none !important; }
       }
 
       /* ── About copy + CTA ─────────────────────────────────────────── */
@@ -286,7 +215,6 @@
       <section class="logo-hero">
         <div class="wrap">
           <div class="scene" id="scene" aria-label="Logo animé Collecti'Frog">
-            <div class="surface-glow"></div>
             <svg
               viewBox="0 0 881 881"
               xmlns="http://www.w3.org/2000/svg"
@@ -295,7 +223,7 @@
             >
               <defs>
                 <clipPath id="waterClip">
-                  <rect x="-200" y="-500" width="1300" height="1052"></rect>
+                  <rect x="-200" y="-500" width="1300" height="1007"></rect>
                 </clipPath>
                 <mask id="pupilMaskR" fill="white">
                   <path d="M640 353.627C640.625 367.131 619.826 377.993 599.32 377.888C578.813 377.782 563.125 367.131 562.5 353.627C561.875 340.123 576.549 328.879 597.056 328.985C617.562 329.09 639.375 340.123 640 353.627Z"></path>
@@ -343,8 +271,6 @@
               </g>
             </svg>
           </div>
-
-          <p class="logo-wordmark" id="wordmark">Collecti'Frog</p>
 
           <button class="replay-btn" id="replay" type="button" aria-label="Rejouer l'animation">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -396,34 +322,12 @@
     <script>
       (function () {
         var scene = document.getElementById("scene");
-        var wordmark = document.getElementById("wordmark");
         var replay = document.getElementById("replay");
-        var timers = [];
-
-        function readMult() {
-          var v = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue("--frog-t")
-          );
-          return isNaN(v) ? 1 : v;
-        }
-
         function play() {
-          timers.forEach(clearTimeout);
-          timers = [];
           scene.classList.remove("go");
-          wordmark.classList.remove("show");
-          wordmark.style.opacity = "0";
           void scene.offsetWidth;
           scene.classList.add("go");
-          var mult = readMult();
-          timers.push(
-            setTimeout(function () {
-              wordmark.classList.add("show");
-              wordmark.style.opacity = "1";
-            }, 3600 * mult)
-          );
         }
-
         replay.addEventListener("click", play);
         window.addEventListener("load", function () {
           setTimeout(play, 250);
