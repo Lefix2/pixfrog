@@ -281,7 +281,21 @@ LOW throughout (DMX is single-wire).
 
 ### 7.4 Hardware
 
-DMX512 is a balanced EIA-485 signal. The channel's DATA GPIO carries 3.3 V
-logic-level DMX; it must drive an RS-485 transceiver (e.g. MAX485/SN75176) to
-reach the differential A/B pair and 5-pin XLR. Do **not** wire a DMX fixture
-directly to the GPIO. The CLOCK pin of a DMX channel is unused.
+The firmware drives the correct DMX waveform on the channel's DATA bit; the
+levels are handled by the existing signal-adapter board (`HARDWARE.md` §6, the
+74HCT245 3.3 V → 5 V buffers). That buffer is **single-ended**, which is fine
+for LED strips but is *not* a DMX-compliant link on its own: DMX512-A is a
+balanced EIA-485 (differential A/B) signal.
+
+So for a DMX channel the chain is:
+
+```
+GPIO (3.3 V) → 74HCT245 (5 V single-ended) → RS-485 transceiver (MAX485/SN75176) → XLR A/B
+```
+
+The RS-485 transceiver is the part that produces the differential pair; it may
+also be fed straight from the 3.3 V GPIO (most MAX485 variants accept a 3.3 V
+input), in which case the 74HCT245 stage is optional for that channel. The
+single-ended 5 V output alone is only adequate for bench bring-up of a nearby,
+non-isolated device or for scoping the frame — **do not** wire a real XLR fixture
+or a long run without the transceiver. The CLOCK pin of a DMX channel is unused.
