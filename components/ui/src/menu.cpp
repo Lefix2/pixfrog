@@ -149,6 +149,7 @@ const char* protocol_name(led::Protocol p) {
     case led::Protocol::APA102: return "APA102";
     case led::Protocol::SK9822: return "SK9822";
     case led::Protocol::LPD8806: return "LPD8806";
+    case led::Protocol::DMX512: return "DMX512";
     default: return "?";
     }
 }
@@ -807,13 +808,48 @@ void dispatch_network_menu(Event e) {
 constexpr size_t kColorOrderCount = static_cast<size_t>(led::ColorOrder::COUNT);
 constexpr size_t kProtocolCount   = static_cast<size_t>(led::Protocol::COUNT);
 
+// The channel menu is layout-driven: the visible items depend on the protocol
+// family. DMX512 output ignores the LED-only fields (color order, brightness,
+// grouping, invert, clock), so they are hidden; clocked SPI strips add Clock.
+enum class ChItem : uint8_t {
+    Proto,
+    Uni,
+    Dmx,
+    Pixels,  // labelled "Slots" in DMX512 mode
+    Order,
+    Bright,
+    Group,
+    Invert,
+    Clock,
+    Back,
+};
+
+// Fills `out` (capacity ≥ 10) with the ordered items for `cc` and returns count.
+uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
+    uint8_t n = 0;
+    out[n++]  = ChItem::Proto;
+    out[n++]  = ChItem::Uni;
+    out[n++]  = ChItem::Dmx;
+    out[n++]  = ChItem::Pixels;
+    if (!led::is_dmx(cc.protocol)) {
+        out[n++] = ChItem::Order;
+        out[n++] = ChItem::Bright;
+        out[n++] = ChItem::Group;
+        out[n++] = ChItem::Invert;
+        if (led::is_clocked(cc.protocol)) out[n++] = ChItem::Clock;
+    }
+    out[n++] = ChItem::Back;
+    return n;
+}
+
 uint8_t channel_item_count() {
-    const auto& cc = config::get_channel(s.channel_index);
-    return led::is_clocked(cc.protocol) ? 10 : 9;
+    ChItem items[10];
+    return channel_items(config::get_channel(s.channel_index), items);
 }
 
 void render_channel_menu() {
     const auto& cc = config::get_channel(s.channel_index);
+    const bool dmx = led::is_dmx(cc.protocol);
     char title[kCols + 1];
     std::snprintf(title, sizeof(title), "CHANNEL %u", s.channel_index + 1);
 
@@ -828,72 +864,78 @@ void render_channel_menu() {
     std::snprintf(vinv, sizeof(vinv), "%s", cc.invert_direction ? "ON" : "OFF");
     std::snprintf(vclk, sizeof(vclk), "%lukHz", static_cast<unsigned long>(cc.clock_hz / 1000u));
 
-    ListItem items[10] = {
-        { "Proto", vproto }, { "Uni", vuni },    { "DMX", vdmx },   { "Pixels", vpix },
-        { "Order", vorder }, { "Bright", vbri }, { "Group", vgrp }, { "Invert", vinv },
-        { "Clock", vclk },   { "[Back]", "" },
-    };
-
-    if (led::is_clocked(cc.protocol)) {
-        render_list(title, items, 10, s.cursor);
-    } else {
-        items[8] = items[9];
-        render_list(title, items, 9, s.cursor);
+    ChItem order[10];
+    const uint8_t count = channel_items(cc, order);
+    ListItem items[10];
+    for (uint8_t i = 0; i < count; ++i) {
+        switch (order[i]) {
+        case ChItem::Proto: items[i] = { "Proto", vproto }; break;
+        case ChItem::Uni: items[i] = { "Uni", vuni }; break;
+        case ChItem::Dmx: items[i] = { "DMX", vdmx }; break;
+        case ChItem::Pixels: items[i] = { dmx ? "Slots" : "Pixels", vpix }; break;
+        case ChItem::Order: items[i] = { "Order", vorder }; break;
+        case ChItem::Bright: items[i] = { "Bright", vbri }; break;
+        case ChItem::Group: items[i] = { "Group", vgrp }; break;
+        case ChItem::Invert: items[i] = { "Invert", vinv }; break;
+        case ChItem::Clock: items[i] = { "Clock", vclk }; break;
+        case ChItem::Back: items[i] = { "[Back]", "" }; break;
+        }
     }
+    render_list(title, items, count, s.cursor);
 }
 
 void dispatch_channel_menu(Event e) {
-    const uint8_t count = channel_item_count();
+    const auto& cc = config::get_channel(s.channel_index);
+    ChItem order[10];
+    const uint8_t count = channel_items(cc, order);
+
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < count - 1) s.cursor++;
     if (e != Event::Click) return;
 
-    const auto& cc         = config::get_channel(s.channel_index);
-    const Screen ret       = Screen::ChannelMenu;
-    const uint8_t ch       = s.channel_index;
-    const bool clocked     = led::is_clocked(cc.protocol);
-    const uint8_t back_idx = clocked ? 9 : 8;
+    const Screen ret = Screen::ChannelMenu;
+    const uint8_t ch = s.channel_index;
+    const bool dmx   = led::is_dmx(cc.protocol);
 
-    if (s.cursor == back_idx) {
-        s.screen = Screen::MainMenu;
-        s.cursor = 2 + ch;
-        return;
-    }
-
-    switch (s.cursor) {
-    case 0:
+    switch (order[s.cursor]) {
+    case ChItem::Proto:
         enter_edit(Field::ChProtocol, ValueKind::Protocol, static_cast<int32_t>(cc.protocol), 0,
                    static_cast<int32_t>(kProtocolCount) - 1, 1, "Proto", ret, ch);
         break;
-    case 1:
+    case ChItem::Uni:
         enter_edit(Field::ChUniverse, ValueKind::Int, cc.universe_start, 1, 32767, 1, "Uni", ret,
                    ch);
         break;
-    case 2:
+    case ChItem::Dmx:
         enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", ret, ch);
         break;
-    case 3:
-        enter_edit(Field::ChPixels, ValueKind::Int, cc.pixel_count, 1, 1024, 1, "Pixels", ret, ch);
+    case ChItem::Pixels:
+        // DMX512 maps one universe → up to 512 slots; LED strips go up to 1024 px.
+        enter_edit(Field::ChPixels, ValueKind::Int, cc.pixel_count, 1, dmx ? 512 : 1024, 1,
+                   dmx ? "Slots" : "Pixels", ret, ch);
         break;
-    case 4:
+    case ChItem::Order:
         enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, static_cast<int32_t>(cc.color_order),
                    0, static_cast<int32_t>(kColorOrderCount) - 1, 1, "Order", ret, ch);
         break;
-    case 5:
+    case ChItem::Bright:
         enter_edit(Field::ChBrightness, ValueKind::Int, cc.brightness, 0, 255, 1, "Bright", ret,
                    ch);
         break;
-    case 6:
+    case ChItem::Group:
         enter_edit(Field::ChGrouping, ValueKind::Int, cc.grouping, 1, 8, 1, "Group", ret, ch);
         break;
-    case 7:
+    case ChItem::Invert:
         enter_edit(Field::ChInvert, ValueKind::Bool, cc.invert_direction ? 1 : 0, 0, 1, 1, "Invert",
                    ret, ch);
         break;
-    case 8:
-        if (clocked)
-            enter_edit(Field::ChClock, ValueKind::Int, static_cast<int32_t>(cc.clock_hz), 250'000,
-                       24'000'000, 250'000, "Clock", ret, ch);
+    case ChItem::Clock:
+        enter_edit(Field::ChClock, ValueKind::Int, static_cast<int32_t>(cc.clock_hz), 250'000,
+                   24'000'000, 250'000, "Clock", ret, ch);
+        break;
+    case ChItem::Back:
+        s.screen = Screen::MainMenu;
+        s.cursor = 2 + ch;
         break;
     }
 }

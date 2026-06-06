@@ -171,6 +171,16 @@ Changing a channel's protocol can change:
 
 Consequence: **changing protocol at runtime never reinitializes LCD_CAM**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffer is sized for the worst case at boot, so no allocation is needed.
 
+**DMX512 output** is a fourth encoder family alongside NRZ and clocked SPI. A
+channel set to `DMX512` re-emits one Art-Net universe as a 250 kbit/s serial
+stream (BREAK + MAB + 8N2 slots) on its DATA bit — see `docs/PROTOCOLS.md` §7.
+It shares the same ingest path; only `bytes_per_pixel` (= 1) and the encoder
+dispatch differ, so hot reconfiguration to/from DMX needs no special handling.
+The channel's otherwise-unused CLOCK bit is driven as the complement of DATA to
+form a `DATA+/DATA−` pair (a poor-man's differential link); a real RS-485
+transceiver is still preferable for long or terminated runs — see
+`docs/PROTOCOLS.md` §7.
+
 ---
 
 ## 9. Module map
@@ -178,7 +188,7 @@ Consequence: **changing protocol at runtime never reinitializes LCD_CAM**. `rend
 | Component            | Responsibility                                      | Depends on              |
 |----------------------|-----------------------------------------------------|-------------------------|
 | `lcd_cam_output`     | LCD_CAM 16-bit driver, PSRAM FBs, GDMA, ISR        | IDF HAL only            |
-| `led_protocols`      | Per-protocol encoders (NRZ, SPI-like)              | (free)                  |
+| `led_protocols`      | Per-protocol encoders (NRZ, SPI-like, DMX512)      | (free)                  |
 | `artnet`             | UDP parser, ArtPollReply, writes universe pool     | `lwip`                  |
 | `dmx_manager`        | Universe pool + channel mapping + capacity check   | `artnet`, `config_store` |
 | `config_store`       | NVS wrappers + RAM cache                           | IDF NVS                 |

@@ -14,5 +14,6 @@ add_executable(test_led_protocols
     ../src/led_protocols.cpp
     ../src/encoder_nrz.cpp
     ../src/encoder_spi.cpp
+    ../src/encoder_dmx.cpp
 )
 target_include_directories(test_led_protocols PRIVATE ../include ../src)

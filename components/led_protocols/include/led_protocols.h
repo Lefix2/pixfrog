@@ -28,6 +28,7 @@ enum class Protocol : uint8_t {
     APA102  = 5,
     SK9822  = 6,
     LPD8806 = 7,
+    DMX512  = 8,
     COUNT,
 };
 
@@ -39,8 +40,15 @@ constexpr bool is_rgbw(Protocol p) {
     return p == Protocol::SK6812 || p == Protocol::WS2814;
 }
 
-// Pixel bytes per LED, including any white channel.
+// DMX512 raw output: the channel emits one DMX universe (8N2 @ 250 kbps) on its
+// DATA bit rather than encoding RGB(W) pixels. Source bytes are passed through.
+constexpr bool is_dmx(Protocol p) {
+    return p == Protocol::DMX512;
+}
+
+// Source bytes per logical "pixel". For DMX512 one "pixel" is a single DMX slot.
 constexpr size_t bytes_per_pixel(Protocol p) {
+    if (is_dmx(p)) return 1;
     return is_rgbw(p) ? 4 : 3;
 }
 

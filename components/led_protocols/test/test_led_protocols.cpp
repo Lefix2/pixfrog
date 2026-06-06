@@ -76,6 +76,94 @@ static void test_bytes_per_pixel() {
     EXPECT_EQ(bytes_per_pixel(Protocol::WS2812B), 3);
     EXPECT_EQ(bytes_per_pixel(Protocol::SK6812), 4);
     EXPECT_EQ(bytes_per_pixel(Protocol::WS2814), 4);
+    EXPECT_EQ(bytes_per_pixel(Protocol::DMX512), 1);  // one byte per DMX slot
+}
+
+// ── DMX512 output encoder ───────────────────────────────────────────────────
+
+static void test_dmx_size() {
+    ChannelDesc d{};
+    d.protocol     = Protocol::DMX512;
+    d.pixel_count  = 512;
+    d.bus_bit_data = 0;
+
+    // BREAK(1536) + MAB(192) + (512 slots + 1 start code) × 11 bits × 64 samples.
+    const size_t expected = 1536 + 192 + (512 + 1) * 11 * 64;
+    EXPECT_EQ(encoded_size_samples(d), expected);
+}
+
+static void test_dmx_waveform() {
+    ChannelDesc d{};
+    d.protocol      = Protocol::DMX512;
+    d.pixel_count   = 1;  // single slot + null start code
+    d.bus_bit_data  = 0;  // DATA+ = bit 0
+    d.bus_bit_clock = 1;  // DATA− (complement) = bit 1
+
+    const uint8_t slots[1] = { 0x01 };  // LSB set → only data bit 0 is high
+    const size_t cap       = encoded_size_samples(d);
+    std::vector<uint16_t> out(cap, 0);
+    const size_t written = encode_channel(d, slots, out.data(), cap);
+    EXPECT_EQ(written, cap);
+
+    constexpr int kBit   = 64;
+    constexpr int kBreak = 1536;
+    constexpr int kMab   = 192;
+
+    // The complement line (bit 1) must always be the inverse of DATA (bit 0).
+    for (size_t i = 0; i < cap; ++i)
+        EXPECT_EQ((out[i] & 1) ^ ((out[i] >> 1) & 1), 1);
+
+    // BREAK is entirely LOW.
+    for (int i = 0; i < kBreak; ++i)
+        EXPECT_EQ(out[i] & 1, 0);
+    // MAB is entirely HIGH.
+    for (int i = kBreak; i < kBreak + kMab; ++i)
+        EXPECT_EQ(out[i] & 1, 1);
+
+    // Start code 0x00: start bit LOW, then 8 data bits LOW, then 2 stop HIGH.
+    const int sc = kBreak + kMab;  // first sample of the start-code character
+    for (int i = 0; i < 9 * kBit; ++i)
+        EXPECT_EQ(out[sc + i] & 1, 0);  // start + 8 zero data bits
+    for (int i = 9 * kBit; i < 11 * kBit; ++i)
+        EXPECT_EQ(out[sc + i] & 1, 1);  // 2 stop bits
+
+    // Slot value 0x01: start LOW, data bit0 HIGH (LSB first), bits1..7 LOW.
+    const int sl = sc + 11 * kBit;
+    for (int i = 0; i < kBit; ++i)
+        EXPECT_EQ(out[sl + i] & 1, 0);  // start bit
+    for (int i = kBit; i < 2 * kBit; ++i)
+        EXPECT_EQ(out[sl + i] & 1, 1);  // data bit 0 = 1
+    for (int i = 2 * kBit; i < 9 * kBit; ++i)
+        EXPECT_EQ(out[sl + i] & 1, 0);  // data bits 1..7 = 0
+}
+
+static void test_dmx_or_into_buffer() {
+    ChannelDesc d{};
+    d.protocol      = Protocol::DMX512;
+    d.pixel_count   = 4;
+    d.bus_bit_data  = 6;  // some other channel's DATA bit
+    d.bus_bit_clock = 7;  // its complement bit
+
+    const uint8_t slots[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
+    const size_t cap       = encoded_size_samples(d);
+    std::vector<uint16_t> out(cap, 0);
+
+    const uint16_t foreign_mask = (1u << 0) | (1u << 3) | (1u << 14);
+    for (auto& s : out)
+        s = foreign_mask;
+
+    encode_channel(d, slots, out.data(), cap);
+
+    // OR-only semantics: foreign bits must be preserved, and the DATA/complement
+    // pair must always be mutually exclusive.
+    const uint16_t data_mask = static_cast<uint16_t>(1u << 6);
+    const uint16_t comp_mask = static_cast<uint16_t>(1u << 7);
+    for (size_t i = 0; i < cap; ++i) {
+        EXPECT_TRUE((out[i] & foreign_mask) == foreign_mask);
+        const bool data = out[i] & data_mask;
+        const bool comp = out[i] & comp_mask;
+        EXPECT_TRUE(data != comp);  // exactly one of the pair is asserted
+    }
 }
 
 // ── NRZ encoder: one pixel, verify exact bit layout ────────────────────────
@@ -210,6 +298,9 @@ int main() {
     test_timing_ws2812b();
     test_timing_apa102_clock();
     test_bytes_per_pixel();
+    test_dmx_size();
+    test_dmx_waveform();
+    test_dmx_or_into_buffer();
     test_nrz_one_pixel_ws2815();
     test_nrz_or_into_buffer();
     test_spi_size();
