@@ -320,5 +320,23 @@ B) Proper RS-485 (recommended for real installs):
 
 Option B's transceiver may be fed straight from the 3.3 V GPIO (most MAX485
 variants accept a 3.3 V input), so the 74HCT245 stage is optional for that
-channel. Use option A only for bench bring-up or scoping — **do not** wire a
-mains-powered XLR fixture or a long/terminated run without a transceiver.
+channel.
+
+**Series resistors + TVS (the pixfrog adapter board).** Each 74HCT245 output
+carries a series resistor (33 Ω or 249 Ω option) and a 5 V TVS diode to ground.
+This makes option A genuinely usable on a real, 120 Ω-terminated DMX pair:
+
+- **33 Ω** is the choice for a terminated DMX bus. Driven complementary into a
+  120 Ω termination it yields ≈ 2.4 V differential at ≈ 20 mA/line — well above
+  the ±200 mV RS-485 receiver threshold and within the HCT245's current limit,
+  while also providing source-termination damping.
+- **249 Ω** still works (≈ 0.9 V differential, ≈ 7 mA) but with less margin; it
+  suits an unterminated line or plain LED-style data.
+- The 5 V TVS clamps ESD/transients without clipping the 5 V logic (its clamp
+  voltage sits well above 5 V).
+
+What this hardware does **not** add: EIA-485 common-mode range (−7 V…+12 V) or
+galvanic isolation. For long inter-building runs or fixtures on a different
+mains domain, prefer an isolated RS-485 transceiver (option B). Otherwise, on a
+common-ground install with a short-to-medium terminated run, option A with the
+33 Ω resistor and TVS is a robust differential DMX driver.
