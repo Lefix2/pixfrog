@@ -1,5 +1,6 @@
 #include "led_protocols.h"
 
+#include "encoder_dmx.h"
 #include "encoder_nrz.h"
 #include "encoder_spi.h"
 
@@ -46,6 +47,9 @@ Timing timing_for(Protocol p, uint32_t requested_clock_hz) {
 }
 
 size_t encoded_size_samples(const ChannelDesc& desc) {
+    if (is_dmx(desc.protocol)) {
+        return detail::dmx_encoded_size_samples(desc.pixel_count);
+    }
     const Timing t = timing_for(desc.protocol, desc.clock_hz);
     if (is_clocked(desc.protocol)) {
         // APA102/SK9822: 4-byte start + 4 bytes/pixel + ceil(pixels/2)/8 end bytes
@@ -65,6 +69,9 @@ size_t encoded_size_samples(const ChannelDesc& desc) {
 
 size_t encode_channel(const ChannelDesc& desc, const uint8_t* pixels, uint16_t* out_samples,
                       size_t out_samples_capacity) {
+    if (is_dmx(desc.protocol)) {
+        return detail::encode_dmx(desc, pixels, out_samples, out_samples_capacity);
+    }
     if (is_clocked(desc.protocol)) {
         return detail::encode_spi(desc, pixels, out_samples, out_samples_capacity);
     }

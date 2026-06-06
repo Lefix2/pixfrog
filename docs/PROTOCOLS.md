@@ -18,6 +18,7 @@ Reference for timings, clock formulas and DMA encoding for every protocol pixfro
 | APA102   | SPI-like   | 1–30 MHz CLOCK       | BGR           | 32 (start + brightness + BGR) | 5-bit hardware brightness |
 | SK9822   | SPI-like   | 1–30 MHz CLOCK       | BGR           | 32         | APA102-compatible timing    |
 | LPD8806  | SPI-like   | 1–20 MHz CLOCK       | GRB           | 24         | MSB of every byte must be 1 |
+| DMX512   | async serial | 250 kbps           | —             | 8 / slot   | Raw 1-universe output (see §7) |
 
 ---
 
@@ -232,3 +233,55 @@ Integration tests (hardware required):
 1. Emit a calibration pattern (1 kHz square wave) on each of the 16 GPIOs, observe on scope (`lcd::emit_calibration_pattern(0)`).
 2. Verify CLOCK is strictly synchronous with DATA on the same channel (delta < 5 ns).
 3. Verify there are no glitches on back-to-back transitions.
+
+---
+
+## 7. DMX512 output (one universe)
+
+Any of the 8 channels can be switched from an LED protocol to **DMX512 output**.
+In this mode the channel stops encoding RGB(W) pixels and instead re-emits one
+incoming Art-Net universe as a standard DMX512-A serial stream on its DATA bit.
+
+### 7.1 Data path
+
+The channel reuses the normal Art-Net → `dmx_manager` ingest path. `bytes_per_pixel`
+is **1** for DMX512, so each "pixel" is one DMX slot: `pixel_count` is the number
+of slots driven (1–512), `universe_start` selects the source universe and
+`dmx_start` the 1-based offset into it. `decode_pixels` copies the raw slot bytes
+straight through — no color reorder, brightness or grouping is applied (those
+fields are hidden in the UI for DMX channels). The encoder
+(`components/led_protocols/src/encoder_dmx.cpp`) then frames those bytes.
+
+### 7.2 Waveform (f_PCLK = 16 MHz, T_PCLK = 62.5 ns)
+
+DMX512 is asynchronous serial at 250 kbit/s → **1 bit = 4 µs = 64 samples**.
+
+| Element            | Level | Duration        | Samples |
+|--------------------|-------|-----------------|--------:|
+| BREAK              | LOW   | 96 µs (≥ 88 µs) | 1 536   |
+| Mark-After-Break   | HIGH  | 12 µs (≥ 8 µs)  | 192     |
+| Per slot (8N2 char)| —     | 44 µs           | 704     |
+| ↳ start bit        | LOW   | 4 µs            | 64      |
+| ↳ 8 data bits      | LSB-first | 32 µs       | 8 × 64  |
+| ↳ 2 stop bits      | HIGH  | 8 µs            | 128     |
+
+Each frame is `BREAK + MAB + (1 null start code + N slots) × 704` samples. A full
+512-slot universe is `1536 + 192 + 513 × 704 = 362 880` samples ≈ **22.7 ms**, so
+DMX output fits a 30 Hz refresh budget (and the standard DMX refresh ceiling of
+~44 Hz). `dmx_manager::validate_capacity` flags the channel with `!` on HOME if
+the configured refresh rate leaves too little budget.
+
+### 7.3 Levels and idle
+
+The line idles HIGH (mark) between characters — provided by the stop bits. The
+shared frame buffer is zeroed each frame, so between successive frames the DATA
+bit sits LOW; a DMX receiver simply treats that inter-frame LOW as an extended
+BREAK before the next MAB, which is spec-tolerant. The CLOCK bit (`ch×2+1`) stays
+LOW throughout (DMX is single-wire).
+
+### 7.4 Hardware
+
+DMX512 is a balanced EIA-485 signal. The channel's DATA GPIO carries 3.3 V
+logic-level DMX; it must drive an RS-485 transceiver (e.g. MAX485/SN75176) to
+reach the differential A/B pair and 5-pin XLR. Do **not** wire a DMX fixture
+directly to the GPIO. The CLOCK pin of a DMX channel is unused.
