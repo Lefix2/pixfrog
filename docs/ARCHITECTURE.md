@@ -176,7 +176,10 @@ channel set to `DMX512` re-emits one Art-Net universe as a 250 kbit/s serial
 stream (BREAK + MAB + 8N2 slots) on its DATA bit — see `docs/PROTOCOLS.md` §7.
 It shares the same ingest path; only `bytes_per_pixel` (= 1) and the encoder
 dispatch differ, so hot reconfiguration to/from DMX needs no special handling.
-The DATA GPIO must feed an RS-485 transceiver for real DMX wiring.
+The channel's otherwise-unused CLOCK bit is driven as the complement of DATA to
+form a `DATA+/DATA−` pair (a poor-man's differential link); a real RS-485
+transceiver is still preferable for long or terminated runs — see
+`docs/PROTOCOLS.md` §7.
 
 ---
 

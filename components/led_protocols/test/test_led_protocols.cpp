@@ -94,9 +94,10 @@ static void test_dmx_size() {
 
 static void test_dmx_waveform() {
     ChannelDesc d{};
-    d.protocol     = Protocol::DMX512;
-    d.pixel_count  = 1;  // single slot + null start code
-    d.bus_bit_data = 0;
+    d.protocol      = Protocol::DMX512;
+    d.pixel_count   = 1;  // single slot + null start code
+    d.bus_bit_data  = 0;  // DATA+ = bit 0
+    d.bus_bit_clock = 1;  // DATA− (complement) = bit 1
 
     const uint8_t slots[1] = { 0x01 };  // LSB set → only data bit 0 is high
     const size_t cap       = encoded_size_samples(d);
@@ -107,6 +108,10 @@ static void test_dmx_waveform() {
     constexpr int kBit   = 64;
     constexpr int kBreak = 1536;
     constexpr int kMab   = 192;
+
+    // The complement line (bit 1) must always be the inverse of DATA (bit 0).
+    for (size_t i = 0; i < cap; ++i)
+        EXPECT_EQ((out[i] & 1) ^ ((out[i] >> 1) & 1), 1);
 
     // BREAK is entirely LOW.
     for (int i = 0; i < kBreak; ++i)
@@ -134,9 +139,10 @@ static void test_dmx_waveform() {
 
 static void test_dmx_or_into_buffer() {
     ChannelDesc d{};
-    d.protocol     = Protocol::DMX512;
-    d.pixel_count  = 4;
-    d.bus_bit_data = 6;  // some other channel's data bit
+    d.protocol      = Protocol::DMX512;
+    d.pixel_count   = 4;
+    d.bus_bit_data  = 6;  // some other channel's DATA bit
+    d.bus_bit_clock = 7;  // its complement bit
 
     const uint8_t slots[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
     const size_t cap       = encoded_size_samples(d);
@@ -148,11 +154,15 @@ static void test_dmx_or_into_buffer() {
 
     encode_channel(d, slots, out.data(), cap);
 
-    // OR-only semantics: foreign bits and the clock bit must be untouched.
-    const uint16_t clock_mask = static_cast<uint16_t>(1u << 7);
+    // OR-only semantics: foreign bits must be preserved, and the DATA/complement
+    // pair must always be mutually exclusive.
+    const uint16_t data_mask = static_cast<uint16_t>(1u << 6);
+    const uint16_t comp_mask = static_cast<uint16_t>(1u << 7);
     for (size_t i = 0; i < cap; ++i) {
         EXPECT_TRUE((out[i] & foreign_mask) == foreign_mask);
-        EXPECT_EQ(out[i] & clock_mask, 0);
+        const bool data = out[i] & data_mask;
+        const bool comp = out[i] & comp_mask;
+        EXPECT_TRUE(data != comp);  // exactly one of the pair is asserted
     }
 }
 

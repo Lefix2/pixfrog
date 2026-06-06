@@ -271,31 +271,54 @@ DMX output fits a 30 Hz refresh budget (and the standard DMX refresh ceiling of
 ~44 Hz). `dmx_manager::validate_capacity` flags the channel with `!` on HOME if
 the configured refresh rate leaves too little budget.
 
-### 7.3 Levels and idle
+### 7.3 Complementary pair on the CLOCK bit
+
+DMX is single-wire, so a DMX channel's CLOCK bit (`ch×2+1`) would otherwise be
+unused. The encoder instead drives it as the **logical complement of DATA**, so
+the channel's two bus lines form a complementary pair `DATA+ / DATA−`:
+
+```
+DATA bit (ch×2)   : ‾|_|‾‾|__   (the framed waveform)
+CLOCK bit (ch×2+1): _|‾|__|‾‾   (its exact inverse, every sample)
+```
+
+A differential DMX receiver decodes `V(DATA+) − V(DATA−)`, so this gives a true
+±Vcc swing — polarity-correct BREAK and bits — instead of the single-ended
+signal a lone DATA line provides. On the board's two-lines-per-channel adapter
+this is exactly the `i2s[1] = ~i2s[0]` trick: feed `DATA+`/`DATA−` to the
+fixture's A/B pair.
+
+**Caveat**: this is a complementary CMOS pair, not a real EIA-485 driver. It has
+no termination-drive capability (can't feed a 120 Ω-terminated bus), no
+common-mode range and no fault/ESD protection. It decodes fine on a short,
+unterminated cable to one nearby device; for long or terminated runs, or any
+mains-powered fixture, route `DATA+` through a proper RS-485 transceiver (the
+complement line is then simply ignored). See §7.4.
+
+### 7.4 Levels and idle
 
 The line idles HIGH (mark) between characters — provided by the stop bits. The
-shared frame buffer is zeroed each frame, so between successive frames the DATA
-bit sits LOW; a DMX receiver simply treats that inter-frame LOW as an extended
-BREAK before the next MAB, which is spec-tolerant. The CLOCK bit (`ch×2+1`) stays
-LOW throughout (DMX is single-wire).
+shared frame buffer is zeroed each frame, so between successive frames both
+lines sit LOW (differential 0); a DMX receiver treats that inter-frame gap as an
+extended BREAK before the next MAB, which is spec-tolerant.
 
-### 7.4 Hardware
+### 7.5 Hardware
 
-The firmware drives the correct DMX waveform on the channel's DATA bit; the
-levels are handled by the existing signal-adapter board (`HARDWARE.md` §6, the
-74HCT245 3.3 V → 5 V buffers). That buffer is **single-ended**, which is fine
-for LED strips but is *not* a DMX-compliant link on its own: DMX512-A is a
-balanced EIA-485 (differential A/B) signal.
-
-So for a DMX channel the chain is:
+The firmware drives the framed waveform on `DATA+` (bit `ch×2`) and its inverse
+on `DATA−` (bit `ch×2+1`); both pass through the existing 74HCT245 3.3 V → 5 V
+buffers (`HARDWARE.md` §6). Two wiring options:
 
 ```
-GPIO (3.3 V) → 74HCT245 (5 V single-ended) → RS-485 transceiver (MAX485/SN75176) → XLR A/B
+A) Complementary pair (no extra parts, §7.3):
+   GPIO DATA+/DATA− → 74HCT245 (5 V) → fixture A / B
+   → works on short, unterminated cable to one nearby device.
+
+B) Proper RS-485 (recommended for real installs):
+   GPIO DATA+ → RS-485 transceiver (MAX485/SN75176) → XLR A/B
+   → handles termination, common-mode and long runs; DATA− is then unused.
 ```
 
-The RS-485 transceiver is the part that produces the differential pair; it may
-also be fed straight from the 3.3 V GPIO (most MAX485 variants accept a 3.3 V
-input), in which case the 74HCT245 stage is optional for that channel. The
-single-ended 5 V output alone is only adequate for bench bring-up of a nearby,
-non-isolated device or for scoping the frame — **do not** wire a real XLR fixture
-or a long run without the transceiver. The CLOCK pin of a DMX channel is unused.
+Option B's transceiver may be fed straight from the 3.3 V GPIO (most MAX485
+variants accept a 3.3 V input), so the 74HCT245 stage is optional for that
+channel. Use option A only for bench bring-up or scoping — **do not** wire a
+mains-powered XLR fixture or a long/terminated run without a transceiver.
