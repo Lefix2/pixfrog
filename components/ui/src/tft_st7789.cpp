@@ -1,4 +1,3 @@
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
 #include "ui_internal.h"
 
 #include "driver/spi_master.h"
@@ -83,4 +82,3 @@ int tft_height() {
 }
 
 }  // namespace pixfrog::ui::detail
-#endif  // CONFIG_PIXFROG_DISPLAY_TFT

@@ -1,4 +1,3 @@
-#ifdef CONFIG_PIXFROG_DISPLAY_OLED
 #include "ui_internal.h"
 
 namespace pixfrog::ui::detail {
@@ -27,4 +26,3 @@ void canvas_flush() {
 }
 
 }  // namespace pixfrog::ui::detail
-#endif

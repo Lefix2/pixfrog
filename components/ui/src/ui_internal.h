@@ -67,15 +67,12 @@ void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg = color:
 void canvas_flush();
 
 // ── OLED low-level (used only by oled_ssd1306.cpp + canvas_oled.cpp) ─────────
-#ifdef CONFIG_PIXFROG_DISPLAY_OLED
 bool oled_init(i2c_master_bus_handle_t bus, uint8_t addr);
 void oled_clear();
 void oled_draw_text(uint8_t row, uint8_t col, const char* str);
 void oled_flush();
-#endif
 
 // ── TFT low-level (used only by tft_st7789.cpp + canvas_tft.cpp) ─────────────
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
 struct TftConfig {
     int spi_host;
     int clk_gpio, mosi_gpio, cs_gpio, dc_gpio, rst_gpio;
@@ -86,7 +83,6 @@ bool tft_init(const TftConfig& cfg);
 void tft_draw_bitmap(int x1, int y1, int x2, int y2, const uint16_t* data);
 int tft_width();
 int tft_height();
-#endif
 
 // ── Encoder driver ────────────────────────────────────────────────────────────
 

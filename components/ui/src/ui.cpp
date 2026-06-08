@@ -87,12 +87,7 @@ bool start(const InitConfig& cfg) {
 
     if (!create_i2c_bus(cfg)) return false;
 
-#ifdef CONFIG_PIXFROG_DISPLAY_OLED
-    if (!detail::oled_init(g_bus, cfg.oled_addr)) {
-        ESP_LOGE(TAG, "oled init failed");
-        return false;
-    }
-#else
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
     {
         detail::TftConfig tft_cfg{};
         tft_cfg.spi_host  = cfg.spi_host;
@@ -108,6 +103,11 @@ bool start(const InitConfig& cfg) {
             ESP_LOGE(TAG, "tft init failed");
             return false;
         }
+    }
+#else
+    if (!detail::oled_init(g_bus, cfg.oled_addr)) {
+        ESP_LOGE(TAG, "oled init failed");
+        return false;
     }
 #endif
     if (!detail::encoder_init(g_bus, cfg.encoder_addr, cfg.encoder_int_gpio)) {

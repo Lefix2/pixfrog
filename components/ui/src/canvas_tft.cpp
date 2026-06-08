@@ -1,4 +1,3 @@
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
 #include "font_5x8.h"
 #include "ui_internal.h"
 
@@ -80,4 +79,3 @@ void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t
 void canvas_flush() {}  // direct-write: nothing to flush
 
 }  // namespace pixfrog::ui::detail
-#endif  // CONFIG_PIXFROG_DISPLAY_TFT
