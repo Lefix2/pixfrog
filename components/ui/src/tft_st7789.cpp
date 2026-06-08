@@ -35,14 +35,14 @@ bool tft_init(const TftConfig& cfg) {
 
     esp_lcd_panel_io_handle_t io = nullptr;
     esp_lcd_panel_io_spi_config_t io_cfg{};
-    io_cfg.dc_gpio_num            = cfg.dc_gpio;
-    io_cfg.cs_gpio_num            = cfg.cs_gpio;
-    io_cfg.pclk_hz                = cfg.freq_hz;
-    io_cfg.lcd_cmd_bits           = 8;
-    io_cfg.lcd_param_bits         = 8;
-    io_cfg.spi_mode               = 0;
-    io_cfg.trans_queue_depth      = 10;
-    io_cfg.flags.swap_color_bytes = 1;  // ST7789 big-endian colors
+    io_cfg.dc_gpio_num       = cfg.dc_gpio;
+    io_cfg.cs_gpio_num       = cfg.cs_gpio;
+    io_cfg.pclk_hz           = cfg.freq_hz;
+    io_cfg.lcd_cmd_bits      = 8;
+    io_cfg.lcd_param_bits    = 8;
+    io_cfg.spi_mode          = 0;
+    io_cfg.trans_queue_depth = 10;
+    // swap_color_bytes removed in IDF v5.5; byte-swap via __builtin_bswap16 in canvas layer
 
     if (esp_lcd_new_panel_io_spi(static_cast<spi_host_device_t>(cfg.spi_host), &io_cfg, &io) !=
         ESP_OK) {
