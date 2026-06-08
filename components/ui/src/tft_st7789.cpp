@@ -10,7 +10,7 @@
 namespace pixfrog::ui::detail {
 
 namespace {
-constexpr const char* TAG = "TFT";
+constexpr const char* TAG      = "TFT";
 esp_lcd_panel_handle_t g_panel = nullptr;
 int g_w                        = 0;
 int g_h                        = 0;
@@ -28,8 +28,8 @@ bool tft_init(const TftConfig& cfg) {
     bus.quadhd_io_num   = -1;
     bus.max_transfer_sz = cfg.width * 40 * 2;  // 40 scan-lines buffer
 
-    if (spi_bus_initialize(static_cast<spi_host_device_t>(cfg.spi_host), &bus,
-                           SPI_DMA_CH_AUTO) != ESP_OK) {
+    if (spi_bus_initialize(static_cast<spi_host_device_t>(cfg.spi_host), &bus, SPI_DMA_CH_AUTO) !=
+        ESP_OK) {
         ESP_LOGE(TAG, "spi_bus_initialize failed");
         return false;
     }
@@ -45,8 +45,8 @@ bool tft_init(const TftConfig& cfg) {
     io_cfg.trans_queue_depth      = 10;
     io_cfg.flags.swap_color_bytes = 1;  // ST7789 big-endian colors
 
-    if (esp_lcd_new_panel_io_spi(static_cast<spi_host_device_t>(cfg.spi_host),
-                                 &io_cfg, &io) != ESP_OK) {
+    if (esp_lcd_new_panel_io_spi(static_cast<spi_host_device_t>(cfg.spi_host), &io_cfg, &io) !=
+        ESP_OK) {
         ESP_LOGE(TAG, "panel_io_spi failed");
         return false;
     }
@@ -75,8 +75,12 @@ void tft_draw_bitmap(int x1, int y1, int x2, int y2, const uint16_t* data) {
     esp_lcd_panel_draw_bitmap(g_panel, x1, y1, x2, y2, data);
 }
 
-int tft_width() { return g_w; }
-int tft_height() { return g_h; }
+int tft_width() {
+    return g_w;
+}
+int tft_height() {
+    return g_h;
+}
 
 }  // namespace pixfrog::ui::detail
 #endif  // CONFIG_PIXFROG_DISPLAY_TFT

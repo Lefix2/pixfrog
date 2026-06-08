@@ -25,11 +25,11 @@ namespace {
 
 constexpr const char* TAG = "OLED";
 
-constexpr uint8_t kCols     = 128;
-constexpr uint8_t kPages    = 8;
-constexpr uint8_t kTextCols = 21;  // = 128 / kFontCellWidth (= 6), rounded down
-constexpr uint8_t kTextRows = 8;
-constexpr int kI2cTimeoutMs = 50;
+constexpr uint8_t kSsd1306Cols = 128;
+constexpr uint8_t kPages       = 8;
+constexpr uint8_t kTextCols    = 21;  // = 128 / kFontCellWidth (= 6), rounded down
+constexpr uint8_t kTextRows    = 8;
+constexpr int kI2cTimeoutMs    = 50;
 
 // SSD1306 control-byte prefixes for I2C transactions.
 constexpr uint8_t kPrefixCmdStream  = 0x00;  // Co=0, D/C=0 → next bytes = commands
@@ -60,8 +60,8 @@ constexpr uint8_t kInitCmds[] = {
 // clang-format on
 
 i2c_master_dev_handle_t g_dev             = nullptr;
-uint8_t g_fb[kPages][kCols]               = {};  // next-to-flush framebuffer
-uint8_t g_fb_prev[kPages][kCols]          = {};  // last-flushed (for diff)
+uint8_t g_fb[kPages][kSsd1306Cols]        = {};  // next-to-flush framebuffer
+uint8_t g_fb_prev[kPages][kSsd1306Cols]   = {};  // last-flushed (for diff)
 char g_text_buf[kTextRows][kTextCols + 1] = {};
 
 bool send_cmds(const uint8_t* data, size_t len) {
@@ -75,14 +75,14 @@ bool send_cmds(const uint8_t* data, size_t len) {
 // row maps to (1 text row = 1 SSD1306 page = 1 byte per column).
 void rasterise_row(uint8_t row) {
     uint8_t* page = g_fb[row];
-    std::memset(page, 0, kCols);
+    std::memset(page, 0, kSsd1306Cols);
     for (uint8_t tc = 0; tc < kTextCols; ++tc) {
         const char c = g_text_buf[row][tc];
         if (c == '\0') break;
         const uint8_t* glyph = font_glyph_for(c);
         const size_t base    = static_cast<size_t>(tc) * kFontCellWidth;
         for (uint8_t gc = 0; gc < kFontWidth; ++gc) {
-            if (base + gc < kCols) page[base + gc] = glyph[gc];
+            if (base + gc < kSsd1306Cols) page[base + gc] = glyph[gc];
         }
         // 1 blank column after each glyph (already zero-init'd)
     }
@@ -136,20 +136,20 @@ void oled_flush() {
     // Diff-based: only push pages whose rendered bytes differ from what's
     // currently on screen. At idle (no text change) zero bytes go over I2C.
     uint8_t page_cmds[4] = { kPrefixCmdStream, 0xB0, 0x00, 0x10 };
-    uint8_t page_data[1 + kCols];
+    uint8_t page_data[1 + kSsd1306Cols];
     page_data[0] = kPrefixDataStream;
 
     for (uint8_t p = 0; p < kPages; ++p) {
-        if (std::memcmp(g_fb[p], g_fb_prev[p], kCols) == 0) continue;
+        if (std::memcmp(g_fb[p], g_fb_prev[p], kSsd1306Cols) == 0) continue;
         page_cmds[1] = static_cast<uint8_t>(0xB0 | p);
         if (!send_cmds(page_cmds, sizeof(page_cmds))) return;
-        std::memcpy(page_data + 1, g_fb[p], kCols);
+        std::memcpy(page_data + 1, g_fb[p], kSsd1306Cols);
         esp_err_t err = i2c_master_transmit(g_dev, page_data, sizeof(page_data), kI2cTimeoutMs);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "page %u tx failed: %s", p, esp_err_to_name(err));
             return;
         }
-        std::memcpy(g_fb_prev[p], g_fb[p], kCols);
+        std::memcpy(g_fb_prev[p], g_fb[p], kSsd1306Cols);
     }
 }
 
