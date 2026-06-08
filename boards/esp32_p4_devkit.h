@@ -9,28 +9,28 @@
 // P6  —  40-pin 2.54 mm header (even = left row, odd = right row)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//   Pin  Left         │  Pin  Right
-//   ─────────────────────────────────
-//    2   GPIO7  (SDA) │   1   VCC_5V
-//    4   GPIO6        │   3   GND
-//    6   GPIO21       │   5   GPIO17
-//    8   GND          │   7   GPIO38  (UART0 RXD)
-//   10   GPIO21       │   9   GPIO22  (LED CH3 DATA)
-//   12   GPIO20       │  11   GND
-//   14   GPIO6        │  13   GPIO5   (LED CH2 CLK)
-//   16   —            │  15   GPIO4   (LED CH2 DATA)
-//   18   —            │  17   GND
-//   20   —            │  19   GPIO1   (status LED)
-//   22   —            │  21   GPIO36  (strapping — keep HIGH)
-//   24   GPIO2        │  23   GPIO32  (LED CH6 DATA)
-//   26   GND          │  25   GPIO25  (LED CH4 CLK)
-//   28   GPIO24       │  27   GND
-//   30   GPIO33       │  29   GPIO54  (LED CH8 CLK)
-//   32   GPIO26       │  31   GND
-//   34   GPIO48       │  33   GPIO46  (LED CH5 CLK)
-//   36   GPIO53       │  35   GPIO27
-//   38   GPIO47       │  37   GPIO45
-//   40   GND          │  39   —
+//   Pin  Left              │  Pin  Right
+//   ──────────────────────────────────────
+//    2   GPIO7  (I2C SDA)  │   1   VCC_5V
+//    4   GPIO8  (I2C SCL)  │   3   GND
+//    6   GPIO23 (LED CH3 CLK) │ 5  GPIO37  (UART0 TXD)
+//    8   GND               │   7   GPIO38  (UART0 RXD)
+//   10   GPIO21 (enc. IRQ) │   9   GPIO22  (LED CH3 DATA)
+//   12   —                 │  11   GND
+//   14   GPIO6             │  13   GPIO5   (LED CH2 CLK)
+//   16   —                 │  15   GPIO4   (LED CH2 DATA)
+//   18   —                 │  17   GND
+//   20   GPIO3  (LED CH1 CLK) │ 19  GPIO1  (status LED)
+//   22   GPIO2  (LED CH1 DATA) │ 21  GPIO36 (strapping — keep HIGH)
+//   24   GPIO0             │  23   GPIO32  (LED CH6 DATA)
+//   26   GND               │  25   GPIO25  (LED CH4 CLK)
+//   28   GPIO24 (LED CH4 DATA) │ 27  GND
+//   30   GPIO33 (LED CH6 CLK) │ 29  GPIO54  (LED CH8 CLK)
+//   32   GPIO26 (LED CH5 DATA) │ 31  GND
+//   34   GPIO48 (LED CH7 CLK) │ 33  GPIO46  (LED CH5 CLK)
+//   36   GPIO53 (LED CH8 DATA) │ 35  GPIO27
+//   38   GPIO47 (LED CH7 DATA) │ 37  GPIO45
+//   40   GND               │  39   —
 //
 // ════════════════════════════════════════════════════════════════════════════
 // On-board peripheral  →  GPIO usage
