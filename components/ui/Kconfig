@@ -1,0 +1,26 @@
+menu "Display backend"
+
+    choice PIXFROG_DISPLAY
+        prompt "Display type"
+        default PIXFROG_DISPLAY_OLED
+        help
+            Select the display connected to the UI port.
+
+        config PIXFROG_DISPLAY_OLED
+            bool "OLED SSD1306 (I2C 128x64)"
+
+        config PIXFROG_DISPLAY_TFT
+            bool "TFT ST7789V / ILI9341 (SPI 240x320)"
+    endchoice
+
+    config PIXFROG_TFT_WIDTH
+        int "TFT width in pixels"
+        depends on PIXFROG_DISPLAY_TFT
+        default 240
+
+    config PIXFROG_TFT_HEIGHT
+        int "TFT height in pixels"
+        depends on PIXFROG_DISPLAY_TFT
+        default 320
+
+endmenu

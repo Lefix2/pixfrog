@@ -23,8 +23,32 @@ namespace pixfrog::ui::detail {
 
 namespace {
 
-constexpr uint8_t kRows = 8;
-constexpr uint8_t kCols = 21;
+// ── Local constants ──────────────────────────────────────────────────────────
+
+// kCols is used for buffer sizing (worst-case OLED width 21 chars).
+// For TFT, kRows/kCols from ui_internal.h govern the grid, but local
+// buffers use kOledCols which covers both backends safely.
+constexpr uint8_t kOledCols = 21;
+
+// ── Canvas text helpers ───────────────────────────────────────────────────────
+// Thin wrappers that map OLED-style (row, col) coordinates to pixel coords.
+
+static void draw_row(uint8_t row, uint8_t col, const char* str) {
+    canvas_draw_text(col * kFontCellWidth, row * kFontHeight, str, color::White);
+}
+
+// ── TFT layout ────────────────────────────────────────────────────────────────
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+constexpr int kTW     = 240;                     // TFT width
+constexpr int kTH     = 320;                     // TFT height
+constexpr int kHdrH   = 28;                      // header bar height
+constexpr int kItemH  = 24;                      // list item height
+constexpr int kTxtSc  = 2;                       // standard text scale (12x16 per char)
+constexpr int kTxtH   = 8 * kTxtSc;              // 16px
+constexpr int kPad    = (kItemH - kTxtH) / 2;    // vertical padding in item
+constexpr int kIndent = 6;                       // left margin
+constexpr int kMaxVis = (kTH - kHdrH) / kItemH;  // max visible items
+#endif
 
 // ── Screens ─────────────────────────────────────────────────────────────────
 enum class Screen : uint8_t {
@@ -197,8 +221,39 @@ struct ListItem {
 };
 
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
-    oled_clear();
-    oled_draw_text(0, 0, title);
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    // ── TFT: header + highlighted cursor row ──────────────────────────────────
+    canvas_fill_rect(0, 0, kTW, kHdrH, color::HeaderBg);
+    canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, color::White, color::HeaderBg, kTxtSc);
+
+    const int visible = kMaxVis;
+    int first         = 0;
+    if (count > static_cast<uint8_t>(visible)) {
+        if (cursor >= static_cast<uint8_t>(visible)) first = cursor - (visible - 1);
+        if (first + visible > count) first = count - visible;
+    }
+    for (int i = 0; i < visible && first + i < count; ++i) {
+        const int idx = first + i;
+        const int ry  = kHdrH + i * kItemH;
+        Color bg = (idx == cursor) ? color::CursorBg : ((i & 1) ? color::AltRowBg : color::Black);
+        canvas_fill_rect(0, ry, kTW, kItemH, bg);
+        char line[48];
+        if (items[idx].value && items[idx].value[0]) {
+            std::snprintf(line, sizeof(line), "%s: %s", items[idx].label, items[idx].value);
+        } else {
+            std::snprintf(line, sizeof(line), "%s", items[idx].label);
+        }
+        canvas_draw_text(kIndent, ry + kPad, line, color::White, bg, kTxtSc);
+    }
+    // Scroll indicator
+    if (count > static_cast<uint8_t>(visible)) {
+        if (first > 0) canvas_fill_rect(kTW - 4, kHdrH, 4, 6, color::LightGray);
+        if (first + visible < count) canvas_fill_rect(kTW - 4, kTH - 6, 4, 6, color::LightGray);
+    }
+#else
+    // ── OLED: classic scrolling text list ────────────────────────────────────
+    canvas_clear();
+    draw_row(0, 0, title);
     const uint8_t visible = kRows - 1;
     uint8_t first         = 0;
     if (count > visible) {
@@ -207,7 +262,7 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
     }
     for (uint8_t i = 0; i < visible && first + i < count; ++i) {
         const uint8_t idx = first + i;
-        char line[kCols + 1];
+        char line[kOledCols + 1];
         const char prefix = (idx == cursor) ? '>' : ' ';
         if (items[idx].value && items[idx].value[0]) {
             std::snprintf(line, sizeof(line), "%c%s:%s", prefix, items[idx].label,
@@ -215,49 +270,130 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         } else {
             std::snprintf(line, sizeof(line), "%c%s", prefix, items[idx].label);
         }
-        oled_draw_text(static_cast<uint8_t>(1 + i), 0, line);
+        draw_row(static_cast<uint8_t>(1 + i), 0, line);
     }
+#endif
 }
 
 // ── HOME ────────────────────────────────────────────────────────────────────
 
 void render_home() {
-    // Oversized vs. kCols: a full "IP   : 255.255.255.255" is 22 chars and
-    // oled_draw_text() clips to the display width, so we build the whole
-    // string here to keep -Wformat-truncation happy.
-    char line[32];
-    oled_clear();
+    char line[48];
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    // ── TFT dashboard ────────────────────────────────────────────────────────
+    canvas_clear(color::Black);
+
+    // Header bar
+    canvas_fill_rect(0, 0, kTW, kHdrH, color::HeaderBg);
+    if (!config::is_persistence_ok()) {
+        canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, "pixfrog [!NVS]", color::Red,
+                         color::HeaderBg, kTxtSc);
+    } else {
+        canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, "pixfrog", color::White, color::HeaderBg,
+                         kTxtSc);
+    }
+
+    const auto stats = dmx::get_stats();
+    std::snprintf(line, sizeof(line), "%lufps", static_cast<unsigned long>(stats.current_fps));
+    // Right-align FPS in header
+    canvas_draw_text(kTW - static_cast<int>(std::strlen(line)) * kFontCellWidth * kTxtSc,
+                     (kHdrH - kTxtH) / 2, line, color::Cyan, color::HeaderBg, kTxtSc);
+
+    // Network row (y = kHdrH .. kHdrH+kItemH-1)
+    int ry = kHdrH;
+    canvas_fill_rect(0, ry, kTW, kItemH, color::DarkBlue);
+    const uint32_t ip = ui::get_ip();
+    if (ip == 0) {
+        canvas_draw_text(kIndent, ry + kPad, "IP: ---", color::LightGray, color::DarkBlue, kTxtSc);
+    } else {
+        std::snprintf(line, sizeof(line), "IP: %u.%u.%u.%u",
+                      static_cast<unsigned>((ip >> 24) & 0xFFu),
+                      static_cast<unsigned>((ip >> 16) & 0xFFu),
+                      static_cast<unsigned>((ip >> 8) & 0xFFu), static_cast<unsigned>(ip & 0xFFu));
+        canvas_draw_text(kIndent, ry + kPad, line, color::White, color::DarkBlue, kTxtSc);
+    }
+    const Color link_col = ui::is_link_up() ? color::Green : color::Red;
+    const char* link_str = ui::is_link_up() ? "UP" : "DOWN";
+    canvas_draw_text(kTW - static_cast<int>(std::strlen(link_str)) * kFontCellWidth * kTxtSc -
+                         kIndent,
+                     ry + kPad, link_str, link_col, color::DarkBlue, kTxtSc);
+
+    // Stats row
+    ry += kItemH;
+    canvas_fill_rect(0, ry, kTW, kItemH, color::AltRowBg);
+    std::snprintf(line, sizeof(line), "Pkts: %llu",
+                  static_cast<unsigned long long>(stats.artnet_packets_rx));
+    canvas_draw_text(kIndent, ry + kPad, line, color::White, color::AltRowBg, kTxtSc);
+
+    // Column header row
+    ry += kItemH;
+    canvas_fill_rect(0, ry, kTW, 10, color::DarkGray);
+    canvas_draw_text(kIndent, ry + 1, "CH  PROTOCOL      UNI", color::LightGray, color::DarkGray,
+                     1);
+
+    // 8 channel rows (30px each fits; use kItemH+6)
+    ry                 += 10;
+    constexpr int kChH  = 30;
+    for (int i = 0; i < 8; ++i) {
+        const int cy       = ry + i * kChH;
+        const Color row_bg = (i & 1) ? color::AltRowBg : color::Black;
+        canvas_fill_rect(0, cy, kTW, kChH, row_bg);
+
+        const auto& cc = config::get_channel(i);
+        char ch_label[4];
+        std::snprintf(ch_label, sizeof(ch_label), "CH%d", i + 1);
+        canvas_draw_text(kIndent, cy + (kChH - kTxtH) / 2, ch_label, color::White, row_bg, kTxtSc);
+
+        // Protocol
+        const char* proto = protocol_name(cc.protocol);
+        canvas_draw_text(kIndent + 4 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, proto,
+                         color::Yellow, row_bg, kTxtSc);
+
+        // Universe
+        std::snprintf(line, sizeof(line), "%u", cc.universe_start);
+        canvas_draw_text(kIndent + 12 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, line,
+                         color::LightGray, row_bg, kTxtSc);
+
+        // Activity indicator bar
+        const bool active   = dmx::is_channel_active(i);
+        const bool ok       = dmx::is_channel_capacity_ok(i);
+        const Color act_col = !ok ? color::Red : (active ? color::Green : color::DarkGray);
+        canvas_fill_rect(kTW - 14, cy + 4, 10, kChH - 8, act_col);
+    }
+#else
+    // ── OLED classic home ─────────────────────────────────────────────────────
+    canvas_clear();
 
     // Item B6: warn loudly when NVS is broken (config does NOT persist).
     if (!config::is_persistence_ok()) {
-        oled_draw_text(0, 0, "pixfrog       [!NVS]");
+        draw_row(0, 0, "pixfrog       [!NVS]");
     } else {
-        oled_draw_text(0, 0, "pixfrog");
+        draw_row(0, 0, "pixfrog");
     }
 
     const uint32_t ip = ui::get_ip();
     if (ip == 0) {
-        oled_draw_text(1, 0, "IP   : ---.---.---.---");
+        draw_row(1, 0, "IP   : ---.---.---.---");
     } else {
         std::snprintf(line, sizeof(line), "IP   : %u.%u.%u.%u",
                       static_cast<unsigned>((ip >> 24) & 0xFFu),
                       static_cast<unsigned>((ip >> 16) & 0xFFu),
                       static_cast<unsigned>((ip >> 8) & 0xFFu), static_cast<unsigned>(ip & 0xFFu));
-        oled_draw_text(1, 0, line);
+        draw_row(1, 0, line);
     }
 
     // Item B4: link state, distinct from IP since DHCP can be pending.
-    oled_draw_text(2, 0, ui::is_link_up() ? "LINK : UP" : "LINK : DOWN");
+    draw_row(2, 0, ui::is_link_up() ? "LINK : UP" : "LINK : DOWN");
 
     const auto stats = dmx::get_stats();
     std::snprintf(line, sizeof(line), "FPS  : %lu", static_cast<unsigned long>(stats.current_fps));
-    oled_draw_text(3, 0, line);
+    draw_row(3, 0, line);
     std::snprintf(line, sizeof(line), "Pkts : %llu",
                   static_cast<unsigned long long>(stats.artnet_packets_rx));
-    oled_draw_text(4, 0, line);
+    draw_row(4, 0, line);
 
-    oled_draw_text(5, 0, "CH 1 2 3 4 5 6 7 8");
-    char ch_line[kCols + 1];
+    draw_row(5, 0, "CH 1 2 3 4 5 6 7 8");
+    char ch_line[kOledCols + 1];
     ch_line[0] = ' ';
     ch_line[1] = ' ';
     ch_line[2] = ' ';
@@ -272,7 +408,8 @@ void render_home() {
         ch_line[3 + i * 2 + 1] = ' ';
     }
     ch_line[3 + 8 * 2 - 1] = '\0';
-    oled_draw_text(6, 0, ch_line);
+    draw_row(6, 0, ch_line);
+#endif
 }
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
@@ -327,12 +464,12 @@ constexpr const char* kTestPatternLabels[kTestPatternItemCount] = {
 };
 
 void render_test_pattern_menu() {
-    const int8_t active                           = lcd::get_calibration_mode();
-    char marked[kTestPatternItemCount][kCols + 1] = {};
+    const int8_t active                               = lcd::get_calibration_mode();
+    char marked[kTestPatternItemCount][kOledCols + 1] = {};
     ListItem items[kTestPatternItemCount];
     for (uint8_t i = 0; i < kTestPatternItemCount; ++i) {
         if (i < 3 && active == static_cast<int8_t>(i)) {
-            std::snprintf(marked[i], sizeof(marked[i]), "%s *", kTestPatternLabels[i]);
+            std::snprintf(marked[i], kOledCols + 1, "%s *", kTestPatternLabels[i]);
             items[i].label = marked[i];
         } else {
             items[i].label = kTestPatternLabels[i];
@@ -376,30 +513,60 @@ void enter_edit(Field field, ValueKind kind, int32_t cur, int32_t mn, int32_t mx
 }
 
 void render_edit_value() {
-    oled_clear();
-    // Buffers are sized to hold the prefix plus a full kCols-wide value;
-    // oled_draw_text() clips to the display width on output.
-    char line[kCols + 4];
-    std::snprintf(line, sizeof(line), "EDIT %s", s.edit.label);
-    oled_draw_text(0, 0, line);
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    canvas_clear(color::Black);
+    // Header
+    canvas_fill_rect(0, 0, kTW, kHdrH, color::HeaderBg);
+    char hdr[32];
+    std::snprintf(hdr, sizeof(hdr), "EDIT %s", s.edit.label);
+    canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, hdr, color::White, color::HeaderBg, kTxtSc);
 
-    char val[kCols + 1];
+    // Large current value (scale 3)
+    constexpr int kBigSc = 3;
+    constexpr int kBigH  = 8 * kBigSc;
+    char val[24];
+    format_value(s.edit, s.edit.current, val, sizeof(val));
+    const int val_w = static_cast<int>(std::strlen(val)) * kFontCellWidth * kBigSc;
+    canvas_draw_text((kTW - val_w) / 2, kHdrH + 30, val, color::Cyan, color::Black, kBigSc);
+
+    // "was: X" when changed
+    if (s.edit.current != s.edit.original) {
+        char orig[24];
+        format_value(s.edit, s.edit.original, orig, sizeof(orig));
+        char was[32];
+        std::snprintf(was, sizeof(was), "was: %s", orig);
+        canvas_draw_text(kIndent, kHdrH + 30 + kBigH + 12, was, color::Orange, color::Black,
+                         kTxtSc);
+    }
+
+    // Hint
+    canvas_draw_text(kIndent, kTH - kHdrH, "rotate=change  click=commit", color::DarkGray,
+                     color::Black, 1);
+#else
+    canvas_clear();
+    // Buffers are sized to hold the prefix plus a full kOledCols-wide value.
+    char line[kOledCols + 4];
+    std::snprintf(line, sizeof(line), "EDIT %s", s.edit.label);
+    draw_row(0, 0, line);
+
+    char val[kOledCols + 1];
     format_value(s.edit, s.edit.current, val, sizeof(val));
     std::snprintf(line, sizeof(line), "  %s", val);
-    oled_draw_text(3, 0, line);
+    draw_row(3, 0, line);
 
     // Item B3: show the original (pre-edit) value when the user has moved
     // away from it, so it's clear the change is not yet committed.
     if (s.edit.current != s.edit.original) {
-        char orig[kCols + 1];
+        char orig[kOledCols + 1];
         format_value(s.edit, s.edit.original, orig, sizeof(orig));
-        char was[kCols + 8];
+        char was[kOledCols + 8];
         std::snprintf(was, sizeof(was), "  was: %s", orig);
-        oled_draw_text(4, 0, was);
+        draw_row(4, 0, was);
     }
 
-    oled_draw_text(5, 0, "rotate to change");
-    oled_draw_text(6, 0, "click to commit");
+    draw_row(5, 0, "rotate to change");
+    draw_row(6, 0, "click to commit");
+#endif
 }
 
 void commit_edit() {
@@ -538,8 +705,7 @@ void enter_edit_string(StringField field, const char* source, uint8_t max_len, c
 }
 
 void render_edit_string() {
-    oled_clear();
-    char title[kCols + 1];
+    char title[48];
     if (s.str_edit.cursor < s.str_edit.max_len) {
         std::snprintf(title, sizeof(title), "EDIT %s [%u/%u]", s.str_edit.label,
                       static_cast<unsigned>(s.str_edit.cursor + 1),
@@ -547,9 +713,7 @@ void render_edit_string() {
     } else {
         std::snprintf(title, sizeof(title), "EDIT %s [end]", s.str_edit.label);
     }
-    oled_draw_text(0, 0, title);
 
-    // Window of up to 20 chars centred on cursor.
     constexpr int kWin   = 20;
     const uint8_t cursor = s.str_edit.cursor;
     const uint8_t len    = s.str_edit.max_len;
@@ -558,28 +722,54 @@ void render_edit_string() {
     if (win_start + kWin > len) win_start = len - kWin;
     if (win_start < 0) win_start = 0;
 
-    char window[kWin + 1] = {};
+    char window[kWin + 1];
+    std::memset(window, 0, sizeof(window));
     for (int i = 0; i < kWin && win_start + i < len; ++i) {
         char c    = s.str_edit.buf[win_start + i];
-        window[i] = (c == ' ') ? '_' : c;  // visible underscore for spaces
+        window[i] = (c == ' ') ? '_' : c;
     }
-    oled_draw_text(2, 0, window);
 
-    // Cursor caret '^' below the char.
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    canvas_clear(color::Black);
+    canvas_fill_rect(0, 0, kTW, kHdrH, color::HeaderBg);
+    canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, color::White, color::HeaderBg, kTxtSc);
+
+    canvas_draw_text(kIndent, kHdrH + 20, window, color::Cyan, color::Black, kTxtSc);
+
     if (cursor < len) {
-        char caret[kWin + 1] = {};
-        const int col        = cursor - win_start;
+        // Highlight active char
+        const int col    = cursor - win_start;
+        const int high_x = kIndent + col * kFontCellWidth * kTxtSc;
+        canvas_fill_rect(high_x, kHdrH + 20 + kTxtH + 4, kFontCellWidth * kTxtSc, 4, color::Cyan);
+        canvas_draw_text(kIndent, kTH - kHdrH, "rotate=char  click=next", color::DarkGray,
+                         color::Black, 1);
+    } else {
+        canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 10, "[end of string]", color::Orange,
+                         color::Black, kTxtSc);
+        canvas_draw_text(kIndent, kTH - kHdrH, "rotate=back  click=commit", color::DarkGray,
+                         color::Black, 1);
+    }
+#else
+    canvas_clear();
+    draw_row(0, 0, title);
+    draw_row(2, 0, window);
+
+    if (cursor < len) {
+        char caret[kWin + 1];
+        std::memset(caret, 0, sizeof(caret));
+        const int col = cursor - win_start;
         for (int i = 0; i < col && i < kWin; ++i)
             caret[i] = ' ';
         if (col >= 0 && col < kWin) caret[col] = '^';
-        oled_draw_text(3, 0, caret);
-        oled_draw_text(5, 0, "rotate=change char");
-        oled_draw_text(6, 0, "click=next char");
+        draw_row(3, 0, caret);
+        draw_row(5, 0, "rotate=change char");
+        draw_row(6, 0, "click=next char");
     } else {
-        oled_draw_text(3, 0, "[end of string]");
-        oled_draw_text(5, 0, "rotate=back to chr");
-        oled_draw_text(6, 0, "click=commit & exit");
+        draw_row(3, 0, "[end of string]");
+        draw_row(5, 0, "rotate=back to chr");
+        draw_row(6, 0, "click=commit & exit");
     }
+#endif
 }
 
 void commit_edit_string() {
@@ -634,10 +824,8 @@ void enter_edit_ip(IpField field, uint32_t current, const char* label, Screen re
 }
 
 void render_edit_ip() {
-    oled_clear();
-    char title[kCols + 1];
+    char title[32];
     std::snprintf(title, sizeof(title), "EDIT %s", s.ip_edit.label);
-    oled_draw_text(0, 0, title);
 
     // Render as "192.[168].001.123" with brackets around current octet.
     const uint32_t v     = s.ip_edit.value;
@@ -647,25 +835,46 @@ void render_edit_ip() {
         static_cast<uint8_t>((v >> 8) & 0xFF),
         static_cast<uint8_t>(v & 0xFF),
     };
-    char line[kCols + 1] = {};
-    int pos              = 0;
+    char ip_line[32];
+    int pos = 0;
     for (int i = 0; i < 4; ++i) {
         if (i == s.ip_edit.cursor)
-            pos += std::snprintf(line + pos, sizeof(line) - pos, "[%u]", oct[i]);
+            pos += std::snprintf(ip_line + pos, sizeof(ip_line) - pos, "[%u]", oct[i]);
         else
-            pos += std::snprintf(line + pos, sizeof(line) - pos, "%u", oct[i]);
-        if (i < 3) pos += std::snprintf(line + pos, sizeof(line) - pos, ".");
-        if (pos >= static_cast<int>(sizeof(line)) - 1) break;
+            pos += std::snprintf(ip_line + pos, sizeof(ip_line) - pos, "%u", oct[i]);
+        if (i < 3) pos += std::snprintf(ip_line + pos, sizeof(ip_line) - pos, ".");
+        if (pos >= static_cast<int>(sizeof(ip_line)) - 1) break;
     }
-    oled_draw_text(3, 0, line);
+
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    canvas_clear(color::Black);
+    canvas_fill_rect(0, 0, kTW, kHdrH, color::HeaderBg);
+    canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, color::White, color::HeaderBg, kTxtSc);
+
+    canvas_draw_text(kIndent, kHdrH + 30, ip_line, color::Cyan, color::Black, kTxtSc);
 
     if (s.ip_edit.cursor < 4) {
-        oled_draw_text(5, 0, "rotate=change oct");
-        oled_draw_text(6, 0, "click=next octet");
+        canvas_draw_text(kIndent, kTH - kHdrH, "rotate=octet  click=next", color::DarkGray,
+                         color::Black, 1);
     } else {
-        oled_draw_text(5, 0, "[ready to commit]");
-        oled_draw_text(6, 0, "click=commit & exit");
+        canvas_draw_text(kIndent, kHdrH + 30 + kTxtH + 16, "[ready to commit]", color::Orange,
+                         color::Black, kTxtSc);
+        canvas_draw_text(kIndent, kTH - kHdrH, "click=commit & exit", color::DarkGray, color::Black,
+                         1);
     }
+#else
+    canvas_clear();
+    draw_row(0, 0, title);
+    draw_row(3, 0, ip_line);
+
+    if (s.ip_edit.cursor < 4) {
+        draw_row(5, 0, "rotate=change oct");
+        draw_row(6, 0, "click=next octet");
+    } else {
+        draw_row(5, 0, "[ready to commit]");
+        draw_row(6, 0, "click=commit & exit");
+    }
+#endif
 }
 
 void commit_edit_ip() {
@@ -764,7 +973,7 @@ void dispatch_artnet_menu(Event e) {
 // ── NETWORK MENU ────────────────────────────────────────────────────────────
 
 void render_network_menu() {
-    char vdhcp[8], vip[kCols + 1], vmsk[kCols + 1], vgw[kCols + 1];
+    char vdhcp[8], vip[kOledCols + 1], vmsk[kOledCols + 1], vgw[kOledCols + 1];
     const auto& g = config::get_global();
     std::snprintf(vdhcp, sizeof(vdhcp), "%s", g.use_dhcp ? "ON" : "OFF");
     auto fmt_ip = [](char* buf, size_t cap, uint32_t v) {
@@ -850,7 +1059,7 @@ uint8_t channel_item_count() {
 void render_channel_menu() {
     const auto& cc = config::get_channel(s.channel_index);
     const bool dmx = led::is_dmx(cc.protocol);
-    char title[kCols + 1];
+    char title[kOledCols + 1];
     std::snprintf(title, sizeof(title), "CHANNEL %u", s.channel_index + 1);
 
     char vproto[8], vuni[8], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12];

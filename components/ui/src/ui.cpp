@@ -52,7 +52,7 @@ bool create_i2c_bus(const InitConfig& cfg) {
 void task_main(void*) {
     detail::menu_init();
     detail::menu_render();
-    detail::oled_flush();
+    detail::canvas_flush();
 
     const TickType_t home_refresh = pdMS_TO_TICKS(100);  // 10 Hz HOME refresh
     const uint32_t idle_ms        = config::get_global().home_timeout_s * 1000u;
@@ -74,7 +74,7 @@ void task_main(void*) {
         // Always re-render + flush; oled_flush is diff-based and writes
         // 0 bytes over I2C when the framebuffer is unchanged.
         detail::menu_render();
-        detail::oled_flush();
+        detail::canvas_flush();
     }
 }
 
@@ -87,10 +87,29 @@ bool start(const InitConfig& cfg) {
 
     if (!create_i2c_bus(cfg)) return false;
 
+#ifdef CONFIG_PIXFROG_DISPLAY_OLED
     if (!detail::oled_init(g_bus, cfg.oled_addr)) {
         ESP_LOGE(TAG, "oled init failed");
         return false;
     }
+#else
+    {
+        detail::TftConfig tft_cfg{};
+        tft_cfg.spi_host  = cfg.spi_host;
+        tft_cfg.clk_gpio  = cfg.spi_clk_gpio;
+        tft_cfg.mosi_gpio = cfg.spi_mosi_gpio;
+        tft_cfg.cs_gpio   = cfg.spi_cs_gpio;
+        tft_cfg.dc_gpio   = cfg.tft_dc_gpio;
+        tft_cfg.rst_gpio  = cfg.tft_rst_gpio;
+        tft_cfg.freq_hz   = cfg.spi_freq_hz;
+        tft_cfg.width     = cfg.tft_width;
+        tft_cfg.height    = cfg.tft_height;
+        if (!detail::tft_init(tft_cfg)) {
+            ESP_LOGE(TAG, "tft init failed");
+            return false;
+        }
+    }
+#endif
     if (!detail::encoder_init(g_bus, cfg.encoder_addr, cfg.encoder_int_gpio)) {
         ESP_LOGE(TAG, "encoder init failed");
         return false;
