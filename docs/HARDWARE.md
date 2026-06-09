@@ -222,7 +222,31 @@ OLED refresh: **10 Hz** via diff-based flush (only pages whose pixels changed ar
 
 ---
 
-## 9. Power
+## 9. TFT display wiring (ST7789V — optional, replaces OLED)
+
+When `CONFIG_PIXFROG_DISPLAY_TFT=y` is selected, a **ST7789V 320×240 SPI display** is used instead of the OLED. The TFT is driven in landscape orientation (320 wide × 240 tall) via `esp_lcd_new_panel_st7789`.
+
+```
+ST7789V module    ESP32-P4
+──────────────    ─────────
+VCC (3.3 V)  ───► 3.3 V
+GND          ───► GND
+CLK (SCLK)   ───► GPIO 13
+MOSI (SDA)   ───► GPIO 11
+CS           ───► GPIO 12
+DC (RS)      ───► GPIO 10
+RST          ───► GPIO 9
+```
+
+SPI host: `SPI2_HOST`, 40 MHz. The display is portrait 240×320 at the hardware level; firmware issues `esp_lcd_panel_swap_xy(true)` after init to address it as landscape 320×240.
+
+Color format: RGB565 big-endian (ST7789 native). `canvas_tft.cpp` applies `__builtin_bswap16` to every pixel value before writing to the DMA buffer.
+
+The OLED and TFT share the same I2C encoder/interrupt wiring (§8 above). The I2C bus is still initialised regardless of display choice (encoder requires it).
+
+---
+
+## 10. Power
 
 - ESP32-P4 + 3.3 V logic: LDO or DC-DC on the DEV-KIT (already done)
 - LED strips at 5 V: **separate supply**, **common ground with the MCU**
@@ -233,7 +257,7 @@ OLED refresh: **10 Hz** via diff-based flush (only pages whose pixels changed ar
 
 ---
 
-## 10. Future hardware (v1, custom PCB)
+## 11. Future hardware (v1, custom PCB)
 
 - 2-layer PCB minimum, continuous ground plane
 - Dedicated 1 A LDO for the 3.3 V rail
