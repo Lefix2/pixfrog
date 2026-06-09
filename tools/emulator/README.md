@@ -1,7 +1,8 @@
 # pixfrog UI emulator
 
 Runs the device's **real** UI code (`menu.cpp`, `canvas_tft.cpp`, `splash.cpp`,
-`font_5x8.cpp`) on a PC against an SDL2 framebuffer instead of the ST7789 TFT.
+`splash_anim.cpp`, `font_data.cpp`) on a PC against an SDL2 framebuffer instead
+of the ST7789 TFT.
 Lets you test the interface before flashing, and gives an AI agent a programmatic
 way to drive and observe the UI.
 
@@ -22,7 +23,7 @@ guarded by `#ifdef PIXFROG_EMULATOR` (invisible to the firmware build).
 
 ```sh
 sudo apt install libsdl2-dev
-cd emulator && cmake -B build && cmake --build build
+cd tools/emulator && cmake -B build && cmake --build build
 
 ./build/pixfrog_emu               # interactive window (960×720, 3× zoom)
 ./build/pixfrog_emu --headless    # no window, piloted via stdin (agent/CI)
@@ -46,6 +47,7 @@ starts at HOME for deterministic runs.
 | `left` / `right`   | rotate the encoder                                 |
 | `click`            | press the encoder                                  |
 | `shot <path>`      | save the 320×240 framebuffer as BMP → `ok shot …`  |
+| `splash <ms> [p]`  | render the boot splash at t=`ms` and shot it       |
 | `state`            | print `{"screen":..,"cursor":..,"channel":..}`     |
 | `set ip a.b.c.d`   | set the displayed IP (HOME)                        |
 | `set link up/down` | set link state (HOME)                              |

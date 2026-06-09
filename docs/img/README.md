@@ -23,6 +23,7 @@ docs viewer hide any image that fails to load, so adding/replacing one is safe.
 | `board-hero.jpg`            | JPG  | Photo of the ESP32-P4 DEV-KIT                                  | Landing hero + HARDWARE §1 |
 | `og-cover.png`              | PNG  | Social / link-preview cover (rendered from `og-cover.svg`)    | `og:image` |
 | `logo.svg`                  | SVG  | Frog mark — nav brand + favicon                               | Site |
+| `frog-anim.svg`             | SVG  | Animated frog logo (self-contained CSS); baked into the splash | About page + `tools/splashgen` |
 
 `*.svg` sources for the rasterised covers (`og-cover.svg`) are kept alongside
 so they can be re-exported with `rsvg-convert`.

@@ -1,0 +1,7 @@
+# Vendored third-party single-header libraries — keep upstream formatting.
+tools/fontgen/stb_truetype.h
+tools/splashgen/nanosvg.h
+tools/splashgen/nanosvgrast.h
+# Generated tables — regenerated, not hand-formatted.
+components/ui/src/font_data.cpp
+components/ui/src/splash_anim.cpp

@@ -17,7 +17,7 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 
-#include "font_5x8.h"
+#include "font.h"
 
 namespace pixfrog::ui::detail {
 
@@ -79,10 +79,16 @@ void rasterise_row(uint8_t row) {
     for (uint8_t tc = 0; tc < kTextCols; ++tc) {
         const char c = g_text_buf[row][tc];
         if (c == '\0') break;
-        const uint8_t* glyph = font_glyph_for(c);
+        const uint8_t* alpha = font_alpha_for(c);
         const size_t base    = static_cast<size_t>(tc) * kFontCellWidth;
+        // Threshold the AA coverage to 1bpp columns (bit r = row r, top=bit0).
         for (uint8_t gc = 0; gc < kFontWidth; ++gc) {
-            if (base + gc < kSsd1306Cols) page[base + gc] = glyph[gc];
+            if (base + gc >= kSsd1306Cols) break;
+            uint8_t colbyte = 0;
+            for (uint8_t r = 0; r < kFontHeight; ++r) {
+                if (alpha[r * kFontCellWidth + gc] >= 128) colbyte |= static_cast<uint8_t>(1u << r);
+            }
+            page[base + gc] = colbyte;
         }
         // 1 blank column after each glyph (already zero-init'd)
     }

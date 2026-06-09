@@ -2,8 +2,9 @@ set(srcs
     "src/ui.cpp"
     "src/menu.cpp"
     "src/encoder_seesaw.cpp"
-    "src/font_5x8.cpp"
+    "src/font_data.cpp"
     "src/splash.cpp"
+    "src/splash_anim.cpp"
 )
 
 set(requires driver esp_common esp_timer config_store dmx_manager lcd_cam_output freertos)

@@ -28,21 +28,29 @@
 #include "encoder_emu.h"
 #include "tft_emu.h"
 
-namespace ui    = pixfrog::ui;
-namespace det   = pixfrog::ui::detail;
-using clock_t_  = std::chrono::steady_clock;
+namespace ui   = pixfrog::ui;
+namespace det  = pixfrog::ui::detail;
+using clock_t_ = std::chrono::steady_clock;
 
 // ── ui:: globals normally provided by components/ui/src/ui.cpp ────────────────
 // menu.cpp reads ui::get_ip() / ui::is_link_up() for the HOME dashboard.
 namespace pixfrog::ui {
 namespace {
-uint32_t g_ip      = 0;
-bool g_link_up     = false;
+uint32_t g_ip  = 0;
+bool g_link_up = false;
 }  // namespace
-void set_ip(uint32_t host_order_ip) { g_ip = host_order_ip; }
-uint32_t get_ip() { return g_ip; }
-void set_link_up(bool up) { g_link_up = up; }
-bool is_link_up() { return g_link_up; }
+void set_ip(uint32_t host_order_ip) {
+    g_ip = host_order_ip;
+}
+uint32_t get_ip() {
+    return g_ip;
+}
+void set_link_up(bool up) {
+    g_link_up = up;
+}
+bool is_link_up() {
+    return g_link_up;
+}
 }  // namespace pixfrog::ui
 
 namespace {
@@ -86,8 +94,7 @@ bool pop_cmd(std::string& out) {
 // ── Screenshot: build a surface from the RGB565 FB and save as BMP ────────────
 void save_shot(const char* path) {
     SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormatFrom(
-        const_cast<uint16_t*>(emu_fb_ptr()), kFbW, kFbH, 16, kFbW * 2,
-        SDL_PIXELFORMAT_RGB565);
+        const_cast<uint16_t*>(emu_fb_ptr()), kFbW, kFbH, 16, kFbW * 2, SDL_PIXELFORMAT_RGB565);
     if (!surf) {
         std::printf("error: surface: %s\n", SDL_GetError());
         std::fflush(stdout);
@@ -125,8 +132,22 @@ bool exec_cmd(const std::string& line) {
         emu_push_event(EmuEvent::Click);
     } else if (line.rfind("shot", 0) == 0) {
         const char* p = line.c_str() + 4;
-        while (*p == ' ') ++p;
+        while (*p == ' ')
+            ++p;
         save_shot(*p ? p : "shot.bmp");
+    } else if (line.rfind("splash", 0) == 0) {
+        // splash <ms> [path] — render the boot animation at t=ms and shot it.
+        // Rendered + captured here because the menu loop repaints every frame.
+        const char* p = line.c_str() + 6;
+        while (*p == ' ')
+            ++p;
+        char* end           = nullptr;
+        const uint32_t t_ms = static_cast<uint32_t>(std::strtoul(p, &end, 10));
+        p                   = end;
+        while (*p == ' ')
+            ++p;
+        det::splash_render(t_ms, false);
+        save_shot(*p ? p : "splash.bmp");
     } else if (line == "state") {
         print_state();
     } else if (line.rfind("set ip ", 0) == 0) {
@@ -152,11 +173,11 @@ bool exec_cmd(const std::string& line) {
 void map_key(SDL_Keycode k) {
     switch (k) {
     case SDLK_UP:
-    case SDLK_LEFT:    emu_push_event(EmuEvent::RotateLeft); break;
+    case SDLK_LEFT: emu_push_event(EmuEvent::RotateLeft); break;
     case SDLK_DOWN:
-    case SDLK_RIGHT:   emu_push_event(EmuEvent::RotateRight); break;
+    case SDLK_RIGHT: emu_push_event(EmuEvent::RotateRight); break;
     case SDLK_RETURN:
-    case SDLK_SPACE:   emu_push_event(EmuEvent::Click); break;
+    case SDLK_SPACE: emu_push_event(EmuEvent::Click); break;
     default: break;
     }
 }
@@ -174,12 +195,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    SDL_Window* win    = nullptr;
-    SDL_Renderer* ren  = nullptr;
-    SDL_Texture* tex   = nullptr;
+    SDL_Window* win   = nullptr;
+    SDL_Renderer* ren = nullptr;
+    SDL_Texture* tex  = nullptr;
     if (!headless) {
-        win = SDL_CreateWindow("pixfrog emulator", SDL_WINDOWPOS_CENTERED,
-                               SDL_WINDOWPOS_CENTERED, kFbW * kZoom, kFbH * kZoom, 0);
+        win = SDL_CreateWindow("pixfrog emulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                               kFbW * kZoom, kFbH * kZoom, 0);
         ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
         tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, kFbW,
                                 kFbH);
@@ -210,18 +231,19 @@ int main(int argc, char** argv) {
         while (g_running.load() && !done) {
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
-                if (ev.type == SDL_QUIT) g_running = false;
-                else if (ev.type == SDL_KEYDOWN) map_key(ev.key.keysym.sym);
+                if (ev.type == SDL_QUIT)
+                    g_running = false;
+                else if (ev.type == SDL_KEYDOWN)
+                    map_key(ev.key.keysym.sym);
             }
             std::string cmd;
             while (pop_cmd(cmd))
                 if (!exec_cmd(cmd)) g_running = false;
 
-            const bool clicked = (det::encoder_poll() == det::Event::Click);
-            const uint32_t t_ms =
-                static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          clock_t_::now() - t0)
-                                          .count());
+            const bool clicked  = (det::encoder_poll() == det::Event::Click);
+            const uint32_t t_ms = static_cast<uint32_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(clock_t_::now() - t0)
+                    .count());
             done = det::splash_render(t_ms, clicked);
             present();
             std::this_thread::sleep_for(std::chrono::milliseconds(headless ? 1 : 16));
@@ -229,15 +251,16 @@ int main(int argc, char** argv) {
     }
 
     // ── Main menu loop ─────────────────────────────────────────────────────────
-    const uint32_t idle_ms =
-        pixfrog::config::get_global().home_timeout_s * 1000u;
-    auto last_event = clock_t_::now();
+    const uint32_t idle_ms = pixfrog::config::get_global().home_timeout_s * 1000u;
+    auto last_event        = clock_t_::now();
 
     while (g_running.load()) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            if (ev.type == SDL_QUIT) g_running = false;
-            else if (ev.type == SDL_KEYDOWN) map_key(ev.key.keysym.sym);
+            if (ev.type == SDL_QUIT)
+                g_running = false;
+            else if (ev.type == SDL_KEYDOWN)
+                map_key(ev.key.keysym.sym);
             else if (ev.type == SDL_MOUSEWHEEL)
                 emu_push_event(ev.wheel.y > 0 ? EmuEvent::RotateLeft : EmuEvent::RotateRight);
         }
