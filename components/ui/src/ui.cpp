@@ -51,6 +51,23 @@ bool create_i2c_bus(const InitConfig& cfg) {
 
 void task_main(void*) {
     detail::menu_init();
+
+    // Boot splash — runs until done or user clicks.
+    {
+        const TickType_t t0 = xTaskGetTickCount();
+        bool done           = false;
+        while (!done) {
+            const uint32_t t_ms = static_cast<uint32_t>((xTaskGetTickCount() - t0) *
+                                                        portTICK_PERIOD_MS);
+            bool clicked        = false;
+            if (xSemaphoreTake(g_wakeup_sem, 0) == pdTRUE) {
+                clicked = (detail::encoder_poll() == detail::Event::Click);
+            }
+            done = detail::splash_render(t_ms, clicked);
+            vTaskDelay(pdMS_TO_TICKS(33));  // ~30 fps
+        }
+    }
+
     detail::menu_render();
     detail::canvas_flush();
 

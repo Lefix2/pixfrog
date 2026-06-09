@@ -102,4 +102,8 @@ void menu_dispatch(Event e);
 void menu_render();
 void menu_on_idle_timeout();
 
+// ── Splash screen ─────────────────────────────────────────────────────────────
+// Returns true when done (time elapsed or clicked). OLED: always true.
+bool splash_render(uint32_t t_ms, bool clicked);
+
 }  // namespace pixfrog::ui::detail
