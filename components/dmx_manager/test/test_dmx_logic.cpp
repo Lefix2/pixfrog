@@ -64,6 +64,14 @@ static void test_universes_used() {
     EXPECT_EQ(channel_universes_used(cc), 6);  // 3072 bytes → 6
 }
 
+static void test_universes_off() {
+    config::ChannelConfig cc{};
+    cc.protocol    = led::Protocol::Off;
+    cc.pixel_count = 1024;  // stale pixel_count is ignored when Off
+    EXPECT_EQ(channel_total_bytes(cc), 0);
+    EXPECT_EQ(channel_universes_used(cc), 0);  // disabled → claims no universe
+}
+
 // ── t_dma + capacity ────────────────────────────────────────────────────────
 
 static void test_t_dma_ws2815() {
@@ -238,6 +246,7 @@ int main() {
     test_total_bytes_rgb();
     test_total_bytes_rgbw();
     test_universes_used();
+    test_universes_off();
     test_t_dma_ws2815();
     test_emission_budget();
     test_capacity_check();

@@ -33,7 +33,7 @@ GlobalConfig make_default_global() {
 
 ChannelConfig make_default_channel(size_t idx) {
     ChannelConfig c{};
-    c.protocol         = led::Protocol::WS2815;
+    c.protocol         = led::Protocol::Off;  // channels start disabled; opt-in per channel
     c.color_order      = led::ColorOrder::GRB;
     c.universe_start   = static_cast<uint16_t>(1 +
                                                idx * 6);  // give each channel 6 universes by default

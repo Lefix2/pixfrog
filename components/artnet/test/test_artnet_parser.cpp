@@ -200,6 +200,29 @@ static void test_poll_reply_header_and_size() {
     EXPECT_EQ(pkt[211], 1);
 }
 
+static void test_poll_reply_disabled_port() {
+    uint8_t mac[6] = {};
+    PollReplyInputs in{};
+    in.short_name      = "";
+    in.long_name       = "";
+    in.node_report     = "";
+    in.mac             = mac;
+    in.bind_index      = 1;
+    in.port_enabled[1] = false;  // port 1 is a disabled (Off) channel
+    in.sw_out[1]       = 5;
+
+    uint8_t pkt[kPollReplySize];
+    build_poll_reply(pkt, in);
+
+    // Disabled port advertises no port type and no output activity…
+    EXPECT_EQ(pkt[174 + 1], 0x00);
+    EXPECT_EQ(pkt[182 + 1], 0x00);
+    // …but its SwOut nibble is still written, and other ports stay enabled.
+    EXPECT_EQ(pkt[190 + 1], 5);
+    EXPECT_EQ(pkt[174 + 0], 0x80);
+    EXPECT_EQ(pkt[182 + 0], 0x80);
+}
+
 static void test_poll_reply_net_subnet_masked() {
     uint8_t mac[6] = {};
     PollReplyInputs in{};
@@ -269,6 +292,7 @@ int main() {
     test_universe_matches_exact();
     test_universe_matches_high_bits_ignored();
     test_poll_reply_header_and_size();
+    test_poll_reply_disabled_port();
     test_poll_reply_net_subnet_masked();
     test_poll_reply_sw_out_masked();
     test_poll_reply_name_truncation();

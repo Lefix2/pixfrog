@@ -41,7 +41,7 @@ bool splash_render(uint32_t t_ms, bool clicked) {
     canvas_draw_text(wx, kH / 2 - kFontHeight * kScale / 2 - 6, "pixfrog", color::Cream,
                      color::FrogBg, kScale);
     canvas_draw_text(wx, kH / 2 + kFontHeight * kScale / 2 + 2, "ARTNET . LED DRIVER",
-                     color::DarkGray, color::FrogBg, 1);
+                     color::SplashSub, color::FrogBg, 1);
 
     const int idx = static_cast<int>(t_ms / frame_ms);
     canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);

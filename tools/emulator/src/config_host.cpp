@@ -31,7 +31,7 @@ GlobalConfig make_default_global() {
 
 ChannelConfig make_default_channel(size_t idx) {
     ChannelConfig c{};
-    c.protocol         = led::Protocol::WS2815;
+    c.protocol         = led::Protocol::Off;  // mirror device default: channels start disabled
     c.color_order      = led::ColorOrder::GRB;
     c.universe_start   = static_cast<uint16_t>(1 + idx * 6);
     c.dmx_start        = 1;

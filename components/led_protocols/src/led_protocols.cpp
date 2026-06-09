@@ -47,6 +47,7 @@ Timing timing_for(Protocol p, uint32_t requested_clock_hz) {
 }
 
 size_t encoded_size_samples(const ChannelDesc& desc) {
+    if (is_off(desc.protocol)) return 0;
     if (is_dmx(desc.protocol)) {
         return detail::dmx_encoded_size_samples(desc.pixel_count);
     }
@@ -69,6 +70,7 @@ size_t encoded_size_samples(const ChannelDesc& desc) {
 
 size_t encode_channel(const ChannelDesc& desc, const uint8_t* pixels, uint16_t* out_samples,
                       size_t out_samples_capacity) {
+    if (is_off(desc.protocol)) return 0;
     if (is_dmx(desc.protocol)) {
         return detail::encode_dmx(desc, pixels, out_samples, out_samples_capacity);
     }

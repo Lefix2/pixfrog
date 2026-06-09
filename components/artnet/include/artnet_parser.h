@@ -80,6 +80,9 @@ struct PollReplyInputs {
     const uint8_t* mac;       // 6 bytes (must not be null)
     uint8_t bind_index;       // 1 for primary, 2.. for bound replies
     uint8_t sw_out[4];        // low 4 bits of each port's universe
+    // A disabled (Off) channel advertises no port type and no output activity,
+    // so controllers don't see it as a live DMX universe.
+    bool port_enabled[4] = { true, true, true, true };
 };
 
 namespace detail {
@@ -129,8 +132,10 @@ inline void build_poll_reply(uint8_t pkt[kPollReplySize], const PollReplyInputs&
     pkt[172] = 0x00;
     pkt[173] = 0x04;
     for (uint8_t p = 0; p < 4; ++p) {
-        pkt[174 + p] = 0x80;                 // PortType: output, DMX512
-        pkt[182 + p] = 0x80;                 // GoodOutputA: transmitting
+        if (in.port_enabled[p]) {
+            pkt[174 + p] = 0x80;  // PortType: output, DMX512
+            pkt[182 + p] = 0x80;  // GoodOutputA: transmitting
+        }  // disabled: PortType/GoodOutput stay 0 (memset)
         pkt[190 + p] = in.sw_out[p] & 0x0F;  // SwOut low nibble
     }
     pkt[200] = 0x00;  // Style: StNode

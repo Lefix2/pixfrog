@@ -36,12 +36,17 @@ constexpr Color DarkGreen{ 0x0380 };
 constexpr Color DarkGray{ 0x39E7 };
 constexpr Color LightGray{ 0xC618 };
 constexpr Color DarkBlue{ 0x000F };
-constexpr Color HeaderBg{ 0x0340 };  // dark teal header
-constexpr Color FrogBg{ 0x19C5 };    // splash backdrop  (about.html --frog-bg #1d3a2c)
-constexpr Color FrogLine{ 0xFE2C };  // splash frog ink   (about.html --frog-line #f8c662)
-constexpr Color Cream{ 0xF73A };     // splash wordmark
-constexpr Color CursorBg{ 0x0014 };  // dark blue cursor highlight
-constexpr Color AltRowBg{ 0x18C3 };  // slightly lighter dark for alternating rows
+constexpr Color HeaderBg{ 0x1083 };     // near-black header bar (#14121a)
+constexpr Color HeaderLine{ 0x2928 };   // faint accent line under header
+constexpr Color FrogBg{ 0x0842 };       // splash backdrop — near-black (#0c0a14)
+constexpr Color FrogLine{ 0x7691 };     // splash frog ink — spring green (#70d18b)
+constexpr Color Cream{ 0xF77B };        // splash / label text — warm white (#f4eedc)
+constexpr Color SplashSub{ 0x8C14 };    // splash subtitle — muted blue-grey (#8a83a0)
+constexpr Color Gold{ 0xFE2C };         // value text — warm gold (#f8c662)
+constexpr Color CursorBg{ 0x3963 };     // warm dark amber cursor highlight (#3a2f1c)
+constexpr Color BadgeGreen{ 0x7691 };   // channel badge — NRZ strips (#70d18b)
+constexpr Color BadgePurple{ 0xACDC };  // channel badge — clocked SPI (#a89be0)
+constexpr Color AltRowBg{ 0x18C3 };     // slightly lighter dark for alternating rows
 }  // namespace color
 
 // ── Display layout ────────────────────────────────────────────────────────────

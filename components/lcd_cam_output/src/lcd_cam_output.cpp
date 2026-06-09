@@ -241,7 +241,8 @@ bool render_frame(uint32_t timeout_ms) {
     // Encode each channel. Channels share the buffer via OR on their bus bits.
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const led::ChannelDesc d = desc_for_channel(ch);
-        const uint8_t* px        = dmx::pixel_front_buffer(ch);
+        if (led::is_off(d.protocol)) continue;  // disabled channel emits nothing
+        const uint8_t* px = dmx::pixel_front_buffer(ch);
         if (!px) continue;
         led::encode_channel(d, px, samples, g_fb_h_res);
     }
