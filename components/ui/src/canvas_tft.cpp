@@ -1,4 +1,4 @@
-#include "font_5x8.h"
+#include "font.h"
 #include "ui_internal.h"
 
 #include <algorithm>
@@ -135,6 +135,18 @@ void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
     }
 }
 
+// Blend fg over bg by 8-bit coverage in RGB565 channel space.
+inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a) {
+    if (a == 0) return bg;
+    if (a == 255) return fg;
+    const uint32_t fr = (fg >> 11) & 0x1F, fgr = (fg >> 5) & 0x3F, fb = fg & 0x1F;
+    const uint32_t br = (bg >> 11) & 0x1F, bgr = (bg >> 5) & 0x3F, bb = bg & 0x1F;
+    const uint32_t r = (fr * a + br * (255 - a)) / 255;
+    const uint32_t g = (fgr * a + bgr * (255 - a)) / 255;
+    const uint32_t b = (fb * a + bb * (255 - a)) / 255;
+    return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
 void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t scale) {
     if (!str || !*str) return;
     const int s  = (scale < 1) ? 1 : scale;
@@ -148,18 +160,20 @@ void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t
 
     if (tw <= 0 || tw > 320 || th > 24) return;
 
-    const uint16_t hw_fg = to_hw(fg);
-    const uint16_t hw_bg = to_hw(bg);
+    // Blend in native RGB565, byte-swap once on store (to_hw handles the swap).
+    const uint16_t nat_bg = bg.v;
+    const uint16_t hw_bg  = to_hw(bg);
     for (int i = 0; i < tw * th; i++)
         s_text_buf[i] = hw_bg;
 
     for (int ci = 0; ci < len; ci++) {
-        const uint8_t* glyph = font_glyph_for(str[ci]);
+        const uint8_t* glyph = font_alpha_for(str[ci]);
         const int cx         = ci * cw;
-        for (int col = 0; col < kFontWidth; col++) {
-            const uint8_t coldata = glyph[col];
+        for (int col = 0; col < kFontCellWidth; col++) {
             for (int row = 0; row < kFontHeight; row++) {
-                const uint16_t pix = ((coldata >> row) & 1u) ? hw_fg : hw_bg;
+                const uint8_t a = glyph[row * kFontCellWidth + col];
+                if (a == 0) continue;  // bg already written
+                const uint16_t pix = __builtin_bswap16(blend565(fg.v, nat_bg, a));
                 for (int sy = 0; sy < s; sy++) {
                     for (int sx = 0; sx < s; sx++) {
                         const int px             = cx + col * s + sx;

@@ -27,6 +27,10 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |
 | `components/ui`                | SSD1306 driver, seesaw encoder, menu FSM                |
 | `main/main.cpp`                | Boot orchestration + `render_task`                      |
+| `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased font)    |
+| `tools/splashgen`              | Host tool: `frog-anim.svg` → `splash_anim.cpp` (frog anim)|
+| `tools/emulator`               | SDL2 host emulator of the TFT UI (no IDF)               |
+| `docs/img/frog-anim.svg`       | Animated logo: source for web + baked splash            |
 
 ## Tests
 
@@ -44,16 +48,50 @@ When you refactor IDF-bound code, the canonical proof is `idf.py build` — loca
 
 ## UI emulator
 
-`emulator/` runs the real TFT UI (`menu.cpp`, `canvas_tft.cpp`, `splash.cpp`, `font_5x8.cpp`) on a host via SDL2 — preview the interface without flashing, and drive it from an AI agent. It reimplements the one hardware seam (`tft_draw_bitmap`) over an SDL framebuffer and stubs the neighbour components in RAM. See `emulator/README.md`.
+`tools/emulator/` runs the real TFT UI (`menu.cpp`, `canvas_tft.cpp`, `splash.cpp`, `font_data.cpp`) on a host via SDL2 — preview the interface without flashing, and drive it from an AI agent. It reimplements the one hardware seam (`tft_draw_bitmap`) over an SDL framebuffer and stubs the neighbour components in RAM. See `tools/emulator/README.md`.
 
 ```bash
 sudo apt install libsdl2-dev
-cd emulator && cmake -B build && cmake --build build
+cd tools/emulator && cmake -B build && cmake --build build
 ./build/pixfrog_emu              # interactive window + keyboard
-./build/pixfrog_emu --headless   # agent/CI: stdin protocol (left|right|click|shot|state|quit)
+./build/pixfrog_emu --headless   # agent/CI: stdin protocol (left|right|click|shot|splash|state|quit)
 ```
 
-The only shared-code hook is `menu_debug_state()` in `menu.cpp`, guarded by `#ifdef PIXFROG_EMULATOR` — the firmware build never defines it. When you add a device call to `menu.cpp`, extend the matching `emulator/src/*_host.cpp` stub.
+`splash <ms> [path]` renders the boot splash at time `ms` and screenshots it
+(the headless main loop otherwise starts straight at HOME and the menu repaints
+every frame, so the splash can't be captured the normal way).
+
+The only shared-code hook is `menu_debug_state()` in `menu.cpp`, guarded by `#ifdef PIXFROG_EMULATOR` — the firmware build never defines it. When you add a device call to `menu.cpp`, extend the matching `tools/emulator/src/*_host.cpp` stub.
+
+## Font
+
+The UI font is **generated**, not hand-edited. `components/ui/src/font_data.cpp`
+holds an 8-bit anti-aliased coverage cell (6×8) per ASCII glyph; the TFT blends
+fg→bg by coverage (`canvas_tft.cpp`), the OLED thresholds it to 1bpp
+(`oled_ssd1306.cpp`). Regenerate from a TTF instead of touching the table:
+
+```bash
+cd tools/fontgen && cmake -B build && cmake --build build
+./build/fontgen /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf \
+    ../../components/ui/src/font_data.cpp        # px / baseline / xpad / gain are tunable
+```
+
+Cell geometry (6×8) is fixed in both `fontgen.cpp` and `font.h` and must stay in
+sync — `menu.cpp` layout maths depends on `kFontCellWidth`/`kFontHeight`. The
+vendored `stb_truetype.h` and the generated `font_data.cpp` are listed in
+`.clang-format-ignore`. See `tools/fontgen/README.md`.
+
+## Splash
+
+The TFT boot splash replays the animated Collecti'Frog logo
+`docs/img/frog-anim.svg` (frog surfaces from the water, bands settle, eyes
+blink). That SVG is the **single source of truth**: the web page embeds it
+(`.github/pages/about.html` via `<img>`, deployed as `site/img/`), and the splash
+is **generated** from it — `tools/splashgen` bakes the SVG + its animation
+timeline into 1bpp masks in `components/ui/src/splash_anim.cpp`, which `splash.cpp`
+blits frame *t* via `canvas_draw_mask`. Regenerate from the SVG; don't hand-edit
+`splash_anim.cpp`. See `tools/splashgen/README.md`. (`canvas_draw_text` caps a
+text block at 24px, so the wordmark is scale 3, not 4.)
 
 ## Formatting
 

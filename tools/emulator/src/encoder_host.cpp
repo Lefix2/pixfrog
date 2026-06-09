@@ -6,8 +6,8 @@
 // handler and the stdin agent API (emu_push_event), then drained by
 // encoder_poll() exactly like the real driver drains the seesaw FIFO.
 
-#include "ui_internal.h"
 #include "encoder_emu.h"
+#include "ui_internal.h"
 
 #include <deque>
 #include <mutex>

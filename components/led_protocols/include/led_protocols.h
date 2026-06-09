@@ -20,17 +20,26 @@ namespace pixfrog::led {
 // ────────────────────────────────────────────────────────────────────────────
 
 enum class Protocol : uint8_t {
-    WS2815  = 0,
-    WS2812B = 1,
-    WS2811  = 2,
-    SK6812  = 3,
-    WS2814  = 4,
-    APA102  = 5,
-    SK9822  = 6,
-    LPD8806 = 7,
-    DMX512  = 8,
+    // Channel disabled: no output is emitted, no universes are consumed, and the
+    // UI hides every per-channel setting. First (= 0) so it is both the default
+    // for a fresh channel and the first entry in the protocol picker.
+    Off     = 0,
+    WS2815  = 1,
+    WS2812B = 2,
+    WS2811  = 3,
+    SK6812  = 4,
+    WS2814  = 5,
+    APA102  = 6,
+    SK9822  = 7,
+    LPD8806 = 8,
+    DMX512  = 9,
     COUNT,
 };
+
+// A disabled channel: produces no DMA samples and claims no universes.
+constexpr bool is_off(Protocol p) {
+    return p == Protocol::Off;
+}
 
 constexpr bool is_clocked(Protocol p) {
     return p == Protocol::APA102 || p == Protocol::SK9822 || p == Protocol::LPD8806;
@@ -47,7 +56,9 @@ constexpr bool is_dmx(Protocol p) {
 }
 
 // Source bytes per logical "pixel". For DMX512 one "pixel" is a single DMX slot.
+// A disabled channel maps to 0 bytes so it consumes neither buffer nor universe.
 constexpr size_t bytes_per_pixel(Protocol p) {
+    if (is_off(p)) return 0;
     if (is_dmx(p)) return 1;
     return is_rgbw(p) ? 4 : 3;
 }

@@ -77,6 +77,24 @@ static void test_bytes_per_pixel() {
     EXPECT_EQ(bytes_per_pixel(Protocol::SK6812), 4);
     EXPECT_EQ(bytes_per_pixel(Protocol::WS2814), 4);
     EXPECT_EQ(bytes_per_pixel(Protocol::DMX512), 1);  // one byte per DMX slot
+    EXPECT_EQ(bytes_per_pixel(Protocol::Off), 0);     // disabled → no bytes
+}
+
+// ── Off (disabled channel) ──────────────────────────────────────────────────
+
+static void test_off_produces_nothing() {
+    EXPECT_TRUE(is_off(Protocol::Off));
+    EXPECT_TRUE(!is_off(Protocol::WS2815));
+
+    ChannelDesc d{};
+    d.protocol    = Protocol::Off;
+    d.pixel_count = 144;  // stale pixel_count must be ignored when Off
+    EXPECT_EQ(encoded_size_samples(d), 0);
+
+    uint16_t out[8]     = { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
+    const uint8_t px[1] = { 0xAB };
+    EXPECT_EQ(encode_channel(d, px, out, 8), 0);  // writes nothing
+    EXPECT_EQ(out[0], 0xFFFF);                    // buffer untouched
 }
 
 // ── DMX512 output encoder ───────────────────────────────────────────────────
@@ -298,6 +316,7 @@ int main() {
     test_timing_ws2812b();
     test_timing_apa102_clock();
     test_bytes_per_pixel();
+    test_off_produces_nothing();
     test_dmx_size();
     test_dmx_waveform();
     test_dmx_or_into_buffer();

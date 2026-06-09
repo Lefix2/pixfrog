@@ -39,15 +39,18 @@ static void draw_row(uint8_t row, uint8_t col, const char* str) {
 
 // ── TFT layout ────────────────────────────────────────────────────────────────
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
-constexpr int kTW     = 320;                     // TFT width  (landscape)
-constexpr int kTH     = 240;                     // TFT height (landscape)
-constexpr int kHdrH   = 28;                      // header bar height
-constexpr int kItemH  = 24;                      // list item height
-constexpr int kTxtSc  = 2;                       // standard text scale (12x16 per char)
-constexpr int kTxtH   = 8 * kTxtSc;              // 16px
-constexpr int kPad    = (kItemH - kTxtH) / 2;    // vertical padding in item
-constexpr int kIndent = 6;                       // left margin
-constexpr int kMaxVis = (kTH - kHdrH) / kItemH;  // 8 visible items
+constexpr int kTW     = 320;                      // TFT width  (landscape)
+constexpr int kTH     = 240;                      // TFT height (landscape)
+constexpr int kHdrH   = 28;                       // header bar height
+constexpr int kItemH  = 24;                       // list item height
+constexpr int kTxtSc  = 2;                        // standard text scale (12x16 per char)
+constexpr int kTxtH   = 8 * kTxtSc;               // 16px
+constexpr int kPad    = (kItemH - kTxtH) / 2;     // vertical padding in item
+constexpr int kIndent = 6;                        // left margin
+constexpr int kMaxVis = (kTH - kHdrH) / kItemH;   // 8 visible items
+constexpr int kBadge  = kItemH - 6;               // square channel-badge side (18px)
+constexpr int kGutter = 5 + kBadge + 6;           // label x: clears the badge column
+constexpr int kChevW  = kFontCellWidth * kTxtSc;  // chevron glyph width (12px)
 #endif
 
 // ── Screens ─────────────────────────────────────────────────────────────────
@@ -174,8 +177,18 @@ const char* protocol_name(led::Protocol p) {
     case led::Protocol::SK9822: return "SK9822";
     case led::Protocol::LPD8806: return "LPD8806";
     case led::Protocol::DMX512: return "DMX512";
+    case led::Protocol::Off: return "Off";
     default: return "?";
     }
+}
+
+// Channel badge colour mirrors the wiring family: clocked SPI strips and DMX512
+// stand out from the common NRZ pixels; a disabled channel is greyed out.
+Color badge_color(led::Protocol p) {
+    if (led::is_off(p)) return color::DarkGray;
+    if (led::is_dmx(p)) return color::Orange;
+    if (led::is_clocked(p)) return color::BadgePurple;
+    return color::BadgeGreen;
 }
 
 const char* color_order_name(led::ColorOrder o) {
@@ -218,13 +231,20 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
 struct ListItem {
     const char* label;
     const char* value;
+    int8_t badge    = -1;  // ≥0 → draw a numbered badge (badge+1)
+    Color badge_col = color::BadgeGreen;
+    Color value_col = color::Gold;
 };
 
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
-    // ── TFT: header + highlighted cursor row ──────────────────────────────────
+    // ── TFT: dark list with rounded cursor highlight ──────────────────────────
+    canvas_clear(color::Black);
+
+    // Header bar + thin accent line.
     canvas_fill_rect(0, 0, kTW, kHdrH, color::HeaderBg);
-    canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, color::White, color::HeaderBg, kTxtSc);
+    canvas_fill_rect(0, kHdrH - 1, kTW, 1, color::HeaderLine);
+    canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, color::Cream, color::HeaderBg, kTxtSc);
 
     const int visible = kMaxVis;
     int first         = 0;
@@ -233,17 +253,42 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         if (first + visible > count) first = count - visible;
     }
     for (int i = 0; i < visible && first + i < count; ++i) {
-        const int idx = first + i;
-        const int ry  = kHdrH + i * kItemH;
-        Color bg = (idx == cursor) ? color::CursorBg : ((i & 1) ? color::AltRowBg : color::Black);
-        canvas_fill_rect(0, ry, kTW, kItemH, bg);
-        char line[48];
-        if (items[idx].value && items[idx].value[0]) {
-            std::snprintf(line, sizeof(line), "%s: %s", items[idx].label, items[idx].value);
-        } else {
-            std::snprintf(line, sizeof(line), "%s", items[idx].label);
+        const int idx       = first + i;
+        const int ry        = kHdrH + i * kItemH;
+        const ListItem& it  = items[idx];
+        const bool sel      = (idx == cursor);
+        const bool is_back  = (it.label[0] == '[');
+        const Color text_bg = sel ? color::CursorBg : color::Black;
+
+        if (sel) {
+            // Rounded warm highlight, inset, with a brighter top accent edge.
+            canvas_fill_round_rect(3, ry + 1, kTW - 6, kItemH - 2, 6, color::CursorBg);
+            canvas_fill_rect(9, ry + 1, kTW - 18, 2, color::Gold);
         }
-        canvas_draw_text(kIndent, ry + kPad, line, color::White, bg, kTxtSc);
+
+        // Left gutter: numbered channel badge when present.
+        if (it.badge >= 0) {
+            canvas_fill_round_rect(5, ry + 3, kBadge, kBadge, 4, it.badge_col);
+            char num[8];
+            std::snprintf(num, sizeof(num), "%d", it.badge + 1);
+            const int nx = 5 + (kBadge - kFontCellWidth * kTxtSc) / 2;
+            canvas_draw_text(nx, ry + kPad, num, color::Black, it.badge_col, kTxtSc);
+        }
+
+        canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
+
+        // Chevron at the right edge for rows that open a sub-screen.
+        const int chev_x = kTW - kChevW - kIndent;
+        if (!is_back) {
+            canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
+        }
+
+        // Right-aligned gold value, left of the chevron.
+        if (it.value && it.value[0]) {
+            const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
+            const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
+            canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
+        }
     }
     // Scroll indicator
     if (count > static_cast<uint8_t>(visible)) {
@@ -309,21 +354,21 @@ void render_home() {
 
     // IP row below header
     int ry = kHdrH;
-    canvas_fill_rect(0, ry, kTW, kItemH, color::DarkBlue);
+    canvas_fill_rect(0, ry, kTW, kItemH, color::AltRowBg);
     const uint32_t ip = ui::get_ip();
     if (ip == 0) {
-        canvas_draw_text(kIndent, ry + kPad, "IP: ---", color::LightGray, color::DarkBlue, kTxtSc);
+        canvas_draw_text(kIndent, ry + kPad, "IP: ---", color::LightGray, color::AltRowBg, kTxtSc);
     } else {
         std::snprintf(line, sizeof(line), "IP: %u.%u.%u.%u",
                       static_cast<unsigned>((ip >> 24) & 0xFFu),
                       static_cast<unsigned>((ip >> 16) & 0xFFu),
                       static_cast<unsigned>((ip >> 8) & 0xFFu), static_cast<unsigned>(ip & 0xFFu));
-        canvas_draw_text(kIndent, ry + kPad, line, color::White, color::DarkBlue, kTxtSc);
+        canvas_draw_text(kIndent, ry + kPad, line, color::White, color::AltRowBg, kTxtSc);
     }
     std::snprintf(line, sizeof(line), "Pkts:%llu",
                   static_cast<unsigned long long>(stats.artnet_packets_rx));
     canvas_draw_text(kTW - static_cast<int>(std::strlen(line)) * kFontCellWidth * kTxtSc - kIndent,
-                     ry + kPad, line, color::LightGray, color::DarkBlue, kTxtSc);
+                     ry + kPad, line, color::LightGray, color::AltRowBg, kTxtSc);
 
     // 8 channel rows; fill remaining height evenly
     ry                 += kItemH;
@@ -334,24 +379,34 @@ void render_home() {
         canvas_fill_rect(0, cy, kTW, kChH, row_bg);
 
         const auto& cc = config::get_channel(i);
+        const int ty   = cy + (kChH - kTxtH) / 2;
         char ch_label[4];
         std::snprintf(ch_label, sizeof(ch_label), "CH%d", i + 1);
-        canvas_draw_text(kIndent, cy + (kChH - kTxtH) / 2, ch_label, color::White, row_bg, kTxtSc);
+
+        // Disabled channel: greyed label + "Off", no universe/pixels/activity.
+        if (led::is_off(cc.protocol)) {
+            canvas_draw_text(kIndent, ty, ch_label, color::DarkGray, row_bg, kTxtSc);
+            canvas_draw_text(kIndent + 4 * kFontCellWidth * kTxtSc, ty, "Off", color::DarkGray,
+                             row_bg, kTxtSc);
+            continue;
+        }
+
+        canvas_draw_text(kIndent, ty, ch_label, color::White, row_bg, kTxtSc);
 
         // Protocol
         const char* proto = protocol_name(cc.protocol);
-        canvas_draw_text(kIndent + 4 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, proto,
-                         color::Yellow, row_bg, kTxtSc);
+        canvas_draw_text(kIndent + 4 * kFontCellWidth * kTxtSc, ty, proto, color::Gold, row_bg,
+                         kTxtSc);
 
         // Universe
         std::snprintf(line, sizeof(line), "%u", cc.universe_start);
-        canvas_draw_text(kIndent + 14 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, line,
-                         color::LightGray, row_bg, kTxtSc);
+        canvas_draw_text(kIndent + 14 * kFontCellWidth * kTxtSc, ty, line, color::LightGray, row_bg,
+                         kTxtSc);
 
         // Pixels
         std::snprintf(line, sizeof(line), "%upx", cc.pixel_count);
-        canvas_draw_text(kIndent + 19 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, line,
-                         color::DarkGray, row_bg, kTxtSc);
+        canvas_draw_text(kIndent + 19 * kFontCellWidth * kTxtSc, ty, line, color::DarkGray, row_bg,
+                         kTxtSc);
 
         // Activity indicator dot on the right edge
         const bool active   = dmx::is_channel_active(i);
@@ -397,9 +452,11 @@ void render_home() {
     ch_line[1] = ' ';
     ch_line[2] = ' ';
     for (int i = 0; i < 8; ++i) {
-        // Priority: ! (config over-capacity) > * (recent DMX) > - (idle).
+        // Priority: o (disabled) > ! (over-capacity) > * (recent DMX) > - (idle).
         char glyph = '-';
-        if (!dmx::is_channel_capacity_ok(i))
+        if (led::is_off(config::get_channel(i).protocol))
+            glyph = 'o';
+        else if (!dmx::is_channel_capacity_ok(i))
             glyph = '!';
         else if (dmx::is_channel_active(i))
             glyph = '*';
@@ -424,6 +481,15 @@ void render_main_menu() {
     for (uint8_t i = 0; i < kMainItemCount; ++i) {
         items[i].label = kMainLabels[i];
         items[i].value = "";
+        // Channel rows (indices 2..9): show the configured protocol + a badge.
+        // A disabled channel ("Off") is greyed out instead of gold.
+        if (i >= 2 && i <= 9) {
+            const auto& cc     = config::get_channel(i - 2);
+            items[i].value     = protocol_name(cc.protocol);  // points to static string
+            items[i].badge     = static_cast<int8_t>(i - 2);
+            items[i].badge_col = badge_color(cc.protocol);
+            items[i].value_col = led::is_off(cc.protocol) ? color::DarkGray : color::Gold;
+        }
     }
     render_list("MENU", items, kMainItemCount, s.cursor);
 }
@@ -1036,9 +1102,15 @@ enum class ChItem : uint8_t {
 uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     uint8_t n = 0;
     out[n++]  = ChItem::Proto;
-    out[n++]  = ChItem::Uni;
-    out[n++]  = ChItem::Dmx;
-    out[n++]  = ChItem::Pixels;
+    // A disabled channel exposes only its protocol (so it can be re-enabled)
+    // plus Back — no universe/pixel/LED settings.
+    if (led::is_off(cc.protocol)) {
+        out[n++] = ChItem::Back;
+        return n;
+    }
+    out[n++] = ChItem::Uni;
+    out[n++] = ChItem::Dmx;
+    out[n++] = ChItem::Pixels;
     if (!led::is_dmx(cc.protocol)) {
         out[n++] = ChItem::Order;
         out[n++] = ChItem::Bright;
@@ -1197,8 +1269,8 @@ void menu_on_idle_timeout() {
 #ifdef PIXFROG_EMULATOR
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     static const char* const kNames[] = {
-        "Home",    "MainMenu",  "ArtnetMenu",      "NetworkMenu", "ChannelMenu",
-        "TestPatternMenu", "EditValue", "EditString", "EditIp",
+        "Home",      "MainMenu",   "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
+        "EditValue", "EditString", "EditIp",
     };
     if (screen_name) *screen_name = kNames[static_cast<uint8_t>(s.screen)];
     if (cursor) *cursor = s.cursor;

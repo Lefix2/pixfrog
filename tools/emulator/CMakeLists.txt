@@ -2,11 +2,11 @@
 #
 # Reuses the device's real UI sources (menu/canvas_tft/splash/font) compiled
 # with CONFIG_PIXFROG_DISPLAY_TFT, and replaces the hardware backends with SDL2
-# + in-RAM stubs. See emulator/README.md.
+# + in-RAM stubs. See README.md.
 #
 # Build:
 #   sudo apt install libsdl2-dev
-#   cd emulator && cmake -B build && cmake --build build
+#   cd tools/emulator && cmake -B build && cmake --build build
 #   ./build/pixfrog_emu                 # interactive window
 #   ./build/pixfrog_emu --headless      # agent/CI, piloted via stdin
 cmake_minimum_required(VERSION 3.16)
@@ -20,14 +20,15 @@ add_compile_options(-Wall -Wextra)
 
 find_package(SDL2 REQUIRED)
 
-set(REPO ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set(REPO ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 add_executable(pixfrog_emu
     # device UI sources, reused verbatim
     ${REPO}/components/ui/src/menu.cpp
     ${REPO}/components/ui/src/canvas_tft.cpp
     ${REPO}/components/ui/src/splash.cpp
-    ${REPO}/components/ui/src/font_5x8.cpp
+    ${REPO}/components/ui/src/splash_anim.cpp
+    ${REPO}/components/ui/src/font_data.cpp
     # (led_protocols: only header constexprs/enums are used — no .cpp needed)
     # emulator backends + stubs
     src/tft_sdl.cpp

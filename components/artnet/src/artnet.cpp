@@ -12,6 +12,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "led_protocols.h"
 
 namespace pixfrog::artnet {
 
@@ -79,10 +80,13 @@ void send_poll_reply(uint32_t target_addr_net_order) {
 
         const uint8_t base_ch = (bind - 1) * 4;
         for (uint8_t p = 0; p < 4; ++p) {
-            const size_t ch = base_ch + p;
-            in.sw_out[p]    = (ch < config::kNumChannels)
-                                ? static_cast<uint8_t>(config::get_channel(ch).universe_start & 0x0F)
-                                : 0;
+            const size_t ch     = base_ch + p;
+            const bool mapped   = ch < config::kNumChannels;
+            const bool disabled = mapped && led::is_off(config::get_channel(ch).protocol);
+            in.sw_out[p]        = mapped
+                                    ? static_cast<uint8_t>(config::get_channel(ch).universe_start & 0x0F)
+                                    : 0;
+            in.port_enabled[p]  = mapped && !disabled;
         }
 
         parser::build_poll_reply(pkt, in);
