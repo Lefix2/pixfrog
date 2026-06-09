@@ -1266,6 +1266,10 @@ void menu_on_idle_timeout() {
     s.cursor = 0;
 }
 
+bool menu_is_home() {
+    return s.screen == Screen::Home;
+}
+
 #ifdef PIXFROG_EMULATOR
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     static const char* const kNames[] = {

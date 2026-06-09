@@ -16,6 +16,8 @@
 
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "font.h"
 
@@ -108,6 +110,19 @@ bool oled_init(i2c_master_bus_handle_t bus, uint8_t addr) {
     esp_err_t err           = i2c_master_bus_add_device(bus, &dev_cfg, &g_dev);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "bus_add_device: %s", esp_err_to_name(err));
+        return false;
+    }
+    // The first transaction on a freshly created bus can NACK, and the panel's
+    // charge pump needs a moment after power-on; poll until the address ACKs
+    // (up to ~400 ms) before sending the init sequence.
+    esp_err_t probe = ESP_FAIL;
+    for (int i = 0; i < 20; ++i) {
+        probe = i2c_master_probe(bus, addr, kI2cTimeoutMs);
+        if (probe == ESP_OK) break;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (probe != ESP_OK) {
+        ESP_LOGE(TAG, "no ACK at 0x%02X after retries: %s", addr, esp_err_to_name(probe));
         return false;
     }
     if (!send_cmds(kInitCmds, sizeof(kInitCmds))) {

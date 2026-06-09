@@ -41,6 +41,16 @@ constexpr uint8_t kSeeEncoderIntEnSet = 0x10;
 constexpr uint8_t kSeeEncoderPosition = 0x30;
 constexpr uint8_t kSeeEncoderDelta    = 0x40;
 
+// On-board NeoPixel (seesaw NEOPIXEL module). The 4991's single WS2812 is wired
+// to seesaw GPIO 6 and is GRB-ordered.
+constexpr uint8_t kSeeBaseNeopixel = 0x0E;
+constexpr uint8_t kSeeNeoPin       = 0x01;
+constexpr uint8_t kSeeNeoSpeed     = 0x02;
+constexpr uint8_t kSeeNeoBufLen    = 0x03;
+constexpr uint8_t kSeeNeoBuf       = 0x04;
+constexpr uint8_t kSeeNeoShow      = 0x05;
+constexpr uint8_t kSeeNeoPixelPin  = 6;
+
 constexpr uint8_t kSeeSwitchPin   = 24;
 constexpr uint32_t kSeeSwitchMask = 1u << kSeeSwitchPin;
 
@@ -147,6 +157,72 @@ void seesaw_clear_ints() {
     seesaw_read(kSeeBaseEncoder, kSeeEncoderDelta, scratch, 4);
 }
 
+// ── On-board NeoPixel feedback ──────────────────────────────────────────────
+// Two modes, set from the UI loop:
+//   • status screen (set_active(false)): the LED slowly breathes theme green.
+//   • config (set_active(true)): it ramps to full green and holds; flash() blips
+//     it to yellow on each action, crossfading back to green.
+// encoder_led_tick() animates both at the UI loop's ~30 Hz so nothing steps.
+
+struct Rgb {
+    uint8_t r, g, b;
+};
+
+// Pure-ish green so it doesn't read teal; warm yellow for the config action flash.
+constexpr Rgb kBreathGreen = { 0x18, 0xC8, 0x28 };  // (24, 200, 40)
+constexpr Rgb kFlashYellow = { 0xFA, 0xC0, 0x14 };  // (250, 192, 20)
+
+constexpr uint16_t kBreathInc = 364;  // phase / tick → ~6 s period (3 s up / 3 s down) at 30 Hz
+constexpr uint8_t kBreathMin  = 6;    // breath floor
+constexpr uint8_t kBreathMax  = 80;   // breath ceiling (~31%)
+constexpr uint8_t kActiveLvl  = 255;  // config base intensity
+constexpr uint8_t kRampStep   = 17;   // base / tick → ~0.5 s ramp to max at 30 Hz
+constexpr uint8_t kFlashFade  = 16;   // flash / tick → ~0.5 s fade at 30 Hz
+
+bool g_led_ok       = false;
+bool g_led_active   = false;  // false = breathe (status screen), true = config
+uint16_t g_led_ph   = 0;      // breathing phase, wraps at 65536
+uint8_t g_led_base  = 0;      // config base level, ramps to kActiveLvl
+uint8_t g_led_flash = 0;      // yellow flash level, decays to 0
+uint8_t g_led_wr_r = 1, g_led_wr_g = 1, g_led_wr_b = 1;  // last bytes sent (forces 1st write)
+
+void neopixel_show(uint8_t r, uint8_t g, uint8_t b) {
+    if (!g_led_ok) return;
+    if (r == g_led_wr_r && g == g_led_wr_g && b == g_led_wr_b) return;
+    g_led_wr_r = r;
+    g_led_wr_g = g;
+    g_led_wr_b = b;
+    // BUF: 2-byte BE pixel offset (0) then GRB bytes for the one pixel.
+    const uint8_t buf[5] = { 0x00, 0x00, g, r, b };
+    seesaw_write(kSeeBaseNeopixel, kSeeNeoBuf, buf, sizeof(buf));
+    seesaw_write(kSeeBaseNeopixel, kSeeNeoShow);
+}
+
+uint8_t scale8(uint8_t c, uint8_t lv) {
+    return static_cast<uint8_t>(static_cast<uint16_t>(c) * lv / 255);
+}
+uint8_t lerp8(uint8_t a, uint8_t b, uint8_t t) {
+    return static_cast<uint8_t>(a + (static_cast<int>(b) - a) * t / 255);
+}
+
+uint8_t breath_level() {
+    const uint16_t tri = g_led_ph < 32768 ? g_led_ph : static_cast<uint16_t>(65535 - g_led_ph);
+    const uint8_t t    = static_cast<uint8_t>(tri >> 7);  // 0..255
+    return static_cast<uint8_t>(kBreathMin + (kBreathMax - kBreathMin) * t / 255);
+}
+
+void led_render() {
+    const uint8_t lv = g_led_active ? g_led_base : breath_level();
+    uint8_t r = scale8(kBreathGreen.r, lv), g = scale8(kBreathGreen.g, lv),
+            b = scale8(kBreathGreen.b, lv);
+    if (g_led_flash > 0) {  // crossfade green base → full yellow by flash level
+        r = lerp8(r, kFlashYellow.r, g_led_flash);
+        g = lerp8(g, kFlashYellow.g, g_led_flash);
+        b = lerp8(b, kFlashYellow.b, g_led_flash);
+    }
+    neopixel_show(r, g, b);
+}
+
 }  // namespace
 
 bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio) {
@@ -229,6 +305,52 @@ Event encoder_poll() {
 
     if (any_read) seesaw_clear_ints();
     return pop_evt();
+}
+
+void encoder_led_init() {
+    const uint8_t pin = kSeeNeoPixelPin;
+    if (!seesaw_write(kSeeBaseNeopixel, kSeeNeoPin, &pin, 1)) {
+        ESP_LOGW(TAG, "neopixel pin set failed");
+        return;
+    }
+    const uint8_t speed = 1;  // 800 kHz
+    seesaw_write(kSeeBaseNeopixel, kSeeNeoSpeed, &speed, 1);
+    const uint8_t len_be[2] = { 0x00, 0x03 };  // 1 RGB pixel = 3 bytes
+    if (!seesaw_write(kSeeBaseNeopixel, kSeeNeoBufLen, len_be, 2)) {
+        ESP_LOGW(TAG, "neopixel buf-length set failed");
+        return;
+    }
+    g_led_ok = true;
+    led_render();
+}
+
+void encoder_led_set_active(bool active) {
+    // Entering config: seed the ramp at the current breath level so there's no
+    // dip before it climbs to full.
+    if (active && !g_led_active) g_led_base = breath_level();
+    g_led_active = active;
+}
+
+void encoder_led_flash() {
+    if (g_led_active) g_led_flash = 255;  // yellow blip, config only
+}
+
+void encoder_led_tick() {
+    if (!g_led_ok) return;
+    g_led_ph = static_cast<uint16_t>(g_led_ph + kBreathInc);  // wraps at 65536
+    if (g_led_active) {
+        if (g_led_base < kActiveLvl)
+            g_led_base = (kActiveLvl - g_led_base > kRampStep)
+                           ? static_cast<uint8_t>(g_led_base + kRampStep)
+                           : kActiveLvl;
+    } else {
+        g_led_base  = 0;
+        g_led_flash = 0;  // no action flashes on the status screen
+    }
+    if (g_led_flash > 0)
+        g_led_flash = (g_led_flash > kFlashFade) ? static_cast<uint8_t>(g_led_flash - kFlashFade)
+                                                 : 0;
+    led_render();
 }
 
 }  // namespace pixfrog::ui::detail
