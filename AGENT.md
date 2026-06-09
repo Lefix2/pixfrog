@@ -111,7 +111,38 @@ idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-`sdkconfig.defaults` already pins the values that matter (octal PSRAM, 400 MHz CPU, no tickless idle, lwIP UDP tuning, partition table). Use `menuconfig` only when you mean to change them deliberately.
+`sdkconfig.defaults` already pins the values that matter (octal PSRAM, 400 MHz CPU, no tickless idle, lwIP UDP tuning, partition table). Use `menuconfig` only when you mean to change them deliberately. The target is pinned (`CONFIG_IDF_TARGET="esp32p4"`), so a bare `idf.py build` picks it up without `set-target`.
+
+### Build & flash without a local IDF (Docker)
+
+If ESP-IDF isn't installed on the host, build and flash inside the official image
+(`espressif/idf:v5.5` — v5.5+ is required for the P4 LCD_CAM driver):
+
+```bash
+# Build as your own uid so build/ isn't left root-owned:
+docker run --rm -v "$PWD":/project -w /project \
+    -u "$(id -u):$(id -g)" -e HOME=/tmp espressif/idf:v5.5 idf.py build
+
+# Flash/monitor must run as root with the port mapped in (--device), because the
+# in-container uid isn't in the host 'dialout' group either:
+docker run --rm --device /dev/ttyACM0 -v "$PWD":/project -w /project \
+    espressif/idf:v5.5 idf.py -p /dev/ttyACM0 flash
+```
+
+After a root flash, `build/` may contain root-owned files; `docker run --rm -v "$PWD":/project espressif/idf:v5.5 chown -R "$(id -u):$(id -g)" /project/build` cleans it.
+
+### Serial port & USB notes
+
+- The CH343 USB-serial bridge (`1a86:55d3`) on the dev board enumerates as
+  **`/dev/ttyACM0`**, not `/dev/ttyUSB0`. Pass `-p /dev/ttyACM0`.
+- The host user is typically not in `dialout`; either `sudo usermod -aG dialout
+  $USER` (re-login) or flash via the root Docker path above.
+- `idf.py monitor` inside non-interactive Docker doesn't reset the chip, so it
+  misses the boot log. To capture a clean boot, pulse RTS (EN) then read — e.g. a
+  short pyserial snippet (`s.rts=True; sleep; s.rts=False; read`).
+- **WSL2**: unplugging/replugging the board drops the usbip attachment. After a
+  physical reconnect the device won't reappear in Linux until it's re-bound from
+  Windows: `usbipd list` then `usbipd attach --wsl --busid <BUSID>`.
 
 ## Don'ts
 

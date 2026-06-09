@@ -145,7 +145,10 @@ void mark_global_dirty() {
 
 void handle_pending_remaps() {
     if (!g_remap_eg) return;
-    const EventBits_t bits = xEventGroupClearBits(g_remap_eg, 0xFFFFFFFFu);
+    // Only bits 0..8 are ever set (channels + global). Clearing the reserved
+    // top byte (0xFF000000) trips a FreeRTOS assert in xEventGroupClearBits.
+    const EventBits_t bits = xEventGroupClearBits(g_remap_eg,
+                                                  kRemapAllChannelsMask | kRemapGlobalBit);
     if (!bits) return;
     // Any channel bit (or global) currently triggers a full LUT rebuild.
     // The LUT covers 32k entries × 2 B = 64 kB so the rebuild is cheap

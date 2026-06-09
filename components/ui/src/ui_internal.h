@@ -103,12 +103,22 @@ int tft_height();
 bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio);
 Event encoder_poll();
 
+// On-board NeoPixel feedback (Adafruit 4991). init() after encoder_init().
+// set_active(false) breathes green on the status screen; set_active(true) holds
+// full green in config and flash() blips yellow per action. tick() once per UI
+// loop (~30 Hz) animates it.
+void encoder_led_init();
+void encoder_led_set_active(bool active);
+void encoder_led_flash();
+void encoder_led_tick();
+
 // ── Menu state machine ────────────────────────────────────────────────────────
 
 void menu_init();
 void menu_dispatch(Event e);
 void menu_render();
 void menu_on_idle_timeout();
+bool menu_is_home();  // true on the "état général" status screen
 
 // ── Splash screen ─────────────────────────────────────────────────────────────
 // Returns true when done (time elapsed or clicked). OLED: always true.

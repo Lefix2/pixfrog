@@ -59,11 +59,12 @@ void task_main(void*) {
         while (!done) {
             const uint32_t t_ms = static_cast<uint32_t>((xTaskGetTickCount() - t0) *
                                                         portTICK_PERIOD_MS);
-            bool clicked        = false;
-            if (xSemaphoreTake(g_wakeup_sem, 0) == pdTRUE) {
-                clicked = (detail::encoder_poll() == detail::Event::Click);
-            }
-            done = detail::splash_render(t_ms, clicked);
+            // Poll every frame; the INT_N wakeup is only a latency hint, so
+            // drain it but don't gate the read on it.
+            xSemaphoreTake(g_wakeup_sem, 0);
+            const detail::Event ev = detail::encoder_poll();
+            detail::encoder_led_tick();  // breathe during the splash
+            done = detail::splash_render(t_ms, ev == detail::Event::Click);
             vTaskDelay(pdMS_TO_TICKS(33));  // ~30 fps
         }
     }
@@ -71,23 +72,33 @@ void task_main(void*) {
     detail::menu_render();
     detail::canvas_flush();
 
-    const TickType_t home_refresh = pdMS_TO_TICKS(100);  // 10 Hz HOME refresh
+    const TickType_t home_refresh = pdMS_TO_TICKS(33);  // ~30 Hz: smooth LED breath/fade
     const uint32_t idle_ms        = config::get_global().home_timeout_s * 1000u;
     const TickType_t idle_ticks   = pdMS_TO_TICKS(idle_ms ? idle_ms : 30000u);
     TickType_t last_event         = xTaskGetTickCount();
 
     while (true) {
-        if (xSemaphoreTake(g_wakeup_sem, home_refresh) == pdTRUE) {
-            detail::Event e;
-            while ((e = detail::encoder_poll()) != detail::Event::None) {
-                detail::menu_dispatch(e);
-                last_event = xTaskGetTickCount();
-            }
+        // Wake on the encoder ISR or at least every home_refresh (10 Hz), then
+        // always poll: the seesaw INT_N line is an optional latency hint, not a
+        // requirement, so time-based polling keeps the menu responsive even if
+        // INT_N isn't wired.
+        xSemaphoreTake(g_wakeup_sem, home_refresh);
+        detail::Event e;
+        while ((e = detail::encoder_poll()) != detail::Event::None) {
+            detail::menu_dispatch(e);
+            last_event = xTaskGetTickCount();
+            // LED mode follows the screen: breathe on HOME, full green + yellow
+            // action-blips in config. set_active() before flash() so the blip on
+            // the click that opens config registers.
+            detail::encoder_led_set_active(!detail::menu_is_home());
+            detail::encoder_led_flash();
         }
         if ((xTaskGetTickCount() - last_event) > idle_ticks) {
             detail::menu_on_idle_timeout();
             last_event = xTaskGetTickCount();
         }
+        detail::encoder_led_set_active(!detail::menu_is_home());
+        detail::encoder_led_tick();
         // Always re-render + flush; oled_flush is diff-based and writes
         // 0 bytes over I2C when the framebuffer is unchanged.
         detail::menu_render();
@@ -131,6 +142,7 @@ bool start(const InitConfig& cfg) {
         ESP_LOGE(TAG, "encoder init failed");
         return false;
     }
+    detail::encoder_led_init();
 
     gpio_config_t io = {};
     io.pin_bit_mask  = 1ULL << cfg.encoder_int_gpio;
