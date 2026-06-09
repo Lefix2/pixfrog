@@ -63,6 +63,7 @@ bool tft_init(const TftConfig& cfg) {
     esp_lcd_panel_reset(g_panel);
     esp_lcd_panel_init(g_panel);
     esp_lcd_panel_invert_color(g_panel, true);
+    esp_lcd_panel_swap_xy(g_panel, true);  // portrait → landscape (320×240)
     esp_lcd_panel_mirror(g_panel, true, false);
     esp_lcd_panel_disp_on_off(g_panel, true);
 

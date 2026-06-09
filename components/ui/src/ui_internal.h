@@ -45,8 +45,8 @@ constexpr Color AltRowBg{ 0x18C3 };  // slightly lighter dark for alternating ro
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
 constexpr uint8_t kDisplayScale = 2;
-constexpr uint8_t kRows         = 13;  // (320 - 28) / 22 visible rows
-constexpr uint8_t kCols         = 20;  // 240 / (6*2)
+constexpr uint8_t kRows         = 8;   // (240 - 28) / 24 visible rows (landscape)
+constexpr uint8_t kCols         = 26;  // 320 / (6*2)
 #else
 constexpr uint8_t kDisplayScale = 1;
 constexpr uint8_t kRows         = 8;
@@ -60,6 +60,12 @@ int canvas_width();
 int canvas_height();
 void canvas_clear(Color bg = color::Black);
 void canvas_fill_rect(int x, int y, int w, int h, Color c);
+void canvas_hline(int x, int y, int w, Color c);
+void canvas_vline(int x, int y, int h, Color c);
+void canvas_fill_round_rect(int x, int y, int w, int h, int r, Color c);
+// mask: 1bpp MSB-first data; bg.v==0xFFFF means transparent (TFT only).
+void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
+                      Color bg = color::Black);
 // Draw text at pixel (x,y). scale multiplies the 5x8 glyph.
 // OLED impl: ignores color/scale, maps (x,y) -> (row=y/8, col=x/6).
 void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg = color::Black,

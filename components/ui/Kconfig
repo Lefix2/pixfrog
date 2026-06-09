@@ -10,17 +10,17 @@ menu "Display backend"
             bool "OLED SSD1306 (I2C 128x64)"
 
         config PIXFROG_DISPLAY_TFT
-            bool "TFT ST7789V / ILI9341 (SPI 240x320)"
+            bool "TFT ST7789V / ILI9341 (SPI 320x240 landscape)"
     endchoice
 
     config PIXFROG_TFT_WIDTH
-        int "TFT width in pixels"
-        depends on PIXFROG_DISPLAY_TFT
-        default 240
-
-    config PIXFROG_TFT_HEIGHT
-        int "TFT height in pixels"
+        int "TFT logical width in pixels (landscape)"
         depends on PIXFROG_DISPLAY_TFT
         default 320
+
+    config PIXFROG_TFT_HEIGHT
+        int "TFT logical height in pixels (landscape)"
+        depends on PIXFROG_DISPLAY_TFT
+        default 240
 
 endmenu

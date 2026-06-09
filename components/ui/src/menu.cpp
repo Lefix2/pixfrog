@@ -39,15 +39,15 @@ static void draw_row(uint8_t row, uint8_t col, const char* str) {
 
 // ── TFT layout ────────────────────────────────────────────────────────────────
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
-constexpr int kTW     = 240;                     // TFT width
-constexpr int kTH     = 320;                     // TFT height
+constexpr int kTW     = 320;                     // TFT width  (landscape)
+constexpr int kTH     = 240;                     // TFT height (landscape)
 constexpr int kHdrH   = 28;                      // header bar height
 constexpr int kItemH  = 24;                      // list item height
 constexpr int kTxtSc  = 2;                       // standard text scale (12x16 per char)
 constexpr int kTxtH   = 8 * kTxtSc;              // 16px
 constexpr int kPad    = (kItemH - kTxtH) / 2;    // vertical padding in item
 constexpr int kIndent = 6;                       // left margin
-constexpr int kMaxVis = (kTH - kHdrH) / kItemH;  // max visible items
+constexpr int kMaxVis = (kTH - kHdrH) / kItemH;  // 8 visible items
 #endif
 
 // ── Screens ─────────────────────────────────────────────────────────────────
@@ -294,12 +294,20 @@ void render_home() {
     }
 
     const auto stats = dmx::get_stats();
-    std::snprintf(line, sizeof(line), "%lufps", static_cast<unsigned long>(stats.current_fps));
-    // Right-align FPS in header
-    canvas_draw_text(kTW - static_cast<int>(std::strlen(line)) * kFontCellWidth * kTxtSc,
-                     (kHdrH - kTxtH) / 2, line, color::Cyan, color::HeaderBg, kTxtSc);
 
-    // Network row (y = kHdrH .. kHdrH+kItemH-1)
+    // Right side of header: FPS + link state
+    const Color link_col = ui::is_link_up() ? color::Green : color::Red;
+    const char* link_str = ui::is_link_up() ? "UP" : "DOWN";
+    canvas_draw_text(kTW - static_cast<int>(std::strlen(link_str)) * kFontCellWidth * kTxtSc -
+                         kIndent,
+                     (kHdrH - kTxtH) / 2, link_str, link_col, color::HeaderBg, kTxtSc);
+
+    std::snprintf(line, sizeof(line), "%lufps", static_cast<unsigned long>(stats.current_fps));
+    const int fps_x = kTW - static_cast<int>(std::strlen(link_str)) * kFontCellWidth * kTxtSc -
+                      kIndent - static_cast<int>(std::strlen(line)) * kFontCellWidth * kTxtSc - 8;
+    canvas_draw_text(fps_x, (kHdrH - kTxtH) / 2, line, color::Cyan, color::HeaderBg, kTxtSc);
+
+    // IP row below header
     int ry = kHdrH;
     canvas_fill_rect(0, ry, kTW, kItemH, color::DarkBlue);
     const uint32_t ip = ui::get_ip();
@@ -312,28 +320,14 @@ void render_home() {
                       static_cast<unsigned>((ip >> 8) & 0xFFu), static_cast<unsigned>(ip & 0xFFu));
         canvas_draw_text(kIndent, ry + kPad, line, color::White, color::DarkBlue, kTxtSc);
     }
-    const Color link_col = ui::is_link_up() ? color::Green : color::Red;
-    const char* link_str = ui::is_link_up() ? "UP" : "DOWN";
-    canvas_draw_text(kTW - static_cast<int>(std::strlen(link_str)) * kFontCellWidth * kTxtSc -
-                         kIndent,
-                     ry + kPad, link_str, link_col, color::DarkBlue, kTxtSc);
-
-    // Stats row
-    ry += kItemH;
-    canvas_fill_rect(0, ry, kTW, kItemH, color::AltRowBg);
-    std::snprintf(line, sizeof(line), "Pkts: %llu",
+    std::snprintf(line, sizeof(line), "Pkts:%llu",
                   static_cast<unsigned long long>(stats.artnet_packets_rx));
-    canvas_draw_text(kIndent, ry + kPad, line, color::White, color::AltRowBg, kTxtSc);
+    canvas_draw_text(kTW - static_cast<int>(std::strlen(line)) * kFontCellWidth * kTxtSc - kIndent,
+                     ry + kPad, line, color::LightGray, color::DarkBlue, kTxtSc);
 
-    // Column header row
-    ry += kItemH;
-    canvas_fill_rect(0, ry, kTW, 10, color::DarkGray);
-    canvas_draw_text(kIndent, ry + 1, "CH  PROTOCOL      UNI", color::LightGray, color::DarkGray,
-                     1);
-
-    // 8 channel rows (30px each fits; use kItemH+6)
-    ry                 += 10;
-    constexpr int kChH  = 30;
+    // 8 channel rows; fill remaining height evenly
+    ry                 += kItemH;
+    constexpr int kChH  = (kTH - kHdrH - kItemH) / 8;  // ~23px each
     for (int i = 0; i < 8; ++i) {
         const int cy       = ry + i * kChH;
         const Color row_bg = (i & 1) ? color::AltRowBg : color::Black;
@@ -351,14 +345,19 @@ void render_home() {
 
         // Universe
         std::snprintf(line, sizeof(line), "%u", cc.universe_start);
-        canvas_draw_text(kIndent + 12 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, line,
+        canvas_draw_text(kIndent + 14 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, line,
                          color::LightGray, row_bg, kTxtSc);
 
-        // Activity indicator bar
+        // Pixels
+        std::snprintf(line, sizeof(line), "%upx", cc.pixel_count);
+        canvas_draw_text(kIndent + 19 * kFontCellWidth * kTxtSc, cy + (kChH - kTxtH) / 2, line,
+                         color::DarkGray, row_bg, kTxtSc);
+
+        // Activity indicator dot on the right edge
         const bool active   = dmx::is_channel_active(i);
         const bool ok       = dmx::is_channel_capacity_ok(i);
         const Color act_col = !ok ? color::Red : (active ? color::Green : color::DarkGray);
-        canvas_fill_rect(kTW - 14, cy + 4, 10, kChH - 8, act_col);
+        canvas_fill_rect(kTW - 10, cy + 2, 8, kChH - 4, act_col);
     }
 #else
     // ── OLED classic home ─────────────────────────────────────────────────────
