@@ -42,6 +42,19 @@ When you change anything in `led_protocols`, `dmx_manager`, or `artnet`, the mat
 
 When you refactor IDF-bound code, the canonical proof is `idf.py build` — locally if IDF is installed, otherwise let CI verify (`.github/workflows/ci.yml` runs `idf.py build` against v5.5). ESP32-P4 requires IDF v5.5+ (the P4 LCD_CAM RGB panel driver is unavailable before then).
 
+## UI emulator
+
+`emulator/` runs the real TFT UI (`menu.cpp`, `canvas_tft.cpp`, `splash.cpp`, `font_5x8.cpp`) on a host via SDL2 — preview the interface without flashing, and drive it from an AI agent. It reimplements the one hardware seam (`tft_draw_bitmap`) over an SDL framebuffer and stubs the neighbour components in RAM. See `emulator/README.md`.
+
+```bash
+sudo apt install libsdl2-dev
+cd emulator && cmake -B build && cmake --build build
+./build/pixfrog_emu              # interactive window + keyboard
+./build/pixfrog_emu --headless   # agent/CI: stdin protocol (left|right|click|shot|state|quit)
+```
+
+The only shared-code hook is `menu_debug_state()` in `menu.cpp`, guarded by `#ifdef PIXFROG_EMULATOR` — the firmware build never defines it. When you add a device call to `menu.cpp`, extend the matching `emulator/src/*_host.cpp` stub.
+
 ## Formatting
 
 `clang-format` runs in CI. Format before committing:

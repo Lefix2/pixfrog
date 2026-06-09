@@ -1194,4 +1194,16 @@ void menu_on_idle_timeout() {
     s.cursor = 0;
 }
 
+#ifdef PIXFROG_EMULATOR
+void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
+    static const char* const kNames[] = {
+        "Home",    "MainMenu",  "ArtnetMenu",      "NetworkMenu", "ChannelMenu",
+        "TestPatternMenu", "EditValue", "EditString", "EditIp",
+    };
+    if (screen_name) *screen_name = kNames[static_cast<uint8_t>(s.screen)];
+    if (cursor) *cursor = s.cursor;
+    if (channel) *channel = s.channel_index;
+}
+#endif
+
 }  // namespace pixfrog::ui::detail

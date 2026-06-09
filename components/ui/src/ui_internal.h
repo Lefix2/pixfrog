@@ -106,4 +106,10 @@ void menu_on_idle_timeout();
 // Returns true when done (time elapsed or clicked). OLED: always true.
 bool splash_render(uint32_t t_ms, bool clicked);
 
+#ifdef PIXFROG_EMULATOR
+// Debug snapshot of the menu FSM for the emulator's agent API ("state" cmd).
+// screen_name points to a static string; cursor/channel are the live indices.
+void menu_debug_state(const char** screen_name, int* cursor, int* channel);
+#endif
+
 }  // namespace pixfrog::ui::detail
