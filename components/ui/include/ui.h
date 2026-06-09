@@ -4,7 +4,7 @@
 //   - The seesaw signals events via an INT line (active LOW).
 //   - A GPIO ISR gives a binary semaphore.
 //   - `ui_task` takes the semaphore, polls seesaw over I2C, dispatches events
-//     into the menu state machine, then redraws the OLED.
+//     into the menu state machine, then redraws the display.
 //   - When idle, `ui_task` blocks on the semaphore + a 1 s timer for HOME refresh.
 
 #pragma once
@@ -14,16 +14,28 @@
 namespace pixfrog::ui {
 
 struct InitConfig {
+    // I2C (always - encoder + OLED when OLED mode)
     int i2c_port;
     int i2c_sda_gpio;
     int i2c_scl_gpio;
     uint32_t i2c_freq_hz;
     int encoder_int_gpio;
-    uint8_t oled_addr;
     uint8_t encoder_addr;
+    // OLED only (ignored in TFT mode)
+    uint8_t oled_addr;
+    // TFT only (ignored in OLED mode)
+    int spi_host;
+    int spi_clk_gpio;
+    int spi_mosi_gpio;
+    int spi_cs_gpio;
+    int tft_dc_gpio;
+    int tft_rst_gpio;
+    uint32_t spi_freq_hz;
+    int tft_width;
+    int tft_height;
 };
 
-// Initialize I2C, OLED, seesaw, GPIO ISR. Spawns ui_task on core 0 prio 4.
+// Initialize I2C, display, seesaw, GPIO ISR. Spawns ui_task on core 0 prio 4.
 // Must be called after config_store::init().
 bool start(const InitConfig& cfg);
 

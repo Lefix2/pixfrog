@@ -8,7 +8,9 @@
 - 10/100M Ethernet via external PHY (IP101GRI)
 - 8 parallel LED channels driven by LCD_CAM 16-bit + GDMA
 - ArtNet UDP receiver (up to 48 universes, with ArtPoll/ArtSync support)
-- Local UI only: SSD1306 OLED + Adafruit seesaw rotary encoder
+- Local UI: **compile-time selectable** — SSD1306 OLED 128×64 (default) **or** ST7789V TFT 320×240 colour (SPI), both sharing a common canvas API and menu FSM
+- Animated TFT boot splash + colour dashboard (channel activity, IP, FPS)
+- Adafruit seesaw rotary encoder on I2C
 - All configuration is **local** and **persisted** in NVS — no network config surface
 
 ## Target hardware
@@ -33,6 +35,17 @@ idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
+### Display backend
+
+Select at `idf.py menuconfig` → **Display backend** (or export `SDKCONFIG_DEFAULTS`):
+
+| Kconfig symbol                | Display                      | Notes                          |
+|-------------------------------|------------------------------|--------------------------------|
+| `CONFIG_PIXFROG_DISPLAY_OLED` | SSD1306 128×64 I2C *(default)* | monochrome, diff-based flush  |
+| `CONFIG_PIXFROG_DISPLAY_TFT`  | ST7789V 320×240 SPI landscape | 16-bit colour, animated splash |
+
+TFT SPI GPIOs are configured in `boards/esp32_p4_devkit.h` (CLK=13, MOSI=11, CS=12, DC=10, RST=9, 40 MHz).
+
 ## Host unit tests
 
 Three pure-C++ test suites that run anywhere a C++17 compiler is installed (no IDF required):
@@ -54,7 +67,7 @@ cd components/artnet/test       && cmake -B build && cmake --build build && ./bu
 targeting `main`:
 
 - the three host suites above
-- `idf.py build` for `esp32p4` in the `espressif/idf:v5.5` container
+- `idf.py build` for `esp32p4` × **two display backends** (oled + tft) in the `espressif/idf:v5.5` container
 - `clang-format --dry-run` against `.clang-format` on every tracked C/C++ file
 
 ## Releases & browser flashing
@@ -82,7 +95,7 @@ Rendered online (with the browser flasher) at **<https://lefix2.github.io/pixfro
 
 ## Status
 
-Firmware feature-complete against the spec. The IDF-side surface (LCD_CAM, SSD1306, seesaw, Ethernet) is written against documented IDF v5.5 APIs but has not been validated on silicon — CI builds the binary on every push.
+Firmware feature-complete against the spec. The IDF-side surface (LCD_CAM, SSD1306/ST7789V, seesaw, Ethernet) is written against documented IDF v5.5 APIs but has not been validated on silicon — CI builds both OLED and TFT binaries on every push.
 
 ## License
 

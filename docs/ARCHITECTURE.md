@@ -39,7 +39,7 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 | `eth_rx_task`        | 0    | 19   | 2 kB  | Ethernet IRQ                  | RMII → lwIP (provided)                            |
 | `artnet_rx_task`     | 0    | 10   | 4 kB  | blocking `lwip_recvfrom`      | Parse packets, write `universe_pool[back]`        |
 | `render_task`        | 1    | 20   | 8 kB  | 60 Hz timer + `ArtSync`       | Swap universes, encode full frame to `fb_back`, draw_bitmap, wait `done_sem` |
-| `ui_task`            | 0    | 4    | 4 kB  | encoder IRQ + 100 ms tick     | Read encoder, render OLED, persist NVS            |
+| `ui_task`            | 0    | 4    | 4 kB  | encoder IRQ + 100 ms tick     | Boot splash, read encoder, render display (OLED or TFT), persist NVS |
 | `idle_0` / `idle_1`  | 0/1  | 0    | 1 kB  | (FreeRTOS)                    | Power-save hooks                                  |
 
 > **Note**: no `lcd_cam_refill_task`. The full frame buffer lives in PSRAM; GDMA scans it in one transaction, the `on_color_trans_done` ISR releases `done_sem` at the end. The encoder has no sub-frame deadline.
@@ -192,7 +192,7 @@ transceiver is still preferable for long or terminated runs — see
 | `artnet`             | UDP parser, ArtPollReply, writes universe pool     | `lwip`                  |
 | `dmx_manager`        | Universe pool + channel mapping + capacity check   | `artnet`, `config_store` |
 | `config_store`       | NVS wrappers + RAM cache                           | IDF NVS                 |
-| `ui`                 | OLED + seesaw + menu FSM                           | IDF I2C, `config_store` |
+| `ui`                 | Canvas API (OLED or TFT) + seesaw + menu FSM + splash | IDF I2C / SPI, `config_store`, `esp_lcd` (TFT only) |
 | `boards/<hw>.h`      | Pinout, hardware capabilities                      | (header-only)           |
 
 **Dependency rule**: `lcd_cam_output` knows nothing about ArtNet; `artnet` knows nothing about LCD_CAM. They meet in `main.cpp` via `dmx_manager`, which owns the pointer dance.

@@ -48,7 +48,7 @@ jobs:
           ./build/test_artnet_parser
 
   idf-build:
-    name: ESP-IDF build for esp32p4
+    name: ESP-IDF build for esp32p4 (${{ matrix.display }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -59,6 +59,9 @@ jobs:
         # ETH_ESP32_EMAC_DEFAULT_CONFIG() macro uses out-of-order designated
         # initializers that g++ rejects (fixed in v5.5).
         idf_version: ['v5.5']
+        # Build both display backends so each render path stays compilable.
+        # oled = the default sdkconfig; tft = overlay selecting ST7789.
+        display: ['oled', 'tft']
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
@@ -76,15 +79,18 @@ jobs:
           path: ${{ github.workspace }}/.ccache
           # New key every commit so the cache is always re-saved; restore-keys
           # falls back to the most recent prior cache to stay warm.
-          key: ccache-${{ matrix.idf_version }}-${{ github.sha }}
+          key: ccache-${{ matrix.idf_version }}-${{ matrix.display }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ matrix.idf_version }}-
+            ccache-${{ matrix.idf_version }}-${{ matrix.display }}-
 
       - name: idf.py set-target esp32p4 && idf.py build
         shell: bash
         run: |
           . $IDF_PATH/export.sh
           idf.py --version
+          if [ "${{ matrix.display }}" = "tft" ]; then
+            export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft"
+          fi
           idf.py set-target esp32p4
           idf.py build
 

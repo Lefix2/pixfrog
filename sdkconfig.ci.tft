@@ -1,0 +1,5 @@
+# CI overlay: build the firmware with the TFT ST7789 display backend selected
+# instead of the default OLED. Applied on top of sdkconfig.defaults via
+# SDKCONFIG_DEFAULTS so the idf-build matrix exercises both render paths.
+CONFIG_PIXFROG_DISPLAY_OLED=n
+CONFIG_PIXFROG_DISPLAY_TFT=y
