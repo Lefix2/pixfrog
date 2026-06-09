@@ -4,8 +4,8 @@
 // zero and channels report idle/ok. emu_dmx_* lets the agent API inject fake
 // telemetry to exercise the HOME screen.
 
-#include "dmx_manager.h"
 #include "dmx_emu.h"
+#include "dmx_manager.h"
 
 namespace pixfrog::dmx {
 
@@ -36,7 +36,7 @@ void mark_global_dirty() {}
 
 // Emulator setters (same TU, can reach the anonymous-namespace state).
 void emu_set_stats(uint32_t fps, uint64_t pkts) {
-    g_stats.current_fps     = fps;
+    g_stats.current_fps       = fps;
     g_stats.artnet_packets_rx = pkts;
 }
 void emu_set_active(size_t ch, bool on) {

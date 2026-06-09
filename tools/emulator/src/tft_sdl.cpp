@@ -9,8 +9,8 @@
 // __builtin_bswap16 before calling tft_draw_bitmap. We swap back here so the
 // framebuffer holds native-endian RGB565, ready for RGB565->RGB888 conversion.
 
-#include "ui_internal.h"
 #include "tft_emu.h"
+#include "ui_internal.h"
 
 #include <cstdint>
 
