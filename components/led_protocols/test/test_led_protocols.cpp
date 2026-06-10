@@ -450,9 +450,9 @@ static void test_frame_fuzz() {
             ChannelDesc d = make_desc(ch, protos[rnd() % 9], static_cast<uint16_t>(rnd() % 600));
             d.brightness  = static_cast<uint8_t>(rnd());
             d.grouping    = static_cast<uint8_t>(1 + rnd() % 8);
-            d.invert_direction = (rnd() & 1) != 0;
-            d.color_order      = static_cast<ColorOrder>(rnd() %
-                                                    static_cast<uint8_t>(ColorOrder::COUNT));
+            d.invert_direction  = (rnd() & 1) != 0;
+            const auto co_count = static_cast<uint8_t>(ColorOrder::COUNT);
+            d.color_order       = static_cast<ColorOrder>(rnd() % co_count);
             descs.push_back(d);
             px.push_back(random_pixels(d));
         }

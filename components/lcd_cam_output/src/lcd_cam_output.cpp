@@ -21,6 +21,7 @@
 
 #include <cstring>
 
+#include "driver/gpio.h"
 #include "esp_cache.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"

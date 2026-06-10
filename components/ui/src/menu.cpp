@@ -846,11 +846,9 @@ void commit_edit_string() {
 
     auto g = config::get_global();
     if (s.str_edit.field == StringField::ArtnetShort) {
-        std::memset(g.short_name, 0, sizeof(g.short_name));
-        std::strncpy(g.short_name, s.str_edit.buf, sizeof(g.short_name) - 1);
+        std::snprintf(g.short_name, sizeof(g.short_name), "%s", s.str_edit.buf);
     } else {
-        std::memset(g.long_name, 0, sizeof(g.long_name));
-        std::strncpy(g.long_name, s.str_edit.buf, sizeof(g.long_name) - 1);
+        std::snprintf(g.long_name, sizeof(g.long_name), "%s", s.str_edit.buf);
     }
     config::set_global(g);
     dmx::mark_global_dirty();
