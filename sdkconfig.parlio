@@ -1,0 +1,5 @@
+# Overlay: build with the PARLIO TX LED output backend instead of LCD_CAM.
+# Usage:
+#   idf.py -B build.parlio -D SDKCONFIG=build.parlio/sdkconfig \
+#          -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.parlio" build
+CONFIG_PIXFROG_LED_OUTPUT_PARLIO=y

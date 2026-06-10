@@ -18,6 +18,9 @@
 // changes the geometry; this runs off the hot path, never per steady-state
 // frame.
 
+#include "sdkconfig.h"
+#if !CONFIG_PIXFROG_LED_OUTPUT_PARLIO
+
 #include "lcd_cam_output.h"
 
 #include <cstring>
@@ -36,10 +39,16 @@
 #include "config_store.h"
 #include "dmx_manager.h"
 #include "led_protocols.h"
+#include "output_common.h"
 
 namespace pixfrog::lcd {
 
 namespace {
+
+using common::desc_for_channel;
+using common::lcm;
+using common::required_frame_samples;
+using common::round_up;
 
 constexpr const char* TAG = "LCD_CAM";
 
@@ -142,39 +151,6 @@ bool IRAM_ATTR on_vsync(esp_lcd_panel_handle_t /*panel*/,
     return hp == pdTRUE;
 }
 
-// Build a led::ChannelDesc from the current ChannelConfig + bus bit assignment.
-led::ChannelDesc desc_for_channel(size_t ch) {
-    const auto& cc = config::get_channel(ch);
-    led::ChannelDesc d{};
-    d.protocol         = cc.protocol;
-    d.color_order      = cc.color_order;
-    d.pixel_count      = cc.pixel_count;
-    d.brightness       = cc.brightness;
-    d.grouping         = cc.grouping;
-    d.invert_direction = cc.invert_direction;
-    d.bus_bit_data     = static_cast<uint8_t>(ch * 2);
-    d.bus_bit_clock    = static_cast<uint8_t>(ch * 2 + 1);
-    d.clock_hz         = cc.clock_hz;
-    return d;
-}
-
-size_t round_up(size_t v, size_t q) {
-    return (v + q - 1) / q * q;
-}
-
-size_t gcd(size_t a, size_t b) {
-    while (b != 0) {
-        const size_t t = a % b;
-        a              = b;
-        b              = t;
-    }
-    return a;
-}
-
-size_t lcm(size_t a, size_t b) {
-    return a / gcd(a, b) * b;
-}
-
 // Samples per line for the current config. The hardware inserts one blank
 // PCLK between lines; by making the line a multiple of every active NRZ bit
 // period, that blank always falls between bits — where the wire is LOW for
@@ -201,20 +177,6 @@ size_t line_samples_for_config() {
         step = merged;
     }
     return kMaxSamplesPerLine / step * step;
-}
-
-// Frame length the current config needs: the longest channel (incl. its
-// reset tail). Channels share the bus in parallel, so this is a max, not a
-// sum. Pure arithmetic — cheap enough to evaluate every frame.
-size_t required_frame_samples() {
-    size_t mx = 0;
-    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        const led::ChannelDesc d = desc_for_channel(ch);
-        if (led::is_off(d.protocol)) continue;
-        const size_t len = led::encoded_size_samples(d);
-        if (len > mx) mx = len;
-    }
-    return mx;
 }
 
 void destroy_panel() {
@@ -493,24 +455,7 @@ bool render_frame(uint32_t timeout_ms) {
 
 bool emit_calibration_pattern(uint8_t pattern_id) {
     if (pattern_id == 3) {
-        // Hardware bring-up probe: drive the 16 bus pins through the plain
-        // GPIO driver, bypassing LCD_CAM entirely. Separates "peripheral
-        // emits nothing" from "pin/probe wiring dead". Steals the pins from
-        // the LCD via the GPIO matrix — reboot to restore normal output.
-        static bool s_gpio_owned = false;
-        if (!s_gpio_owned) {
-            for (int i = 0; i < 16; ++i) {
-                const gpio_num_t g = static_cast<gpio_num_t>(g_cfg.bus_gpio_16[i]);
-                gpio_reset_pin(g);
-                gpio_set_direction(g, GPIO_MODE_OUTPUT);
-            }
-            s_gpio_owned = true;
-        }
-        static bool s_level = false;
-        s_level             = !s_level;
-        for (int i = 0; i < 16; ++i) {
-            gpio_set_level(static_cast<gpio_num_t>(g_cfg.bus_gpio_16[i]), s_level ? 1 : 0);
-        }
+        common::gpio_bitbang_probe_tick(g_cfg.bus_gpio_16);
         return true;
     }
 
@@ -519,35 +464,7 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
     void* back        = (g_back_idx == 0) ? g_fb_a : g_fb_b;
     uint16_t* samples = static_cast<uint16_t*>(back);
 
-    switch (pattern_id) {
-    case 0: {
-        // 1 kHz square wave on all 16 bits: half-period = pclk/1000/2 samples.
-        const size_t half = g_cfg.pclk_hz / 2000;
-        for (size_t i = 0; i < g_fb_samples; ++i) {
-            const bool high = ((i / half) & 1) == 0;
-            samples[i]      = high ? 0xFFFFu : 0x0000u;
-        }
-        break;
-    }
-    case 1: {
-        // Walking-1 across the 16 bits, holding each high for 256 samples
-        // (= 16 µs at PCLK=16 MHz — comfortably scope-able).
-        constexpr size_t per_bit = 256;
-        for (size_t i = 0; i < g_fb_samples; ++i) {
-            samples[i] = static_cast<uint16_t>(1u << ((i / per_bit) % 16));
-        }
-        break;
-    }
-    case 2: {
-        // 0xAAAA on even samples, 0x5555 on odd samples — every sample
-        // flips every bit, useful to see if PCLK is correct.
-        for (size_t i = 0; i < g_fb_samples; ++i) {
-            samples[i] = (i & 1) ? 0x5555u : 0xAAAAu;
-        }
-        break;
-    }
-    default: std::memset(samples, 0, g_fb_bytes); break;
-    }
+    common::fill_calibration_pattern(samples, g_fb_samples, pattern_id, g_cfg.pclk_hz);
     g_written[g_back_idx] = g_fb_samples;
 
     checked_msync(samples, round_up(g_fb_bytes, kCacheLineBytes));
@@ -610,3 +527,5 @@ int8_t get_calibration_mode() {
 }
 
 }  // namespace pixfrog::lcd
+
+#endif  // !CONFIG_PIXFROG_LED_OUTPUT_PARLIO

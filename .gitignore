@@ -27,5 +27,6 @@ log/
 # Windows NTFS alternate-data-stream metadata (WSL downloads)
 *:Zone.Identifier
 
-# tft CI-overlay local build (tools/ci-local.sh)
+# overlay local builds (tools/ci-local.sh)
 build.tft/
+build.parlio/

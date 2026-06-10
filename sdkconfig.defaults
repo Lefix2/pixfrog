@@ -26,10 +26,12 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=n
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
 
 #
-# CPU
+# CPU — 360 MHz is the P4 maximum exposed by IDF v5.5 (there is no _400
+# symbol; the previous _400 line was silently dropped, same trap as the
+# PSRAM options above).
 #
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_400=y
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=400
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=360
 
 #
 # Compiler — -O2. The IDF default (-Og) costs 2-4× on the frame encoder,

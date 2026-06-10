@@ -1,0 +1,28 @@
+menu "pixfrog LED output"
+
+    choice PIXFROG_LED_OUTPUT_BACKEND
+        prompt "LED bus output backend"
+        default PIXFROG_LED_OUTPUT_LCD_CAM
+        help
+            Peripheral driving the 16-bit LED bus. Both backends implement
+            the same pixfrog::lcd:: interface and emit identical sample
+            streams; they differ in the engine moving the bytes.
+
+        config PIXFROG_LED_OUTPUT_LCD_CAM
+            bool "LCD_CAM RGB panel"
+            help
+                esp_lcd RGB panel in refresh_on_demand mode. Frames are split
+                into v_res lines of <=4092 samples (12-bit timing registers);
+                a 3-PCLK blank separates lines, absorbed between NRZ bits.
+
+        config PIXFROG_LED_OUTPUT_PARLIO
+            bool "PARLIO TX (loop transmission)"
+            help
+                PARLIO TX unit in loop transmission mode: the frame is a flat
+                DMA buffer repeated back-to-back (the encoded reset tail
+                separates repeats), no line-geometry registers involved.
+                Buffer swaps happen gapless at frame boundaries.
+
+    endchoice
+
+endmenu
