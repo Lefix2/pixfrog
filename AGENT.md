@@ -26,6 +26,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/dmx_manager`       | Universe pool, channel mapping, capacity check, sync    |
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |
 | `components/ui`                | SSD1306 driver, seesaw encoder, menu FSM                |
+| `components/control_console`   | UART0 command server: full config get/set, telemetry, DMX injection |
 | `main/main.cpp`                | Boot orchestration + `render_task`                      |
 | `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased TFT font) |
 | `tools/oledfont`               | Host tool: hand-drawn 5×7 → `font_oled.cpp` (crisp 1bpp OLED font) |
@@ -33,6 +34,75 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `tools/oledsplash`             | Host tool: TFT splash frame → `splash_oled.cpp` (static OLED frog logo) |
 | `tools/emulator`               | SDL2 host emulator of the TFT UI (no IDF)               |
 | `docs/img/frog-anim.svg`       | Animated logo: source for web + baked splash            |
+
+## CI must pass locally before pushing
+
+**Hard rule: replay every CI job locally and get it green before any push.**
+`tools/ci-local.sh` runs the exact jobs of `.github/workflows/ci.yml` — the
+clang-format check, the three host test suites, and both IDF builds (oled +
+tft overlay):
+
+```bash
+./tools/ci-local.sh
+```
+
+Inside the devcontainer the IDF builds run natively; outside, the script falls
+back to the same `espressif/idf:v5.5` docker image CI uses. Don't push and
+"let CI find out".
+
+## Devcontainer (CI parity)
+
+`.devcontainer/` builds on the CI image (`espressif/idf:v5.5`) plus the tools
+the other CI jobs use: clang-format **18** (pinned, same major as the
+`format-check` job), build-essential/cmake for the host test suites, and
+libsdl2-dev for the UI emulator. Every shell sources the IDF env, so
+`idf.py build` works directly (no docker wrapper). The container runs
+privileged with `/dev` mapped in, so `idf.py -p /dev/ttyACM0 flash` works
+from inside it (it runs as root, which satisfies the flash-needs-root rule
+below).
+
+## Control console (UART)
+
+`components/control_console` exposes a line-oriented command server on the
+UART0 console (`/dev/ttyACM0` @ 115200, via the board's USB-UART bridge —
+note: the bridge enumerates as CDC-ACM, but it is *not* the P4's native
+USB-Serial-JTAG; UART0 is the only console wired to USB) — the full device is
+scriptable for bench tests: every `GlobalConfig`/`ChannelConfig` field,
+telemetry, calibration patterns, DMX injection without ArtNet, and buffer
+readback to verify the universe→pixel pipeline end to end.
+
+Protocol: each command answers `key=value` lines then a final `OK`, or one
+`ERR <reason>` line. Boot logs share the port — send `loglevel none` first
+when parsing strictly. Commands (see `help` on the device):
+
+| Command | Purpose |
+|---|---|
+| `version` / `status` / `stats` / `chstat` | Versions; link/IP/MAC/FPS/heap; telemetry counters; per-channel active+capacity |
+| `global [<key> <value>]` | Get/set GlobalConfig: `dhcp ip mask gw net subnet short_name long_name reply_unicast refresh_hz home_timeout_s` |
+| `ch <n> [<key> <value>]` | Get/set ChannelConfig: `protocol order universe dmx_start pixels brightness grouping invert clock_hz` |
+| `dmxw <uni> <slot> <hex>` | Inject DMX bytes into a mapped universe (1-based slot) |
+| `dmxr <uni> [start len]` / `pixr <ch> [start len]` | Hex readback of universe / decoded pixel buffers |
+| `cal [-1\|0\|1\|2]` | Get/set persistent calibration pattern |
+| `loglevel <none..verbose>` / `factory-reset` / `reboot` | Logs and lifecycle |
+
+Sets persist to NVS and take effect next frame (`mark_*_dirty`); network keys
+(`dhcp ip mask gw`) need a `reboot`. **Opening the port can auto-reset the
+board** (bridge DTR/RTS circuit), so sync on the prompt before scripting:
+
+```python
+import serial, time
+s = serial.Serial("/dev/ttyACM0", 115200, timeout=1)
+buf = ""
+while "pixfrog>" not in buf:          # poke until the REPL answers (boot ~4 s)
+    s.write(b"\r\n"); time.sleep(0.5)
+    buf += s.read(s.in_waiting or 1).decode(errors="replace")
+for c in (b"loglevel none", b"ch 0 protocol WS2812B", b"dmxw 1 1 ff0000", b"status"):
+    s.write(c + b"\r\n"); time.sleep(0.3)
+print(s.read(4096).decode())          # responses end with OK / ERR <reason>
+```
+
+Console writes share `ui_task`'s NVS path and are not locked against it —
+don't turn the encoder while a script is configuring the device.
 
 ## Tests
 
@@ -46,7 +116,7 @@ cd components/artnet/test       && cmake -B build && cmake --build build && ./bu
 
 When you change anything in `led_protocols`, `dmx_manager`, or `artnet`, the matching suite must still pass.
 
-When you refactor IDF-bound code, the canonical proof is `idf.py build` — locally if IDF is installed, otherwise let CI verify (`.github/workflows/ci.yml` runs `idf.py build` against v5.5). ESP32-P4 requires IDF v5.5+ (the P4 LCD_CAM RGB panel driver is unavailable before then).
+When you refactor IDF-bound code, the canonical proof is `idf.py build` — natively in the devcontainer, or through the `espressif/idf:v5.5` docker image (`tools/ci-local.sh` does both display variants). Never rely on CI to find out. ESP32-P4 requires IDF v5.5+ (the P4 LCD_CAM RGB panel driver is unavailable before then).
 
 ## UI emulator
 

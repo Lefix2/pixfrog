@@ -25,6 +25,7 @@
 
 #include "artnet.h"
 #include "config_store.h"
+#include "control_console.h"
 #include "dmx_manager.h"
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
@@ -265,6 +266,8 @@ extern "C" void app_main() {
     pixfrog::artnet::start();
 
     xTaskCreatePinnedToCore(render_task, "render", 6144, nullptr, 20, nullptr, 1);
+
+    pixfrog::console::start();
 
     ESP_LOGI(TAG, "boot complete");
 }

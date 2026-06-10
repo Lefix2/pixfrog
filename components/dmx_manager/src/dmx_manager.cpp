@@ -227,6 +227,20 @@ const uint8_t* universe_front_buffer_for(uint16_t universe_number) {
     return g_uni_front.load(std::memory_order_acquire) + slot * kUniverseSize;
 }
 
+bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* data, size_t len) {
+    if (!g_universe_to_slot_valid || !data) return false;
+    if (offset + len > kUniverseSize) return false;
+    const uint16_t slot = g_universe_to_slot[universe_number];
+    if (slot == UINT16_MAX) return false;
+    const size_t base = static_cast<size_t>(slot) * kUniverseSize + offset;
+    // Byte-level tearing against a concurrent artnet write or render read is
+    // acceptable here — this is a bench/test path, not a sync-critical one.
+    memcpy(g_uni_bank_a + base, data, len);
+    memcpy(g_uni_bank_b + base, data, len);
+    note_channel_activity(g_slot_to_channel[slot]);
+    return true;
+}
+
 void note_packet_rx() {
     __atomic_add_fetch(&g_stats.artnet_packets_rx, 1, __ATOMIC_RELAXED);
 }
