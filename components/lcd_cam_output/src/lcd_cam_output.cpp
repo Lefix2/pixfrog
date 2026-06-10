@@ -6,16 +6,17 @@
 // done_sem and kicks the new emission — CPU encode and DMA emission overlap,
 // so the frame rate is bounded by max(encode, emission), not their sum.
 //
-// The panel's h_res (= emission duration) tracks the frame length actually
-// required by the current channel config — longest channel incl. reset tail —
-// not the theoretical worst case. The panel is torn down and recreated when a
-// config commit moves that length to a different bucket; this runs off the
-// hot path (once per UI commit), never per steady-state frame.
-//
-// Status: implemented surface — register-level details validated against
-// IDF v5.3 RGB panel API. The 1-line frame buffer model (h_res = total
-// samples, v_res = 1, no hsync/vsync porches) needs validation on real
-// hardware; some IDF builds reject hsync_pulse_width = 0 and may need 1.
+// Frame geometry: the P4 LCD_CAM horizontal timing registers are 12 bits
+// (lcd_ha_width / lcd_ht_width) and the vertical ones 10 bits, so a frame is
+// laid out as v_res lines of h_res samples — h_res ≤ 4095 and v_res ≤ 1023,
+// NOT one giant line (that silently truncates in hardware, validated on a
+// Saleae 2026-06). The FB stays one flat sample array; the line split only
+// exists in the panel timing. Hardware inserts one blank PCLK (the HSYNC
+// tick) between lines; h_res is chosen as a multiple of every active NRZ bit
+// period so that tick always lands on an inter-bit LOW and merely stretches
+// it by 62.5 ns. The panel is torn down and recreated when a config commit
+// changes the geometry; this runs off the hot path, never per steady-state
+// frame.
 
 #include "lcd_cam_output.h"
 
@@ -47,7 +48,9 @@ esp_lcd_panel_handle_t g_panel = nullptr;
 void* g_fb_a                   = nullptr;
 void* g_fb_b                   = nullptr;
 size_t g_fb_bytes              = 0;
-size_t g_fb_h_res              = 0;         // samples per "line" (= total samples per frame)
+size_t g_fb_h_res              = 0;         // samples per line
+size_t g_fb_v_res              = 0;         // lines per frame
+size_t g_fb_samples            = 0;         // h_res × v_res = FB capacity in samples
 uint8_t g_back_idx             = 0;         // which fb is next to write into (0 → write fb_a)
 size_t g_written[2]            = { 0, 0 };  // samples encoded into each FB since creation
 
@@ -56,13 +59,16 @@ SemaphoreHandle_t g_done_sem = nullptr;
 // Persistent calibration mode (TODO B5). -1 = normal pixel rendering.
 volatile int8_t g_cal_mode = -1;
 
-// ── Item 1: HSYNC pulse width ────────────────────────────────────────────────
-// ESP-IDF v5.3 RGB panel driver rejects hsync_pulse_width == 0 on ESP32-P4
-// and forces it to >= 1. We use 1 (= 62.5 ns at PCLK=16MHz). The HSYNC pin
-// is never routed externally (hsync_gpio_num = -1) so this is harmless.
-// If hardware validation shows this 1-tick gap glitches WS2815 timing,
-// raise to 2 and re-measure.
+// ── Item 1: HSYNC pulse width and porches ────────────────────────────────────
+// The HSYNC pin is never routed externally (hsync_gpio_num = -1), but the
+// blanking region it defines is load-bearing: with zero porches the P4 LCD
+// engine emits exactly one line and never re-arms the next (measured on a
+// Saleae — 204-bit bursts, VSYNC_END never fires). Give it one PCLK of back
+// and front porch. Total inter-line gap = hsw+hbp+hfp = 3 PCLK = 187.5 ns of
+// LOW, which line_samples_for_config() keeps between NRZ bits.
 constexpr int kHsyncPulseWidth = 1;
+constexpr int kHsyncBackPorch  = 1;
+constexpr int kHsyncFrontPorch = 1;
 
 // ── Item 2: thresholds for swap latency warning ──────────────────────────────
 // A no-copy FB swap inside esp_lcd_panel_draw_bitmap should return in
@@ -71,10 +77,12 @@ constexpr int kHsyncPulseWidth = 1;
 // blocked on a previous emission still in flight.
 constexpr int64_t kSwapLatencyWarnUs = 200;
 
-// h_res granularity: 64 samples = 128 B = two 64-B cache lines. Keeps FB
-// sizes cache-line aligned and avoids panel re-creation when a config tweak
-// shifts the frame length by a few samples within the same bucket.
-constexpr size_t kHresQuantum = 64;
+// Hardware ceilings of the P4 LCD_CAM RGB timing engine (lcd_cam_struct.h):
+// ht_width = hsw + hbp + active + hfp - 1 must fit its 12-bit field, so the
+// porch budget comes off the per-line active ceiling; vt_height is 10 bits.
+constexpr size_t kMaxSamplesPerLine = 4095 - kHsyncPulseWidth - kHsyncBackPorch - kHsyncFrontPorch +
+                                      1;
+constexpr size_t kMaxLinesPerFrame = 1023;  // lcd_va_height/lcd_vt_height: 10 bits
 
 // esp_cache_msync requires cache-line-granular sizes for C2M. The P4 L2
 // line is 64 B or 128 B depending on CONFIG_CACHE_L2_CACHE_LINE_SIZE;
@@ -83,13 +91,18 @@ constexpr size_t kCacheLineBytes = 128;
 
 // Calibration frames are decoupled from the LED config: 262144 samples
 // = 16.4 ms at PCLK=16 MHz, so one kick per 60 Hz render tick keeps the
-// scope pattern essentially gapless.
+// scope pattern essentially gapless (the 62.5 ns inter-line blank is
+// invisible at scope timescales).
 constexpr size_t kCalFrameSamples = 262144;
 
-// ── Item 4: callback identification counters ─────────────────────────────────
-// Both on_color_trans_done and on_vsync are registered. Whichever fires
-// first wakes done_sem. Counters help diagnose post-mortem which path was
-// used in production (logged at shutdown / periodically).
+// ── Item 4: emission pacing ──────────────────────────────────────────────────
+// Only on_vsync (the VSYNC_END interrupt = LCD engine finished clocking the
+// frame out) may give done_sem. on_color_trans_done is NOT an emission
+// signal: in refresh_on_demand mode without bounce buffers, the IDF driver
+// invokes it synchronously inside esp_lcd_panel_draw_bitmap ("draw buffer
+// handed over") — pacing on it lets the render loop outrun the LCD and each
+// panel_refresh then cuts the tail off the in-flight frame (and VSYNC_END
+// never fires). It is still registered, counter-only, for telemetry.
 volatile uint32_t g_trans_done_count = 0;
 volatile uint32_t g_vsync_count      = 0;
 
@@ -103,21 +116,28 @@ int64_t g_emit_us_sum    = 0;
 uint32_t g_emit_us_count = 0;
 int64_t g_emit_us_max    = 0;
 
+volatile uint32_t g_msync_err_count = 0;
+
+void checked_msync(void* addr, size_t bytes) {
+    const esp_err_t err = esp_cache_msync(addr, bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    if (err != ESP_OK) {
+        g_msync_err_count = g_msync_err_count + 1;
+        ESP_LOGE(TAG, "esp_cache_msync(%p, %zu): %s", addr, bytes, esp_err_to_name(err));
+    }
+}
+
 bool IRAM_ATTR on_trans_done(esp_lcd_panel_handle_t /*panel*/,
                              const esp_lcd_rgb_panel_event_data_t* /*edata*/, void* /*user_ctx*/) {
-    // Plain read-modify-write: C++20 deprecates ++ on a volatile lvalue.
+    // Telemetry only — see Item 4. Plain read-modify-write: C++20 deprecates
+    // ++ on a volatile lvalue.
     g_trans_done_count = g_trans_done_count + 1;
-    BaseType_t hp      = pdFALSE;
-    xSemaphoreGiveFromISR(g_done_sem, &hp);
-    return hp == pdTRUE;
+    return false;
 }
 
 bool IRAM_ATTR on_vsync(esp_lcd_panel_handle_t /*panel*/,
                         const esp_lcd_rgb_panel_event_data_t* /*edata*/, void* /*user_ctx*/) {
     g_vsync_count = g_vsync_count + 1;
     BaseType_t hp = pdFALSE;
-    // Fallback: if on_color_trans_done never fires on this IDF/HW combo,
-    // on_vsync still releases the sem so the pipeline keeps flowing.
     xSemaphoreGiveFromISR(g_done_sem, &hp);
     return hp == pdTRUE;
 }
@@ -142,6 +162,47 @@ size_t round_up(size_t v, size_t q) {
     return (v + q - 1) / q * q;
 }
 
+size_t gcd(size_t a, size_t b) {
+    while (b != 0) {
+        const size_t t = a % b;
+        a              = b;
+        b              = t;
+    }
+    return a;
+}
+
+size_t lcm(size_t a, size_t b) {
+    return a / gcd(a, b) * b;
+}
+
+// Samples per line for the current config. The hardware inserts one blank
+// PCLK between lines; by making the line a multiple of every active NRZ bit
+// period, that blank always falls between bits — where the wire is LOW for
+// both bit values — and only stretches the low tail by 62.5 ns, which WS281x
+// receivers don't care about. Clocked (APA/SK/LPD) and DMX channels tolerate
+// the pause at any offset: their clock pauses together with the data, and a
+// 62.5 ns stretch inside a 4 µs DMX bit is noise.
+size_t line_samples_for_config() {
+    size_t step = 2;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        const auto& cc = config::get_channel(ch);
+        if (led::is_off(cc.protocol) || led::is_dmx(cc.protocol) || led::is_clocked(cc.protocol))
+            continue;
+        const led::Timing t = led::timing_for(cc.protocol, cc.clock_hz);
+        if (t.samples_bit == 0) continue;
+        const size_t merged = lcm(step, t.samples_bit);
+        if (merged > kMaxSamplesPerLine) {
+            // No common multiple fits one line; the odd channel out gets its
+            // blank mid-bit (worst case a 62.5 ns notch). Keep the others.
+            ESP_LOGW(TAG, "NRZ bit periods have no common line multiple <= %zu (ch%zu bit=%u)",
+                     kMaxSamplesPerLine, ch, t.samples_bit);
+            continue;
+        }
+        step = merged;
+    }
+    return kMaxSamplesPerLine / step * step;
+}
+
 // Frame length the current config needs: the longest channel (incl. its
 // reset tail). Channels share the bus in parallel, so this is a max, not a
 // sum. Pure arithmetic — cheap enough to evaluate every frame.
@@ -164,12 +225,16 @@ void destroy_panel() {
     g_fb_b         = nullptr;
     g_fb_bytes     = 0;
     g_fb_h_res     = 0;
+    g_fb_v_res     = 0;
+    g_fb_samples   = 0;
     g_last_kick_us = 0;
 }
 
-bool create_panel(size_t h_res) {
-    g_fb_h_res = h_res;
-    g_fb_bytes = h_res * sizeof(uint16_t);
+bool create_panel(size_t h_res, size_t v_res) {
+    g_fb_h_res   = h_res;
+    g_fb_v_res   = v_res;
+    g_fb_samples = h_res * v_res;
+    g_fb_bytes   = g_fb_samples * sizeof(uint16_t);
 
     // ── Item 3: PSRAM sanity check ───────────────────────────────────────────
     // We need 2 × fb_bytes plus a comfortable headroom for cache lines, the
@@ -200,10 +265,10 @@ bool create_panel(size_t h_res) {
     }
     panel_config.timings.pclk_hz               = g_cfg.pclk_hz;
     panel_config.timings.h_res                 = g_fb_h_res;
-    panel_config.timings.v_res                 = 1;
+    panel_config.timings.v_res                 = g_fb_v_res;
     panel_config.timings.hsync_pulse_width     = kHsyncPulseWidth;
-    panel_config.timings.hsync_back_porch      = 0;
-    panel_config.timings.hsync_front_porch     = 0;
+    panel_config.timings.hsync_back_porch      = kHsyncBackPorch;
+    panel_config.timings.hsync_front_porch     = kHsyncFrontPorch;
     panel_config.timings.vsync_pulse_width     = 1;
     panel_config.timings.vsync_back_porch      = 0;
     panel_config.timings.vsync_front_porch     = 0;
@@ -245,20 +310,24 @@ bool create_panel(size_t h_res) {
     }
     std::memset(g_fb_a, 0, g_fb_bytes);
     std::memset(g_fb_b, 0, g_fb_bytes);
-    esp_cache_msync(g_fb_a, g_fb_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
-    esp_cache_msync(g_fb_b, g_fb_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    checked_msync(g_fb_a, round_up(g_fb_bytes, kCacheLineBytes));
+    checked_msync(g_fb_b, round_up(g_fb_bytes, kCacheLineBytes));
 
     g_back_idx   = 0;
     g_written[0] = 0;
     g_written[1] = 0;
 
-    ESP_LOGI(TAG, "panel up: fb_a=%p fb_b=%p, %zu bytes each, h_res=%zu @ %lu Hz (%llu µs/frame)",
-             g_fb_a, g_fb_b, g_fb_bytes, g_fb_h_res, static_cast<unsigned long>(g_cfg.pclk_hz),
-             static_cast<unsigned long long>(g_fb_h_res) * 1'000'000ULL / g_cfg.pclk_hz);
+    ESP_LOGI(TAG,
+             "panel up: fb_a=%p fb_b=%p, %zu bytes each, %zux%zu samples @ %lu Hz "
+             "(%llu µs/frame)",
+             g_fb_a, g_fb_b, g_fb_bytes, g_fb_h_res, g_fb_v_res,
+             static_cast<unsigned long>(g_cfg.pclk_hz),
+             static_cast<unsigned long long>(g_fb_samples + g_fb_v_res) * 1'000'000ULL /
+                 g_cfg.pclk_hz);
     return true;
 }
 
-// Recreate the panel iff `needed_samples` lands in a different h_res bucket.
+// Recreate the panel iff `needed_samples` changes the line/lines geometry.
 // Holds done_sem across the swap so no emission is in flight while the FBs
 // are reallocated. No-op (and cheap) in the steady state.
 bool ensure_frame_capacity(size_t needed_samples) {
@@ -267,15 +336,21 @@ bool ensure_frame_capacity(size_t needed_samples) {
                  needed_samples, static_cast<unsigned long>(g_cfg.max_samples_per_frame));
         return false;
     }
-    const size_t h_res = round_up(needed_samples, kHresQuantum);
-    if (g_panel && h_res == g_fb_h_res) return true;
+    const size_t h_res = line_samples_for_config();
+    const size_t v_res = (needed_samples + h_res - 1) / h_res;
+    if (v_res > kMaxLinesPerFrame) {
+        ESP_LOGE(TAG, "frame needs %zu lines of %zu samples > cap %zu", v_res, h_res,
+                 kMaxLinesPerFrame);
+        return false;
+    }
+    if (g_panel && h_res == g_fb_h_res && v_res == g_fb_v_res) return true;
 
     if (xSemaphoreTake(g_done_sem, pdMS_TO_TICKS(1000)) != pdTRUE) {
         ESP_LOGE(TAG, "reconfigure: previous emission never drained");
         return false;
     }
     destroy_panel();
-    const bool ok = create_panel(h_res);
+    const bool ok = create_panel(h_res, v_res);
     xSemaphoreGive(g_done_sem);
     return ok;
 }
@@ -328,9 +403,9 @@ bool render_frame(uint32_t timeout_ms) {
     // traversals. This runs while the previous frame is still emitting from
     // the other FB — the overlap is what holds 60 FPS.
     const size_t written = led::encode_frame(descs, pixels, config::kNumChannels, samples,
-                                             g_fb_h_res);
+                                             g_fb_samples);
     if (written == 0) {
-        ESP_LOGE(TAG, "encode_frame wrote nothing (needed=%zu h_res=%zu)", needed, g_fb_h_res);
+        ESP_LOGE(TAG, "encode_frame wrote nothing (needed=%zu capacity=%zu)", needed, g_fb_samples);
         return false;
     }
 
@@ -346,15 +421,21 @@ bool render_frame(uint32_t timeout_ms) {
 
     // Make the CPU writes visible to GDMA — but only the bytes this frame
     // touched, not the whole FB. PSRAM cache is write-back; without this,
-    // GDMA could fetch stale data and emit garbage.
-    size_t sync_bytes = round_up(sync_samples * sizeof(uint16_t), kCacheLineBytes);
-    if (sync_bytes > g_fb_bytes) sync_bytes = g_fb_bytes;
-    esp_cache_msync(samples, sync_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    // GDMA could fetch stale data and emit garbage. g_fb_bytes need not be a
+    // cache-line multiple (h_res follows protocol bit periods), so the last
+    // flush may overrun the FB by < one line — that only writes back valid
+    // adjacent heap data, never corrupts it.
+    const size_t sync_bytes = round_up(sync_samples * sizeof(uint16_t), kCacheLineBytes);
+    checked_msync(samples, sync_bytes);
 
     // Only now wait for the previous emission to drain: the encode above
     // worked on the FB that GDMA was NOT reading.
     if (xSemaphoreTake(g_done_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
         dmx::note_dma_underrun();
+        // Self-heal: timeout_ms is far beyond one emission, so the frame is
+        // over even if VSYNC_END got lost — re-arm instead of bricking every
+        // subsequent frame.
+        xSemaphoreGive(g_done_sem);
         return false;
     }
 
@@ -364,8 +445,8 @@ bool render_frame(uint32_t timeout_ms) {
     // Hand the back FB to the panel as the next frame to emit. With num_fbs=2
     // and `refresh_on_demand`, IDF detects that the passed buffer matches one
     // of its internal FBs and simply switches the active pointer (no copy).
-    esp_err_t err = esp_lcd_panel_draw_bitmap(g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1,
-                                              samples);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(g_panel, 0, 0, static_cast<int>(g_fb_h_res),
+                                              static_cast<int>(g_fb_v_res), samples);
 
     const int64_t t_kick_post = esp_timer_get_time();
     const int64_t swap_us     = t_kick_post - t_kick_pre;
@@ -378,6 +459,18 @@ bool render_frame(uint32_t timeout_ms) {
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "draw_bitmap: %s", esp_err_to_name(err));
+        xSemaphoreGive(g_done_sem);
+        return false;
+    }
+
+    // In refresh_on_demand mode draw_bitmap only swaps the FB pointer — the
+    // LCD engine is NOT started until this explicit kick. Without it nothing
+    // is ever clocked out of the pins (on_color_trans_done still fires: it
+    // is raised synchronously inside draw_bitmap and only means "draw buffer
+    // handed over", not "emission done" — on_vsync is the emission signal).
+    err = esp_lcd_rgb_panel_refresh(g_panel);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "panel_refresh: %s", esp_err_to_name(err));
         xSemaphoreGive(g_done_sem);
         return false;
     }
@@ -399,6 +492,28 @@ bool render_frame(uint32_t timeout_ms) {
 }
 
 bool emit_calibration_pattern(uint8_t pattern_id) {
+    if (pattern_id == 3) {
+        // Hardware bring-up probe: drive the 16 bus pins through the plain
+        // GPIO driver, bypassing LCD_CAM entirely. Separates "peripheral
+        // emits nothing" from "pin/probe wiring dead". Steals the pins from
+        // the LCD via the GPIO matrix — reboot to restore normal output.
+        static bool s_gpio_owned = false;
+        if (!s_gpio_owned) {
+            for (int i = 0; i < 16; ++i) {
+                const gpio_num_t g = static_cast<gpio_num_t>(g_cfg.bus_gpio_16[i]);
+                gpio_reset_pin(g);
+                gpio_set_direction(g, GPIO_MODE_OUTPUT);
+            }
+            s_gpio_owned = true;
+        }
+        static bool s_level = false;
+        s_level             = !s_level;
+        for (int i = 0; i < 16; ++i) {
+            gpio_set_level(static_cast<gpio_num_t>(g_cfg.bus_gpio_16[i]), s_level ? 1 : 0);
+        }
+        return true;
+    }
+
     if (!ensure_frame_capacity(kCalFrameSamples)) return false;
 
     void* back        = (g_back_idx == 0) ? g_fb_a : g_fb_b;
@@ -408,7 +523,7 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
     case 0: {
         // 1 kHz square wave on all 16 bits: half-period = pclk/1000/2 samples.
         const size_t half = g_cfg.pclk_hz / 2000;
-        for (size_t i = 0; i < g_fb_h_res; ++i) {
+        for (size_t i = 0; i < g_fb_samples; ++i) {
             const bool high = ((i / half) & 1) == 0;
             samples[i]      = high ? 0xFFFFu : 0x0000u;
         }
@@ -418,7 +533,7 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
         // Walking-1 across the 16 bits, holding each high for 256 samples
         // (= 16 µs at PCLK=16 MHz — comfortably scope-able).
         constexpr size_t per_bit = 256;
-        for (size_t i = 0; i < g_fb_h_res; ++i) {
+        for (size_t i = 0; i < g_fb_samples; ++i) {
             samples[i] = static_cast<uint16_t>(1u << ((i / per_bit) % 16));
         }
         break;
@@ -426,22 +541,30 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
     case 2: {
         // 0xAAAA on even samples, 0x5555 on odd samples — every sample
         // flips every bit, useful to see if PCLK is correct.
-        for (size_t i = 0; i < g_fb_h_res; ++i) {
+        for (size_t i = 0; i < g_fb_samples; ++i) {
             samples[i] = (i & 1) ? 0x5555u : 0xAAAAu;
         }
         break;
     }
     default: std::memset(samples, 0, g_fb_bytes); break;
     }
-    g_written[g_back_idx] = g_fb_h_res;
+    g_written[g_back_idx] = g_fb_samples;
 
-    esp_cache_msync(samples, g_fb_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    checked_msync(samples, round_up(g_fb_bytes, kCacheLineBytes));
 
-    if (xSemaphoreTake(g_done_sem, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    if (xSemaphoreTake(g_done_sem, pdMS_TO_TICKS(100)) != pdTRUE) {
+        xSemaphoreGive(g_done_sem);  // same self-heal as render_frame
+        return false;
+    }
 
-    esp_err_t err = esp_lcd_panel_draw_bitmap(g_panel, 0, 0, static_cast<int>(g_fb_h_res), 1,
-                                              samples);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(g_panel, 0, 0, static_cast<int>(g_fb_h_res),
+                                              static_cast<int>(g_fb_v_res), samples);
     if (err != ESP_OK) {
+        xSemaphoreGive(g_done_sem);
+        return false;
+    }
+    if ((err = esp_lcd_rgb_panel_refresh(g_panel)) != ESP_OK) {
+        ESP_LOGE(TAG, "panel_refresh: %s", esp_err_to_name(err));
         xSemaphoreGive(g_done_sem);
         return false;
     }
@@ -450,14 +573,23 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
 }
 
 void dump_stats() {
-    const int64_t expected_us = static_cast<int64_t>(g_fb_h_res) * 1'000'000LL / g_cfg.pclk_hz;
-    const int64_t avg_us      = (g_emit_us_count > 0) ? (g_emit_us_sum / g_emit_us_count) : 0;
+    const int64_t expected_us = static_cast<int64_t>(g_fb_samples + g_fb_v_res) * 1'000'000LL /
+                                g_cfg.pclk_hz;
+    const int64_t avg_us = (g_emit_us_count > 0) ? (g_emit_us_sum / g_emit_us_count) : 0;
     ESP_LOGI(TAG,
              "stats: trans_done=%lu, vsync=%lu, frames=%lu, "
              "expected DMA=%lld µs, avg interval=%lld µs, max=%lld µs",
              static_cast<unsigned long>(g_trans_done_count),
              static_cast<unsigned long>(g_vsync_count), static_cast<unsigned long>(g_emit_us_count),
              expected_us, avg_us, g_emit_us_max);
+}
+
+DebugCounters get_debug_counters() {
+    DebugCounters c{};
+    c.trans_done = g_trans_done_count;
+    c.vsync      = g_vsync_count;
+    c.msync_err  = g_msync_err_count;
+    return c;
 }
 
 void wait_idle() {

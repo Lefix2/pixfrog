@@ -1,4 +1,4 @@
-# pixfrog default sdkconfig — tuned for ESP32-P4 + octal PSRAM + LCD_CAM + lwIP UDP
+# pixfrog default sdkconfig — tuned for ESP32-P4 + hex PSRAM + LCD_CAM + lwIP UDP
 # Override with `idf.py menuconfig`; this file pins the values that matter.
 
 #
@@ -7,11 +7,19 @@
 CONFIG_IDF_TARGET="esp32p4"
 
 #
-# PSRAM — octal, 200 MHz
+# PSRAM — P4 is hex-mode only (SPIRAM_MODE_HEX, the Kconfig default).
+# Speed MUST be raised from the 20 MHz default: GDMA streams the LCD frame
+# buffers from PSRAM at 32 MB/s while the encoder writes the other FB, and
+# at 20 MHz the LCD FIFO starves a few thousand samples into every frame
+# (measured on a Saleae 2026-06). 80 MHz is the fastest non-experimental
+# option on IDF v5.5 (200 MHz needs IDF_EXPERIMENTAL_FEATURES).
+# NOTE: invalid symbols are dropped silently — the previous OCT/200M lines
+# (S3 names) were ignored and the build ran at 20 MHz. After changing
+# PSRAM options, `rm -f sdkconfig` so the defaults re-apply, and check the
+# boot log line `esp_psram: Speed: 80MHz`.
 #
 CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_OCT=y
-CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=n
 # Large allocations go to PSRAM by default; DMA buffers stay in SRAM via MALLOC_CAP_DMA.

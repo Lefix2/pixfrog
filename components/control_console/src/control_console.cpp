@@ -170,6 +170,10 @@ int cmd_stats(int, char**) {
     printf("artnet_bad_packets=%llu\n", static_cast<unsigned long long>(s.artnet_bad_packets));
     printf("dma_underruns=%lu\n", static_cast<unsigned long>(s.dma_underruns));
     printf("current_fps=%lu\n", static_cast<unsigned long>(s.current_fps));
+    const lcd::DebugCounters d = lcd::get_debug_counters();
+    printf("lcd_trans_done=%lu\n", static_cast<unsigned long>(d.trans_done));
+    printf("lcd_vsync=%lu\n", static_cast<unsigned long>(d.vsync));
+    printf("lcd_msync_err=%lu\n", static_cast<unsigned long>(d.msync_err));
     return ok();
 }
 
@@ -396,10 +400,10 @@ int cmd_cal(int argc, char** argv) {
         printf("cal=%d\n", static_cast<int>(lcd::get_calibration_mode()));
         return ok();
     }
-    if (argc != 2) return err("usage: cal [-1|0|1|2]");
+    if (argc != 2) return err("usage: cal [-1|0|1|2|3]");
     char* end    = nullptr;
     const long v = strtol(argv[1], &end, 10);
-    if (end == argv[1] || *end != '\0' || v < -1 || v > 2) return err("mode: -1..2");
+    if (end == argv[1] || *end != '\0' || v < -1 || v > 3) return err("mode: -1..3");
     lcd::set_calibration_mode(static_cast<int8_t>(v));
     printf("cal=%d\n", static_cast<int>(v));
     return ok();
@@ -485,7 +489,8 @@ void start() {
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
-    register_cmd("cal", "cal [-1|0|1|2] — get/set calibration pattern", cmd_cal);
+    register_cmd("cal", "cal [-1|0|1|2|3] — get/set calibration pattern (3 = GPIO bit-bang probe)",
+                 cmd_cal);
     register_cmd("loglevel", "loglevel <none..verbose> — set global log level", cmd_loglevel);
     register_cmd("factory-reset", "Restore default config (no reboot)", cmd_factory_reset);
     register_cmd("reboot", "Restart the device", cmd_reboot);

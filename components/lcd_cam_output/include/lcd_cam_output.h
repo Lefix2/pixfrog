@@ -57,6 +57,16 @@ size_t fb_bytes();
 // PSRAM→GDMA sustained throughput in production.
 void dump_stats();
 
+// Raw telemetry counters for the control console: ISR fire counts for the
+// two completion callbacks, and esp_cache_msync failures (a non-zero count
+// means GDMA may be emitting stale FB contents).
+struct DebugCounters {
+    uint32_t trans_done;
+    uint32_t vsync;
+    uint32_t msync_err;
+};
+DebugCounters get_debug_counters();
+
 // Emit a calibration pattern instead of pixel data. Used at bring-up to
 // validate LCD_CAM GPIO routing, PCLK timing, and PSRAM→GDMA throughput
 // with an oscilloscope. The frame is resized to a fixed 16.4 ms scope-
