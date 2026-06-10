@@ -24,6 +24,19 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_400=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=400
 
 #
+# Compiler — -O2. The IDF default (-Og) costs 2-4× on the frame encoder,
+# which is pure integer/store hot loops feeding the LCD_CAM DMA budget.
+#
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+#
+# Cache — 256 kB L2 (default 128 kB). The render path streams multi-hundred-kB
+# frames through PSRAM every frame; a larger L2 batches the write-backs.
+# Keep the 64 B line: lcd_cam_output msync-aligns to 128 B, valid for both.
+#
+CONFIG_CACHE_L2_CACHE_256KB=y
+
+#
 # FreeRTOS — dual-core, no tickless idle (need deterministic timing for render task)
 #
 CONFIG_FREERTOS_UNICORE=n

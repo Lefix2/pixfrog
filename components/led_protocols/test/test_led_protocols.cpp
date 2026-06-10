@@ -460,6 +460,33 @@ static void test_frame_fuzz() {
     }
 }
 
+static void test_frame_all_dmx() {
+    // 8 DMX channels, ragged slot counts incl. 0 (BREAK+MAB+start code only).
+    std::vector<ChannelDesc> descs;
+    std::vector<std::vector<uint8_t>> px;
+    const uint16_t slot_counts[8] = { 512, 1, 0, 256, 512, 100, 511, 7 };
+    for (size_t ch = 0; ch < 8; ++ch) {
+        descs.push_back(make_desc(ch, Protocol::DMX512, slot_counts[ch]));
+        px.push_back(random_pixels(descs.back()));
+    }
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
+static void test_frame_dmx_dominant() {
+    // DMX region (363 k samples) larger than the NRZ region → DMX must win
+    // the pure-store pass and the NRZ groups OR over it.
+    std::vector<ChannelDesc> descs{
+        make_desc(0, Protocol::DMX512, 512),
+        make_desc(1, Protocol::WS2815, 256),
+        make_desc(2, Protocol::SK6812, 100),
+        make_desc(3, Protocol::APA102, 60),
+    };
+    std::vector<std::vector<uint8_t>> px;
+    for (const auto& d : descs)
+        px.push_back(random_pixels(d));
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
 static void test_frame_capacity_too_small() {
     std::vector<ChannelDesc> descs{ make_desc(0, Protocol::WS2815, 10) };
     std::vector<std::vector<uint8_t>> px{ random_pixels(descs[0]) };
@@ -506,6 +533,41 @@ static void test_perf_frame_8x512() {
     }
 }
 
+// 8 full DMX universes: the largest frame region (363 k samples). The sweep
+// must keep this a single store pass, not 8 RMW traversals.
+static void test_perf_frame_8xdmx512() {
+    std::vector<ChannelDesc> descs;
+    std::vector<std::vector<uint8_t>> px;
+    std::vector<const uint8_t*> ptrs;
+    for (size_t ch = 0; ch < 8; ++ch) {
+        descs.push_back(make_desc(ch, Protocol::DMX512, 512));
+        px.push_back(random_pixels(descs.back()));
+    }
+    for (const auto& p : px)
+        ptrs.push_back(p.data());
+
+    size_t cap = 0;
+    for (const auto& d : descs)
+        cap = std::max(cap, encoded_size_samples(d));
+    std::vector<uint16_t> samples(cap);
+
+    constexpr int kReps = 20;
+    auto t0             = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < kReps; ++i)
+        encode_frame(descs.data(), ptrs.data(), descs.size(), samples.data(), cap);
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    const double per_ms = std::chrono::duration<double, std::milli>(t1 - t0).count() / kReps;
+    std::printf("perf: encode_frame 8×DMX512 = %.3f ms/call\n", per_ms);
+
+    if (per_ms < 8.0)
+        g_pass++;
+    else {
+        g_fail++;
+        std::fprintf(stderr, "FAIL perf: encode_frame 8×DMX512 %.3f ms >= 8 ms\n", per_ms);
+    }
+}
+
 int main() {
     test_timing_ws2815();
     test_timing_ws2812b();
@@ -525,8 +587,11 @@ int main() {
     test_frame_two_groups_sk6812();
     test_frame_full_mix();
     test_frame_fuzz();
+    test_frame_all_dmx();
+    test_frame_dmx_dominant();
     test_frame_capacity_too_small();
     test_perf_frame_8x512();
+    test_perf_frame_8xdmx512();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

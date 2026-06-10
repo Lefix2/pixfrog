@@ -12,6 +12,16 @@
 // (the distinct T0H/T1H values plus the bit boundary), so each bit time is a
 // few constant-word fills. Channels with a different samples_bit (SK6812 is
 // 19 where WS281x are 20) form a second group, OR-ed over the stored one.
+//
+// DMX512 channels form their own sweep family: the whole waveform (BREAK 1536,
+// MAB 192, 11-bit 8N2 characters at 64 samples/bit) is a sequence of 64-sample
+// cells, each at a constant level, so all DMX channels merge cell-by-cell.
+// A full universe spans 363 k samples (22.7 ms — DMX's own 44 Hz physical
+// cap), the largest region a frame can have; without this it would be 8
+// read-modify-write traversals again.
+//
+// The group with the largest extent gets the pure-store pass; the others are
+// OR-ed over it, paying read-modify-write only on their own (smaller) span.
 
 #include <cstring>
 
@@ -162,6 +172,89 @@ uint32_t sweep_group(NrzChan* ch, size_t n, uint16_t samples_bit, uint16_t* out)
     return out_pos;
 }
 
+// One DMX512 channel in the cell sweep. The line is differential: data_mask
+// when the level is high, comp_mask when low — exactly one of the two is
+// asserted in every cell, matching encode_dmx.
+struct DmxChan {
+    uint16_t data_mask;
+    uint16_t comp_mask;
+    uint32_t total_cells;
+    const uint8_t* slots;
+    uint16_t slot_count;
+    uint32_t pos;         // cell cursor
+    uint32_t char_idx;    // 0 = null start code, 1..slot_count = data slots
+    uint8_t bit_in_char;  // 0 start, 1..8 data LSB-first, 9..10 stop
+    uint8_t cur_char;
+};
+
+// BREAK and MAB are exact multiples of the 64-sample bit cell.
+constexpr uint32_t kDmxBreakCells = detail::kDmxBreakSamples / detail::kDmxSamplesPerBit;
+constexpr uint32_t kDmxMabCells   = detail::kDmxMabSamples / detail::kDmxSamplesPerBit;
+
+void dmx_init(DmxChan& c, const ChannelDesc& d, const uint8_t* slots) {
+    c.data_mask   = static_cast<uint16_t>(1u << d.bus_bit_data);
+    c.comp_mask   = static_cast<uint16_t>(1u << d.bus_bit_clock);
+    c.slots       = slots;
+    c.slot_count  = d.pixel_count;
+    c.total_cells = kDmxBreakCells + kDmxMabCells +
+                    (static_cast<uint32_t>(d.pixel_count) + 1) * detail::kDmxBitsPerSlot;
+    c.pos         = 0;
+    c.char_idx    = 0;
+    c.bit_in_char = 0;
+    c.cur_char    = 0x00;  // null start code
+}
+
+// Level mask for the current cell, then advance. Sequential calls only; must
+// not be called past total_cells.
+uint16_t dmx_next_mask(DmxChan& c) {
+    bool high;
+    if (c.pos < kDmxBreakCells) {
+        high = false;
+    } else if (c.pos < kDmxBreakCells + kDmxMabCells) {
+        high = true;
+    } else {
+        if (c.bit_in_char == 0) {
+            high = false;  // start bit
+        } else if (c.bit_in_char <= 8) {
+            high = ((c.cur_char >> (c.bit_in_char - 1)) & 1u) != 0;
+        } else {
+            high = true;  // stop bits
+        }
+        if (++c.bit_in_char == detail::kDmxBitsPerSlot) {
+            c.bit_in_char = 0;
+            ++c.char_idx;
+            c.cur_char = (c.char_idx <= c.slot_count) ? c.slots[c.char_idx - 1] : 0;
+        }
+    }
+    ++c.pos;
+    return high ? c.data_mask : c.comp_mask;
+}
+
+template <bool kStore> uint32_t sweep_dmx(DmxChan* ch, size_t n, uint16_t* out) {
+    uint32_t max_cells = 0;
+    for (size_t i = 0; i < n; ++i) {
+        if (ch[i].total_cells > max_cells) max_cells = ch[i].total_cells;
+    }
+
+    uint32_t out_pos = 0;
+    for (uint32_t ct = 0; ct < max_cells; ++ct) {
+        uint16_t word = 0;
+        for (size_t i = 0; i < n; ++i) {
+            if (ch[i].total_cells > ct) word = static_cast<uint16_t>(word | dmx_next_mask(ch[i]));
+        }
+        if (kStore) {
+            for (uint16_t k = 0; k < detail::kDmxSamplesPerBit; ++k)
+                out[out_pos + k] = word;
+        } else if (word) {
+            for (uint16_t k = 0; k < detail::kDmxSamplesPerBit; ++k) {
+                out[out_pos + k] = static_cast<uint16_t>(out[out_pos + k] | word);
+            }
+        }
+        out_pos += detail::kDmxSamplesPerBit;
+    }
+    return out_pos;
+}
+
 }  // namespace
 
 size_t encode_frame(const ChannelDesc* descs, const uint8_t* const* pixels, size_t channel_count,
@@ -210,35 +303,75 @@ size_t encode_frame(const ChannelDesc* descs, const uint8_t* const* pixels, size
         chan_init(g->chans[g->n++], d, pixels[i], t);
     }
 
-    // Pass 1: the first group fully initializes [0, store_end) with pure
-    // stores; everything beyond up to frame_len is zeroed so the OR passes
-    // below land on defined data.
+    DmxChan dmx_chans[kMaxChannels];
+    size_t ndmx = 0;
+    size_t leftover_dmx[kMaxChannels];
+    size_t nleftover_dmx = 0;
+    for (size_t i = 0; i < channel_count; ++i) {
+        if (!is_dmx(descs[i].protocol) || !pixels[i]) continue;
+        if (ndmx == kMaxChannels) {
+            if (nleftover_dmx < kMaxChannels) leftover_dmx[nleftover_dmx++] = i;
+            continue;
+        }
+        dmx_init(dmx_chans[ndmx++], descs[i], pixels[i]);
+    }
+
+    // Extents (samples each sweep would write, reset tails excluded — those
+    // are zeros). The largest-extent sweep gets the pure-store pass; the
+    // others pay read-modify-write only over their own smaller span.
+    size_t extents[4]{};  // [0..2] NRZ groups, [3] DMX
+    for (size_t k = 0; k < ngroups; ++k) {
+        uint32_t max_bits = 0;
+        for (size_t i = 0; i < groups[k].n; ++i) {
+            if (groups[k].chans[i].total_bits > max_bits) max_bits = groups[k].chans[i].total_bits;
+        }
+        extents[k] = static_cast<size_t>(max_bits) * groups[k].samples_bit;
+    }
+    for (size_t i = 0; i < ndmx; ++i) {
+        const size_t e = static_cast<size_t>(dmx_chans[i].total_cells) * detail::kDmxSamplesPerBit;
+        if (e > extents[3]) extents[3] = e;
+    }
+    size_t store_idx = 0;
+    for (size_t k = 1; k < 4; ++k) {
+        if (extents[k] > extents[store_idx]) store_idx = k;
+    }
+
+    // Pass 1: the store sweep fully initializes [0, store_end); everything
+    // beyond up to frame_len is zeroed so the OR passes land on defined data.
     size_t store_end = 0;
-    if (ngroups > 0) {
-        store_end = sweep_group<true>(groups[0].chans, groups[0].n, groups[0].samples_bit,
-                                      out_samples);
+    if (store_idx == 3) {
+        if (ndmx > 0) store_end = sweep_dmx<true>(dmx_chans, ndmx, out_samples);
+    } else if (ngroups > 0) {
+        store_end = sweep_group<true>(groups[store_idx].chans, groups[store_idx].n,
+                                      groups[store_idx].samples_bit, out_samples);
     }
     if (store_end < frame_len) {
         std::memset(out_samples + store_end, 0, (frame_len - store_end) * sizeof(uint16_t));
     }
 
-    // Pass 2: remaining NRZ groups (different samples_bit) OR on top.
-    for (size_t k = 1; k < ngroups; ++k) {
+    // Pass 2: remaining sweeps OR on top.
+    for (size_t k = 0; k < ngroups; ++k) {
+        if (k == store_idx) continue;
         sweep_group<false>(groups[k].chans, groups[k].n, groups[k].samples_bit, out_samples);
     }
+    if (store_idx != 3 && ndmx > 0) {
+        sweep_dmx<false>(dmx_chans, ndmx, out_samples);
+    }
 
-    // Pass 3: compact OR-encoders — leftover NRZ, clocked SPI, DMX512.
+    // Pass 3: compact OR-encoders — leftover NRZ and clocked SPI (small
+    // regions, per-channel cost negligible).
     for (size_t k = 0; k < nleftover; ++k) {
         const size_t i = leftover_nrz[k];
         detail::encode_nrz(descs[i], pixels[i], out_samples, out_samples_capacity);
     }
+    for (size_t k = 0; k < nleftover_dmx; ++k) {
+        const size_t i = leftover_dmx[k];
+        detail::encode_dmx(descs[i], pixels[i], out_samples, out_samples_capacity);
+    }
     for (size_t i = 0; i < channel_count; ++i) {
-        const ChannelDesc& d = descs[i];
         if (!pixels[i]) continue;
-        if (is_clocked(d.protocol)) {
-            detail::encode_spi(d, pixels[i], out_samples, out_samples_capacity);
-        } else if (is_dmx(d.protocol)) {
-            detail::encode_dmx(d, pixels[i], out_samples, out_samples_capacity);
+        if (is_clocked(descs[i].protocol)) {
+            detail::encode_spi(descs[i], pixels[i], out_samples, out_samples_capacity);
         }
     }
 

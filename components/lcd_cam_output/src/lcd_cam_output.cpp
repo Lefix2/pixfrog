@@ -75,9 +75,10 @@ constexpr int64_t kSwapLatencyWarnUs = 200;
 // shifts the frame length by a few samples within the same bucket.
 constexpr size_t kHresQuantum = 64;
 
-// Data cache line on the ESP32-P4; esp_cache_msync requires line-granular
-// sizes for C2M.
-constexpr size_t kCacheLineBytes = 64;
+// esp_cache_msync requires cache-line-granular sizes for C2M. The P4 L2
+// line is 64 B or 128 B depending on CONFIG_CACHE_L2_CACHE_LINE_SIZE;
+// 128 satisfies both.
+constexpr size_t kCacheLineBytes = 128;
 
 // Calibration frames are decoupled from the LED config: 262144 samples
 // = 16.4 ms at PCLK=16 MHz, so one kick per 60 Hz render tick keeps the
