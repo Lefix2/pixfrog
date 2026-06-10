@@ -56,7 +56,7 @@ When `render_task` wakes (t = 0), it runs, in order:
 
 1. Atomic swap `universe_front ↔ universe_back`.
 2. Per channel: decode universes → pixels (DMX offset, multi-universe spanning) into `pixel_back_buffer(ch)`, then `swap_pixels(ch)`.
-3. `lcd::render_frame()`: zero `fb_back`, encode every channel (color order, brightness, grouping, invert), `esp_cache_msync(…, DIR_C2M)`, then `esp_lcd_panel_draw_bitmap(panel, fb_back)` — which swaps the active FB and kicks GDMA.
+3. `lcd::render_frame()`: encode every channel into `fb_back` in a single pass (`led::encode_frame` — pure stores, no pre-zeroing, color order / brightness / grouping / invert applied inline) **while the previous frame is still emitting from the other FB**, `esp_cache_msync(…, DIR_C2M)` on the written region, wait `done_sem`, then `esp_lcd_panel_draw_bitmap(panel, fb_back)` — which swaps the active FB and kicks GDMA. Encode (CPU) and emission (GDMA) overlap; the frame rate is bounded by max of the two, not their sum.
 4. `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
 
 In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]`; an ArtSync calls `dmx::note_sync()`, which wakes `render_task` early via the semaphore.
@@ -84,14 +84,14 @@ In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `
 
 | Item                              | Size       | Note                                                |
 |-----------------------------------|-----------:|-----------------------------------------------------|
-| `frame_buf[2]` (PSRAM)            | 2 × ~2.6 MB | 1024 px × 32 bits × 40 samples worst case (WS2811-slow RGBW) |
+| `frame_buf[2]` (PSRAM)            | 2 × actual frame | sized to the longest configured channel (e.g. 512 px WS2815 → 2 × ~0.5 MB); hard cap 2 × ~2.6 MB (1024 px × 32 bits × 40 samples, WS2811-slow RGBW) |
 | `universe_pool[2][N]`             | 2 × 48 kB  | 48 universes × 512 bytes × 2 buffers                |
 | Circular logs                     | 64 kB      | Post-mortem debug                                   |
 | Application headroom              | ~27 MB     | Future sequencer / FX engine / ...                  |
 
 **GDMA from PSRAM** is supported natively by `esp_lcd_new_rgb_panel(flags.fb_in_psram=true)` on ESP32-P4. The shared DMA bus tolerates 32 MB/s sustained on 200 MHz octal PSRAM (peak ~200 MB/s, shared with cache and other masters — comfortable headroom). One `esp_cache_msync(DIR_C2M)` is required after CPU writes and before the GDMA kick.
 
-For configs without WS2811-slow / RGBW, `frame_buf` could be sized smaller — left as a future optimization.
+`frame_buf` (and the panel's `h_res`, i.e. the DMA emission duration) tracks the actual config: the panel is recreated when a config commit changes the required frame length. Sizing to the worst case would pin the emission at 82 ms/frame (≈ 12 FPS) regardless of content.
 
 ### NVS
 
@@ -169,7 +169,7 @@ Changing a channel's protocol can change:
 
 **Decision**: PCLK is **fixed at boot** to a compromise value (see `docs/PROTOCOLS.md` §3). Samples per bit are derived per channel without changing PCLK. Clocked protocols run at PCLK/N where N is computed to hit the requested CLOCK rate.
 
-Consequence: **changing protocol at runtime never reinitializes LCD_CAM**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffer is sized for the worst case at boot, so no allocation is needed.
+Consequence: **changing protocol at runtime never changes PCLK**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffers are sized for the worst case at boot. The one exception is the frame length: a config commit that moves the required sample count to a different bucket tears down and recreates the RGB panel (FB realloc included) — once per commit, between frames, never in steady state.
 
 **DMX512 output** is a fourth encoder family alongside NRZ and clocked SPI. A
 channel set to `DMX512` re-emits one Art-Net universe as a 250 kbit/s serial

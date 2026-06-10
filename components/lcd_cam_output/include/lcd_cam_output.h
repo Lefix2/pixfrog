@@ -2,10 +2,14 @@
 // 16-bit parallel bus with GDMA, emitting LED data for 8 channels at once.
 //
 // Architecture (cf. docs/ARCHITECTURE.md §4):
-//   Two frame buffers live in PSRAM, owned by esp_lcd_rgb_panel.
-//   render_task encodes the full next frame into fb_back,
-//   calls esp_cache_msync(DIR_C2M) + esp_lcd_panel_draw_bitmap(),
-//   and waits on done_sem (released by on_color_trans_done ISR).
+//   Two frame buffers live in PSRAM, owned by esp_lcd_rgb_panel, sized to the
+//   frame length the current channel config actually needs (the panel is
+//   recreated on a config commit that changes that length).
+//   render_task encodes the full next frame into fb_back in one pass
+//   (led::encode_frame) while the previous frame is still emitting from the
+//   other FB, calls esp_cache_msync(DIR_C2M) on the written region, waits on
+//   done_sem (released by on_color_trans_done ISR) and kicks
+//   esp_lcd_panel_draw_bitmap() — encode and emission overlap.
 //
 //   No chunked refill. No real-time sub-frame deadline on the encoder.
 
@@ -19,18 +23,24 @@ namespace pixfrog::lcd {
 struct InitConfig {
     const int* bus_gpio_16;          // bit k of the bus → GPIO bus_gpio_16[k]
     uint32_t pclk_hz;                // PCLK frequency; must match led_protocols::kPclkHz
-    uint32_t max_samples_per_frame;  // sizes the PSRAM frame buffers; cf. led::encoded_size_samples
+    uint32_t max_samples_per_frame;  // hard upper cap on the frame length; the PSRAM
+                                     // frame buffers are sized to the config's actual
+                                     // need, never to this cap
 };
 
-// Initialize the LCD_CAM peripheral and allocate the two PSRAM frame buffers
-// via esp_lcd_new_rgb_panel(flags.fb_in_psram=true, num_fbs=2).
+// Initialize the LCD_CAM driver. The esp_lcd_rgb_panel (and its two PSRAM
+// frame buffers, flags.fb_in_psram=true, num_fbs=2) is created for the frame
+// length the current channel config requires — or lazily by the first
+// rendered frame when every channel is Off at boot.
 // Returns false on any IDF API failure (most often: PSRAM too small).
 bool init(const InitConfig& cfg);
 
 // Encode the next frame from dmx_manager's front pixel buffers into the back
-// frame buffer, sync cache, and trigger emission. Blocks waiting for the
-// previous emission to complete (up to `timeout_ms`); on timeout, increments
-// `dma_underruns` and returns false but still leaves the next frame queued.
+// frame buffer (single pass, while the previous emission drains from the
+// other FB), sync cache on the written region, and trigger emission. Waits
+// for the previous emission only between encode and kick (up to
+// `timeout_ms`); on timeout, increments `dma_underruns` and returns false.
+// When every channel is Off, returns true without touching the hardware.
 bool render_frame(uint32_t timeout_ms = 50);
 
 // Block until any in-flight emission completes. Useful at shutdown.
@@ -49,7 +59,8 @@ void dump_stats();
 
 // Emit a calibration pattern instead of pixel data. Used at bring-up to
 // validate LCD_CAM GPIO routing, PCLK timing, and PSRAM→GDMA throughput
-// with an oscilloscope. Pattern IDs:
+// with an oscilloscope. The frame is resized to a fixed 16.4 ms scope-
+// friendly length, independent of the LED config. Pattern IDs:
 //   0  — 1 kHz square wave on every bus bit. Each GPIO should toggle at
 //        exactly 1 kHz; use to verify pin assignments and check for shorts.
 //   1  — walking-1 across bits 0..15. Only one GPIO is HIGH at any time;

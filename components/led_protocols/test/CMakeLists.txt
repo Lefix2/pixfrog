@@ -12,6 +12,7 @@ add_compile_options(-Wall -Wextra -Wpedantic -Werror -fno-exceptions -fno-rtti)
 add_executable(test_led_protocols
     test_led_protocols.cpp
     ../src/led_protocols.cpp
+    ../src/encoder_frame.cpp
     ../src/encoder_nrz.cpp
     ../src/encoder_spi.cpp
     ../src/encoder_dmx.cpp
