@@ -311,6 +311,201 @@ static void test_perf_encode_ws2815_1024() {
     }
 }
 
+// ── encode_frame: single-pass output must equal per-channel OR composition ──
+
+static uint32_t g_rng = 0x12345678u;
+static uint32_t rnd() {
+    g_rng = g_rng * 1664525u + 1013904223u;
+    return g_rng >> 8;
+}
+
+// Reference = zeroed buffer + encode_channel per channel (the documented OR
+// semantics). encode_frame gets a 0xFFFF-poisoned buffer to prove it does not
+// rely on pre-zeroing.
+static void check_frame_equivalence(const std::vector<ChannelDesc>& descs,
+                                    const std::vector<std::vector<uint8_t>>& px, int src_line) {
+    size_t frame_len = 0;
+    for (const auto& d : descs) {
+        const size_t len = encoded_size_samples(d);
+        if (len > frame_len) frame_len = len;
+    }
+    const size_t cap = frame_len + 97;  // slack to catch out-of-range writes
+
+    std::vector<uint16_t> ref(cap, 0);
+    std::vector<const uint8_t*> ptrs;
+    for (size_t i = 0; i < descs.size(); ++i) {
+        ptrs.push_back(px[i].data());
+        if (!is_off(descs[i].protocol)) encode_channel(descs[i], px[i].data(), ref.data(), cap);
+    }
+
+    std::vector<uint16_t> got(cap, 0xFFFF);
+    const size_t written = encode_frame(descs.data(), ptrs.data(), descs.size(), got.data(), cap);
+    EXPECT_EQ(written, frame_len);
+
+    size_t mismatches = 0;
+    for (size_t i = 0; i < frame_len; ++i) {
+        if (got[i] != ref[i]) {
+            if (mismatches < 4) {
+                std::fprintf(stderr, "  (case line %d) sample %zu: got 0x%04X want 0x%04X\n",
+                             src_line, i, got[i], ref[i]);
+            }
+            mismatches++;
+        }
+    }
+    EXPECT_EQ(mismatches, 0);
+    for (size_t i = frame_len; i < cap; ++i) {
+        if (got[i] != 0xFFFF) mismatches++;  // must not write past frame_len
+    }
+    EXPECT_EQ(mismatches, 0);
+}
+
+static ChannelDesc make_desc(size_t ch, Protocol p, uint16_t pixels) {
+    ChannelDesc d{};
+    d.protocol      = p;
+    d.color_order   = is_rgbw(p) ? ColorOrder::GRBW : ColorOrder::GRB;
+    d.pixel_count   = pixels;
+    d.brightness    = 255;
+    d.grouping      = 1;
+    d.bus_bit_data  = static_cast<uint8_t>(ch * 2);
+    d.bus_bit_clock = static_cast<uint8_t>(ch * 2 + 1);
+    d.clock_hz      = 4'000'000;
+    return d;
+}
+
+static std::vector<uint8_t> random_pixels(const ChannelDesc& d) {
+    std::vector<uint8_t> px(static_cast<size_t>(d.pixel_count) * bytes_per_pixel(d.protocol) + 1);
+    for (auto& b : px)
+        b = static_cast<uint8_t>(rnd());
+    return px;
+}
+
+static void test_frame_single_channel() {
+    std::vector<ChannelDesc> descs{ make_desc(0, Protocol::WS2815, 37) };
+    std::vector<std::vector<uint8_t>> px{ random_pixels(descs[0]) };
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
+static void test_frame_homogeneous_8ch() {
+    std::vector<ChannelDesc> descs;
+    std::vector<std::vector<uint8_t>> px;
+    for (size_t ch = 0; ch < 8; ++ch) {
+        descs.push_back(make_desc(ch, Protocol::WS2812B, 512));
+        px.push_back(random_pixels(descs.back()));
+    }
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
+static void test_frame_mixed_t0h_and_lengths() {
+    // Same samples_bit (20), different T0H/T1H, ragged lengths → dropout path.
+    std::vector<ChannelDesc> descs{
+        make_desc(0, Protocol::WS2815, 512), make_desc(1, Protocol::WS2812B, 300),
+        make_desc(2, Protocol::WS2811, 1),   make_desc(3, Protocol::WS2814, 64),
+        make_desc(4, Protocol::WS2815, 7),
+    };
+    descs[0].invert_direction = true;
+    descs[1].brightness       = 128;
+    descs[3].grouping         = 3;
+    std::vector<std::vector<uint8_t>> px;
+    for (const auto& d : descs)
+        px.push_back(random_pixels(d));
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
+static void test_frame_two_groups_sk6812() {
+    // SK6812 has samples_bit=19 → second sweep group, OR-ed over the first.
+    std::vector<ChannelDesc> descs{
+        make_desc(0, Protocol::SK6812, 200),
+        make_desc(1, Protocol::WS2815, 150),
+        make_desc(2, Protocol::SK6812, 33),
+        make_desc(3, Protocol::WS2812B, 400),
+    };
+    std::vector<std::vector<uint8_t>> px;
+    for (const auto& d : descs)
+        px.push_back(random_pixels(d));
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
+static void test_frame_full_mix() {
+    // NRZ + clocked + DMX + Off + zero-length on one bus.
+    std::vector<ChannelDesc> descs{
+        make_desc(0, Protocol::WS2815, 256), make_desc(1, Protocol::APA102, 100),
+        make_desc(2, Protocol::DMX512, 512), make_desc(3, Protocol::Off, 99),
+        make_desc(4, Protocol::SK6812, 80),  make_desc(5, Protocol::LPD8806, 50),
+        make_desc(6, Protocol::WS2812B, 0),  make_desc(7, Protocol::WS2811, 1024),
+    };
+    std::vector<std::vector<uint8_t>> px;
+    for (const auto& d : descs)
+        px.push_back(random_pixels(d));
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
+static void test_frame_fuzz() {
+    const Protocol protos[] = { Protocol::Off,    Protocol::WS2815,  Protocol::WS2812B,
+                                Protocol::WS2811, Protocol::SK6812,  Protocol::WS2814,
+                                Protocol::APA102, Protocol::LPD8806, Protocol::DMX512 };
+    for (int iter = 0; iter < 25; ++iter) {
+        std::vector<ChannelDesc> descs;
+        std::vector<std::vector<uint8_t>> px;
+        for (size_t ch = 0; ch < 8; ++ch) {
+            ChannelDesc d = make_desc(ch, protos[rnd() % 9], static_cast<uint16_t>(rnd() % 600));
+            d.brightness  = static_cast<uint8_t>(rnd());
+            d.grouping    = static_cast<uint8_t>(1 + rnd() % 8);
+            d.invert_direction = (rnd() & 1) != 0;
+            d.color_order      = static_cast<ColorOrder>(rnd() %
+                                                    static_cast<uint8_t>(ColorOrder::COUNT));
+            descs.push_back(d);
+            px.push_back(random_pixels(d));
+        }
+        check_frame_equivalence(descs, px, __LINE__);
+    }
+}
+
+static void test_frame_capacity_too_small() {
+    std::vector<ChannelDesc> descs{ make_desc(0, Protocol::WS2815, 10) };
+    std::vector<std::vector<uint8_t>> px{ random_pixels(descs[0]) };
+    const uint8_t* ptrs[1] = { px[0].data() };
+    uint16_t out[16];
+    EXPECT_EQ(encode_frame(descs.data(), ptrs, 1, out, 16), 0);
+}
+
+// ── Perf: 8 × WS2815 512 px single-pass must beat the 60 FPS CPU budget ─────
+//
+// Same generous-ceiling logic as test_perf_encode_ws2815_1024: a CI runner is
+// 5-10× an ESP32-P4 core, so 8 ms here ≈ comfortably under 16.7 ms on target.
+
+static void test_perf_frame_8x512() {
+    std::vector<ChannelDesc> descs;
+    std::vector<std::vector<uint8_t>> px;
+    std::vector<const uint8_t*> ptrs;
+    for (size_t ch = 0; ch < 8; ++ch) {
+        descs.push_back(make_desc(ch, Protocol::WS2815, 512));
+        px.push_back(random_pixels(descs.back()));
+    }
+    for (const auto& p : px)
+        ptrs.push_back(p.data());
+
+    size_t cap = 0;
+    for (const auto& d : descs)
+        cap = std::max(cap, encoded_size_samples(d));
+    std::vector<uint16_t> samples(cap);
+
+    constexpr int kReps = 20;
+    auto t0             = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < kReps; ++i)
+        encode_frame(descs.data(), ptrs.data(), descs.size(), samples.data(), cap);
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    const double per_ms = std::chrono::duration<double, std::milli>(t1 - t0).count() / kReps;
+    std::printf("perf: encode_frame 8×WS2815 512 px = %.3f ms/call\n", per_ms);
+
+    if (per_ms < 8.0)
+        g_pass++;
+    else {
+        g_fail++;
+        std::fprintf(stderr, "FAIL perf: encode_frame %.3f ms >= 8 ms\n", per_ms);
+    }
+}
+
 int main() {
     test_timing_ws2815();
     test_timing_ws2812b();
@@ -324,6 +519,14 @@ int main() {
     test_nrz_or_into_buffer();
     test_spi_size();
     test_perf_encode_ws2815_1024();
+    test_frame_single_channel();
+    test_frame_homogeneous_8ch();
+    test_frame_mixed_t0h_and_lengths();
+    test_frame_two_groups_sk6812();
+    test_frame_full_mix();
+    test_frame_fuzz();
+    test_frame_capacity_too_small();
+    test_perf_frame_8x512();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

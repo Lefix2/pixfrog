@@ -150,4 +150,18 @@ size_t encode_channel(const ChannelDesc& desc, const uint8_t* pixels, uint16_t* 
 // Worst-case sample count for `desc`, used for buffer sizing.
 size_t encoded_size_samples(const ChannelDesc& desc);
 
+// Encode every channel of one frame in a single traversal of `out_samples`.
+//
+// Unlike per-channel encode_channel calls (read-modify-write over the whole
+// frame region, once per channel), the NRZ channels are merged and written
+// with pure stores — `out_samples` needs NO pre-zeroing and [0, return value)
+// is fully initialized on return. Clocked SPI and DMX512 channels are OR-ed
+// on top. Off channels and null pixel pointers are skipped.
+//
+// `descs` / `pixels` are parallel arrays of `channel_count` entries.
+// Returns the frame length in samples (max over channels, incl. reset tails),
+// or 0 if there is nothing to emit or the capacity is too small.
+size_t encode_frame(const ChannelDesc* descs, const uint8_t* const* pixels, size_t channel_count,
+                    uint16_t* out_samples, size_t out_samples_capacity);
+
 }  // namespace pixfrog::led

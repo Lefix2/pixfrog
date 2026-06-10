@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "src/led_protocols.cpp"
+        "src/encoder_frame.cpp"
         "src/encoder_nrz.cpp"
         "src/encoder_spi.cpp"
         "src/encoder_dmx.cpp"
