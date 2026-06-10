@@ -1,5 +1,6 @@
 # ESP-IDF build outputs
 build/
+!.claude/skills/build/
 sdkconfig
 sdkconfig.old
 managed_components/
@@ -25,3 +26,6 @@ log/
 
 # Windows NTFS alternate-data-stream metadata (WSL downloads)
 *:Zone.Identifier
+
+# tft CI-overlay local build (tools/ci-local.sh)
+build.tft/

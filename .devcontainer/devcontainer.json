@@ -1,0 +1,25 @@
+{
+    "name": "pixfrog (ESP-IDF v5.5, CI parity)",
+    "build": { "dockerfile": "Dockerfile" },
+    // Privileged + /dev passthrough so `idf.py -p /dev/ttyACM0 flash` works
+    // from inside the container (root == the flash-needs-root rule from
+    // AGENT.md). The board can be plugged/unplugged without recreating the
+    // container.
+    "runArgs": ["--privileged", "-v", "/dev:/dev"],
+    "remoteUser": "root",
+    "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cmake-tools"
+            ],
+            "settings": {
+                "C_Cpp.clang_format_path": "/usr/local/bin/clang-format",
+                "C_Cpp.formatting": "clangFormat",
+                "editor.formatOnSave": true,
+                "terminal.integrated.defaultProfile.linux": "bash"
+            }
+        }
+    }
+}

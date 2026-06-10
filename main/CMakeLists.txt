@@ -14,4 +14,5 @@ idf_component_register(
         artnet
         lcd_cam_output
         ui
+        control_console
 )

@@ -82,6 +82,14 @@ void mark_channel_dirty(size_t channel_index);
 void mark_global_dirty();
 void handle_pending_remaps();
 
+// Test injection (control_console): write `len` bytes at byte `offset` into
+// the universe's slot in BOTH banks. Writing both sides makes the data
+// persistent across the per-frame bank swap — same "stale data sticks"
+// convention as swap_universes(). Also refreshes the owning channel's
+// activity timestamp. Returns false if the universe is unmapped or
+// offset+len exceeds kUniverseSize.
+bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* data, size_t len);
+
 // Signal that an ArtSync was received (forces frame emission ASAP).
 void note_sync();
 
