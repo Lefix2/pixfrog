@@ -1,5 +1,6 @@
 # ESP-IDF build outputs
 build/
+!.claude/skills/build/
 sdkconfig
 sdkconfig.old
 managed_components/
