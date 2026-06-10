@@ -83,6 +83,7 @@ void canvas_flush();
 // ── OLED low-level (used only by oled_ssd1306.cpp + canvas_oled.cpp) ─────────
 bool oled_init(i2c_master_bus_handle_t bus, uint8_t addr);
 void oled_clear();
+void oled_set_pixel(int x, int y, bool on);  // pixel-level draw into the framebuffer
 void oled_draw_text(uint8_t row, uint8_t col, const char* str);
 void oled_flush();
 
@@ -133,6 +134,11 @@ int splash_anim_h();
 int splash_anim_count();
 uint32_t splash_anim_frame_ms();
 const uint8_t* splash_anim_frame(int i);
+#else
+// Static 1bpp frog logo for the OLED splash (tools/oledsplash/gen.cpp).
+int frog_oled_w();
+int frog_oled_h();
+const uint8_t* frog_oled_data();
 #endif
 
 #ifdef PIXFROG_EMULATOR

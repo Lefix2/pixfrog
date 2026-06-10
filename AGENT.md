@@ -27,8 +27,10 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |
 | `components/ui`                | SSD1306 driver, seesaw encoder, menu FSM                |
 | `main/main.cpp`                | Boot orchestration + `render_task`                      |
-| `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased font)    |
-| `tools/splashgen`              | Host tool: `frog-anim.svg` → `splash_anim.cpp` (frog anim)|
+| `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased TFT font) |
+| `tools/oledfont`               | Host tool: hand-drawn 5×7 → `font_oled.cpp` (crisp 1bpp OLED font) |
+| `tools/splashgen`              | Host tool: `frog-anim.svg` → `splash_anim.cpp` (TFT frog anim)|
+| `tools/oledsplash`             | Host tool: TFT splash frame → `splash_oled.cpp` (static OLED frog logo) |
 | `tools/emulator`               | SDL2 host emulator of the TFT UI (no IDF)               |
 | `docs/img/frog-anim.svg`       | Animated logo: source for web + baked splash            |
 
@@ -65,10 +67,17 @@ The only shared-code hook is `menu_debug_state()` in `menu.cpp`, guarded by `#if
 
 ## Font
 
-The UI font is **generated**, not hand-edited. `components/ui/src/font_data.cpp`
-holds an 8-bit anti-aliased coverage cell (6×8) per ASCII glyph; the TFT blends
-fg→bg by coverage (`canvas_tft.cpp`), the OLED thresholds it to 1bpp
-(`oled_ssd1306.cpp`). Regenerate from a TTF instead of touching the table:
+The UI font is **generated**, not hand-edited. There are two:
+
+- **TFT** uses `components/ui/src/font_data.cpp` — an 8-bit anti-aliased coverage
+  cell (6×8) per ASCII glyph; `canvas_tft.cpp` blends fg→bg by coverage. Built by
+  `tools/fontgen` from a TTF.
+- **OLED** uses `components/ui/src/font_oled.cpp` — a crisp 1bpp 5×7 column-major
+  table drawn for the pixel grid; `oled_ssd1306.cpp` copies a glyph's column
+  bytes straight into the page framebuffer (no thresholding). Built by
+  `tools/oledfont/gen.py` (see `tools/oledfont/README.md`).
+
+Regenerate the TFT font from a TTF instead of touching the table:
 
 ```bash
 cd tools/fontgen && cmake -B build && cmake --build build
@@ -93,6 +102,11 @@ blits frame *t* via `canvas_draw_mask`. Regenerate from the SVG; don't hand-edit
 `splash_anim.cpp`. See `tools/splashgen/README.md`. (`canvas_draw_text` caps a
 text block at 24px, so the wordmark is scale 3, not 4.)
 
+The **OLED** can't fit the full animation, so its splash is **static**: a small
+1bpp frog logo (`splash_oled.cpp`, baked by `tools/oledsplash` from one TFT frame)
+above a scaled "pixfrog" wordmark, held ~1.8 s and click-skippable
+(`splash.cpp`, `#else` branch). See `tools/oledsplash/README.md`.
+
 ## Formatting
 
 `clang-format` runs in CI. Format before committing:
@@ -103,46 +117,38 @@ git ls-files '*.h' '*.cpp' | xargs clang-format -i
 
 Style is defined by `.clang-format` at the repo root. Don't bypass it.
 
-## Build (IDF side)
+## Build & flash (Docker)
+
+Build and flash inside the official ESP-IDF image (`espressif/idf:v5.5` — v5.5+
+is required for the P4 LCD_CAM driver). No local IDF install needed.
 
 ```bash
-idf.py set-target esp32p4
-idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
-```
-
-`sdkconfig.defaults` already pins the values that matter (octal PSRAM, 400 MHz CPU, no tickless idle, lwIP UDP tuning, partition table). Use `menuconfig` only when you mean to change them deliberately. The target is pinned (`CONFIG_IDF_TARGET="esp32p4"`), so a bare `idf.py build` picks it up without `set-target`.
-
-### Build & flash without a local IDF (Docker)
-
-If ESP-IDF isn't installed on the host, build and flash inside the official image
-(`espressif/idf:v5.5` — v5.5+ is required for the P4 LCD_CAM driver):
-
-```bash
-# Build as your own uid so build/ isn't left root-owned:
+# Build — run as your own uid so build/ isn't left root-owned:
 docker run --rm -v "$PWD":/project -w /project \
     -u "$(id -u):$(id -g)" -e HOME=/tmp espressif/idf:v5.5 idf.py build
 
-# Flash/monitor must run as root with the port mapped in (--device), because the
-# in-container uid isn't in the host 'dialout' group either:
-docker run --rm --device /dev/ttyACM0 -v "$PWD":/project -w /project \
-    espressif/idf:v5.5 idf.py -p /dev/ttyACM0 flash
+# Flash — run as root with the port mapped in (--device), because the
+# in-container uid isn't in the host 'dialout' group. Replace $PORT with the
+# board's serial device (find it with `ls /dev/ttyACM* /dev/ttyUSB*`):
+docker run --rm --device "$PORT" -v "$PWD":/project -w /project \
+    espressif/idf:v5.5 idf.py -p "$PORT" flash
 ```
 
-After a root flash, `build/` may contain root-owned files; `docker run --rm -v "$PWD":/project espressif/idf:v5.5 chown -R "$(id -u):$(id -g)" /project/build` cleans it.
+The target is pinned (`CONFIG_IDF_TARGET="esp32p4"` in `sdkconfig.defaults`), so
+a bare `idf.py build` needs no `set-target`. `sdkconfig.defaults` also pins octal
+PSRAM, 400 MHz CPU, no tickless idle, lwIP UDP tuning and the partition table —
+use `menuconfig` only to change them deliberately.
 
-### Serial port & USB notes
+After a root flash `build/` may hold root-owned files; reclaim with
+`docker run --rm -v "$PWD":/project espressif/idf:v5.5 chown -R "$(id -u):$(id -g)" /project/build`.
 
-- The CH343 USB-serial bridge (`1a86:55d3`) on the dev board enumerates as
-  **`/dev/ttyACM0`**, not `/dev/ttyUSB0`. Pass `-p /dev/ttyACM0`.
-- The host user is typically not in `dialout`; either `sudo usermod -aG dialout
-  $USER` (re-login) or flash via the root Docker path above.
+Notes:
 - `idf.py monitor` inside non-interactive Docker doesn't reset the chip, so it
-  misses the boot log. To capture a clean boot, pulse RTS (EN) then read — e.g. a
-  short pyserial snippet (`s.rts=True; sleep; s.rts=False; read`).
-- **WSL2**: unplugging/replugging the board drops the usbip attachment. After a
-  physical reconnect the device won't reappear in Linux until it's re-bound from
-  Windows: `usbipd list` then `usbipd attach --wsl --busid <BUSID>`.
+  misses the boot log. To capture a clean boot, pulse RTS (EN) then read — a
+  short pyserial snippet (`s.rts=True; sleep; s.rts=False; read`) does it.
+- **WSL2**: unplugging/replugging the board drops the usbip attachment; the port
+  won't reappear in Linux until it's re-bound from Windows
+  (`usbipd list` then `usbipd attach --wsl --busid <BUSID>`).
 
 ## Don'ts
 

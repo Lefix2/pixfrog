@@ -81,16 +81,13 @@ void rasterise_row(uint8_t row) {
     for (uint8_t tc = 0; tc < kTextCols; ++tc) {
         const char c = g_text_buf[row][tc];
         if (c == '\0') break;
-        const uint8_t* alpha = font_alpha_for(c);
-        const size_t base    = static_cast<size_t>(tc) * kFontCellWidth;
-        // Threshold the AA coverage to 1bpp columns (bit r = row r, top=bit0).
+        // Crisp 1bpp font: each glyph byte is already a column (bit r = row r,
+        // top = bit0), matching the SSD1306 page layout — copy it straight in.
+        const uint8_t* col = font_oled_for(c);
+        const size_t base  = static_cast<size_t>(tc) * kFontCellWidth;
         for (uint8_t gc = 0; gc < kFontWidth; ++gc) {
             if (base + gc >= kSsd1306Cols) break;
-            uint8_t colbyte = 0;
-            for (uint8_t r = 0; r < kFontHeight; ++r) {
-                if (alpha[r * kFontCellWidth + gc] >= 128) colbyte |= static_cast<uint8_t>(1u << r);
-            }
-            page[base + gc] = colbyte;
+            page[base + gc] = col[gc];
         }
         // 1 blank column after each glyph (already zero-init'd)
     }
@@ -142,6 +139,16 @@ bool oled_init(i2c_master_bus_handle_t bus, uint8_t addr) {
 void oled_clear() {
     std::memset(g_fb, 0, sizeof(g_fb));
     std::memset(g_text_buf, 0, sizeof(g_text_buf));
+}
+
+void oled_set_pixel(int x, int y, bool on) {
+    if (x < 0 || y < 0 || x >= kSsd1306Cols || y >= kPages * 8) return;
+    uint8_t& cell      = g_fb[y >> 3][x];
+    const uint8_t mask = static_cast<uint8_t>(1u << (y & 7));
+    if (on)
+        cell |= mask;
+    else
+        cell &= static_cast<uint8_t>(~mask);
 }
 
 void oled_draw_text(uint8_t row, uint8_t col, const char* str) {

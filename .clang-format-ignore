@@ -5,3 +5,5 @@ tools/splashgen/nanosvgrast.h
 # Generated tables — regenerated, not hand-formatted.
 components/ui/src/font_data.cpp
 components/ui/src/splash_anim.cpp
+components/ui/src/font_oled.cpp
+components/ui/src/splash_oled.cpp
