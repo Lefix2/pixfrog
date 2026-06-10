@@ -15,3 +15,5 @@ cd tools/splashgen && cmake -B build && cmake --build build
 Static OLED logo → `components/ui/src/splash_oled.cpp`: multi-step (stub i2c header, bakes one TFT frame) — follow tools/oledsplash/README.md exactly.
 
 Preview via the /emulator skill (`splash <ms>` stdin command).
+
+Notes: the same SVG is embedded by the web page (`.github/pages/about.html`, deployed as `site/img/`). `canvas_draw_text` caps a text block at 24 px, so the TFT wordmark is scale 3, not 4. The OLED splash is static (logo + wordmark, ~1.8 s, click-skippable — `splash.cpp` `#else` branch).

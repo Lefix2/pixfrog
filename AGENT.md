@@ -2,6 +2,10 @@
 
 Quick orientation for any agent (or human) working in this repo.
 
+**Operational how-tos live in `.claude/skills/<name>/SKILL.md`** (plain
+markdown, auto-loaded by Claude Code at the repo root, readable by anyone).
+This file keeps the rules, invariants and design facts.
+
 ## What this is
 
 Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives an LED strip (WS/SK NRZ or APA/SK/LPD clocked SPI) or, alternatively, a single DMX512 universe output. Detailed design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); hardware in [docs/HARDWARE.md](docs/HARDWARE.md); per-protocol timings (incl. DMX512 §7) in [docs/PROTOCOLS.md](docs/PROTOCOLS.md); target board ([Waveshare ESP32-P4 Module DEV-KIT](https://docs.waveshare.com/ESP32-P4-Module-DEV-KIT/Resources-And-Documents)).
@@ -33,192 +37,61 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `tools/splashgen`              | Host tool: `frog-anim.svg` → `splash_anim.cpp` (TFT frog anim)|
 | `tools/oledsplash`             | Host tool: TFT splash frame → `splash_oled.cpp` (static OLED frog logo) |
 | `tools/emulator`               | SDL2 host emulator of the TFT UI (no IDF)               |
+| `tools/uartctl.sh`             | One-shot client for the control console                 |
 | `docs/img/frog-anim.svg`       | Animated logo: source for web + baked splash            |
 
-## CI must pass locally before pushing
+## Workflows → skills
 
-**Hard rule: replay every CI job locally and get it green before any push.**
-`tools/ci-local.sh` runs the exact jobs of `.github/workflows/ci.yml` — the
-clang-format check, the three host test suites, and both IDF builds (oled +
-tft overlay):
+| Skill | Operation |
+|---|---|
+| [build](.claude/skills/build/SKILL.md) | IDF build (docker or devcontainer), oled + tft variants, sdkconfig traps |
+| [flash](.claude/skills/flash/SKILL.md) | Flash over `/dev/ttyACM0`, boot-log capture, WSL2 replug |
+| [host-tests](.claude/skills/host-tests/SKILL.md) | The three pure-host unit suites |
+| [ci-local](.claude/skills/ci-local/SKILL.md) | Replay all CI jobs locally |
+| [format](.claude/skills/format/SKILL.md) | clang-format (style: `.clang-format`, don't bypass) |
+| [emulator](.claude/skills/emulator/SKILL.md) | SDL2 UI emulator, headless stdin protocol |
+| [regen-fonts](.claude/skills/regen-fonts/SKILL.md) | Regenerate `font_data.cpp` / `font_oled.cpp` |
+| [regen-splash](.claude/skills/regen-splash/SKILL.md) | Regenerate `splash_anim.cpp` / `splash_oled.cpp` |
+| [uartctl](.claude/skills/uartctl/SKILL.md) | Drive the device over UART (config, telemetry, DMX injection) |
 
-```bash
-./tools/ci-local.sh
-```
+## Hard rules
 
-Inside the devcontainer the IDF builds run natively; outside, the script falls
-back to the same `espressif/idf:v5.5` docker image CI uses. Don't push and
-"let CI find out".
-
-## Devcontainer (CI parity)
-
-`.devcontainer/` builds on the CI image (`espressif/idf:v5.5`) plus the tools
-the other CI jobs use: clang-format **18** (pinned, same major as the
-`format-check` job), build-essential/cmake for the host test suites, and
-libsdl2-dev for the UI emulator. Every shell sources the IDF env, so
-`idf.py build` works directly (no docker wrapper). The container runs
-privileged with `/dev` mapped in, so `idf.py -p /dev/ttyACM0 flash` works
-from inside it (it runs as root, which satisfies the flash-needs-root rule
-below).
+- **CI must pass locally before any push**: `./tools/ci-local.sh` replays every
+  `ci.yml` job (format check, three host suites, oled + tft IDF builds). Never
+  push and "let CI find out".
+- A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
+  host suite green.
+- The canonical proof for IDF-bound refactors is `idf.py build` — natively in
+  the devcontainer (`.devcontainer/`, built on the CI image `espressif/idf:v5.5`)
+  or through that same docker image. ESP32-P4 requires IDF **v5.5+** (P4
+  LCD_CAM RGB panel driver).
 
 ## Control console (UART)
 
-`components/control_console` exposes a line-oriented command server on the
-UART0 console (`/dev/ttyACM0` @ 115200, via the board's USB-UART bridge —
-note: the bridge enumerates as CDC-ACM, but it is *not* the P4's native
-USB-Serial-JTAG; UART0 is the only console wired to USB) — the full device is
-scriptable for bench tests: every `GlobalConfig`/`ChannelConfig` field,
-telemetry, calibration patterns, DMX injection without ArtNet, and buffer
-readback to verify the universe→pixel pipeline end to end.
+`components/control_console`: line-oriented command server on the UART0
+console — every config field get/set, telemetry, calibration, DMX injection
+without ArtNet, universe/pixel buffer readback. Protocol: `key=value` lines
+then `OK`, or one `ERR <reason>` line. Use `tools/uartctl.sh` (see the
+[uartctl](.claude/skills/uartctl/SKILL.md) skill) rather than raw pyserial.
 
-Protocol: each command answers `key=value` lines then a final `OK`, or one
-`ERR <reason>` line. Boot logs share the port — send `loglevel none` first
-when parsing strictly. Commands (see `help` on the device):
+Hardware facts: `/dev/ttyACM0` is a **USB-UART bridge into UART0** (CDC-ACM,
+but *not* the P4's native USB-Serial-JTAG), and **opening the port can
+auto-reset the board** — sync on the `pixfrog>` prompt first (uartctl does).
+Console config writes share `ui_task`'s NVS path and are not locked against
+it — don't turn the encoder while a script is configuring the device.
 
-| Command | Purpose |
-|---|---|
-| `version` / `status` / `stats` / `chstat` | Versions; link/IP/MAC/FPS/heap; telemetry counters; per-channel active+capacity |
-| `global [<key> <value>]` | Get/set GlobalConfig: `dhcp ip mask gw net subnet short_name long_name reply_unicast refresh_hz home_timeout_s` |
-| `ch <n> [<key> <value>]` | Get/set ChannelConfig: `protocol order universe dmx_start pixels brightness grouping invert clock_hz` |
-| `dmxw <uni> <slot> <hex>` | Inject DMX bytes into a mapped universe (1-based slot) |
-| `dmxr <uni> [start len]` / `pixr <ch> [start len]` | Hex readback of universe / decoded pixel buffers |
-| `cal [-1\|0\|1\|2]` | Get/set persistent calibration pattern |
-| `loglevel <none..verbose>` / `factory-reset` / `reboot` | Logs and lifecycle |
+## Generated sources — never hand-edit
 
-Sets persist to NVS and take effect next frame (`mark_*_dirty`); network keys
-(`dhcp ip mask gw`) need a `reboot`. **Opening the port can auto-reset the
-board** (bridge DTR/RTS circuit), so sync on the prompt before scripting:
+Fonts and splash are **generated**; regenerate instead of editing the tables
+(commands in the [regen-fonts](.claude/skills/regen-fonts/SKILL.md) /
+[regen-splash](.claude/skills/regen-splash/SKILL.md) skills):
 
-```python
-import serial, time
-s = serial.Serial("/dev/ttyACM0", 115200, timeout=1)
-buf = ""
-while "pixfrog>" not in buf:          # poke until the REPL answers (boot ~4 s)
-    s.write(b"\r\n"); time.sleep(0.5)
-    buf += s.read(s.in_waiting or 1).decode(errors="replace")
-for c in (b"loglevel none", b"ch 0 protocol WS2812B", b"dmxw 1 1 ff0000", b"status"):
-    s.write(c + b"\r\n"); time.sleep(0.3)
-print(s.read(4096).decode())          # responses end with OK / ERR <reason>
-```
-
-Console writes share `ui_task`'s NVS path and are not locked against it —
-don't turn the encoder while a script is configuring the device.
-
-## Tests
-
-Three pure host suites (no IDF needed):
-
-```bash
-cd components/led_protocols/test && cmake -B build && cmake --build build && ./build/test_led_protocols
-cd components/dmx_manager/test  && cmake -B build && cmake --build build && ./build/test_dmx_logic
-cd components/artnet/test       && cmake -B build && cmake --build build && ./build/test_artnet_parser
-```
-
-When you change anything in `led_protocols`, `dmx_manager`, or `artnet`, the matching suite must still pass.
-
-When you refactor IDF-bound code, the canonical proof is `idf.py build` — natively in the devcontainer, or through the `espressif/idf:v5.5` docker image (`tools/ci-local.sh` does both display variants). Never rely on CI to find out. ESP32-P4 requires IDF v5.5+ (the P4 LCD_CAM RGB panel driver is unavailable before then).
-
-## UI emulator
-
-`tools/emulator/` runs the real TFT UI (`menu.cpp`, `canvas_tft.cpp`, `splash.cpp`, `font_data.cpp`) on a host via SDL2 — preview the interface without flashing, and drive it from an AI agent. It reimplements the one hardware seam (`tft_draw_bitmap`) over an SDL framebuffer and stubs the neighbour components in RAM. See `tools/emulator/README.md`.
-
-```bash
-sudo apt install libsdl2-dev
-cd tools/emulator && cmake -B build && cmake --build build
-./build/pixfrog_emu              # interactive window + keyboard
-./build/pixfrog_emu --headless   # agent/CI: stdin protocol (left|right|click|shot|splash|state|quit)
-```
-
-`splash <ms> [path]` renders the boot splash at time `ms` and screenshots it
-(the headless main loop otherwise starts straight at HOME and the menu repaints
-every frame, so the splash can't be captured the normal way).
-
-The only shared-code hook is `menu_debug_state()` in `menu.cpp`, guarded by `#ifdef PIXFROG_EMULATOR` — the firmware build never defines it. When you add a device call to `menu.cpp`, extend the matching `tools/emulator/src/*_host.cpp` stub.
-
-## Font
-
-The UI font is **generated**, not hand-edited. There are two:
-
-- **TFT** uses `components/ui/src/font_data.cpp` — an 8-bit anti-aliased coverage
-  cell (6×8) per ASCII glyph; `canvas_tft.cpp` blends fg→bg by coverage. Built by
-  `tools/fontgen` from a TTF.
-- **OLED** uses `components/ui/src/font_oled.cpp` — a crisp 1bpp 5×7 column-major
-  table drawn for the pixel grid; `oled_ssd1306.cpp` copies a glyph's column
-  bytes straight into the page framebuffer (no thresholding). Built by
-  `tools/oledfont/gen.py` (see `tools/oledfont/README.md`).
-
-Regenerate the TFT font from a TTF instead of touching the table:
-
-```bash
-cd tools/fontgen && cmake -B build && cmake --build build
-./build/fontgen /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf \
-    ../../components/ui/src/font_data.cpp        # px / baseline / xpad / gain are tunable
-```
-
-Cell geometry (6×8) is fixed in both `fontgen.cpp` and `font.h` and must stay in
-sync — `menu.cpp` layout maths depends on `kFontCellWidth`/`kFontHeight`. The
-vendored `stb_truetype.h` and the generated `font_data.cpp` are listed in
-`.clang-format-ignore`. See `tools/fontgen/README.md`.
-
-## Splash
-
-The TFT boot splash replays the animated Collecti'Frog logo
-`docs/img/frog-anim.svg` (frog surfaces from the water, bands settle, eyes
-blink). That SVG is the **single source of truth**: the web page embeds it
-(`.github/pages/about.html` via `<img>`, deployed as `site/img/`), and the splash
-is **generated** from it — `tools/splashgen` bakes the SVG + its animation
-timeline into 1bpp masks in `components/ui/src/splash_anim.cpp`, which `splash.cpp`
-blits frame *t* via `canvas_draw_mask`. Regenerate from the SVG; don't hand-edit
-`splash_anim.cpp`. See `tools/splashgen/README.md`. (`canvas_draw_text` caps a
-text block at 24px, so the wordmark is scale 3, not 4.)
-
-The **OLED** can't fit the full animation, so its splash is **static**: a small
-1bpp frog logo (`splash_oled.cpp`, baked by `tools/oledsplash` from one TFT frame)
-above a scaled "pixfrog" wordmark, held ~1.8 s and click-skippable
-(`splash.cpp`, `#else` branch). See `tools/oledsplash/README.md`.
-
-## Formatting
-
-`clang-format` runs in CI. Format before committing:
-
-```bash
-git ls-files '*.h' '*.cpp' | xargs clang-format -i
-```
-
-Style is defined by `.clang-format` at the repo root. Don't bypass it.
-
-## Build & flash (Docker)
-
-Build and flash inside the official ESP-IDF image (`espressif/idf:v5.5` — v5.5+
-is required for the P4 LCD_CAM driver). No local IDF install needed.
-
-```bash
-# Build — run as your own uid so build/ isn't left root-owned:
-docker run --rm -v "$PWD":/project -w /project \
-    -u "$(id -u):$(id -g)" -e HOME=/tmp espressif/idf:v5.5 idf.py build
-
-# Flash — run as root with the port mapped in (--device), because the
-# in-container uid isn't in the host 'dialout' group. Replace $PORT with the
-# board's serial device (find it with `ls /dev/ttyACM* /dev/ttyUSB*`):
-docker run --rm --device "$PORT" -v "$PWD":/project -w /project \
-    espressif/idf:v5.5 idf.py -p "$PORT" flash
-```
-
-The target is pinned (`CONFIG_IDF_TARGET="esp32p4"` in `sdkconfig.defaults`), so
-a bare `idf.py build` needs no `set-target`. `sdkconfig.defaults` also pins octal
-PSRAM, 400 MHz CPU, no tickless idle, lwIP UDP tuning and the partition table —
-use `menuconfig` only to change them deliberately.
-
-After a root flash `build/` may hold root-owned files; reclaim with
-`docker run --rm -v "$PWD":/project espressif/idf:v5.5 chown -R "$(id -u):$(id -g)" /project/build`.
-
-Notes:
-- `idf.py monitor` inside non-interactive Docker doesn't reset the chip, so it
-  misses the boot log. To capture a clean boot, pulse RTS (EN) then read — a
-  short pyserial snippet (`s.rts=True; sleep; s.rts=False; read`) does it.
-- **WSL2**: unplugging/replugging the board drops the usbip attachment; the port
-  won't reappear in Linux until it's re-bound from Windows
-  (`usbipd list` then `usbipd attach --wsl --busid <BUSID>`).
+- `font_data.cpp` (TFT, anti-aliased 6×8 from TTF) and `font_oled.cpp` (OLED,
+  crisp 1bpp 5×7). Cell geometry (6×8) is fixed in both `fontgen.cpp` and
+  `font.h` and must stay in sync — `menu.cpp` layout maths depends on it.
+- `splash_anim.cpp` / `splash_oled.cpp`, baked from `docs/img/frog-anim.svg` —
+  the **single source of truth**, also embedded by the web page.
+- Generated/vendored files are listed in `.clang-format-ignore`.
 
 ## Don'ts
 

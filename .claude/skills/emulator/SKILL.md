@@ -13,4 +13,6 @@ Drive it (one command per line on stdin; `shot [path]` writes a screenshot, `sta
 printf 'right\nclick\nshot /tmp/ui.png\nstate\nquit\n' | ./build/pixfrog_emu --headless
 ```
 
-`splash <ms> [path]` screenshots the boot splash at time *ms*. Needs `libsdl2-dev`. When adding a device call to `menu.cpp`, extend the matching `tools/emulator/src/*_host.cpp` stub. See tools/emulator/README.md.
+`splash <ms> [path]` screenshots the boot splash at time *ms* (the headless loop otherwise starts at HOME and repaints every frame). Needs `libsdl2-dev`.
+
+The only shared-code hook is `menu_debug_state()` in `menu.cpp`, guarded by `#ifdef PIXFROG_EMULATOR` — the firmware build never defines it. When adding a device call to `menu.cpp`, extend the matching `tools/emulator/src/*_host.cpp` stub. See tools/emulator/README.md.

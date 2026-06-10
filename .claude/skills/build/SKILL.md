@@ -21,3 +21,5 @@ ninja "Permission denied" in build/ (root-owned files after a flash):
 docker run --rm -v "$PWD":/project espressif/idf:v5.5 chown -R "$(id -u):$(id -g)" /project/build
 ```
 If sdkconfig.defaults changed, `rm -f sdkconfig` (and build.tft/sdkconfig) first — defaults only apply when sdkconfig doesn't exist.
+
+`sdkconfig.defaults` pins target esp32p4 (no `set-target` needed), octal PSRAM, 400 MHz CPU, no tickless idle, lwIP UDP tuning, and the partition table — change them only deliberately via `menuconfig`.
