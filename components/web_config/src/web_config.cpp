@@ -180,6 +180,7 @@ static cJSON* build_global_json() {
     cJSON_AddNumberToObject(jg, "failsafe_timeout_s", g.failsafe_timeout_s);
     cJSON_AddNumberToObject(jg, "failsafe_scene", g.failsafe_scene);
     cJSON_AddNumberToObject(jg, "boot_scene", g.boot_scene);
+    cJSON_AddNumberToObject(jg, "merge_mode", g.merge_mode);
     char fscol[8];
     snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     cJSON_AddStringToObject(jg, "failsafe_color", fscol);
@@ -323,6 +324,7 @@ static void restore_global(cJSON* jg) {
     if (num("failsafe_scene", 0, config::kNumScenes - 1, &v))
         g.failsafe_scene = static_cast<uint8_t>(v);
     if (num("boot_scene", 0, config::kNumScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
+    if (num("merge_mode", 0, 1, &v)) g.merge_mode = static_cast<uint8_t>(v);
     config::set_global(g);
 }
 
@@ -528,6 +530,7 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
         g.failsafe_scene = static_cast<uint8_t>(u);
     if (get_u32("boot_scene", 0, config::kNumScenes, u)) g.boot_scene = static_cast<uint8_t>(u);
     if (get_u32("failsafe_timeout_s", 0, 3600, u)) g.failsafe_timeout_s = static_cast<uint16_t>(u);
+    if (get_u32("merge_mode", 0, 1, u)) g.merge_mode = static_cast<uint8_t>(u);
     if ((s = get_str("failsafe_color"))) {
         unsigned fr, fg, fb;
         if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &fr, &fg, &fb) == 3) {

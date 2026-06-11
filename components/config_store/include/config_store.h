@@ -67,12 +67,19 @@ struct GlobalConfig {
     // Standalone scenes hooks (zero-fill migration = none/0).
     uint8_t boot_scene;      // 0 = none, 1..kNumScenes = play scene N-1 at boot
     uint8_t failsafe_scene;  // scene index 0..kNumScenes-1 used by failsafe mode 3
+
+    // 2-source merge policy when two senders feed one universe. Zero-fill
+    // migration = HTP, the Art-Net default. Settable via ArtAddress too.
+    uint8_t merge_mode;  // 0 = HTP (per-slot max), 1 = LTP (last frame wins)
 };
 
 constexpr uint8_t kFailsafeHold     = 0;
 constexpr uint8_t kFailsafeBlackout = 1;
 constexpr uint8_t kFailsafeColor    = 2;
 constexpr uint8_t kFailsafeScene    = 3;
+
+constexpr uint8_t kMergeHtp = 0;
+constexpr uint8_t kMergeLtp = 1;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Standalone scenes — parametric effects, no recorded frames

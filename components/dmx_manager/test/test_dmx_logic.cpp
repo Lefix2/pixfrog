@@ -425,6 +425,144 @@ static void test_hue_wheel_endpoints() {
     EXPECT_EQ(b, 0);
 }
 
+// ── 2-source merge (HTP/LTP) ────────────────────────────────────────────────
+
+constexpr int64_t kTestTimeoutUs = 10'000'000;
+
+static void test_merge_single_source_passthrough() {
+    MergeState m{};
+    uint8_t staging[2 * kUniverseSize] = {};
+    uint8_t dst[kUniverseSize]         = {};
+    uint8_t frame[4]                   = { 10, 20, 30, 40 };
+
+    EXPECT_TRUE(merge_ingest(m, staging, dst, frame, sizeof(frame), 0xA1, false, 1'000'000,
+                             kTestTimeoutUs));
+    EXPECT_EQ(merge_active_count(m), 1);
+    EXPECT_EQ(dst[0], 10);
+    EXPECT_EQ(dst[3], 40);
+}
+
+static void test_merge_htp_two_sources() {
+    MergeState m{};
+    uint8_t staging[2 * kUniverseSize] = {};
+    uint8_t dst[kUniverseSize]         = {};
+    uint8_t a[3]                       = { 100, 5, 200 };
+    uint8_t b[3]                       = { 50, 60, 250 };
+
+    EXPECT_TRUE(
+        merge_ingest(m, staging, dst, a, sizeof(a), 0xA1, false, 1'000'000, kTestTimeoutUs));
+    EXPECT_TRUE(
+        merge_ingest(m, staging, dst, b, sizeof(b), 0xB2, false, 1'100'000, kTestTimeoutUs));
+    EXPECT_EQ(merge_active_count(m), 2);
+    EXPECT_EQ(dst[0], 100);  // max(100, 50)
+    EXPECT_EQ(dst[1], 60);   // max(5, 60)
+    EXPECT_EQ(dst[2], 250);  // max(200, 250)
+}
+
+static void test_merge_ltp_last_frame_wins() {
+    MergeState m{};
+    uint8_t staging[2 * kUniverseSize] = {};
+    uint8_t dst[kUniverseSize]         = {};
+    uint8_t a[3]                       = { 100, 100, 100 };
+    uint8_t b[3]                       = { 1, 2, 3 };
+
+    EXPECT_TRUE(merge_ingest(m, staging, dst, a, sizeof(a), 0xA1, true, 1'000'000, kTestTimeoutUs));
+    EXPECT_TRUE(merge_ingest(m, staging, dst, b, sizeof(b), 0xB2, true, 1'100'000, kTestTimeoutUs));
+    EXPECT_EQ(merge_active_count(m), 2);  // both tracked (for reporting)…
+    EXPECT_EQ(dst[0], 1);                 // …but the last frame wins
+    EXPECT_EQ(dst[1], 2);
+    EXPECT_EQ(dst[2], 3);
+}
+
+static void test_merge_third_source_rejected() {
+    MergeState m{};
+    uint8_t staging[2 * kUniverseSize] = {};
+    uint8_t dst[kUniverseSize]         = {};
+    uint8_t frame[1]                   = { 9 };
+
+    EXPECT_TRUE(merge_ingest(m, staging, dst, frame, 1, 0xA1, false, 1'000'000, kTestTimeoutUs));
+    EXPECT_TRUE(merge_ingest(m, staging, dst, frame, 1, 0xB2, false, 1'000'000, kTestTimeoutUs));
+    EXPECT_TRUE(!merge_ingest(m, staging, dst, frame, 1, 0xC3, false, 1'000'000, kTestTimeoutUs));
+    EXPECT_EQ(merge_active_count(m), 2);
+}
+
+static void test_merge_source_timeout_drops() {
+    MergeState m{};
+    uint8_t staging[2 * kUniverseSize] = {};
+    uint8_t dst[kUniverseSize]         = {};
+    uint8_t a[2]                       = { 100, 100 };
+    uint8_t b[2]                       = { 10, 10 };
+
+    merge_ingest(m, staging, dst, a, 2, 0xA1, false, 1'000'000, kTestTimeoutUs);
+    merge_ingest(m, staging, dst, b, 2, 0xB2, false, 1'000'000, kTestTimeoutUs);
+    EXPECT_EQ(dst[0], 100);  // HTP while both live
+
+    // A goes silent past the timeout; B's next frame is exclusive again.
+    const int64_t later = 1'000'000 + kTestTimeoutUs + 1;
+    EXPECT_TRUE(merge_ingest(m, staging, dst, b, 2, 0xB2, false, later, kTestTimeoutUs));
+    EXPECT_EQ(merge_active_count(m), 1);
+    EXPECT_EQ(dst[0], 10);
+
+    // …and a third sender can claim the freed slot.
+    uint8_t c[2] = { 77, 77 };
+    EXPECT_TRUE(merge_ingest(m, staging, dst, c, 2, 0xC3, false, later + 1, kTestTimeoutUs));
+    EXPECT_EQ(merge_active_count(m), 2);
+}
+
+static void test_merge_fresh_claim_zeroes_staging() {
+    MergeState m{};
+    uint8_t staging[2 * kUniverseSize];
+    std::memset(staging, 0xEE, sizeof(staging));  // dirt from a previous occupant
+    uint8_t dst[kUniverseSize] = {};
+    uint8_t a[8]               = { 10, 10, 10, 10, 10, 10, 10, 10 };
+    uint8_t b[2]               = { 200, 200 };  // shorter frame
+
+    merge_ingest(m, staging, dst, a, sizeof(a), 0xA1, false, 1'000'000, kTestTimeoutUs);
+    merge_ingest(m, staging, dst, b, sizeof(b), 0xB2, false, 1'100'000, kTestTimeoutUs);
+    EXPECT_EQ(dst[0], 200);  // max(10, 200)
+    EXPECT_EQ(dst[2], 10);   // B's tail is zero, not 0xEE
+    EXPECT_EQ(dst[7], 10);
+    EXPECT_EQ(dst[8], 0);  // beyond both frames: zero, no dirt
+}
+
+static void test_merge_drop_and_claim_refresh() {
+    MergeState m{};
+    bool fresh = false;
+    EXPECT_EQ(merge_claim(m, 0xA1, 1'000'000, &fresh), 0);
+    EXPECT_TRUE(fresh);
+    EXPECT_EQ(merge_claim(m, 0xA1, 2'000'000, &fresh), 0);  // refresh, same slot
+    EXPECT_TRUE(!fresh);
+    EXPECT_EQ(m.last_us[0], 2'000'000);
+
+    merge_drop(m, 0xA1);
+    EXPECT_EQ(merge_active_count(m), 0);
+    merge_drop(m, 0xDEAD);  // dropping an unknown id is a no-op
+}
+
+static void test_merge_zero_id_coerced() {
+    MergeState m{};
+    // id 0 (the free-slot sentinel) is coerced to 1, so it still tracks.
+    EXPECT_EQ(merge_claim(m, 0, 1'000'000, nullptr), 0);
+    EXPECT_EQ(merge_active_count(m), 1);
+    EXPECT_EQ(merge_claim(m, 1, 1'000'001, nullptr), 0);  // same source as id 0
+    EXPECT_EQ(merge_active_count(m), 1);
+}
+
+static void test_merge_htp_full_universe() {
+    MergeState m{};
+    uint8_t staging[2 * kUniverseSize] = {};
+    uint8_t dst[kUniverseSize]         = {};
+    uint8_t a[kUniverseSize], b[kUniverseSize];
+    for (size_t i = 0; i < kUniverseSize; ++i) {
+        a[i] = static_cast<uint8_t>(i);
+        b[i] = static_cast<uint8_t>(255 - i);
+    }
+    merge_ingest(m, staging, dst, a, sizeof(a), 0xA1, false, 1'000'000, kTestTimeoutUs);
+    merge_ingest(m, staging, dst, b, sizeof(b), 0xB2, false, 1'000'001, kTestTimeoutUs);
+    for (size_t i = 0; i < kUniverseSize; ++i)
+        EXPECT_EQ(dst[i], a[i] > b[i] ? a[i] : b[i]);
+}
+
 int main() {
     test_total_bytes_rgb();
     test_total_bytes_rgbw();
@@ -455,6 +593,15 @@ int main() {
     test_scene_rainbow_spans_hues();
     test_scene_overflow_is_noop();
     test_hue_wheel_endpoints();
+    test_merge_single_source_passthrough();
+    test_merge_htp_two_sources();
+    test_merge_ltp_last_frame_wins();
+    test_merge_third_source_rejected();
+    test_merge_source_timeout_drops();
+    test_merge_fresh_claim_zeroes_staging();
+    test_merge_drop_and_claim_refresh();
+    test_merge_zero_id_coerced();
+    test_merge_htp_full_universe();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

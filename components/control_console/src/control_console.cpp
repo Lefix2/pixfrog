@@ -186,10 +186,12 @@ int cmd_stats(int, char**) {
 int cmd_chstat(int, char**) {
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& c = config::get_channel(ch);
-        printf("ch%u protocol=%s universe=%u pixels=%u active=%d capacity_ok=%d failsafe=%d\n",
+        printf("ch%u protocol=%s universe=%u pixels=%u active=%d capacity_ok=%d failsafe=%d "
+               "merge=%d\n",
                static_cast<unsigned>(ch), kProtocolNames[static_cast<size_t>(c.protocol)],
                c.universe_start, c.pixel_count, dmx::is_channel_active(ch) ? 1 : 0,
-               dmx::is_channel_capacity_ok(ch) ? 1 : 0, dmx::is_channel_failsafe(ch) ? 1 : 0);
+               dmx::is_channel_capacity_ok(ch) ? 1 : 0, dmx::is_channel_failsafe(ch) ? 1 : 0,
+               dmx::is_channel_merging(ch) ? 1 : 0);
     }
     return ok();
 }
@@ -221,6 +223,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("failsafe_color=%02x%02x%02x\n", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     printf("failsafe_scene=%u\n", g.failsafe_scene);
     printf("boot_scene=%u\n", g.boot_scene);
+    printf("merge_mode=%s\n", g.merge_mode == config::kMergeLtp ? "LTP" : "HTP");
 }
 
 int cmd_global(int argc, char** argv) {
@@ -291,6 +294,11 @@ int cmd_global(int argc, char** argv) {
         g.failsafe_r = rgb[0];
         g.failsafe_g = rgb[1];
         g.failsafe_b = rgb[2];
+    } else if (strcmp(key, "merge_mode") == 0) {
+        static const char* const kMergeNames[] = { "HTP", "LTP" };
+        const int m                            = lookup_name(kMergeNames, 2, val);
+        if (m < 0) return err("merge_mode: HTP|LTP or 0..1");
+        g.merge_mode = static_cast<uint8_t>(m);
     } else if (strcmp(key, "web_password") == 0) {
         // UART = the trusted physical recovery channel. `-` clears (auth off).
         const bool cleared = (strcmp(val, "-") == 0);
@@ -300,7 +308,8 @@ int cmd_global(int argc, char** argv) {
     } else {
         return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
                    "refresh_hz home_timeout_s web_enabled sacn_enabled web_password "
-                   "failsafe_mode failsafe_timeout_s failsafe_color failsafe_scene boot_scene)");
+                   "failsafe_mode failsafe_timeout_s failsafe_color failsafe_scene boot_scene "
+                   "merge_mode)");
     }
 
     const bool persisted = config::set_global(g);

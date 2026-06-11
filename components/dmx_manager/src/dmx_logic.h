@@ -203,6 +203,87 @@ inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel
     }
 }
 
+// ── 2-source merge (HTP/LTP) ────────────────────────────────────────────────
+//
+// Art-Net nodes must merge up to two concurrent senders per universe: HTP
+// takes the per-slot maximum (dimmer semantics), LTP lets the last full frame
+// win. A third sender is ignored, and a source that stays silent past the
+// timeout is dropped. Sources are keyed by an opaque nonzero 32-bit id
+// (sender IPv4 for ArtDmx, CID hash for sACN); 0 marks a free slot.
+// The per-protocol timeout policy constants live in dmx_manager.h.
+
+struct MergeState {
+    uint32_t id[2];
+    int64_t last_us[2];
+};
+
+inline void merge_expire(MergeState& m, int64_t now_us, int64_t timeout_us) {
+    for (int i = 0; i < 2; ++i)
+        if (m.id[i] != 0 && (now_us - m.last_us[i]) > timeout_us) m.id[i] = 0;
+}
+
+// Claim or refresh the slot for `id`. Returns the slot index, or -1 when both
+// slots are held by other (live) sources. `*fresh` is set when the id was not
+// tracked before, so the caller can clear that source's staging buffer.
+inline int merge_claim(MergeState& m, uint32_t id, int64_t now_us, bool* fresh) {
+    if (id == 0) id = 1;  // 0 is the free-slot sentinel
+    if (fresh) *fresh = false;
+    for (int i = 0; i < 2; ++i) {
+        if (m.id[i] == id) {
+            m.last_us[i] = now_us;
+            return i;
+        }
+    }
+    for (int i = 0; i < 2; ++i) {
+        if (m.id[i] == 0) {
+            m.id[i]      = id;
+            m.last_us[i] = now_us;
+            if (fresh) *fresh = true;
+            return i;
+        }
+    }
+    return -1;
+}
+
+inline int merge_active_count(const MergeState& m) {
+    return (m.id[0] != 0 ? 1 : 0) + (m.id[1] != 0 ? 1 : 0);
+}
+
+inline void merge_drop(MergeState& m, uint32_t id) {
+    if (id == 0) id = 1;
+    for (int i = 0; i < 2; ++i)
+        if (m.id[i] == id) m.id[i] = 0;
+}
+
+inline void htp_max(uint8_t* dst, const uint8_t* a, const uint8_t* b, size_t n) {
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = a[i] > b[i] ? a[i] : b[i];
+}
+
+// Ingest one network frame from `id` into a universe slot. `staging` is the
+// slot's per-source store (2 × kUniverseSize), `dst` the live output buffer.
+// Returns false when the frame is dropped (third concurrent source).
+inline bool merge_ingest(MergeState& m, uint8_t* staging, uint8_t* dst, const uint8_t* data,
+                         size_t len, uint32_t id, bool ltp, int64_t now_us, int64_t timeout_us) {
+    merge_expire(m, now_us, timeout_us);
+    bool fresh    = false;
+    const int idx = merge_claim(m, id, now_us, &fresh);
+    if (idx < 0) return false;
+
+    if (len > kUniverseSize) len = kUniverseSize;
+    uint8_t* mine = staging + static_cast<size_t>(idx) * kUniverseSize;
+    // Zero a fresh claim so the previous occupant's tail can't leak into HTP.
+    if (fresh) std::memset(mine, 0, kUniverseSize);
+    std::memcpy(mine, data, len);
+
+    if (!ltp && merge_active_count(m) == 2) {
+        htp_max(dst, staging, staging + kUniverseSize, kUniverseSize);
+    } else {
+        std::memcpy(dst, data, len);  // single source, or LTP: last frame wins
+    }
+    return true;
+}
+
 // ── Pixel decoder ───────────────────────────────────────────────────────────
 //
 // Copies bytes from one or more universes into the destination buffer,

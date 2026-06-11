@@ -122,10 +122,21 @@ inline uint32_t multicast_group_host(uint16_t universe) {
            (universe & 0xFF);
 }
 
+// 32-bit FNV-1a of the sender CID — the nonzero merge-source key used by
+// dmx::write_universe_from_source (0 is its free-slot sentinel).
+inline uint32_t source_id_from_cid(const uint8_t cid[16]) {
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < 16; ++i) {
+        h ^= cid[i];
+        h *= 16777619u;
+    }
+    return h != 0 ? h : 1;
+}
+
 // ── Per-universe source gate ────────────────────────────────────────────────
-// E1.31 single-source arbitration: highest priority wins; an idle source is
+// E1.31 priority arbitration: highest priority wins; an idle source is
 // forgotten after kSourceTimeoutMs (network data loss, §6.7.1). Equal
-// priority = last writer wins (true multi-source merge is a TODO item).
+// priority passes through — the dmx_manager 2-source merge arbitrates there.
 
 constexpr uint32_t kSourceTimeoutMs = 2500;
 
@@ -138,10 +149,13 @@ struct SourceGate {
 
 // Decide whether a data packet for `universe` with `priority` may be applied,
 // updating the gate table (linear scan, `count` entries). Returns true to
-// accept. `terminated` releases the slot immediately.
+// accept. `terminated` releases the slot immediately. `*takeover` is set when
+// a live universe's priority strictly rises — the caller must then drop the
+// outranked sources from the downstream merge.
 template <size_t N>
 inline bool gate_accept(SourceGate (&gates)[N], uint16_t universe, uint8_t priority,
-                        bool terminated, uint32_t now_ms) {
+                        bool terminated, uint32_t now_ms, bool* takeover = nullptr) {
+    if (takeover) *takeover = false;
     SourceGate* slot     = nullptr;
     SourceGate* free_one = nullptr;
     for (auto& g : gates) {
@@ -160,6 +174,7 @@ inline bool gate_accept(SourceGate (&gates)[N], uint16_t universe, uint8_t prior
     if (slot) {
         const bool expired = (now_ms - slot->last_ms) > kSourceTimeoutMs;
         if (!expired && priority < slot->priority) return false;
+        if (takeover && !expired && priority > slot->priority) *takeover = true;
         slot->priority = priority;
         slot->last_ms  = now_ms;
         return true;

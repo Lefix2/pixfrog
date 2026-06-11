@@ -349,6 +349,44 @@ static void test_address_rejects_short_packet() {
     EXPECT_TRUE(!parse_address(pkt.data(), kAddressSize - 1, nullptr));
 }
 
+static void test_address_merge_commands() {
+    for (uint8_t p = 0; p < 4; ++p) {
+        EXPECT_TRUE(is_merge_ltp_command(kAcMergeLtp0 + p));
+        EXPECT_TRUE(is_merge_htp_command(kAcMergeHtp0 + p));
+    }
+    EXPECT_TRUE(!is_merge_ltp_command(kAcMergeLtp0 + 4));  // 0x14 = AcLedNormal
+    EXPECT_TRUE(!is_merge_ltp_command(kAcCancelMerge));
+    EXPECT_TRUE(!is_merge_htp_command(kAcMergeLtp0));
+    EXPECT_TRUE(!is_merge_ltp_command(kAcMergeHtp0));
+    EXPECT_TRUE(!is_merge_htp_command(kAcNone));
+}
+
+static void test_poll_reply_merge_bits() {
+    uint8_t mac[6] = {};
+    PollReplyInputs in{};
+    in.short_name      = "";
+    in.long_name       = "";
+    in.node_report     = "";
+    in.mac             = mac;
+    in.bind_index      = 1;
+    in.merge_ltp       = true;
+    in.port_merging[2] = true;
+    in.port_enabled[3] = false;
+    in.port_merging[3] = true;  // disabled port must stay silent regardless
+
+    uint8_t pkt[kPollReplySize];
+    build_poll_reply(pkt, in);
+    EXPECT_EQ(pkt[182 + 0], 0x82);  // transmitting + LTP
+    EXPECT_EQ(pkt[182 + 2], 0x8A);  // transmitting + merging + LTP
+    EXPECT_EQ(pkt[182 + 3], 0x00);  // disabled
+
+    in.merge_ltp       = false;
+    in.port_merging[2] = false;
+    build_poll_reply(pkt, in);
+    EXPECT_EQ(pkt[182 + 0], 0x80);  // HTP, not merging: bits 1/3 clear
+    EXPECT_EQ(pkt[182 + 2], 0x80);
+}
+
 // ── ArtIpProg + reply ───────────────────────────────────────────────────────
 
 static void test_ip_prog_extract() {
@@ -415,6 +453,8 @@ int main() {
     test_nzs_rejects_truncated();
     test_address_program_bits();
     test_address_rejects_short_packet();
+    test_address_merge_commands();
+    test_poll_reply_merge_bits();
     test_ip_prog_extract();
     test_ip_prog_reply_layout();
 
