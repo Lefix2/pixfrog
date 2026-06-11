@@ -21,6 +21,7 @@
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
 #include "ui.h"
+#include "web_config.h"
 
 namespace pixfrog::console {
 
@@ -206,6 +207,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("reply_unicast=%d\n", g.artnet_poll_reply_unicast ? 1 : 0);
     printf("refresh_hz=%u\n", g.refresh_rate_hz);
     printf("home_timeout_s=%u\n", g.home_timeout_s);
+    printf("web_enabled=%d\n", g.web_enabled ? 1 : 0);
 }
 
 int cmd_global(int argc, char** argv) {
@@ -251,15 +253,26 @@ int cmd_global(int argc, char** argv) {
     } else if (strcmp(key, "home_timeout_s") == 0) {
         if (!parse_u32_in(val, 0, 65535, u)) return err("home_timeout_s: 0..65535");
         g.home_timeout_s = static_cast<uint16_t>(u);
+    } else if (strcmp(key, "web_enabled") == 0) {
+        if (!parse_bool(val, g.web_enabled)) return err("web_enabled: 0|1");
     } else {
         return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
-                   "refresh_hz home_timeout_s)");
+                   "refresh_hz home_timeout_s web_enabled)");
     }
 
     const bool persisted = config::set_global(g);
     dmx::mark_global_dirty();
     if (!persisted) printf("warn=not_persisted\n");
     if (network_changed) printf("note=network_changes_apply_after_reboot\n");
+
+    // Apply web server state immediately (does not require reboot).
+    if (strcmp(key, "web_enabled") == 0) {
+        if (g.web_enabled)
+            web::start();
+        else
+            web::stop();
+    }
+
     return ok();
 }
 

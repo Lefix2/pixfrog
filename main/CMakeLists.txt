@@ -15,4 +15,5 @@ idf_component_register(
         lcd_cam_output
         ui
         control_console
+        web_config
 )

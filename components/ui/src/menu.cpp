@@ -18,6 +18,7 @@
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
 #include "ui.h"
+#include "web_config.h"
 
 namespace pixfrog::ui::detail {
 
@@ -74,6 +75,7 @@ enum class Field : uint8_t {
     ArtnetReplyUnicast,
     GlobalRefresh,
     NetworkDhcp,
+    NetworkWebEnabled,
     ChProtocol,
     ChColorOrder,
     ChUniverse,
@@ -672,6 +674,16 @@ void commit_edit() {
         dmx::mark_global_dirty();
         break;
     }
+    case Field::NetworkWebEnabled: {
+        auto g        = config::get_global();
+        g.web_enabled = (v != 0);
+        config::set_global(g);
+        if (g.web_enabled)
+            web::start();
+        else
+            web::stop();
+        break;
+    }
 
     case Field::ChProtocol: {
         auto c     = config::get_channel(s.edit.channel);
@@ -1040,9 +1052,10 @@ void dispatch_artnet_menu(Event e) {
 // ── NETWORK MENU ────────────────────────────────────────────────────────────
 
 void render_network_menu() {
-    char vdhcp[8], vip[kOledCols + 1], vmsk[kOledCols + 1], vgw[kOledCols + 1];
+    char vdhcp[8], vip[kOledCols + 1], vmsk[kOledCols + 1], vgw[kOledCols + 1], vweb[8];
     const auto& g = config::get_global();
     std::snprintf(vdhcp, sizeof(vdhcp), "%s", g.use_dhcp ? "ON" : "OFF");
+    std::snprintf(vweb, sizeof(vweb), "%s", g.web_enabled ? "ON" : "OFF");
     auto fmt_ip = [](char* buf, size_t cap, uint32_t v) {
         std::snprintf(buf, cap, "%u.%u.%u.%u", static_cast<unsigned>((v >> 24) & 0xFFu),
                       static_cast<unsigned>((v >> 16) & 0xFFu),
@@ -1052,14 +1065,15 @@ void render_network_menu() {
     fmt_ip(vmsk, sizeof(vmsk), g.static_mask);
     fmt_ip(vgw, sizeof(vgw), g.static_gateway);
 
-    ListItem items[5] = {
-        { "DHCP", vdhcp }, { "IP", vip }, { "Msk", vmsk }, { "GW", vgw }, { "[Back]", "" },
+    ListItem items[6] = {
+        { "DHCP", vdhcp }, { "IP", vip },      { "Msk", vmsk },
+        { "GW", vgw },     { "Web UI", vweb }, { "[Back]", "" },
     };
-    render_list("NETWORK", items, 5, s.cursor);
+    render_list("NETWORK", items, 6, s.cursor);
 }
 
 void dispatch_network_menu(Event e) {
-    constexpr uint8_t kCount = 5;
+    constexpr uint8_t kCount = 6;
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1) s.cursor++;
     if (e != Event::Click) return;
@@ -1073,6 +1087,10 @@ void dispatch_network_menu(Event e) {
     case 2: enter_edit_ip(IpField::StaticMask, g.static_mask, "Mask", Screen::NetworkMenu); break;
     case 3: enter_edit_ip(IpField::StaticGw, g.static_gateway, "GW", Screen::NetworkMenu); break;
     case 4:
+        enter_edit(Field::NetworkWebEnabled, ValueKind::Bool, g.web_enabled ? 1 : 0, 0, 1, 1,
+                   "Web UI", Screen::NetworkMenu);
+        break;
+    case 5:
         s.screen = Screen::MainMenu;
         s.cursor = 1;
         break;

@@ -7,7 +7,7 @@ set(srcs
     "src/splash_anim.cpp"
 )
 
-set(requires driver esp_common esp_timer config_store dmx_manager lcd_cam_output freertos)
+set(requires driver esp_common esp_timer config_store dmx_manager lcd_cam_output freertos web_config)
 
 if(CONFIG_PIXFROG_DISPLAY_TFT)
     list(APPEND srcs "src/tft_st7789.cpp" "src/canvas_tft.cpp")

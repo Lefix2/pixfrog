@@ -54,6 +54,19 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | [regen-splash](.claude/skills/regen-splash/SKILL.md) | Regenerate `splash_anim.cpp` / `splash_oled.cpp` |
 | [uartctl](.claude/skills/uartctl/SKILL.md) | Drive the device over UART (config, telemetry, DMX injection) |
 
+## Web configuration UI
+
+`components/web_config`: optional HTTP server (port 80) with an embedded SPA + REST API.
+Controlled by `GlobalConfig::web_enabled` (NVS-backed, default **off**). No TCP socket is
+opened while the flag is off — opt-in only. Toggle from the Network submenu, via
+`global web_enabled 0|1` in the UART console, or via POST `/api/global`.
+
+REST endpoints: `GET /` (SPA), `GET /api/config`, `POST /api/global`, `POST /api/channel/{0..7}`,
+`POST /api/reboot`, `POST /api/factory-reset`. All JSON.
+
+This is the only TCP surface beyond ArtNet UDP — the strict "no extra network surface" rule
+applies to *always-on* listeners; this one is opt-in and user-controlled.
+
 ## Hard rules
 
 - **Never commit to `main`** — it is protected on GitHub (PR-only, CI checks
