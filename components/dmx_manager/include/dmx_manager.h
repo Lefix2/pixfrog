@@ -20,6 +20,11 @@ constexpr size_t kNumUniverses     = 48;   // 8 channels × 6 max
 constexpr size_t kMaxPixelsPerChan = 1024;
 constexpr size_t kMaxBytesPerChan  = kMaxPixelsPerChan * 4;  // RGBW worst case
 
+// 2-source merge: how long a tracked sender may stay silent before it is
+// dropped from the merge (per the receiver's protocol spec).
+constexpr int64_t kArtnetMergeTimeoutUs = 10'000'000;  // Art-Net: ~10 s
+constexpr int64_t kSacnMergeTimeoutUs   = 2'500'000;   // E1.31 §6.7.1 data loss
+
 // Live telemetry counters; updated by render_task & receiver tasks with relaxed atomics.
 struct Stats {
     uint64_t frames_emitted;
@@ -47,6 +52,27 @@ bool init();
 // into a pool slot. Returns nullptr if the universe is not configured for any
 // channel. The returned pointer is valid until the next swap_universes().
 uint8_t* universe_back_buffer_for(uint16_t universe_number);
+
+// ── 2-source merge (HTP/LTP) ────────────────────────────────────────────────
+// Route one network frame into the universe pool, tracking up to two
+// concurrent senders keyed by a nonzero `source_id` (IPv4 for ArtDmx, CID
+// hash for sACN). With two live sources the output is merged per
+// GlobalConfig::merge_mode; a source silent past `timeout_us` is dropped.
+// Returns false if the universe is unmapped or the frame came from a third
+// concurrent source (callers must not count rx/activity then).
+bool write_universe_from_source(uint16_t universe_number, const uint8_t* data, size_t len,
+                                uint32_t source_id, int64_t timeout_us);
+
+// Forget one tracked source (sACN stream_terminated) or every source on a
+// universe (sACN priority takeover) / the whole node (ArtAddress
+// AcCancelMerge) — the next sender becomes exclusive.
+void merge_drop_source(uint16_t universe_number, uint32_t source_id);
+void merge_reset_universe(uint16_t universe_number);
+void merge_cancel_all();
+
+// True if any of the channel's universes currently has two live sources.
+// Reported in ArtPollReply GoodOutputA bit 3 and chstat.
+bool is_channel_merging(size_t channel_index);
 
 // Note one ArtDmx packet was received. Used for stats only.
 void note_packet_rx();

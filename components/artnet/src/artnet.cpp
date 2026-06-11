@@ -25,7 +25,7 @@ int g_sock          = -1;
 bool g_run          = false;
 uint32_t g_local_ip = 0;
 
-void handle_dmx(const uint8_t* buf, size_t len) {
+void handle_dmx(const uint8_t* buf, size_t len, const sockaddr_in& from) {
     parser::DmxFields f{};
     if (!parser::parse_dmx(buf, len, &f)) {
         dmx::note_packet_bad();
@@ -38,11 +38,11 @@ void handle_dmx(const uint8_t* buf, size_t len) {
         return;  // legitimate Art-Net for another node — silently drop
     }
 
-    uint8_t* dst = dmx::universe_back_buffer_for(f.universe);
-    if (!dst) return;
-
-    const size_t copy = f.data_len > dmx::kUniverseSize ? dmx::kUniverseSize : f.data_len;
-    std::memcpy(dst, f.data, copy);
+    // 2-source merge keyed by sender IP; a third concurrent sender is dropped.
+    if (!dmx::write_universe_from_source(f.universe, f.data, f.data_len, from.sin_addr.s_addr,
+                                         dmx::kArtnetMergeTimeoutUs)) {
+        return;
+    }
     dmx::note_packet_rx();
 
     const int ch = dmx::channel_for_universe(f.universe);
@@ -78,6 +78,8 @@ void send_poll_reply(uint32_t target_addr_net_order) {
         in.mac           = mac;
         in.bind_index    = bind;
 
+        in.merge_ltp = g.merge_mode == config::kMergeLtp;
+
         const uint8_t base_ch = (bind - 1) * 4;
         for (uint8_t p = 0; p < 4; ++p) {
             const size_t ch     = base_ch + p;
@@ -87,6 +89,7 @@ void send_poll_reply(uint32_t target_addr_net_order) {
                                     ? static_cast<uint8_t>(config::get_channel(ch).universe_start & 0x0F)
                                     : 0;
             in.port_enabled[p]  = mapped && !disabled;
+            in.port_merging[p]  = mapped && !disabled && dmx::is_channel_merging(ch);
         }
 
         parser::build_poll_reply(pkt, in);
@@ -163,12 +166,26 @@ void handle_address(const uint8_t* buf, size_t len, const sockaddr_in& from) {
         dmx::mark_channel_dirty(ch);
     }
 
+    // Merge commands. The spec scopes AcMerge* to one port; pixfrog applies a
+    // single node-wide merge mode, so any port's command switches it globally.
+    if (f.command == parser::kAcCancelMerge) {
+        dmx::merge_cancel_all();
+        ESP_LOGI(TAG, "ArtAddress: merge cancelled");
+    } else if (parser::is_merge_ltp_command(f.command) || parser::is_merge_htp_command(f.command)) {
+        const uint8_t mode = parser::is_merge_ltp_command(f.command) ? config::kMergeLtp
+                                                                     : config::kMergeHtp;
+        if (g.merge_mode != mode) {
+            g.merge_mode   = mode;
+            global_changed = true;
+        }
+        ESP_LOGI(TAG, "ArtAddress: merge mode %s", mode == config::kMergeLtp ? "LTP" : "HTP");
+    } else if (f.command != parser::kAcNone) {
+        ESP_LOGI(TAG, "ArtAddress command 0x%02X ignored", f.command);
+    }
+
     if (global_changed) {
         config::set_global(g);
         dmx::mark_global_dirty();
-    }
-    if (f.command != 0x00) {
-        ESP_LOGI(TAG, "ArtAddress command 0x%02X ignored", f.command);
     }
 
     send_poll_reply(from.sin_addr.s_addr);
@@ -311,7 +328,7 @@ void task_main(void*) {
             continue;
         }
         switch (op) {
-        case parser::kOpDmx: handle_dmx(buf, n); break;
+        case parser::kOpDmx: handle_dmx(buf, n, from); break;
         case parser::kOpPoll: handle_poll(buf, n, from); break;
         case parser::kOpSync: handle_sync(buf, n); break;
         case parser::kOpAddress: handle_address(buf, n, from); break;

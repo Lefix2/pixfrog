@@ -115,16 +115,25 @@ void handle_data(const uint8_t* buf, size_t len) {
     }
     if (f.options & parser::kOptPreview) return;  // visualizer-only data
 
-    const bool terminated = (f.options & parser::kOptTerminated) != 0;
-    if (terminated) dmx::note_universe_terminated(f.universe);  // immediate failsafe (E1.31)
-    if (!parser::gate_accept(g_gates, f.universe, f.priority, terminated, now_ms())) return;
+    const uint32_t source_id = parser::source_id_from_cid(f.cid);
+    const bool terminated    = (f.options & parser::kOptTerminated) != 0;
+    if (terminated) {
+        dmx::note_universe_terminated(f.universe);  // immediate failsafe (E1.31)
+        dmx::merge_drop_source(f.universe, source_id);
+    }
+    bool takeover = false;
+    if (!parser::gate_accept(g_gates, f.universe, f.priority, terminated, now_ms(), &takeover))
+        return;
+    // Priority rose: the outranked sources' staging must not blend into HTP.
+    if (takeover) dmx::merge_reset_universe(f.universe);
     if (f.start_code != 0) return;  // alternate start codes: not routed (cf. ArtNzs)
 
-    uint8_t* dst = dmx::universe_back_buffer_for(f.universe);
-    if (!dst) return;  // legitimate sACN for an unmapped universe
-
-    const size_t copy = f.data_len > dmx::kUniverseSize ? dmx::kUniverseSize : f.data_len;
-    std::memcpy(dst, f.data, copy);
+    // Equal-priority sources land here together; the 2-source merge (keyed by
+    // CID hash) arbitrates HTP/LTP exactly like concurrent ArtDmx senders.
+    if (!dmx::write_universe_from_source(f.universe, f.data, f.data_len, source_id,
+                                         dmx::kSacnMergeTimeoutUs)) {
+        return;  // unmapped universe, or a third concurrent source
+    }
     dmx::note_sacn_rx();
 
     const int ch = dmx::channel_for_universe(f.universe);

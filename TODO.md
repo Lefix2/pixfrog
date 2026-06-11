@@ -9,18 +9,24 @@ picks are marked ★.
 - [x] **sACN (E1.31) receiver** — `components/sacn`, opt-in via
       `sacn_enabled`. Multicast joins per configured universe (5 s refresh),
       per-universe priority gate with 2.5 s source timeout, E1.31 sync →
-      frame sync. Equal-priority multi-source merge still pending (see next
-      item). Unicast validated end-to-end on hardware (PR #24).
+      frame sync. Equal-priority sources now go through the shared 2-source
+      merge (see next item). Unicast validated end-to-end on hardware (PR #24).
 - [ ] **sACN multicast test on a real LAN** — IGMP joins are untestable from
       the WSL2 NAT (only unicast was validated). Drive the board from
       xLights or a console on the apartment LAN and confirm
       `sacn_packets_rx` climbs with multicast-addressed universes
       (239.255.x.y), including after a universe re-config (5 s join
       refresh).
-- [ ] **2-source merge (HTP/LTP)** — today two senders on one universe fight
-      (last write wins). Standard: track up to 2 sources per universe, merge
-      HTP (dimmers) or LTP, drop a source after ~10 s silence. Mode is
-      signalled in ArtPollReply and set via ArtAddress.
+- [x] **2-source merge (HTP/LTP)** — shared merge engine in `dmx_manager`
+      (`merge_ingest` in dmx_logic.h, host-tested): up to 2 sources per
+      universe keyed by sender IP (ArtDmx) / CID hash (sACN), per-source
+      staging frames in PSRAM, HTP = per-slot max, LTP = last frame wins.
+      Source dropped after 10 s silence (Art-Net) / 2.5 s (E1.31); a third
+      sender is ignored. Mode is node-wide (`GlobalConfig::merge_mode`,
+      default HTP), set via ArtAddress AcMergeLtp*/AcMergeHtp*/AcCancelMerge,
+      UART `global merge_mode`, or the web API; reported in ArtPollReply
+      GoodOutputA bits 1+3 and `chstat merge=`. sACN priority takeover
+      resets the universe's merge so an outranked source can't blend in.
 - [x] **Failsafe on signal loss** — global mode (hold / blackout / solid
       colour) + timeout (0 = off), triggered per channel from its activity
       timestamp; never-active channels stay dark; sACN stream_terminated

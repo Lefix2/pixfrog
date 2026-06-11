@@ -207,6 +207,34 @@ static void test_gate_eviction_when_full() {
     EXPECT_TRUE(gate_accept(gates, 1, 10, false, 3100));   // uni 1 forgotten → accepted
 }
 
+static void test_gate_takeover_flag() {
+    SourceGate gates[4] = {};
+    bool takeover       = true;
+    EXPECT_TRUE(gate_accept(gates, 1, 100, false, 1000, &takeover));
+    EXPECT_TRUE(!takeover);  // first source: no takeover
+    EXPECT_TRUE(gate_accept(gates, 1, 100, false, 1100, &takeover));
+    EXPECT_TRUE(!takeover);  // equal priority: no takeover
+    EXPECT_TRUE(gate_accept(gates, 1, 150, false, 1200, &takeover));
+    EXPECT_TRUE(takeover);  // priority rose on a live universe
+    takeover = true;
+    EXPECT_TRUE(gate_accept(gates, 1, 200, false, 5000, &takeover));
+    EXPECT_TRUE(!takeover);  // expired slot: reclaim, not a takeover
+}
+
+// ── Merge-source key from CID ───────────────────────────────────────────────
+
+static void test_source_id_from_cid() {
+    uint8_t cid_a[16] = {}, cid_b[16] = {};
+    for (int i = 0; i < 16; ++i)
+        cid_a[i] = static_cast<uint8_t>(i);
+    cid_b[15] = 1;  // differs in one byte
+
+    EXPECT_TRUE(source_id_from_cid(cid_a) != 0);  // 0 is the merge free-slot sentinel
+    EXPECT_TRUE(source_id_from_cid(cid_b) != 0);
+    EXPECT_EQ(source_id_from_cid(cid_a), source_id_from_cid(cid_a));  // deterministic
+    EXPECT_TRUE(source_id_from_cid(cid_a) != source_id_from_cid(cid_b));
+}
+
 int main() {
     test_parse_valid_data();
     test_parse_full_universe();
@@ -222,6 +250,8 @@ int main() {
     test_gate_terminated_releases();
     test_gate_universes_independent();
     test_gate_eviction_when_full();
+    test_gate_takeover_flag();
+    test_source_id_from_cid();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

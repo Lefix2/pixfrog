@@ -122,6 +122,20 @@ inline bool parse_nzs(const uint8_t* buf, size_t len, NzsFields* out) {
 
 constexpr size_t kAddressSize = 107;
 
+// ArtAddress Command values (Art-Net 4 §6.3). The merge commands are
+// per-port (low 2 bits select the port within the bind group).
+constexpr uint8_t kAcNone        = 0x00;
+constexpr uint8_t kAcCancelMerge = 0x01;
+constexpr uint8_t kAcMergeLtp0   = 0x10;  // ..0x13
+constexpr uint8_t kAcMergeHtp0   = 0x50;  // ..0x53
+
+inline bool is_merge_ltp_command(uint8_t command) {
+    return (command & 0xFC) == kAcMergeLtp0;
+}
+inline bool is_merge_htp_command(uint8_t command) {
+    return (command & 0xFC) == kAcMergeHtp0;
+}
+
 struct AddressFields {
     uint8_t net_switch;      // raw byte: 0x80|n programs n, 0x00 = no change
     uint8_t sub_switch;      // raw byte: 0x80|s programs s, 0x00 = no change
@@ -218,6 +232,10 @@ struct PollReplyInputs {
     // A disabled (Off) channel advertises no port type and no output activity,
     // so controllers don't see it as a live DMX universe.
     bool port_enabled[4] = { true, true, true, true };
+    // GoodOutputA merge reporting: bit 1 (merge mode is LTP, node-wide) and
+    // bit 3 (this port is currently merging two sources).
+    bool merge_ltp       = false;
+    bool port_merging[4] = { false, false, false, false };
 };
 
 inline void build_poll_reply(uint8_t pkt[kPollReplySize], const PollReplyInputs& in) {
@@ -248,8 +266,11 @@ inline void build_poll_reply(uint8_t pkt[kPollReplySize], const PollReplyInputs&
     pkt[173] = 0x04;
     for (uint8_t p = 0; p < 4; ++p) {
         if (in.port_enabled[p]) {
-            pkt[174 + p] = 0x80;  // PortType: output, DMX512
-            pkt[182 + p] = 0x80;  // GoodOutputA: transmitting
+            pkt[174 + p] = 0x80;                   // PortType: output, DMX512
+            uint8_t good = 0x80;                   // GoodOutputA: transmitting
+            if (in.port_merging[p]) good |= 0x08;  // merging ArtNet data
+            if (in.merge_ltp) good |= 0x02;        // merge mode is LTP
+            pkt[182 + p] = good;
         }  // disabled: PortType/GoodOutput stay 0 (memset)
         pkt[190 + p] = in.sw_out[p] & 0x0F;  // SwOut low nibble
     }

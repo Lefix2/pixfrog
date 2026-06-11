@@ -63,6 +63,14 @@ bool g_universe_to_slot_valid = false;
 
 // Reverse mapping slot → channel index, populated alongside g_universe_to_slot.
 uint8_t g_slot_to_channel[kNumUniverses]{};
+uint16_t g_slots_used = 0;
+
+// 2-source merge: per-slot source tracking + per-source staging frames
+// (2 × kUniverseSize per slot, PSRAM). Receiver tasks (artnet + sacn, same
+// priority, core 0) may interleave here at tick boundaries; like the bank
+// writes, a torn merge costs at most one oddly-blended frame.
+logic::MergeState g_merge[kNumUniverses]{};
+uint8_t* g_merge_staging = nullptr;
 
 // Per-channel last-activity timestamp (µs). 0 = never seen.
 int64_t g_last_activity_us[config::kNumChannels]{};
@@ -97,6 +105,9 @@ void rebuild_universe_lut() {
             slot++;
         }
     }
+    g_slots_used = slot;
+    // Slots may now mean different universes — tracked sources are stale.
+    std::memset(g_merge, 0, sizeof(g_merge));
 }
 
 }  // namespace
@@ -111,6 +122,13 @@ bool init() {
     }
     g_uni_front.store(g_uni_bank_a, std::memory_order_release);
     g_uni_back = g_uni_bank_b;
+
+    g_merge_staging = static_cast<uint8_t*>(
+        heap_caps_calloc(1, kNumUniverses * 2 * kUniverseSize, MALLOC_CAP_SPIRAM));
+    if (!g_merge_staging) {
+        ESP_LOGE(TAG, "PSRAM alloc for merge staging failed");
+        return false;
+    }
 
     for (size_t i = 0; i < config::kNumChannels; ++i) {
         g_chan_bufs[i].a = static_cast<uint8_t*>(
@@ -363,6 +381,48 @@ uint8_t* universe_back_buffer_for(uint16_t universe_number) {
     const uint16_t slot = g_universe_to_slot[universe_number];
     if (slot == UINT16_MAX) return nullptr;
     return g_uni_back + slot * kUniverseSize;
+}
+
+bool write_universe_from_source(uint16_t universe_number, const uint8_t* data, size_t len,
+                                uint32_t source_id, int64_t timeout_us) {
+    if (!g_universe_to_slot_valid || !data || !g_merge_staging) return false;
+    const uint16_t slot = g_universe_to_slot[universe_number];
+    if (slot == UINT16_MAX) return false;
+    const bool ltp = config::get_global().merge_mode == config::kMergeLtp;
+    return logic::merge_ingest(g_merge[slot],
+                               g_merge_staging + static_cast<size_t>(slot) * 2 * kUniverseSize,
+                               g_uni_back + static_cast<size_t>(slot) * kUniverseSize, data, len,
+                               source_id, ltp, esp_timer_get_time(), timeout_us);
+}
+
+void merge_drop_source(uint16_t universe_number, uint32_t source_id) {
+    if (!g_universe_to_slot_valid) return;
+    const uint16_t slot = g_universe_to_slot[universe_number];
+    if (slot == UINT16_MAX) return;
+    logic::merge_drop(g_merge[slot], source_id);
+}
+
+void merge_reset_universe(uint16_t universe_number) {
+    if (!g_universe_to_slot_valid) return;
+    const uint16_t slot = g_universe_to_slot[universe_number];
+    if (slot == UINT16_MAX) return;
+    std::memset(&g_merge[slot], 0, sizeof(g_merge[slot]));
+}
+
+void merge_cancel_all() {
+    std::memset(g_merge, 0, sizeof(g_merge));
+}
+
+bool is_channel_merging(size_t channel_index) {
+    if (channel_index >= config::kNumChannels) return false;
+    const int64_t now = esp_timer_get_time();
+    for (uint16_t slot = 0; slot < g_slots_used; ++slot) {
+        if (g_slot_to_channel[slot] != channel_index) continue;
+        logic::MergeState m = g_merge[slot];
+        logic::merge_expire(m, now, kArtnetMergeTimeoutUs);
+        if (logic::merge_active_count(m) == 2) return true;
+    }
+    return false;
 }
 
 const uint8_t* universe_front_buffer_for(uint16_t universe_number) {
