@@ -11,6 +11,7 @@ idf_component_register(
         ui
         esp_system
         esp_app_format
+        app_update
         json
         freertos
 )

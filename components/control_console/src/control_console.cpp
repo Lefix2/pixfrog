@@ -11,6 +11,7 @@
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -143,6 +144,7 @@ int cmd_version(int, char**) {
     printf("version=%s\n", app->version);
     printf("idf=%s\n", esp_get_idf_version());
     printf("compile=%s %s\n", app->date, app->time);
+    printf("partition=%s\n", esp_ota_get_running_partition()->label);
     return ok();
 }
 

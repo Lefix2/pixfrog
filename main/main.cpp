@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_ota_ops.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -298,5 +299,16 @@ extern "C" void app_main() {
 
     pixfrog::console::start();
 
-    ESP_LOGI(TAG, "boot complete");
+    // OTA rollback gate: every subsystem above came up, so confirm this
+    // image. If a freshly OTA'd build crashes before reaching this line,
+    // the bootloader reverts to the previous slot on the next reset.
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK &&
+        ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+        esp_ota_mark_app_valid_cancel_rollback();
+        ESP_LOGI(TAG, "OTA image confirmed on %s", running->label);
+    }
+
+    ESP_LOGI(TAG, "boot complete (%s)", running->label);
 }

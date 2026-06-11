@@ -12,6 +12,7 @@ idf_component_register(
         web_config
         esp_timer
         esp_app_format
+        app_update
         esp_hw_support
         esp_system
         heap
