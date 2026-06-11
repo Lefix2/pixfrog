@@ -43,6 +43,9 @@ std::atomic<bool> g_sync_pending{ false };
 constexpr uint32_t kPreviewOff = 0xFFFF0000u;
 std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
 
+// Active standalone scene (-1 = none).
+std::atomic<int8_t> g_active_scene{ -1 };
+
 // Map a universe number to a slot in the bank. For v0 we use a simple
 // flat allocation: universe N → slot (N % kNumUniverses). On boot, the
 // config_store tells us which universes are routed to which channel; we
@@ -186,6 +189,19 @@ uint16_t pixel_preview_count() {
     return static_cast<uint16_t>(g_pixel_preview.load(std::memory_order_relaxed) & 0xFFFFu);
 }
 
+void scene_start(uint8_t scene_index) {
+    if (scene_index >= config::kNumScenes) return;
+    g_active_scene.store(static_cast<int8_t>(scene_index), std::memory_order_relaxed);
+}
+
+void scene_stop() {
+    g_active_scene.store(-1, std::memory_order_relaxed);
+}
+
+int active_scene() {
+    return g_active_scene.load(std::memory_order_relaxed);
+}
+
 bool decode_pixels_for_channel(size_t ch) {
     if (ch >= config::kNumChannels) return false;
     uint8_t* dst = pixel_back_buffer(ch);
@@ -203,10 +219,34 @@ bool decode_pixels_for_channel(size_t ch) {
     // (stale) universes and emits the fallback instead. Hold mode never gets
     // here — stale decode IS the hold. DMX512 outputs degrade colour→blackout
     // (an RGB fill has no meaning on a generic universe).
+    // Standalone scene: manual override — masked channels render the effect,
+    // incoming traffic is ignored until scene_stop(). LED protocols only.
+    const int sc = g_active_scene.load(std::memory_order_relaxed);
+    if (sc >= 0) {
+        const auto& scene = config::get_scene(static_cast<size_t>(sc));
+        const auto& cc    = config::get_channel(ch);
+        if (((scene.channel_mask >> ch) & 1) && !led::is_dmx(cc.protocol)) {
+            logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
+                                      led::bytes_per_pixel(cc.protocol), scene.effect, scene.r,
+                                      scene.g, scene.b, scene.speed, scene.param,
+                                      static_cast<uint32_t>(esp_timer_get_time() / 1000));
+            return true;
+        }
+    }
+
     const auto& g = config::get_global();
     if (g.failsafe_mode != config::kFailsafeHold &&
         logic::failsafe_due(g_last_activity_us[ch], esp_timer_get_time(), g.failsafe_timeout_s)) {
-        const auto& cc     = config::get_channel(ch);
+        const auto& cc = config::get_channel(ch);
+        // Mode "scene": play the configured scene's effect on the lost channel.
+        if (g.failsafe_mode == config::kFailsafeScene && !led::is_dmx(cc.protocol)) {
+            const auto& scene = config::get_scene(g.failsafe_scene);
+            logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
+                                      led::bytes_per_pixel(cc.protocol), scene.effect, scene.r,
+                                      scene.g, scene.b, scene.speed, scene.param,
+                                      static_cast<uint32_t>(esp_timer_get_time() / 1000));
+            return true;
+        }
         const uint8_t mode = led::is_dmx(cc.protocol) ? config::kFailsafeBlackout : g.failsafe_mode;
         logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
                                      led::bytes_per_pixel(cc.protocol), mode, g.failsafe_r,

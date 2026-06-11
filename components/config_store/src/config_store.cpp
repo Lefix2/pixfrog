@@ -1,5 +1,6 @@
 #include "config_store.h"
 
+#include <cstdio>
 #include <cstring>
 
 #include "esp_log.h"
@@ -18,7 +19,10 @@ constexpr const char* kKeyGlobal = "global";
 
 GlobalConfig g_global{};
 ChannelConfig g_channels[kNumChannels]{};
+Scene g_scenes[kNumScenes]{};
 bool g_nvs_ok = false;
+
+constexpr const char* kKeyScenes = "scenes";
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
@@ -52,6 +56,29 @@ ChannelConfig make_default_channel(size_t idx) {
 // the stored blob is smaller than size (struct grew), the tail is zero-filled
 // so new fields get their safe zero default. Returns false only on hard error
 // or if the stored blob is *larger* than expected (downgrade scenario).
+// Usable starter set: 0-2 showcase each effect, the rest are named slots.
+void fill_default_scenes() {
+    std::memset(g_scenes, 0, sizeof(g_scenes));
+    for (size_t i = 0; i < kNumScenes; ++i) {
+        std::snprintf(g_scenes[i].name, kSceneNameMax, "Scene %u", static_cast<unsigned>(i + 1));
+        g_scenes[i].channel_mask = 0xFF;
+        g_scenes[i].effect       = kSceneFxSolid;
+    }
+    std::strncpy(g_scenes[0].name, "Warm white", kSceneNameMax - 1);
+    g_scenes[0].r = 255;
+    g_scenes[0].g = 180;
+    g_scenes[0].b = 110;
+    std::strncpy(g_scenes[1].name, "Chase", kSceneNameMax - 1);
+    g_scenes[1].effect = kSceneFxChase;
+    g_scenes[1].r = g_scenes[1].g = g_scenes[1].b = 255;
+    g_scenes[1].speed                             = 60;  // px/s
+    g_scenes[1].param                             = 3;   // head width
+    std::strncpy(g_scenes[2].name, "Rainbow", kSceneNameMax - 1);
+    g_scenes[2].effect = kSceneFxRainbow;
+    g_scenes[2].speed  = 50;
+    g_scenes[2].param  = 1;
+}
+
 bool nvs_load_blob(nvs_handle_t handle, const char* key, void* dst, size_t size) {
     size_t actual = 0;
     esp_err_t err = nvs_get_blob(handle, key, nullptr, &actual);
@@ -100,6 +127,7 @@ void fill_ram_defaults() {
     g_global = make_default_global();
     for (size_t i = 0; i < kNumChannels; ++i)
         g_channels[i] = make_default_channel(i);
+    fill_default_scenes();
 }
 
 }  // namespace
@@ -161,6 +189,11 @@ void init() {
             g_channels[i] = make_default_channel(i);
             nvs_save_blob(h, key, &g_channels[i], sizeof(ChannelConfig));
         }
+    }
+
+    if (!nvs_load_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes))) {
+        fill_default_scenes();
+        nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
     }
 
     nvs_commit(h);
@@ -256,6 +289,23 @@ bool check_web_password(const char* password) {
     return diff == 0;
 }
 
+const Scene& get_scene(size_t i) {
+    return g_scenes[i < kNumScenes ? i : 0];
+}
+
+bool set_scene(size_t i, const Scene& scene) {
+    if (i >= kNumScenes) return false;
+    g_scenes[i]                         = scene;
+    g_scenes[i].name[kSceneNameMax - 1] = '\0';
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
+}
+
 void reset_to_defaults() {
     fill_ram_defaults();
     if (!g_nvs_ok) return;
@@ -267,6 +317,7 @@ void reset_to_defaults() {
         channel_key(i, key);
         nvs_save_blob(h, key, &g_channels[i], sizeof(ChannelConfig));
     }
+    nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
     nvs_commit(h);
     nvs_close(h);
 }

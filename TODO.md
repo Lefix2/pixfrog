@@ -35,13 +35,13 @@ Handled: `ArtDmx`, `ArtPoll`, `ArtPollReply` (emitted), `ArtSync`,
 `ArtAddress` (names/net/subnet/SwOut applied + reply), `ArtIpProg` (+ reply;
 reboot applies). Validated + counted in `stats artnet_ctrl_rx` but not yet
 consumed: `ArtNzs` (payload not routed — alternate-start-code storage and
-DMX512 encoder interleaving needed), `ArtTrigger` (waiting on scenes),
-`ArtCommand`, `ArtTimeCode`. Remaining candidates:
+DMX512 encoder interleaving needed), `ArtCommand`, `ArtTimeCode`.
+`ArtTrigger` is now consumed: global KeyShow plays/stops the standalone
+scenes. Remaining candidates:
 
 | Opcode | Value | What it brings |
 |---|---|---|
 | `ArtNzs` routing | 0x5100 | Store alternate-start-code frames + emit them on DMX512 channels (encoder interleaving). |
-| `ArtTrigger` consumer | 0x9900 | Fire standalone scenes once they exist. |
 | `ArtCommand` consumer | 0x2400 | Mirror the UART console (`key=value`). |
 | `ArtDiagData` | 0x2300 | Emit diagnostics to subscribed controllers (we'd be a sender; ArtPoll already tells us who wants them). |
 | `ArtTodRequest/TodData/TodControl/Rdm/RdmSub` | 0x8000–0x8400 | RDM over ArtNet — only meaningful for DMX512 output channels, and needs RDM on the wire (driver work). Large. |
@@ -64,9 +64,17 @@ DMX512 encoder interleaving needed), `ArtTrigger` (waiting on scenes),
       UART is the recovery channel.
 - [ ] **Config export/import** — JSON dump/restore via the web UI: backup
       before changes, clone one box to the next.
-- [ ] **Standalone scenes** — a few built-in effects (solid colour, chase,
-      rainbow) playable without a console; doubles as install validation.
-      Hook for ArtTrigger.
+- [x] **Standalone scenes** — 8 parametric slots (solid / chase / rainbow,
+      colour, speed, param, per-channel mask) persisted in NVS. Manual-stop
+      priority over network traffic. Triggers: Scenes menu, web tab, UART
+      `scene` command, `boot_scene`, ArtTrigger KeyShow (SubKey 1..8 / 0),
+      failsafe mode "scene". Validated 12/12 on hardware.
+- [ ] **FSEQ player from microSD** — the xLights ecosystem standard for
+      recorded shows (v2, zstd-compressed frames; played by Falcon/FPP/
+      ESPixelStick). Feasible: devkit microSD on GPIO39-44 (no LED-bus
+      conflict) and its power rail is the LDO VO4 we already program;
+      P4 SDMMC 4-bit has ample bandwidth. Big piece: SDMMC driver + FAT +
+      FSEQ parser + playback scheduling.
 
 ## UX / commissioning
 

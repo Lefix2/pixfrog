@@ -6,6 +6,7 @@
 
 #include "config_store.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace pixfrog::config {
@@ -14,6 +15,7 @@ namespace {
 
 GlobalConfig g_global{};
 ChannelConfig g_channels[kNumChannels]{};
+Scene g_scenes[kNumScenes]{};
 bool g_inited = false;
 
 GlobalConfig make_default_global() {
@@ -48,6 +50,10 @@ void ensure_init() {
     g_global = make_default_global();
     for (size_t i = 0; i < kNumChannels; ++i)
         g_channels[i] = make_default_channel(i);
+    for (size_t i = 0; i < kNumScenes; ++i) {
+        std::snprintf(g_scenes[i].name, kSceneNameMax, "Scene %u", static_cast<unsigned>(i + 1));
+        g_scenes[i].channel_mask = 0xFF;
+    }
     g_inited = true;
 }
 
@@ -88,6 +94,18 @@ void reset_to_defaults() {
 
 bool is_persistence_ok() {
     return true;  // emulator: pretend NVS is healthy
+}
+
+const Scene& get_scene(size_t i) {
+    ensure_init();
+    return g_scenes[i < kNumScenes ? i : 0];
+}
+
+bool set_scene(size_t i, const Scene& scene) {
+    ensure_init();
+    if (i >= kNumScenes) return false;
+    g_scenes[i] = scene;
+    return true;
 }
 
 }  // namespace pixfrog::config

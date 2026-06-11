@@ -188,9 +188,28 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddBoolToObject(jg, "auth_enabled", config::web_password_set());
     cJSON_AddNumberToObject(jg, "failsafe_mode", g.failsafe_mode);
     cJSON_AddNumberToObject(jg, "failsafe_timeout_s", g.failsafe_timeout_s);
+    cJSON_AddNumberToObject(jg, "failsafe_scene", g.failsafe_scene);
+    cJSON_AddNumberToObject(jg, "boot_scene", g.boot_scene);
     char fscol[8];
     snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     cJSON_AddStringToObject(jg, "failsafe_color", fscol);
+
+    // Scenes
+    cJSON_AddNumberToObject(root, "active_scene", dmx::active_scene());
+    cJSON* jscenes = cJSON_AddArrayToObject(root, "scenes");
+    for (size_t i = 0; i < config::kNumScenes; ++i) {
+        const auto& sc = config::get_scene(i);
+        cJSON* js      = cJSON_CreateObject();
+        cJSON_AddStringToObject(js, "name", sc.name);
+        cJSON_AddNumberToObject(js, "effect", sc.effect);
+        char col[8];
+        snprintf(col, sizeof(col), "#%02x%02x%02x", sc.r, sc.g, sc.b);
+        cJSON_AddStringToObject(js, "color", col);
+        cJSON_AddNumberToObject(js, "speed", sc.speed);
+        cJSON_AddNumberToObject(js, "param", sc.param);
+        cJSON_AddNumberToObject(js, "mask", sc.channel_mask);
+        cJSON_AddItemToArray(jscenes, js);
+    }
 
     // Channels
     cJSON* jchs = cJSON_AddArrayToObject(root, "channels");
@@ -302,7 +321,10 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     }
     if (get_u32("home_timeout_s", 0, 65535, u)) g.home_timeout_s = static_cast<uint16_t>(u);
     if (get_bool("web_enabled", b)) g.web_enabled = b;
-    if (get_u32("failsafe_mode", 0, 2, u)) g.failsafe_mode = static_cast<uint8_t>(u);
+    if (get_u32("failsafe_mode", 0, 3, u)) g.failsafe_mode = static_cast<uint8_t>(u);
+    if (get_u32("failsafe_scene", 0, config::kNumScenes - 1, u))
+        g.failsafe_scene = static_cast<uint8_t>(u);
+    if (get_u32("boot_scene", 0, config::kNumScenes, u)) g.boot_scene = static_cast<uint8_t>(u);
     if (get_u32("failsafe_timeout_s", 0, 3600, u)) g.failsafe_timeout_s = static_cast<uint16_t>(u);
     if ((s = get_str("failsafe_color"))) {
         unsigned fr, fg, fb;
@@ -509,6 +531,69 @@ static esp_err_t handle_ota(httpd_req_t* req) {
     return ESP_OK;
 }
 
+// ── POST /api/scene/{n} (config) + /api/scene/{n}/play + /api/scenes/stop ───
+
+static esp_err_t handle_post_scene(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+
+    // URI: /api/scene/N or /api/scene/N/play
+    const char* tail = req->uri + strlen("/api/scene/");
+    const int idx    = atoi(tail);
+    if (idx < 0 || static_cast<size_t>(idx) >= config::kNumScenes)
+        return send_err(req, 400, "scene 0..7");
+    const bool play = strstr(tail, "/play") != nullptr;
+
+    if (play) {
+        dmx::scene_start(static_cast<uint8_t>(idx));
+        return send_ok(req);
+    }
+
+    char buf[256];
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+
+    auto sc = config::get_scene(static_cast<size_t>(idx));
+
+    cJSON* item = cJSON_GetObjectItemCaseSensitive(j, "name");
+    if (cJSON_IsString(item)) {
+        memset(sc.name, 0, sizeof(sc.name));
+        strncpy(sc.name, item->valuestring, sizeof(sc.name) - 1);
+    }
+    item = cJSON_GetObjectItemCaseSensitive(j, "effect");
+    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 2)
+        sc.effect = static_cast<uint8_t>(item->valuedouble);
+    item = cJSON_GetObjectItemCaseSensitive(j, "color");
+    if (cJSON_IsString(item)) {
+        const char* cs = item->valuestring;
+        unsigned r, gg, b;
+        if (sscanf(cs[0] == '#' ? cs + 1 : cs, "%02x%02x%02x", &r, &gg, &b) == 3) {
+            sc.r = static_cast<uint8_t>(r);
+            sc.g = static_cast<uint8_t>(gg);
+            sc.b = static_cast<uint8_t>(b);
+        }
+    }
+    item = cJSON_GetObjectItemCaseSensitive(j, "speed");
+    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 255)
+        sc.speed = static_cast<uint8_t>(item->valuedouble);
+    item = cJSON_GetObjectItemCaseSensitive(j, "param");
+    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 255)
+        sc.param = static_cast<uint8_t>(item->valuedouble);
+    item = cJSON_GetObjectItemCaseSensitive(j, "mask");
+    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 255)
+        sc.channel_mask = static_cast<uint8_t>(item->valuedouble);
+
+    cJSON_Delete(j);
+    config::set_scene(static_cast<size_t>(idx), sc);
+    return send_ok(req);
+}
+
+static esp_err_t handle_scenes_stop(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    dmx::scene_stop();
+    return send_ok(req);
+}
+
 // ── POST /api/reboot ─────────────────────────────────────────────────────────
 
 static esp_err_t handle_reboot(httpd_req_t* req) {
@@ -538,7 +623,7 @@ void start() {
     if (g_server) return;
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 8;
+    cfg.max_uri_handlers = 10;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -563,6 +648,14 @@ void start() {
           .handler  = handle_post_channel,
           .user_ctx = nullptr },
         { .uri = "/api/ota", .method = HTTP_POST, .handler = handle_ota, .user_ctx = nullptr },
+        { .uri      = "/api/scene/*",
+          .method   = HTTP_POST,
+          .handler  = handle_post_scene,
+          .user_ctx = nullptr },
+        { .uri      = "/api/scenes/stop",
+          .method   = HTTP_POST,
+          .handler  = handle_scenes_stop,
+          .user_ctx = nullptr },
         { .uri      = "/api/reboot",
           .method   = HTTP_POST,
           .handler  = handle_reboot,
