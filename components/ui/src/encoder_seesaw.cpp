@@ -71,9 +71,11 @@ constexpr int64_t kBtnDebounceUs = 20'000;  // 20 ms
 int64_t g_last_btn_change_us     = 0;
 
 // Long-press: holding past this threshold emits LongPress immediately (no
-// need to release); the subsequent release is then swallowed so a single
-// hold never produces both events. Short presses emit Click on release.
-constexpr int64_t kLongPressUs = 600'000;  // 600 ms
+// need to release), exactly once per hold — the button must be released
+// before any further event can fire. The release after a LongPress is
+// swallowed so a single hold never also produces a Click; short presses
+// emit Click on release.
+constexpr int64_t kLongPressUs = 1'000'000;  // 1 s
 int64_t g_press_start_us       = 0;
 bool g_long_fired              = false;
 
