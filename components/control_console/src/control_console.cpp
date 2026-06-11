@@ -214,6 +214,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("home_timeout_s=%u\n", g.home_timeout_s);
     printf("web_enabled=%d\n", g.web_enabled ? 1 : 0);
     printf("sacn_enabled=%d\n", g.sacn_enabled ? 1 : 0);
+    printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
 }
 
 int cmd_global(int argc, char** argv) {
@@ -263,9 +264,15 @@ int cmd_global(int argc, char** argv) {
         if (!parse_bool(val, g.web_enabled)) return err("web_enabled: 0|1");
     } else if (strcmp(key, "sacn_enabled") == 0) {
         if (!parse_bool(val, g.sacn_enabled)) return err("sacn_enabled: 0|1");
+    } else if (strcmp(key, "web_password") == 0) {
+        // UART = the trusted physical recovery channel. `-` clears (auth off).
+        const bool cleared = (strcmp(val, "-") == 0);
+        if (!config::set_web_password(cleared ? "" : val)) printf("warn=not_persisted\n");
+        printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
+        return ok();
     } else {
         return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
-                   "refresh_hz home_timeout_s web_enabled sacn_enabled)");
+                   "refresh_hz home_timeout_s web_enabled sacn_enabled web_password)");
     }
 
     const bool persisted = config::set_global(g);
