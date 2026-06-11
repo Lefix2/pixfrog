@@ -235,13 +235,33 @@ void handle_nzs(const uint8_t* buf, size_t len) {
     dmx::note_ctrl_rx();
 }
 
-// ArtTrigger / ArtCommand / ArtTimeCode — validated + counted so controllers
-// see them land (stats artnet_ctrl_rx); consumers (scenes, console mirror,
-// timecode sync) are future work per TODO.md.
+// ArtTrigger — show control from the desk. Global packets (Oem 0xFFFF) with
+// Key 3 (KeyShow) drive the standalone scenes: SubKey 0 stops, SubKey 1..8
+// plays scene N-1. Other keys/Oems are counted but ignored.
+void handle_trigger(const uint8_t* buf, size_t len) {
+    if (len < 18) {
+        dmx::note_packet_bad();
+        return;
+    }
+    dmx::note_ctrl_rx();
+    const uint16_t oem = static_cast<uint16_t>((buf[14] << 8) | buf[15]);
+    const uint8_t key  = buf[16];
+    const uint8_t sub  = buf[17];
+    if (oem != 0xFFFF || key != 3) return;  // not a global KeyShow trigger
+    if (sub == 0) {
+        dmx::scene_stop();
+        ESP_LOGI(TAG, "ArtTrigger: scene stop");
+    } else if (sub <= config::kNumScenes) {
+        dmx::scene_start(static_cast<uint8_t>(sub - 1));
+        ESP_LOGI(TAG, "ArtTrigger: scene %u", static_cast<unsigned>(sub - 1));
+    }
+}
+
+// ArtCommand / ArtTimeCode — validated + counted so controllers see them
+// land (stats artnet_ctrl_rx); consumers are future work per TODO.md.
 void handle_counted_only(uint16_t op, const uint8_t* buf, size_t len) {
     size_t min_len = 0;
     switch (op) {
-    case parser::kOpTrigger: min_len = 18; break;
     case parser::kOpCommand: min_len = 16; break;
     case parser::kOpTimeCode: min_len = 19; break;
     default: return;
@@ -297,7 +317,7 @@ void task_main(void*) {
         case parser::kOpAddress: handle_address(buf, n, from); break;
         case parser::kOpIpProg: handle_ip_prog(buf, n, from); break;
         case parser::kOpNzs: handle_nzs(buf, n); break;
-        case parser::kOpTrigger:
+        case parser::kOpTrigger: handle_trigger(buf, n); break;
         case parser::kOpCommand:
         case parser::kOpTimeCode: handle_counted_only(op, buf, n); break;
         default: break;

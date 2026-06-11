@@ -340,6 +340,91 @@ static void test_failsafe_fill_overflow_is_noop() {
     EXPECT_EQ(buf[0], 0);
 }
 
+// ── Scene generators ────────────────────────────────────────────────────────
+
+static void test_scene_solid() {
+    uint8_t buf[4 * 3] = {};
+    fill_scene_pattern(buf, sizeof(buf), 4, 3, 0 /*solid*/, 10, 20, 30, 0, 0, 12345);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_EQ(buf[i * 3 + 0], 10);
+        EXPECT_EQ(buf[i * 3 + 1], 20);
+        EXPECT_EQ(buf[i * 3 + 2], 30);
+    }
+}
+
+static void test_scene_solid_rgbw_white_off() {
+    uint8_t buf[2 * 4];
+    std::memset(buf, 0xFF, sizeof(buf));
+    fill_scene_pattern(buf, sizeof(buf), 2, 4, 0, 1, 2, 3, 0, 0, 0);
+    EXPECT_EQ(buf[3], 0);
+    EXPECT_EQ(buf[7], 0);
+}
+
+static void test_scene_chase_position_and_width() {
+    // 10 px, speed 100 px/s, t=0 → head at 0; width 3 → pixels 0, 9, 8 lit.
+    uint8_t buf[10 * 3] = {};
+    fill_scene_pattern(buf, sizeof(buf), 10, 3, 1 /*chase*/, 255, 0, 0, 100, 3, 0);
+    EXPECT_EQ(buf[0 * 3], 255);
+    EXPECT_EQ(buf[9 * 3], 255);
+    EXPECT_EQ(buf[8 * 3], 255);
+    EXPECT_EQ(buf[5 * 3], 0);  // background black
+
+    // t=1000 ms → 100 px advanced → head back at 0 (wrap).
+    uint8_t buf2[10 * 3] = {};
+    fill_scene_pattern(buf2, sizeof(buf2), 10, 3, 1, 255, 0, 0, 100, 3, 1000);
+    EXPECT_EQ(buf2[0 * 3], 255);
+
+    // t=50 ms → 5 px advanced → head at 5.
+    uint8_t buf3[10 * 3] = {};
+    fill_scene_pattern(buf3, sizeof(buf3), 10, 3, 1, 255, 0, 0, 100, 3, 50);
+    EXPECT_EQ(buf3[5 * 3], 255);
+    EXPECT_EQ(buf3[0 * 3], 0);
+}
+
+static void test_scene_rainbow_spans_hues() {
+    // 6 px, 1 repeat, t=0 → hues 0,60,...,300 → all distinct primaries/mixes.
+    uint8_t buf[6 * 3] = {};
+    fill_scene_pattern(buf, sizeof(buf), 6, 3, 2 /*rainbow*/, 0, 0, 0, 0, 1, 0);
+    EXPECT_EQ(buf[0], 255);  // hue 0 = red
+    EXPECT_EQ(buf[1], 0);
+    // hue 120 (pixel 2) = green
+    EXPECT_EQ(buf[2 * 3 + 0], 0);
+    EXPECT_EQ(buf[2 * 3 + 1], 255);
+    // hue 240 (pixel 4) = blue
+    EXPECT_EQ(buf[4 * 3 + 2], 255);
+    // rotation: with speed, t shifts the wheel
+    uint8_t buf2[6 * 3] = {};
+    fill_scene_pattern(buf2, sizeof(buf2), 6, 3, 2, 0, 0, 0, 100, 1, 60);  // +60°
+    EXPECT_EQ(buf2[0 * 3 + 0], 255);                                       // hue 60 = yellow
+    EXPECT_EQ(buf2[0 * 3 + 1], 255);
+}
+
+static void test_scene_overflow_is_noop() {
+    uint8_t buf[5] = {};
+    fill_scene_pattern(buf, sizeof(buf), 2, 3, 0, 9, 9, 9, 0, 0, 0);
+    EXPECT_EQ(buf[0], 0);
+}
+
+static void test_hue_wheel_endpoints() {
+    uint8_t r, g, b;
+    hue_to_rgb(0, &r, &g, &b);
+    EXPECT_EQ(r, 255);
+    EXPECT_EQ(g, 0);
+    EXPECT_EQ(b, 0);
+    hue_to_rgb(120, &r, &g, &b);
+    EXPECT_EQ(g, 255);
+    EXPECT_EQ(r, 0);
+    hue_to_rgb(240, &r, &g, &b);
+    EXPECT_EQ(b, 255);
+    EXPECT_EQ(g, 0);
+    hue_to_rgb(359, &r, &g, &b);
+    EXPECT_EQ(r, 255);            // wraps back toward red
+    hue_to_rgb(720, &r, &g, &b);  // modulo
+    EXPECT_EQ(r, 255);
+    EXPECT_EQ(g, 0);
+    EXPECT_EQ(b, 0);
+}
+
 int main() {
     test_total_bytes_rgb();
     test_total_bytes_rgbw();
@@ -364,6 +449,12 @@ int main() {
     test_failsafe_fill_color_rgb();
     test_failsafe_fill_color_rgbw_white_off();
     test_failsafe_fill_overflow_is_noop();
+    test_scene_solid();
+    test_scene_solid_rgbw_white_off();
+    test_scene_chase_position_and_width();
+    test_scene_rainbow_spans_hues();
+    test_scene_overflow_is_noop();
+    test_hue_wheel_endpoints();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

@@ -58,16 +58,42 @@ struct GlobalConfig {
     // Signal-loss failsafe — global setting, triggered per channel when no
     // packet touched any of its universes for failsafe_timeout_s. Zero-fill
     // migration = Hold + disabled = today's behaviour.
-    uint8_t failsafe_mode;        // 0=hold last look, 1=blackout, 2=solid colour
+    uint8_t failsafe_mode;        // 0=hold last look, 1=blackout, 2=solid colour, 3=scene
     uint16_t failsafe_timeout_s;  // 0 = failsafe disabled
     uint8_t failsafe_r;           // solid-colour fill (mode 2)
     uint8_t failsafe_g;
     uint8_t failsafe_b;
+
+    // Standalone scenes hooks (zero-fill migration = none/0).
+    uint8_t boot_scene;      // 0 = none, 1..kNumScenes = play scene N-1 at boot
+    uint8_t failsafe_scene;  // scene index 0..kNumScenes-1 used by failsafe mode 3
 };
 
 constexpr uint8_t kFailsafeHold     = 0;
 constexpr uint8_t kFailsafeBlackout = 1;
 constexpr uint8_t kFailsafeColor    = 2;
+constexpr uint8_t kFailsafeScene    = 3;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Standalone scenes — parametric effects, no recorded frames
+// ────────────────────────────────────────────────────────────────────────────
+
+constexpr size_t kNumScenes    = 8;
+constexpr size_t kSceneNameMax = 16;
+
+constexpr uint8_t kSceneFxSolid   = 0;
+constexpr uint8_t kSceneFxChase   = 1;
+constexpr uint8_t kSceneFxRainbow = 2;
+
+struct Scene {
+    char name[kSceneNameMax];  // null-padded
+    uint8_t channel_mask;      // bit n = channel n participates
+    uint8_t effect;            // kSceneFx*
+    uint8_t r, g, b;           // solid / chase colour
+    uint8_t speed;             // solid: unused; chase: px/s; rainbow: rotation
+    uint8_t param;             // chase: head width px; rainbow: wheel repeats
+    uint8_t reserved[2];
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Per-channel configuration
@@ -101,6 +127,10 @@ const ChannelConfig& get_channel(size_t channel_index);
 // Return true on success.
 bool set_global(const GlobalConfig& cfg);
 bool set_channel(size_t channel_index, const ChannelConfig& cfg);
+
+// Scene slots (RAM-cached, NVS-persisted like channels).
+const Scene& get_scene(size_t scene_index);
+bool set_scene(size_t scene_index, const Scene& scene);
 
 // ── Web UI admin password ───────────────────────────────────────────────────
 // Empty/null password clears the hash (auth disabled). Setting a password

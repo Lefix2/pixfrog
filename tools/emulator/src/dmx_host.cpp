@@ -36,6 +36,18 @@ void mark_global_dirty() {}
 bool is_channel_failsafe(size_t /*channel_index*/) {
     return false;
 }
+namespace {
+int g_scene = -1;
+}
+void scene_start(uint8_t scene_index) {
+    g_scene = scene_index;
+}
+void scene_stop() {
+    g_scene = -1;
+}
+int active_scene() {
+    return g_scene;
+}
 void note_universe_terminated(uint16_t /*universe_number*/) {}
 
 // Pixel-count preview: the emulator has no LED output, but the state is kept

@@ -63,6 +63,7 @@ enum class Screen : uint8_t {
     NetworkMenu,
     ChannelMenu,
     TestPatternMenu,
+    ScenesMenu,
     About,
     EditValue,
     EditString,
@@ -253,6 +254,7 @@ const char* failsafe_name(uint8_t m) {
     switch (m) {
     case config::kFailsafeBlackout: return "Black";
     case config::kFailsafeColor: return "Color";
+    case config::kFailsafeScene: return "Scene";
     default: return "Hold";
     }
 }
@@ -523,11 +525,11 @@ void render_home() {
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
 
-constexpr uint8_t kMainItemCount                  = 13;
+constexpr uint8_t kMainItemCount                  = 14;
 constexpr const char* kMainLabels[kMainItemCount] = {
-    "ArtNet",       "Network",   "Channel 1",      "Channel 2", "Channel 3",
-    "Channel 4",    "Channel 5", "Channel 6",      "Channel 7", "Channel 8",
-    "Test pattern", "About",     "[Back to HOME]",
+    "ArtNet",    "Network",      "Channel 1", "Channel 2",      "Channel 3",
+    "Channel 4", "Channel 5",    "Channel 6", "Channel 7",      "Channel 8",
+    "Scenes",    "Test pattern", "About",     "[Back to HOME]",
 };
 
 void render_main_menu() {
@@ -563,9 +565,12 @@ void dispatch_main_menu(Event e) {
             s.screen        = Screen::ChannelMenu;
             s.cursor        = 0;
         } else if (s.cursor == 10) {
-            s.screen = Screen::TestPatternMenu;
+            s.screen = Screen::ScenesMenu;
             s.cursor = 0;
         } else if (s.cursor == 11) {
+            s.screen = Screen::TestPatternMenu;
+            s.cursor = 0;
+        } else if (s.cursor == 12) {
             s.screen = Screen::About;
             s.cursor = 0;
         } else {
@@ -604,7 +609,7 @@ void render_about() {
 void dispatch_about(Event e) {
     if (e == Event::Click) {
         s.screen = Screen::MainMenu;
-        s.cursor = 11;
+        s.cursor = 12;
     }
 }
 
@@ -645,6 +650,45 @@ void dispatch_test_pattern_menu(Event e) {
     } else {
         // Stop calibration and return.
         lcd::set_calibration_mode(-1);
+        s.screen = Screen::MainMenu;
+        s.cursor = 11;
+    }
+}
+
+// ── SCENES MENU ─────────────────────────────────────────────────────────────
+// Play/stop only — editing colours and masks on a rotary encoder is web/UART
+// territory. The active scene is starred.
+
+constexpr uint8_t kScenesItemCount = config::kNumScenes + 2;  // 8 + [Stop] + [Back]
+
+void render_scenes_menu() {
+    char marked[config::kNumScenes][kOledCols + 1] = {};
+    ListItem items[kScenesItemCount];
+    const int active = dmx::active_scene();
+    for (uint8_t i = 0; i < config::kNumScenes; ++i) {
+        const auto& sc = config::get_scene(i);
+        if (active == static_cast<int>(i)) {
+            std::snprintf(marked[i], sizeof(marked[i]), "%s *", sc.name);
+            items[i].label = marked[i];
+        } else {
+            items[i].label = sc.name;
+        }
+        items[i].value = "";
+    }
+    items[config::kNumScenes]     = { "[Stop]", "" };
+    items[config::kNumScenes + 1] = { "[Back]", "" };
+    render_list("SCENES", items, kScenesItemCount, s.cursor);
+}
+
+void dispatch_scenes_menu(Event e) {
+    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
+    if (e == Event::RotateRight && s.cursor < kScenesItemCount - 1) s.cursor++;
+    if (e != Event::Click) return;
+    if (s.cursor < config::kNumScenes) {
+        dmx::scene_start(s.cursor);  // stay in the menu to switch scenes
+    } else if (s.cursor == config::kNumScenes) {
+        dmx::scene_stop();
+    } else {
         s.screen = Screen::MainMenu;
         s.cursor = 10;
     }
@@ -1153,7 +1197,7 @@ void dispatch_artnet_menu(Event e) {
                    Screen::ArtnetMenu);
         break;
     case 7:
-        enter_edit(Field::ArtnetFailsafeMode, ValueKind::Failsafe, g.failsafe_mode, 0, 2, 1,
+        enter_edit(Field::ArtnetFailsafeMode, ValueKind::Failsafe, g.failsafe_mode, 0, 3, 1,
                    "FSafe", Screen::ArtnetMenu);
         break;
     case 8:
@@ -1387,11 +1431,15 @@ void dispatch_long_press() {
     case Screen::TestPatternMenu:
         lcd::set_calibration_mode(-1);
         s.screen = Screen::MainMenu;
+        s.cursor = 11;
+        break;
+    case Screen::ScenesMenu:
+        s.screen = Screen::MainMenu;
         s.cursor = 10;
         break;
     case Screen::About:
         s.screen = Screen::MainMenu;
-        s.cursor = 11;
+        s.cursor = 12;
         break;
     case Screen::EditValue:
         dmx::clear_pixel_preview();
@@ -1425,6 +1473,7 @@ void menu_render() {
     case Screen::NetworkMenu: render_network_menu(); break;
     case Screen::ChannelMenu: render_channel_menu(); break;
     case Screen::TestPatternMenu: render_test_pattern_menu(); break;
+    case Screen::ScenesMenu: render_scenes_menu(); break;
     case Screen::About: render_about(); break;
     case Screen::EditValue: render_edit_value(); break;
     case Screen::EditString: render_edit_string(); break;
@@ -1449,6 +1498,7 @@ void menu_dispatch(Event e) {
     case Screen::NetworkMenu: dispatch_network_menu(e); break;
     case Screen::ChannelMenu: dispatch_channel_menu(e); break;
     case Screen::TestPatternMenu: dispatch_test_pattern_menu(e); break;
+    case Screen::ScenesMenu: dispatch_scenes_menu(e); break;
     case Screen::About: dispatch_about(e); break;
     case Screen::EditValue: dispatch_edit_value(e); break;
     case Screen::EditString: dispatch_edit_string(e); break;
@@ -1469,8 +1519,8 @@ bool menu_is_home() {
 #ifdef PIXFROG_EMULATOR
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     static const char* const kNames[] = {
-        "Home",  "MainMenu",  "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
-        "About", "EditValue", "EditString", "EditIp",
+        "Home",       "MainMenu", "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
+        "ScenesMenu", "About",    "EditValue",  "EditString",  "EditIp",
     };
     if (screen_name) *screen_name = kNames[static_cast<uint8_t>(s.screen)];
     if (cursor) *cursor = s.cursor;

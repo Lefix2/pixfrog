@@ -64,7 +64,8 @@ opened while the flag is off — opt-in only. Toggle from the Network submenu, v
 `global web_enabled 0|1` in the UART console, or via POST `/api/global`.
 
 REST endpoints: `GET /` (SPA), `GET /api/config`, `POST /api/global`, `POST /api/channel/{0..7}`,
-`POST /api/ota` (raw .bin body), `POST /api/reboot`, `POST /api/factory-reset`. All JSON.
+`POST /api/scene/{0..7}[/play]`, `POST /api/scenes/stop`, `POST /api/ota` (raw .bin body),
+`POST /api/reboot`, `POST /api/factory-reset`. All JSON.
 
 Auth: HTTP Basic on every POST (GETs stay open), enabled by setting an admin
 password (`web_password` via the SPA, `/api/global`, or UART

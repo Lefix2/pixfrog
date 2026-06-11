@@ -115,6 +115,15 @@ void clear_pixel_preview();
 int pixel_preview_channel();
 uint16_t pixel_preview_count();
 
+// ── Standalone scenes (manual override) ────────────────────────────────────
+// While a scene plays, channels in its mask render the parametric effect
+// instead of decoding universes — network traffic is ignored until
+// scene_stop() (manual-stop policy). Set from ui/console/web/artnet tasks,
+// read by render_task (single atomic).
+void scene_start(uint8_t scene_index);  // 0..config::kNumScenes-1
+void scene_stop();
+int active_scene();  // -1 = none
+
 // Signal that an ArtSync was received (forces frame emission ASAP).
 void note_sync();
 

@@ -109,6 +109,100 @@ inline void fill_failsafe_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pi
     }
 }
 
+// ── Standalone scene generators ─────────────────────────────────────────────
+//
+// Parametric effects rendered straight into the channel's pixel back buffer
+// (canonical RGB(W) order; colour order / brightness apply at encode time).
+// `phase_ms` is wall-clock so animation speed is refresh-rate independent.
+
+// Integer HSV→RGB, h in [0,360), s/v fixed at max — enough for a wheel.
+inline void hue_to_rgb(uint32_t h360, uint8_t* r, uint8_t* g, uint8_t* b) {
+    const uint32_t sector = (h360 % 360) / 60;
+    const uint32_t f      = ((h360 % 360) % 60) * 255 / 60;  // 0..255 within sector
+    const uint8_t q       = static_cast<uint8_t>(255 - f);
+    const uint8_t t       = static_cast<uint8_t>(f);
+    switch (sector) {
+    case 0:
+        *r = 255;
+        *g = t;
+        *b = 0;
+        break;
+    case 1:
+        *r = q;
+        *g = 255;
+        *b = 0;
+        break;
+    case 2:
+        *r = 0;
+        *g = 255;
+        *b = t;
+        break;
+    case 3:
+        *r = 0;
+        *g = q;
+        *b = 255;
+        break;
+    case 4:
+        *r = t;
+        *g = 0;
+        *b = 255;
+        break;
+    default:
+        *r = 255;
+        *g = 0;
+        *b = q;
+        break;
+    }
+}
+
+inline void set_px(uint8_t* dst, uint8_t bpp, uint16_t i, uint8_t r, uint8_t g, uint8_t b) {
+    uint8_t* p = dst + static_cast<size_t>(i) * bpp;
+    p[0]       = r;
+    if (bpp > 1) p[1] = g;
+    if (bpp > 2) p[2] = b;
+    for (uint8_t k = 3; k < bpp; ++k)
+        p[k] = 0;  // W die off — scene colours are RGB-defined
+}
+
+// Renders one frame of scene `effect` at time `phase_ms`:
+//   solid   — r,g,b everywhere
+//   chase   — black background, `param`-pixel head moving at `speed` px/s
+//   rainbow — `param` wheel repeats along the strip, rotating with `speed`
+inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                               uint8_t bytes_per_pixel, uint8_t effect, uint8_t r, uint8_t g,
+                               uint8_t b, uint8_t speed, uint8_t param, uint32_t phase_ms) {
+    const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
+    if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
+
+    switch (effect) {
+    case 1: {  // chase
+        std::memset(dst, 0, total);
+        const uint16_t width = param ? param : 1;
+        const uint32_t head  = (static_cast<uint64_t>(phase_ms) * speed / 1000) % pixel_count;
+        for (uint16_t k = 0; k < width && k < pixel_count; ++k) {
+            const uint16_t i = static_cast<uint16_t>((head + pixel_count - k) % pixel_count);
+            set_px(dst, bytes_per_pixel, i, r, g, b);
+        }
+        break;
+    }
+    case 2: {  // rainbow
+        const uint32_t repeats = param ? param : 1;
+        const uint32_t offset  = (static_cast<uint64_t>(phase_ms) * speed / 100) % 360;
+        for (uint16_t i = 0; i < pixel_count; ++i) {
+            const uint32_t hue = (static_cast<uint32_t>(i) * 360 * repeats / pixel_count + offset);
+            uint8_t pr, pg, pb;
+            hue_to_rgb(hue, &pr, &pg, &pb);
+            set_px(dst, bytes_per_pixel, i, pr, pg, pb);
+        }
+        break;
+    }
+    default:  // solid
+        for (uint16_t i = 0; i < pixel_count; ++i)
+            set_px(dst, bytes_per_pixel, i, r, g, b);
+        break;
+    }
+}
+
 // ── Pixel decoder ───────────────────────────────────────────────────────────
 //
 // Copies bytes from one or more universes into the destination buffer,
