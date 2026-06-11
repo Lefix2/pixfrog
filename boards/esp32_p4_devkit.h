@@ -97,6 +97,13 @@ constexpr const char* kBoardRev  = "v0";
 //
 // Bit position on the parallel bus → physical GPIO.
 // Bit 0 = CH1 DATA, Bit 1 = CH1 CLOCK, Bit 2 = CH2 DATA, etc.
+//
+// Pad power domains (P4 datasheet §2, Waveshare module wiring):
+//   GPIO 2-25   VDD_IO_0/4 ← 3.3 V direct
+//   GPIO 39-48  VDD_IO_5   ← internal LDO VO4 — MUST be programmed to 3.3 V
+//               at boot (main::power_vdd_io5_pads), else outputs swing ~1.2 V.
+//               Covers CH5 CLOCK (46) and CH7 DATA/CLOCK (47/48).
+//   GPIO 49-54  VDD_IO_6   ← 3.3 V direct
 
 constexpr int kLedDataGpio[8]  = { 2, 4, 22, 24, 26, 32, 47, 53 };
 constexpr int kLedClockGpio[8] = { 3, 5, 23, 25, 46, 33, 48, 54 };

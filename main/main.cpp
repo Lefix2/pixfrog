@@ -11,6 +11,7 @@
 
 #include "esp_eth.h"
 #include "esp_event.h"
+#include "esp_ldo_regulator.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -224,8 +225,32 @@ void render_task(void*) {
 
 }  // namespace
 
+// On the Waveshare ESP32-P4 module, the VDD_IO_5 pad domain (GPIO39-48 —
+// carries LED bus CH5 CLOCK and CH7 DATA/CLOCK) is wired to the P4's internal
+// LDO output VO4, not to 3.3 V. Left unprogrammed, VO4 idles near 1.2 V and
+// those outputs swing 0-1.2 V instead of 0-3.3 V (measured on GPIO47).
+// Acquire the channel at 3.3 V before any LED output starts and never
+// release it. VDD_IO_6 (GPIO49-54) is tied to 3.3 V on the module and needs
+// nothing.
+void power_vdd_io5_pads() {
+    esp_ldo_channel_config_t cfg = {
+        .chan_id    = 4,
+        .voltage_mv = 3300,
+    };
+    static esp_ldo_channel_handle_t s_chan = nullptr;
+    const esp_err_t err                    = esp_ldo_acquire_channel(&cfg, &s_chan);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "LDO VO4 acquire failed (%s) — GPIO39-48 stuck at ~1.2V",
+                 esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "LDO VO4 → 3.3V (VDD_IO_5 pads GPIO39-48)");
+    }
+}
+
 extern "C" void app_main() {
     ESP_LOGI(TAG, "pixfrog booting on %s", pixfrog::board::kBoardName);
+
+    power_vdd_io5_pads();
 
     pixfrog::config::init();
     if (!pixfrog::dmx::init()) {
