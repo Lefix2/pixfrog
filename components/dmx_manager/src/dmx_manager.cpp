@@ -282,6 +282,12 @@ void note_packet_rx() {
 void note_packet_bad() {
     __atomic_add_fetch(&g_stats.artnet_bad_packets, 1, __ATOMIC_RELAXED);
 }
+void note_ctrl_rx() {
+    __atomic_add_fetch(&g_stats.artnet_ctrl_rx, 1, __ATOMIC_RELAXED);
+}
+void note_sacn_rx() {
+    __atomic_add_fetch(&g_stats.sacn_packets_rx, 1, __ATOMIC_RELAXED);
+}
 void note_sync() {
     g_sync_pending.store(true, std::memory_order_release);
     if (g_sync_sem) xSemaphoreGive(g_sync_sem);

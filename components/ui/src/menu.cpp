@@ -17,6 +17,7 @@
 #include "dmx_manager.h"
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
+#include "sacn.h"
 #include "ui.h"
 #include "web_config.h"
 
@@ -74,6 +75,7 @@ enum class Field : uint8_t {
     ArtnetNet,
     ArtnetSubnet,
     ArtnetReplyUnicast,
+    ArtnetSacn,
     GlobalRefresh,
     NetworkDhcp,
     NetworkWebEnabled,
@@ -720,6 +722,16 @@ void commit_edit() {
         dmx::mark_global_dirty();
         break;
     }
+    case Field::ArtnetSacn: {
+        auto g         = config::get_global();
+        g.sacn_enabled = (v != 0);
+        config::set_global(g);
+        if (g.sacn_enabled)
+            sacn::start();
+        else
+            sacn::stop();
+        break;
+    }
     case Field::GlobalRefresh: {
         auto g            = config::get_global();
         g.refresh_rate_hz = static_cast<uint8_t>(v);
@@ -1049,25 +1061,26 @@ void dispatch_edit_ip(Event e) {
 // ── ARTNET MENU ─────────────────────────────────────────────────────────────
 
 void render_artnet_menu() {
-    char vnet[8], vsub[8], vrefresh[8], vunicast[8];
+    char vnet[8], vsub[8], vrefresh[8], vunicast[8], vsacn[8];
     char vshort[14], vlong[14];
     const auto& g = config::get_global();
     std::snprintf(vnet, sizeof(vnet), "%u", g.artnet_net);
     std::snprintf(vsub, sizeof(vsub), "%u", g.artnet_subnet);
     std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
     std::snprintf(vunicast, sizeof(vunicast), "%s", g.artnet_poll_reply_unicast ? "ON" : "OFF");
+    std::snprintf(vsacn, sizeof(vsacn), "%s", g.sacn_enabled ? "ON" : "OFF");
     truncate(vshort, sizeof(vshort), g.short_name);
     truncate(vlong, sizeof(vlong), g.long_name);
 
-    ListItem items[7] = {
+    ListItem items[8] = {
         { "Net", vnet },         { "Sub", vsub },         { "Short", vshort }, { "Long", vlong },
-        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "[Back]", "" },
+        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },   { "[Back]", "" },
     };
-    render_list("ARTNET", items, 7, s.cursor);
+    render_list("ARTNET", items, 8, s.cursor);
 }
 
 void dispatch_artnet_menu(Event e) {
-    constexpr uint8_t kCount = 7;
+    constexpr uint8_t kCount = 8;
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1) s.cursor++;
     if (e != Event::Click) return;
@@ -1099,6 +1112,10 @@ void dispatch_artnet_menu(Event e) {
                    0, 1, 1, "Unicast", Screen::ArtnetMenu);
         break;
     case 6:
+        enter_edit(Field::ArtnetSacn, ValueKind::Bool, g.sacn_enabled ? 1 : 0, 0, 1, 1, "sACN",
+                   Screen::ArtnetMenu);
+        break;
+    case 7:
         s.screen = Screen::MainMenu;
         s.cursor = 0;
         break;

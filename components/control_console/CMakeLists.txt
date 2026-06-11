@@ -8,6 +8,7 @@ idf_component_register(
         lcd_cam_output
         ui
         led_protocols
+        sacn
         web_config
         esp_timer
         esp_app_format

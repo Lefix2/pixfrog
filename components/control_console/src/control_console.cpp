@@ -20,6 +20,7 @@
 #include "dmx_manager.h"
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
+#include "sacn.h"
 #include "ui.h"
 #include "web_config.h"
 
@@ -169,6 +170,8 @@ int cmd_stats(int, char**) {
     printf("frames_emitted=%llu\n", static_cast<unsigned long long>(s.frames_emitted));
     printf("artnet_packets_rx=%llu\n", static_cast<unsigned long long>(s.artnet_packets_rx));
     printf("artnet_bad_packets=%llu\n", static_cast<unsigned long long>(s.artnet_bad_packets));
+    printf("artnet_ctrl_rx=%llu\n", static_cast<unsigned long long>(s.artnet_ctrl_rx));
+    printf("sacn_packets_rx=%llu\n", static_cast<unsigned long long>(s.sacn_packets_rx));
     printf("dma_underruns=%lu\n", static_cast<unsigned long>(s.dma_underruns));
     printf("current_fps=%lu\n", static_cast<unsigned long>(s.current_fps));
     const lcd::DebugCounters d = lcd::get_debug_counters();
@@ -208,6 +211,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("refresh_hz=%u\n", g.refresh_rate_hz);
     printf("home_timeout_s=%u\n", g.home_timeout_s);
     printf("web_enabled=%d\n", g.web_enabled ? 1 : 0);
+    printf("sacn_enabled=%d\n", g.sacn_enabled ? 1 : 0);
 }
 
 int cmd_global(int argc, char** argv) {
@@ -255,9 +259,11 @@ int cmd_global(int argc, char** argv) {
         g.home_timeout_s = static_cast<uint16_t>(u);
     } else if (strcmp(key, "web_enabled") == 0) {
         if (!parse_bool(val, g.web_enabled)) return err("web_enabled: 0|1");
+    } else if (strcmp(key, "sacn_enabled") == 0) {
+        if (!parse_bool(val, g.sacn_enabled)) return err("sacn_enabled: 0|1");
     } else {
         return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
-                   "refresh_hz home_timeout_s web_enabled)");
+                   "refresh_hz home_timeout_s web_enabled sacn_enabled)");
     }
 
     const bool persisted = config::set_global(g);
@@ -265,12 +271,18 @@ int cmd_global(int argc, char** argv) {
     if (!persisted) printf("warn=not_persisted\n");
     if (network_changed) printf("note=network_changes_apply_after_reboot\n");
 
-    // Apply web server state immediately (does not require reboot).
+    // Apply server states immediately (no reboot needed).
     if (strcmp(key, "web_enabled") == 0) {
         if (g.web_enabled)
             web::start();
         else
             web::stop();
+    }
+    if (strcmp(key, "sacn_enabled") == 0) {
+        if (g.sacn_enabled)
+            sacn::start();
+        else
+            sacn::stop();
     }
 
     return ok();

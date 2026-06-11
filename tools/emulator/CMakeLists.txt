@@ -37,6 +37,7 @@ add_executable(pixfrog_emu
     src/dmx_host.cpp
     src/lcd_host.cpp
     src/web_host.cpp
+    src/sacn_host.cpp
     src/main_emulator.cpp
 )
 
@@ -52,6 +53,7 @@ target_include_directories(pixfrog_emu PRIVATE
     ${REPO}/components/lcd_cam_output/include
     ${REPO}/components/led_protocols/include
     ${REPO}/components/web_config/include
+    ${REPO}/components/sacn/include
 )
 
 target_link_libraries(pixfrog_emu PRIVATE SDL2::SDL2)

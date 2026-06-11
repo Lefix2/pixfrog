@@ -20,12 +20,20 @@ namespace pixfrog::artnet::parser {
 
 constexpr char kArtnetId[8] = { 'A', 'r', 't', '-', 'N', 'e', 't', 0 };
 
-constexpr uint16_t kOpDmx       = 0x5000;
-constexpr uint16_t kOpPoll      = 0x2000;
-constexpr uint16_t kOpPollReply = 0x2100;
-constexpr uint16_t kOpSync      = 0x5200;
+constexpr uint16_t kOpDmx         = 0x5000;
+constexpr uint16_t kOpNzs         = 0x5100;
+constexpr uint16_t kOpPoll        = 0x2000;
+constexpr uint16_t kOpPollReply   = 0x2100;
+constexpr uint16_t kOpSync        = 0x5200;
+constexpr uint16_t kOpAddress     = 0x6000;
+constexpr uint16_t kOpCommand     = 0x2400;
+constexpr uint16_t kOpTrigger     = 0x9900;
+constexpr uint16_t kOpTimeCode    = 0x9700;
+constexpr uint16_t kOpIpProg      = 0xF800;
+constexpr uint16_t kOpIpProgReply = 0xF900;
 
-constexpr size_t kPollReplySize = 239;
+constexpr size_t kPollReplySize   = 239;
+constexpr size_t kIpProgReplySize = 34;
 
 // ── Header ──────────────────────────────────────────────────────────────────
 
@@ -61,6 +69,133 @@ inline bool parse_dmx(const uint8_t* buf, size_t len, DmxFields* out) {
     return true;
 }
 
+namespace detail {
+
+inline void write_ip(uint8_t* dst, uint32_t host_ip) {
+    dst[0] = static_cast<uint8_t>((host_ip >> 24) & 0xFF);
+    dst[1] = static_cast<uint8_t>((host_ip >> 16) & 0xFF);
+    dst[2] = static_cast<uint8_t>((host_ip >> 8) & 0xFF);
+    dst[3] = static_cast<uint8_t>(host_ip & 0xFF);
+}
+
+inline void copy_bounded(uint8_t* dst, size_t cap, const char* src) {
+    if (!src) return;
+    size_t n = 0;
+    while (n < cap && src[n] != '\0') {
+        dst[n] = static_cast<uint8_t>(src[n]);
+        n++;
+    }
+}
+
+}  // namespace detail
+
+// ── ArtNzs body ─────────────────────────────────────────────────────────────
+// Same layout as ArtDmx except byte 12 = Sequence, byte 13 = StartCode
+// (ArtDmx has Physical there and an implicit start code 0).
+
+struct NzsFields {
+    uint16_t universe;
+    uint8_t start_code;
+    uint16_t data_len;
+    const uint8_t* data;
+};
+
+inline bool parse_nzs(const uint8_t* buf, size_t len, NzsFields* out) {
+    if (!buf || len < 18) return false;
+    const uint16_t sub_uni  = buf[14];
+    const uint16_t net      = buf[15] & 0x7F;
+    const uint16_t data_len = (static_cast<uint16_t>(buf[16]) << 8) | buf[17];
+    if (18u + data_len > len) return false;
+    if (out) {
+        out->universe   = (net << 8) | sub_uni;
+        out->start_code = buf[13];
+        out->data_len   = data_len;
+        out->data       = buf + 18;
+    }
+    return true;
+}
+
+// ── ArtAddress body ─────────────────────────────────────────────────────────
+// Remote programming from the controller. Spec semantics: a value is applied
+// only when its bit 7 is set (program low bits); 0x00 means "no change".
+// Names are applied when their first byte is non-zero.
+
+constexpr size_t kAddressSize = 107;
+
+struct AddressFields {
+    uint8_t net_switch;      // raw byte: 0x80|n programs n, 0x00 = no change
+    uint8_t sub_switch;      // raw byte: 0x80|s programs s, 0x00 = no change
+    uint8_t bind_index;      // 0/1 = root, 2.. = subsequent bind groups of 4 ports
+    uint8_t sw_out[4];       // raw bytes: 0x80|u programs the port's low nibble
+    uint8_t command;         // AcNone / AcCancelMerge / Ac* — caller decides
+    const char* short_name;  // points into buf; NOT null-terminated past 18
+    const char* long_name;   // points into buf; NOT null-terminated past 64
+};
+
+inline bool parse_address(const uint8_t* buf, size_t len, AddressFields* out) {
+    if (!buf || len < kAddressSize) return false;
+    if (out) {
+        out->net_switch = buf[12];
+        out->bind_index = buf[13];
+        out->short_name = reinterpret_cast<const char*>(buf + 14);
+        out->long_name  = reinterpret_cast<const char*>(buf + 32);
+        for (int p = 0; p < 4; ++p)
+            out->sw_out[p] = buf[100 + p];
+        out->sub_switch = buf[104];
+        out->command    = buf[106];
+    }
+    return true;
+}
+
+// ── ArtIpProg body + ArtIpProgReply builder ─────────────────────────────────
+// Command bits: 7=enable programming, 6=enable DHCP, 4=reset to defaults,
+// 3=program gateway, 2=program IP, 1=program subnet, 0=program port (dep.).
+
+struct IpProgFields {
+    uint8_t command;
+    uint32_t prog_ip;    // host-order
+    uint32_t prog_mask;  // host-order
+    uint32_t prog_gw;    // host-order
+};
+
+inline uint32_t read_ip(const uint8_t* p) {
+    return (static_cast<uint32_t>(p[0]) << 24) | (static_cast<uint32_t>(p[1]) << 16) |
+           (static_cast<uint32_t>(p[2]) << 8) | p[3];
+}
+
+inline bool parse_ip_prog(const uint8_t* buf, size_t len, IpProgFields* out) {
+    if (!buf || len < 30) return false;
+    if (out) {
+        out->command   = buf[14];
+        out->prog_ip   = read_ip(buf + 16);
+        out->prog_mask = read_ip(buf + 20);
+        out->prog_gw   = read_ip(buf + 26);
+    }
+    return true;
+}
+
+struct IpProgReplyInputs {
+    uint32_t ip;    // host-order
+    uint32_t mask;  // host-order
+    uint32_t gw;    // host-order
+    bool dhcp_enabled;
+};
+
+inline void build_ip_prog_reply(uint8_t pkt[kIpProgReplySize], const IpProgReplyInputs& in) {
+    std::memset(pkt, 0, kIpProgReplySize);
+    std::memcpy(pkt, kArtnetId, 8);
+    pkt[8]  = 0x00;
+    pkt[9]  = 0xF9;
+    pkt[10] = 0x00;
+    pkt[11] = 14;  // ProtVer
+    detail::write_ip(pkt + 16, in.ip);
+    detail::write_ip(pkt + 20, in.mask);
+    pkt[24] = 0x36;
+    pkt[25] = 0x19;                           // port 6454 (deprecated field)
+    pkt[26] = in.dhcp_enabled ? 0x40 : 0x00;  // Status: bit 6 = DHCP enabled
+    detail::write_ip(pkt + 28, in.gw);
+}
+
 // ── Net/subnet filter ───────────────────────────────────────────────────────
 
 inline bool universe_matches(uint16_t universe, uint8_t our_net, uint8_t our_subnet) {
@@ -84,26 +219,6 @@ struct PollReplyInputs {
     // so controllers don't see it as a live DMX universe.
     bool port_enabled[4] = { true, true, true, true };
 };
-
-namespace detail {
-
-inline void write_ip(uint8_t* dst, uint32_t host_ip) {
-    dst[0] = static_cast<uint8_t>((host_ip >> 24) & 0xFF);
-    dst[1] = static_cast<uint8_t>((host_ip >> 16) & 0xFF);
-    dst[2] = static_cast<uint8_t>((host_ip >> 8) & 0xFF);
-    dst[3] = static_cast<uint8_t>(host_ip & 0xFF);
-}
-
-inline void copy_bounded(uint8_t* dst, size_t cap, const char* src) {
-    if (!src) return;
-    size_t n = 0;
-    while (n < cap && src[n] != '\0') {
-        dst[n] = static_cast<uint8_t>(src[n]);
-        n++;
-    }
-}
-
-}  // namespace detail
 
 inline void build_poll_reply(uint8_t pkt[kPollReplySize], const PollReplyInputs& in) {
     std::memset(pkt, 0, kPollReplySize);

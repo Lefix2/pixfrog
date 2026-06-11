@@ -20,11 +20,13 @@ constexpr size_t kNumUniverses     = 48;   // 8 channels × 6 max
 constexpr size_t kMaxPixelsPerChan = 1024;
 constexpr size_t kMaxBytesPerChan  = kMaxPixelsPerChan * 4;  // RGBW worst case
 
-// Live telemetry counters; updated by render_task & artnet_task with relaxed atomics.
+// Live telemetry counters; updated by render_task & receiver tasks with relaxed atomics.
 struct Stats {
     uint64_t frames_emitted;
-    uint64_t artnet_packets_rx;
-    uint64_t artnet_bad_packets;
+    uint64_t artnet_packets_rx;   // ArtDmx routed to a mapped universe
+    uint64_t artnet_bad_packets;  // malformed (ArtNet or sACN)
+    uint64_t artnet_ctrl_rx;      // ArtAddress/IpProg/Nzs/Trigger/Command/TimeCode
+    uint64_t sacn_packets_rx;     // sACN data packets routed to a mapped universe
     uint32_t dma_underruns;
     uint32_t current_fps;
 };
@@ -49,6 +51,8 @@ uint8_t* universe_back_buffer_for(uint16_t universe_number);
 // Note one ArtDmx packet was received. Used for stats only.
 void note_packet_rx();
 void note_packet_bad();
+void note_ctrl_rx();  // ArtNet control packet (Address, IpProg, Nzs, ...)
+void note_sacn_rx();  // sACN data packet routed to a mapped universe
 
 // Note that a DMX update arrived for `channel_index` (derived from the
 // universe number by the caller via channel_for_universe).

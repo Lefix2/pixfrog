@@ -40,12 +40,26 @@ jobs:
           cmake --build build --parallel
           ./build/test_dmx_logic
 
-      - name: artnet_parser (header, dmx, filter, PollReply)
+      - name: artnet_parser (header, dmx, filter, PollReply, Address, IpProg, Nzs)
         run: |
           cd components/artnet/test
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
           ./build/test_artnet_parser
+
+      - name: config_store (struct layout, NVS migration)
+        run: |
+          cd components/config_store/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_config_store
+
+      - name: sacn_parser (root/framing/DMP, sync, source gate)
+        run: |
+          cd components/sacn/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_sacn_parser
 
   idf-build:
     name: ESP-IDF build for esp32p4 (${{ matrix.variant }})
@@ -61,9 +75,10 @@ jobs:
         idf_version: ['v5.5']
         # Build every config variant so each compile path stays green:
         # oled = the default sdkconfig (PARLIO LED backend); tft = overlay
-        # selecting ST7789; lcdcam = overlay selecting the LCD_CAM LED
-        # output backend.
-        variant: ['oled', 'tft', 'lcdcam']
+        # selecting ST7789. The legacy LCD_CAM LED backend (overlay
+        # sdkconfig.ci.lcdcam) is no longer CI-built — kept for manual
+        # debugging only.
+        variant: ['oled', 'tft']
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
@@ -96,8 +111,6 @@ jobs:
           idf.py --version
           if [ "${{ matrix.variant }}" = "tft" ]; then
             export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft"
-          elif [ "${{ matrix.variant }}" = "lcdcam" ]; then
-            export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.lcdcam"
           fi
           idf.py set-target esp32p4
           idf.py build

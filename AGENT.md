@@ -25,8 +25,9 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 |--------------------------------|---------------------------------------------------------|
 | `boards/esp32_p4_devkit.h`     | Single source of truth for pinout / I2C addrs           |
 | `components/led_protocols`     | Pure C++ NRZ + SPI + DMX512 encoders (host-testable)    |
-| `components/lcd_cam_output`    | 16-bit LED bus output: PARLIO TX loop (default) or LCD_CAM RGB backend (Kconfig choice), PSRAM double-buffer, calibration |
-| `components/artnet`            | UDP receiver + parser + ArtPollReply                    |
+| `components/lcd_cam_output`    | 16-bit LED bus output: PARLIO TX loop (default) or legacy LCD_CAM RGB backend (Kconfig choice, NOT CI-built), PSRAM double-buffer, calibration |
+| `components/artnet`            | UDP receiver + parser; ArtDmx/Poll/Sync/Address/IpProg  |
+| `components/sacn`              | sACN (E1.31) receiver: multicast joins, priority gate (opt-in) |
 | `components/dmx_manager`       | Universe pool, channel mapping, capacity check, sync    |
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |
 | `components/ui`                | SSD1306 driver, seesaw encoder, menu FSM                |
@@ -74,8 +75,8 @@ applies to *always-on* listeners; this one is opt-in and user-controlled.
   goes on a feature branch (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and lands
   through a pull request once CI is green.
 - **CI must pass locally before any push**: `./tools/ci-local.sh` replays every
-  `ci.yml` job (format check, three host suites, oled + tft + parlio IDF
-  builds). Never push and "let CI find out".
+  `ci.yml` job (format check, five host suites, oled + tft IDF builds).
+  Never push and "let CI find out".
 - A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
   host suite green.
 - The canonical proof for IDF-bound refactors is `idf.py build` — natively in
@@ -113,7 +114,10 @@ Fonts and splash are **generated**; regenerate instead of editing the tables
 ## Don'ts
 
 - Don't add features that aren't on the user's TODO list ([TODO.md](TODO.md)).
-- Don't add WiFi, mDNS, or any extra network surface — design rule, ArtNet UDP is the only one.
+- Don't add WiFi, mDNS, or any extra *always-on* network surface — design
+  rule. ArtNet UDP is the only default listener; sACN (UDP 5568) and the web
+  UI (TCP 80) exist but are strictly opt-in (`sacn_enabled` / `web_enabled`,
+  both default off — no socket while disabled).
 - Don't write to NVS from `render_task` or ISRs — only from `ui_task`.
 - Don't put a frame-buffer-sized allocation in SRAM — that lives in PSRAM.
 - Don't sleep in ISRs, don't `printf` in ISRs, don't grab mutexes in ISRs.

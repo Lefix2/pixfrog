@@ -7,6 +7,7 @@ idf_component_register(
         config_store
         dmx_manager
         led_protocols
+        sacn
         ui
         esp_system
         esp_app_format
