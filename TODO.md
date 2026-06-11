@@ -10,7 +10,13 @@ picks are marked ★.
       `sacn_enabled`. Multicast joins per configured universe (5 s refresh),
       per-universe priority gate with 2.5 s source timeout, E1.31 sync →
       frame sync. Equal-priority multi-source merge still pending (see next
-      item).
+      item). Unicast validated end-to-end on hardware (PR #24).
+- [ ] **sACN multicast test on a real LAN** — IGMP joins are untestable from
+      the WSL2 NAT (only unicast was validated). Drive the board from
+      xLights or a console on the apartment LAN and confirm
+      `sacn_packets_rx` climbs with multicast-addressed universes
+      (239.255.x.y), including after a universe re-config (5 s join
+      refresh).
 - [ ] **2-source merge (HTP/LTP)** — today two senders on one universe fight
       (last write wins). Standard: track up to 2 sources per universe, merge
       HTP (dimmers) or LTP, drop a source after ~10 s silence. Mode is
