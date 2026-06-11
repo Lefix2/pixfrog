@@ -75,9 +75,10 @@ jobs:
         idf_version: ['v5.5']
         # Build every config variant so each compile path stays green:
         # oled = the default sdkconfig (PARLIO LED backend); tft = overlay
-        # selecting ST7789; lcdcam = overlay selecting the LCD_CAM LED
-        # output backend.
-        variant: ['oled', 'tft', 'lcdcam']
+        # selecting ST7789. The legacy LCD_CAM LED backend (overlay
+        # sdkconfig.ci.lcdcam) is no longer CI-built — kept for manual
+        # debugging only.
+        variant: ['oled', 'tft']
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
@@ -110,8 +111,6 @@ jobs:
           idf.py --version
           if [ "${{ matrix.variant }}" = "tft" ]; then
             export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft"
-          elif [ "${{ matrix.variant }}" = "lcdcam" ]; then
-            export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.lcdcam"
           fi
           idf.py set-target esp32p4
           idf.py build
