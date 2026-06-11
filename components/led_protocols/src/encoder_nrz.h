@@ -49,10 +49,16 @@ inline void transformed_pixel_bytes(const ChannelDesc& desc, const uint8_t* pixe
     const uint16_t group      = desc.grouping ? desc.grouping : 1;
     const uint8_t* p          = pixels + (src_pi / group) * bytes_per_px;
 
-    const uint8_t r = p[0];
-    const uint8_t g = p[1];
-    const uint8_t b = p[2];
-    const uint8_t w = (bytes_per_px == 4) ? p[3] : 0;
+    uint8_t r = p[0];
+    uint8_t g = p[1];
+    uint8_t b = p[2];
+    uint8_t w = (bytes_per_px == 4) ? p[3] : 0;
+    if (desc.lut) {
+        r = desc.lut->r[r];
+        g = desc.lut->g[g];
+        b = desc.lut->b[b];
+        w = desc.lut->w[w];
+    }
 
     const Reorder o = apply_order(desc.color_order, r, g, b, w);
     out_bytes[0]    = apply_brightness(o.r, desc.brightness);

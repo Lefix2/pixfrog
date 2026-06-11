@@ -154,19 +154,9 @@ static esp_err_t handle_root(httpd_req_t* req) {
 
 // ── GET /api/config ─────────────────────────────────────────────────────────
 
-static esp_err_t handle_get_config(httpd_req_t* req) {
+static cJSON* build_global_json() {
     const auto& g = config::get_global();
-
-    cJSON* root = cJSON_CreateObject();
-
-    // Status (live)
-    cJSON_AddBoolToObject(root, "link", ui::is_link_up());
-    cJSON_AddNumberToObject(root, "fps", static_cast<double>(dmx::get_stats().current_fps));
-    cJSON_AddStringToObject(root, "version", esp_app_get_description()->version);
-    cJSON_AddStringToObject(root, "ota_partition", esp_ota_get_running_partition()->label);
-
-    // Global config
-    cJSON* jg = cJSON_AddObjectToObject(root, "global");
+    cJSON* jg     = cJSON_CreateObject();
     cJSON_AddBoolToObject(jg, "dhcp", g.use_dhcp);
 
     char ip[16], mask[16], gw[16];
@@ -193,10 +183,11 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     char fscol[8];
     snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     cJSON_AddStringToObject(jg, "failsafe_color", fscol);
+    return jg;
+}
 
-    // Scenes
-    cJSON_AddNumberToObject(root, "active_scene", dmx::active_scene());
-    cJSON* jscenes = cJSON_AddArrayToObject(root, "scenes");
+static cJSON* build_scenes_json() {
+    cJSON* jscenes = cJSON_CreateArray();
     for (size_t i = 0; i < config::kNumScenes; ++i) {
         const auto& sc = config::get_scene(i);
         cJSON* js      = cJSON_CreateObject();
@@ -210,9 +201,11 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
         cJSON_AddNumberToObject(js, "mask", sc.channel_mask);
         cJSON_AddItemToArray(jscenes, js);
     }
+    return jscenes;
+}
 
-    // Channels
-    cJSON* jchs = cJSON_AddArrayToObject(root, "channels");
+static cJSON* build_channels_json() {
+    cJSON* jchs = cJSON_CreateArray();
     for (size_t i = 0; i < config::kNumChannels; ++i) {
         const auto& c = config::get_channel(i);
         cJSON* jc     = cJSON_CreateObject();
@@ -226,10 +219,219 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
         cJSON_AddNumberToObject(jc, "grouping", c.grouping);
         cJSON_AddBoolToObject(jc, "invert", c.invert_direction);
         cJSON_AddNumberToObject(jc, "clock_hz", static_cast<double>(c.clock_hz));
+        cJSON_AddNumberToObject(jc, "gamma_x10", c.gamma_x10);
+        char wb[8];
+        snprintf(wb, sizeof(wb), "#%02x%02x%02x", c.wb_r, c.wb_g, c.wb_b);
+        cJSON_AddStringToObject(jc, "wb", wb);
         cJSON_AddItemToArray(jchs, jc);
     }
+    return jchs;
+}
 
+// ── GET /api/config ─────────────────────────────────────────────────────────
+
+static esp_err_t handle_get_config(httpd_req_t* req) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "link", ui::is_link_up());
+    cJSON_AddNumberToObject(root, "fps", static_cast<double>(dmx::get_stats().current_fps));
+    cJSON_AddStringToObject(root, "version", esp_app_get_description()->version);
+    cJSON_AddStringToObject(root, "ota_partition", esp_ota_get_running_partition()->label);
+    cJSON_AddNumberToObject(root, "active_scene", dmx::active_scene());
+    cJSON_AddNumberToObject(root, "identify_channel", dmx::identify_channel());
+    cJSON_AddItemToObject(root, "global", build_global_json());
+    cJSON_AddItemToObject(root, "scenes", build_scenes_json());
+    cJSON_AddItemToObject(root, "channels", build_channels_json());
     return send_json(req, root);
+}
+
+// ── GET /api/backup + POST /api/restore ─────────────────────────────────────
+// Backup = the persisted configuration only (no live status, no password
+// hash). Restore applies best-effort: unknown or invalid fields are skipped
+// so a backup from a different firmware degrades gracefully.
+
+static esp_err_t handle_backup(httpd_req_t* req) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "backup_version", 1);
+    cJSON_AddStringToObject(root, "firmware", esp_app_get_description()->version);
+    cJSON_AddItemToObject(root, "global", build_global_json());
+    cJSON_AddItemToObject(root, "channels", build_channels_json());
+    cJSON_AddItemToObject(root, "scenes", build_scenes_json());
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-config.json\"");
+    return send_json(req, root);
+}
+
+static void restore_global(cJSON* jg) {
+    config::GlobalConfig g = config::get_global();
+    cJSON* it;
+    auto num = [&](const char* k, double lo, double hi, double* out) {
+        it = cJSON_GetObjectItemCaseSensitive(jg, k);
+        if (cJSON_IsNumber(it) && it->valuedouble >= lo && it->valuedouble <= hi) {
+            *out = it->valuedouble;
+            return true;
+        }
+        return false;
+    };
+    auto getb = [&](const char* k, bool* out) {
+        it = cJSON_GetObjectItemCaseSensitive(jg, k);
+        if (cJSON_IsBool(it)) {
+            *out = cJSON_IsTrue(it);
+            return true;
+        }
+        return false;
+    };
+    auto getip = [&](const char* k, uint32_t* out) {
+        it = cJSON_GetObjectItemCaseSensitive(jg, k);
+        uint32_t x;
+        if (cJSON_IsString(it) && parse_ip(it->valuestring, x)) *out = x;
+    };
+    double v;
+    bool bv;
+    if (getb("dhcp", &bv)) g.use_dhcp = bv;
+    getip("ip", &g.static_ip);
+    getip("mask", &g.static_mask);
+    getip("gw", &g.static_gateway);
+    if (num("net", 0, 127, &v)) g.artnet_net = static_cast<uint8_t>(v);
+    if (num("subnet", 0, 15, &v)) g.artnet_subnet = static_cast<uint8_t>(v);
+    it = cJSON_GetObjectItemCaseSensitive(jg, "short_name");
+    if (cJSON_IsString(it)) {
+        memset(g.short_name, 0, sizeof(g.short_name));
+        strncpy(g.short_name, it->valuestring, sizeof(g.short_name) - 1);
+    }
+    it = cJSON_GetObjectItemCaseSensitive(jg, "long_name");
+    if (cJSON_IsString(it)) {
+        memset(g.long_name, 0, sizeof(g.long_name));
+        strncpy(g.long_name, it->valuestring, sizeof(g.long_name) - 1);
+    }
+    if (getb("reply_unicast", &bv)) g.artnet_poll_reply_unicast = bv;
+    if (num("refresh_hz", 30, 60, &v) && (v == 30 || v == 60))
+        g.refresh_rate_hz = static_cast<uint8_t>(v);
+    if (num("home_timeout_s", 0, 65535, &v)) g.home_timeout_s = static_cast<uint16_t>(v);
+    if (getb("web_enabled", &bv)) g.web_enabled = bv;
+    if (getb("sacn_enabled", &bv)) g.sacn_enabled = bv;
+    if (num("failsafe_mode", 0, 3, &v)) g.failsafe_mode = static_cast<uint8_t>(v);
+    if (num("failsafe_timeout_s", 0, 3600, &v)) g.failsafe_timeout_s = static_cast<uint16_t>(v);
+    it = cJSON_GetObjectItemCaseSensitive(jg, "failsafe_color");
+    if (cJSON_IsString(it)) {
+        unsigned cr, cg, cb;
+        if (sscanf(it->valuestring[0] == '#' ? it->valuestring + 1 : it->valuestring,
+                   "%02x%02x%02x", &cr, &cg, &cb) == 3) {
+            g.failsafe_r = static_cast<uint8_t>(cr);
+            g.failsafe_g = static_cast<uint8_t>(cg);
+            g.failsafe_b = static_cast<uint8_t>(cb);
+        }
+    }
+    if (num("failsafe_scene", 0, config::kNumScenes - 1, &v))
+        g.failsafe_scene = static_cast<uint8_t>(v);
+    if (num("boot_scene", 0, config::kNumScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
+    config::set_global(g);
+}
+
+static void restore_channel(size_t i, cJSON* jc) {
+    auto c    = config::get_channel(i);
+    cJSON* it = cJSON_GetObjectItemCaseSensitive(jc, "protocol");
+    if (cJSON_IsString(it)) {
+        const int pv = lookup(kProtoNames, static_cast<size_t>(led::Protocol::COUNT),
+                              it->valuestring);
+        if (pv >= 0) c.protocol = static_cast<led::Protocol>(pv);
+    }
+    it = cJSON_GetObjectItemCaseSensitive(jc, "color_order");
+    if (cJSON_IsString(it)) {
+        const int ov = lookup(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT),
+                              it->valuestring);
+        if (ov >= 0) c.color_order = static_cast<led::ColorOrder>(ov);
+    }
+    auto num = [&](const char* k, double lo, double hi, double* out) {
+        it = cJSON_GetObjectItemCaseSensitive(jc, k);
+        if (cJSON_IsNumber(it) && it->valuedouble >= lo && it->valuedouble <= hi) {
+            *out = it->valuedouble;
+            return true;
+        }
+        return false;
+    };
+    double v;
+    if (num("universe_start", 1, 32767, &v)) c.universe_start = static_cast<uint16_t>(v);
+    if (num("dmx_start", 1, 512, &v)) c.dmx_start = static_cast<uint16_t>(v);
+    if (num("pixel_count", 1, dmx::kMaxPixelsPerChan, &v)) c.pixel_count = static_cast<uint16_t>(v);
+    if (num("brightness", 0, 255, &v)) c.brightness = static_cast<uint8_t>(v);
+    if (num("grouping", 1, 8, &v)) c.grouping = static_cast<uint8_t>(v);
+    it = cJSON_GetObjectItemCaseSensitive(jc, "invert");
+    if (cJSON_IsBool(it)) c.invert_direction = cJSON_IsTrue(it);
+    if (num("clock_hz", 100'000, led::kPclkHz / 2, &v)) c.clock_hz = static_cast<uint32_t>(v);
+    if (num("gamma_x10", 10, 40, &v)) c.gamma_x10 = static_cast<uint8_t>(v);
+    it = cJSON_GetObjectItemCaseSensitive(jc, "wb");
+    if (cJSON_IsString(it)) {
+        unsigned cr, cg, cb;
+        if (sscanf(it->valuestring[0] == '#' ? it->valuestring + 1 : it->valuestring,
+                   "%02x%02x%02x", &cr, &cg, &cb) == 3) {
+            c.wb_r = cr ? static_cast<uint8_t>(cr) : 255;
+            c.wb_g = cg ? static_cast<uint8_t>(cg) : 255;
+            c.wb_b = cb ? static_cast<uint8_t>(cb) : 255;
+        }
+    }
+    config::set_channel(i, c);
+    dmx::mark_channel_dirty(i);
+}
+
+static void restore_scene(size_t i, cJSON* js) {
+    auto sc   = config::get_scene(i);
+    cJSON* it = cJSON_GetObjectItemCaseSensitive(js, "name");
+    if (cJSON_IsString(it)) {
+        memset(sc.name, 0, sizeof(sc.name));
+        strncpy(sc.name, it->valuestring, sizeof(sc.name) - 1);
+    }
+    auto num = [&](const char* k, double lo, double hi, double* out) {
+        it = cJSON_GetObjectItemCaseSensitive(js, k);
+        if (cJSON_IsNumber(it) && it->valuedouble >= lo && it->valuedouble <= hi) {
+            *out = it->valuedouble;
+            return true;
+        }
+        return false;
+    };
+    double v;
+    if (num("effect", 0, 2, &v)) sc.effect = static_cast<uint8_t>(v);
+    if (num("speed", 0, 255, &v)) sc.speed = static_cast<uint8_t>(v);
+    if (num("param", 0, 255, &v)) sc.param = static_cast<uint8_t>(v);
+    if (num("mask", 0, 255, &v)) sc.channel_mask = static_cast<uint8_t>(v);
+    it = cJSON_GetObjectItemCaseSensitive(js, "color");
+    if (cJSON_IsString(it)) {
+        unsigned cr, cg, cb;
+        if (sscanf(it->valuestring[0] == '#' ? it->valuestring + 1 : it->valuestring,
+                   "%02x%02x%02x", &cr, &cg, &cb) == 3) {
+            sc.r = static_cast<uint8_t>(cr);
+            sc.g = static_cast<uint8_t>(cg);
+            sc.b = static_cast<uint8_t>(cb);
+        }
+    }
+    config::set_scene(i, sc);
+}
+
+static esp_err_t handle_restore(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    static char buf[4096];  // full backup ≈ 3 kB; static keeps it off the httpd stack
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+
+    cJSON* jg = cJSON_GetObjectItemCaseSensitive(j, "global");
+    if (cJSON_IsObject(jg)) restore_global(jg);
+    cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
+    if (cJSON_IsArray(jchs)) {
+        const int n = cJSON_GetArraySize(jchs);
+        for (int i = 0; i < n && i < static_cast<int>(config::kNumChannels); ++i)
+            restore_channel(static_cast<size_t>(i), cJSON_GetArrayItem(jchs, i));
+    }
+    cJSON* jsc = cJSON_GetObjectItemCaseSensitive(j, "scenes");
+    if (cJSON_IsArray(jsc)) {
+        const int n = cJSON_GetArraySize(jsc);
+        for (int i = 0; i < n && i < static_cast<int>(config::kNumScenes); ++i)
+            restore_scene(static_cast<size_t>(i), cJSON_GetArrayItem(jsc, i));
+    }
+    cJSON_Delete(j);
+    dmx::mark_global_dirty();
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req,
+                              "{\"ok\":true,\"note\":\"network/web changes apply after reboot\"}");
 }
 
 // ── POST /api/global ─────────────────────────────────────────────────────────
@@ -374,13 +576,15 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
 
 static esp_err_t handle_post_channel(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    // Extract channel index from URI (/api/channel/N)
-    const char* uri        = req->uri;
-    const char* last_slash = strrchr(uri, '/');
-    if (!last_slash) return send_err(req, 400, "bad URI");
-    const int idx = atoi(last_slash + 1);
+    // URI: /api/channel/N or /api/channel/N/identify
+    const char* tail = req->uri + strlen("/api/channel/");
+    const int idx    = atoi(tail);
     if (idx < 0 || static_cast<size_t>(idx) >= config::kNumChannels)
         return send_err(req, 400, "channel 0..7");
+    if (strstr(tail, "/identify") != nullptr) {
+        dmx::identify_start(static_cast<size_t>(idx));
+        return send_ok(req);
+    }
 
     char buf[512];
     if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
@@ -445,6 +649,15 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
     if (get_u32("grouping", 1, 8, u)) c.grouping = static_cast<uint8_t>(u);
     if (get_bool("invert", b)) c.invert_direction = b;
     if (get_u32("clock_hz", 100'000, led::kPclkHz / 2, u)) c.clock_hz = u;
+    if (get_u32("gamma_x10", 10, 40, u)) c.gamma_x10 = static_cast<uint8_t>(u);
+    if ((s = get_str("wb"))) {
+        unsigned wr, wg, wbv;
+        if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &wr, &wg, &wbv) == 3) {
+            c.wb_r = wr ? static_cast<uint8_t>(wr) : 255;
+            c.wb_g = wg ? static_cast<uint8_t>(wg) : 255;
+            c.wb_b = wbv ? static_cast<uint8_t>(wbv) : 255;
+        }
+    }
 
     cJSON_Delete(j);
     config::set_channel(static_cast<size_t>(idx), c);
@@ -623,7 +836,7 @@ void start() {
     if (g_server) return;
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 10;
+    cfg.max_uri_handlers = 12;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -648,6 +861,11 @@ void start() {
           .handler  = handle_post_channel,
           .user_ctx = nullptr },
         { .uri = "/api/ota", .method = HTTP_POST, .handler = handle_ota, .user_ctx = nullptr },
+        { .uri = "/api/backup", .method = HTTP_GET, .handler = handle_backup, .user_ctx = nullptr },
+        { .uri      = "/api/restore",
+          .method   = HTTP_POST,
+          .handler  = handle_restore,
+          .user_ctx = nullptr },
         { .uri      = "/api/scene/*",
           .method   = HTTP_POST,
           .handler  = handle_post_scene,

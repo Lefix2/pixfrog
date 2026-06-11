@@ -109,7 +109,23 @@ struct ChannelConfig {
     uint8_t grouping;         // 1..8
     bool invert_direction;
     uint32_t clock_hz;  // only for clocked protocols
+
+    // Gamma correction + white balance, applied at encode time (LED
+    // protocols only). Appended for NVS tail migration; 0 = unset.
+    uint8_t gamma_x10;  // 10 = linear .. 40 = gamma 4.0; 0 → sanitized to 10
+    uint8_t wb_r;       // 255 = unity; 0 → sanitized to 255
+    uint8_t wb_g;
+    uint8_t wb_b;
 };
+
+// Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
+// 0 would silently black a colour out. Called after every NVS load.
+inline void sanitize_channel(ChannelConfig& c) {
+    if (c.gamma_x10 < 10 || c.gamma_x10 > 40) c.gamma_x10 = 10;
+    if (c.wb_r == 0) c.wb_r = 255;
+    if (c.wb_g == 0) c.wb_g = 255;
+    if (c.wb_b == 0) c.wb_b = 255;
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // API

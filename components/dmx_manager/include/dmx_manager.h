@@ -115,6 +115,13 @@ void clear_pixel_preview();
 int pixel_preview_channel();
 uint16_t pixel_preview_count();
 
+// ── Channel identify (commissioning) ───────────────────────────────────────
+// Blinks the channel full white at 2 Hz for `seconds` so the physical strip
+// can be matched to its config slot. Auto-expires; any new call retargets.
+void identify_start(size_t channel_index, uint16_t seconds = 10);
+void identify_stop();
+int identify_channel();  // -1 = inactive
+
 // ── Standalone scenes (manual override) ────────────────────────────────────
 // While a scene plays, channels in its mask render the parametric effect
 // instead of decoding universes — network traffic is ignored until

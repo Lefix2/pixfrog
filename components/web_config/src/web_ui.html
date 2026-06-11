@@ -82,6 +82,16 @@ button.sec:hover{background:#1a4a8a}
     <div class="status" id="st-pwd"></div>
   </div>
   <div class="card">
+    <h2>Backup</h2>
+    <div class="row"><label>Export</label>
+      <button class="sec" style="margin-top:0" onclick="location.href='/api/backup'">Download config JSON</button>
+    </div>
+    <div class="row"><label>Import</label><input id="restore-file" type="file" accept=".json"></div>
+    <button onclick="restoreConfig()">Restore</button>
+    <span class="note">applies everything except the admin password; reboot for network changes</span>
+    <div class="status" id="st-backup"></div>
+  </div>
+  <div class="card">
     <h2>Firmware</h2>
     <div class="row"><label>Running</label><span id="fw-info" style="color:#888;font-size:12px">--</span></div>
     <div class="row"><label>Update (.bin)</label><input id="ota-file" type="file" accept=".bin"></div>
@@ -180,8 +190,13 @@ function makeChanPanel(i) {
       <div id="ch${i}-grprow" class="row"><label>Grouping</label><input id="ch${i}-grp" type="number" min="1" max="8"></div>
       <div id="ch${i}-invrow" class="row"><label>Invert</label><input id="ch${i}-inv" type="checkbox"></div>
       <div id="ch${i}-clkrow" class="row"><label>Clock Hz</label><input id="ch${i}-clk" type="number" min="100000" max="8000000" step="250000"></div>
+      <div id="ch${i}-gamrow" class="row"><label>Gamma ×10</label><input id="ch${i}-gam" type="number" min="10" max="40">
+        <span class="note">10 = linear, 22 = 2.2</span></div>
+      <div id="ch${i}-wbrow" class="row"><label>White balance</label><input id="ch${i}-wb" type="color" value="#ffffff">
+        <span class="note">#ffffff = unity</span></div>
     </div>
     <button onclick="saveChan(${i})">Save</button>
+    <button class="sec" onclick="identifyChan(${i})" style="margin-left:8px">Identify</button>
     <div class="status" id="st-ch${i}"></div>
   </div>`;
   return p;
@@ -235,6 +250,11 @@ async function playScene(i){
   try{await api('POST','/api/scene/'+i+'/play',{});status('st-sc'+i,'Playing','');loadConfig();}
   catch(e){status('st-sc'+i,'Error: '+e.message,true);}
 }
+async function identifyChan(i){
+  try{await api('POST','/api/channel/'+i+'/identify',{});status('st-ch'+i,'Blinking strip for 10 s','');}
+  catch(e){status('st-ch'+i,'Error: '+e.message,true);}
+}
+
 async function sceneStop(){
   try{await api('POST','/api/scenes/stop',{});status('st-scenes','Stopped','');loadConfig();}
   catch(e){status('st-scenes','Error: '+e.message,true);}
@@ -255,6 +275,8 @@ function updateChanVis(i) {
     show('grp',!isDmx);
     show('inv',!isDmx);
     show('clk',isClk);
+    show('gam',!isDmx);
+    show('wb',!isDmx);
     const lbl=document.getElementById('ch'+i+'-pixrow').querySelector('label');
     if(lbl)lbl.textContent=isDmx?'Slots':'Pixels';
   }
@@ -334,6 +356,8 @@ async function loadConfig(){
       setVal('ch'+i+'-grp',c.grouping);
       setChk('ch'+i+'-inv',c.invert);
       setVal('ch'+i+'-clk',c.clock_hz);
+      setVal('ch'+i+'-gam',c.gamma_x10??10);
+      setVal('ch'+i+'-wb',c.wb||'#ffffff');
       updateChanVis(i);
     }
     // Status bar
@@ -399,6 +423,8 @@ async function saveChan(i){
     grouping:parseInt(document.getElementById('ch'+i+'-grp').value),
     invert:document.getElementById('ch'+i+'-inv').checked?1:0,
     clock_hz:parseInt(document.getElementById('ch'+i+'-clk').value),
+    gamma_x10:parseInt(document.getElementById('ch'+i+'-gam').value),
+    wb:document.getElementById('ch'+i+'-wb').value,
   };
   try{
     await api('POST','/api/channel/'+i,body);
@@ -415,6 +441,20 @@ async function savePassword(){
     document.getElementById('g-pwd').value='';
     loadConfig();
   }catch(e){status('st-pwd','Error: '+e.message,true);}
+}
+
+async function restoreConfig(){
+  const f=document.getElementById('restore-file').files[0];
+  if(!f){status('st-backup','Select a JSON first',true);return;}
+  if(!confirm('Restore configuration from '+f.name+'? Current settings are overwritten.'))return;
+  try{
+    const txt=await f.text();
+    JSON.parse(txt); // fail fast on garbage
+    const r=await fetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:txt});
+    if(!r.ok)throw new Error(await r.text());
+    status('st-backup','Restored — reboot for network changes','');
+    loadConfig();
+  }catch(e){status('st-backup','Error: '+e.message,true);}
 }
 
 function otaUpload(){

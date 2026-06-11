@@ -46,6 +46,12 @@ std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
 // Active standalone scene (-1 = none).
 std::atomic<int8_t> g_active_scene{ -1 };
 
+// Identify blink: channel in the high byte (0xFF = off), expiry in ms since
+// boot in the low 24 bits won't fit — use two relaxed atomics; tearing across
+// them costs at most one oddly-timed frame.
+std::atomic<int8_t> g_identify_ch{ -1 };
+std::atomic<uint32_t> g_identify_until_ms{ 0 };
+
 // Map a universe number to a slot in the bank. For v0 we use a simple
 // flat allocation: universe N → slot (N % kNumUniverses). On boot, the
 // config_store tells us which universes are routed to which channel; we
@@ -189,6 +195,28 @@ uint16_t pixel_preview_count() {
     return static_cast<uint16_t>(g_pixel_preview.load(std::memory_order_relaxed) & 0xFFFFu);
 }
 
+void identify_start(size_t channel_index, uint16_t seconds) {
+    if (channel_index >= config::kNumChannels) return;
+    g_identify_until_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000) + seconds * 1000u,
+                              std::memory_order_relaxed);
+    g_identify_ch.store(static_cast<int8_t>(channel_index), std::memory_order_relaxed);
+}
+
+void identify_stop() {
+    g_identify_ch.store(-1, std::memory_order_relaxed);
+}
+
+int identify_channel() {
+    const int ch = g_identify_ch.load(std::memory_order_relaxed);
+    if (ch < 0) return -1;
+    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    if (static_cast<int32_t>(g_identify_until_ms.load(std::memory_order_relaxed) - now) <= 0) {
+        g_identify_ch.store(-1, std::memory_order_relaxed);
+        return -1;
+    }
+    return ch;
+}
+
 void scene_start(uint8_t scene_index) {
     if (scene_index >= config::kNumScenes) return;
     g_active_scene.store(static_cast<int8_t>(scene_index), std::memory_order_relaxed);
@@ -206,6 +234,17 @@ bool decode_pixels_for_channel(size_t ch) {
     if (ch >= config::kNumChannels) return false;
     uint8_t* dst = pixel_back_buffer(ch);
     if (!dst) return false;
+
+    // Identify blink: top priority — it answers "which strip is this?".
+    if (identify_channel() == static_cast<int>(ch)) {
+        const auto& cc     = config::get_channel(ch);
+        const uint8_t bpp  = led::bytes_per_pixel(cc.protocol);
+        const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+        const uint8_t lvl  = ((now / 250) & 1) ? 255 : 0;  // 2 Hz blink
+        logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count, bpp,
+                                     config::kFailsafeColor, lvl, lvl, lvl);
+        return true;
+    }
 
     const uint32_t preview = g_pixel_preview.load(std::memory_order_relaxed);
     if ((preview >> 16) == ch) {

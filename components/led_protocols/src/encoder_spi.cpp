@@ -61,9 +61,12 @@ size_t encode_spi(const ChannelDesc& desc, const uint8_t* pixels, uint16_t* out_
         const uint16_t group_src = src_pi / group;
         const uint8_t* p         = pixels + group_src * 3;
 
-        const uint8_t r = apply_brightness_spi(p[0], desc.brightness);
-        const uint8_t g = apply_brightness_spi(p[1], desc.brightness);
-        const uint8_t b = apply_brightness_spi(p[2], desc.brightness);
+        const uint8_t lr = desc.lut ? desc.lut->r[p[0]] : p[0];
+        const uint8_t lg = desc.lut ? desc.lut->g[p[1]] : p[1];
+        const uint8_t lb = desc.lut ? desc.lut->b[p[2]] : p[2];
+        const uint8_t r  = apply_brightness_spi(lr, desc.brightness);
+        const uint8_t g  = apply_brightness_spi(lg, desc.brightness);
+        const uint8_t b  = apply_brightness_spi(lb, desc.brightness);
 
         switch (desc.protocol) {
         case Protocol::APA102:

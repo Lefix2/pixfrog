@@ -62,8 +62,9 @@ scenes. Remaining candidates:
       `global web_password <pwd|->`) enables it. Salted SHA-256 in
       GlobalConfig, constant-time compare, 500 ms flat delay on failure;
       UART is the recovery channel.
-- [ ] **Config export/import** — JSON dump/restore via the web UI: backup
-      before changes, clone one box to the next.
+- [x] **Config export/import** — `GET /api/backup` (download, no password
+      hash) / `POST /api/restore` (best-effort apply: global + channels +
+      scenes), Backup card in the web UI. Round-trip validated on hardware.
 - [x] **Standalone scenes** — 8 parametric slots (solid / chase / rainbow,
       colour, speed, param, per-channel mask) persisted in NVS. Manual-stop
       priority over network traffic. Triggers: Scenes menu, web tab, UART
@@ -78,11 +79,15 @@ scenes. Remaining candidates:
 
 ## UX / commissioning
 
-- [ ] **Channel identify** — from the channel menu, flash the selected strip
-      (extends the pixel-count preview shipped in #21) to physically match
-      strip ↔ channel.
-- [ ] **Per-channel gamma / white balance** — lookup table applied at encode
-      time (already a per-pixel pass, near-zero cost).
+- [x] **Channel identify** — 2 Hz full-white blink on one strip,
+      auto-expiring (default 10 s). Channel menu "Identify", web button,
+      UART `identify <ch> [s]`. Top render priority.
+- [x] **Per-channel gamma / white balance** — `gamma_x10` (10..40) +
+      `wb` RGB per channel, baked into a per-channel `PixelLut` applied in
+      every encoder path (NRZ, frame, SPI) before colour-order/brightness;
+      identity channels skip the lookups. LUT rebuilt lazily on config
+      change (4-byte key compare per frame). NVS tail migration sanitized
+      so old configs stay identity. 1291 new encoder assertions.
 
 ## Tech debt / infra
 
