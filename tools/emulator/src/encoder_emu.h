@@ -6,6 +6,6 @@
 
 #pragma once
 
-enum class EmuEvent { RotateLeft, RotateRight, Click };
+enum class EmuEvent { RotateLeft, RotateRight, Click, LongPress };
 
 void emu_push_event(EmuEvent e);

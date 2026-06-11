@@ -9,6 +9,7 @@
 #include "encoder_emu.h"
 #include "ui_internal.h"
 
+#include <chrono>
 #include <deque>
 #include <mutex>
 
@@ -41,6 +42,23 @@ void emu_push_event_internal(Event e) {
     queue().push_back(e);
 }
 
+// ── Platform hooks (firmware versions live in ui.cpp) ───────────────────────
+
+uint32_t now_ms() {
+    using clock                       = std::chrono::steady_clock;
+    static const clock::time_point t0 = clock::now();
+    return static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count());
+}
+
+const char* fw_version() {
+    return "emulator";
+}
+
+const char* fw_build_info() {
+    return "host build  " __DATE__;
+}
+
 }  // namespace pixfrog::ui::detail
 
 void emu_push_event(EmuEvent e) {
@@ -50,6 +68,7 @@ void emu_push_event(EmuEvent e) {
     case EmuEvent::RotateLeft: ev = Event::RotateLeft; break;
     case EmuEvent::RotateRight: ev = Event::RotateRight; break;
     case EmuEvent::Click: ev = Event::Click; break;
+    case EmuEvent::LongPress: ev = Event::LongPress; break;
     }
     if (ev != Event::None) pixfrog::ui::detail::emu_push_event_internal(ev);
 }

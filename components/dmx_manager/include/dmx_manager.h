@@ -90,6 +90,18 @@ void handle_pending_remaps();
 // offset+len exceeds kUniverseSize.
 bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* data, size_t len);
 
+// ── Pixel-count preview (UI: ChPixels edit screen) ─────────────────────────
+// While active, decode_pixels_for_channel(ch) fills the channel's pixel
+// buffer with a ruler pattern (1..N-1 dim white, decades half white, N full
+// white) instead of decoding universes, and the output backend overrides
+// the channel's pixel_count/brightness/grouping so the pattern maps 1:1 to
+// physical LEDs. Set from ui_task, read from render_task (single atomic).
+void set_pixel_preview(size_t channel_index, uint16_t pixel_count);
+void clear_pixel_preview();
+// Returns the previewed channel (-1 if inactive) and its count.
+int pixel_preview_channel();
+uint16_t pixel_preview_count();
+
 // Signal that an ArtSync was received (forces frame emission ASAP).
 void note_sync();
 

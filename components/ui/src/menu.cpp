@@ -62,6 +62,7 @@ enum class Screen : uint8_t {
     NetworkMenu,
     ChannelMenu,
     TestPatternMenu,
+    About,
     EditValue,
     EditString,
     EditIp,
@@ -145,6 +146,34 @@ struct State {
 };
 
 State s;
+
+// ── Rotation acceleration ───────────────────────────────────────────────────
+// Sustained rotation escalates the per-detent step ×10 then ×100, whatever
+// the direction (the streak counts detents, not displacement). A short pause
+// drops back to ×1. Tuned for ~20 detents/s on a fast flick: ×10 after about
+// half a turn, ×100 after roughly two seconds of continuous spinning.
+
+constexpr uint32_t kAccelResetMs    = 350;
+constexpr uint16_t kAccelTensAt     = 10;
+constexpr uint16_t kAccelHundredsAt = 36;
+
+uint32_t g_accel_last_ms = 0;
+uint16_t g_accel_streak  = 0;
+
+void accel_reset() {
+    g_accel_streak = 0;
+}
+
+// Call on every rotation detent; returns the step multiplier to apply.
+int32_t accel_note_rotation() {
+    const uint32_t now = now_ms();
+    if (now - g_accel_last_ms > kAccelResetMs) g_accel_streak = 0;
+    if (g_accel_streak < UINT16_MAX) g_accel_streak++;
+    g_accel_last_ms = now;
+    if (g_accel_streak >= kAccelHundredsAt) return 100;
+    if (g_accel_streak >= kAccelTensAt) return 10;
+    return 1;
+}
 
 // ── Alphabet for string editing ─────────────────────────────────────────────
 constexpr const char kAlphabet[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -472,10 +501,11 @@ void render_home() {
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
 
-constexpr uint8_t kMainItemCount                  = 12;
+constexpr uint8_t kMainItemCount                  = 13;
 constexpr const char* kMainLabels[kMainItemCount] = {
-    "ArtNet",    "Network",   "Channel 1", "Channel 2", "Channel 3",    "Channel 4",
-    "Channel 5", "Channel 6", "Channel 7", "Channel 8", "Test pattern", "[Back to HOME]",
+    "ArtNet",       "Network",   "Channel 1",      "Channel 2", "Channel 3",
+    "Channel 4",    "Channel 5", "Channel 6",      "Channel 7", "Channel 8",
+    "Test pattern", "About",     "[Back to HOME]",
 };
 
 void render_main_menu() {
@@ -513,10 +543,46 @@ void dispatch_main_menu(Event e) {
         } else if (s.cursor == 10) {
             s.screen = Screen::TestPatternMenu;
             s.cursor = 0;
+        } else if (s.cursor == 11) {
+            s.screen = Screen::About;
+            s.cursor = 0;
         } else {
             s.screen = Screen::Home;
             s.cursor = 0;
         }
+    }
+}
+
+// ── ABOUT ───────────────────────────────────────────────────────────────────
+
+void render_about() {
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    canvas_clear(color::Black);
+    canvas_fill_rect(0, 0, kTW, kHdrH, color::HeaderBg);
+    canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, "ABOUT", color::White, color::HeaderBg, kTxtSc);
+
+    int y = kHdrH + 20;
+    canvas_draw_text(kIndent, y, "pixfrog", color::Cream, color::Black, kTxtSc);
+    y += kTxtH + 10;
+    canvas_draw_text(kIndent, y, fw_version(), color::Gold, color::Black, kTxtSc);
+    y += kTxtH + 10;
+    canvas_draw_text(kIndent, y, fw_build_info(), color::LightGray, color::Black, 1);
+#else
+    canvas_clear();
+    draw_row(0, 0, "ABOUT");
+    draw_row(2, 0, "pixfrog");
+    char line[kOledCols + 1];
+    truncate(line, sizeof(line), fw_version());
+    draw_row(3, 0, line);
+    truncate(line, sizeof(line), fw_build_info());
+    draw_row(5, 0, line);
+#endif
+}
+
+void dispatch_about(Event e) {
+    if (e == Event::Click) {
+        s.screen = Screen::MainMenu;
+        s.cursor = 11;
     }
 }
 
@@ -577,6 +643,7 @@ void enter_edit(Field field, ValueKind kind, int32_t cur, int32_t mn, int32_t mx
     s.edit.return_screen = return_screen;
     s.edit.channel       = channel;
     s.screen             = Screen::EditValue;
+    accel_reset();
 }
 
 void render_edit_value() {
@@ -605,10 +672,6 @@ void render_edit_value() {
         canvas_draw_text(kIndent, kHdrH + 30 + kBigH + 12, was, color::Orange, color::Black,
                          kTxtSc);
     }
-
-    // Hint
-    canvas_draw_text(kIndent, kTH - kHdrH, "rotate=change  click=commit", color::DarkGray,
-                     color::Black, 1);
 #else
     canvas_clear();
     // Buffers are sized to hold the prefix plus a full kOledCols-wide value.
@@ -630,9 +693,6 @@ void render_edit_value() {
         std::snprintf(was, sizeof(was), "  was: %s", orig);
         draw_row(4, 0, was);
     }
-
-    draw_row(5, 0, "rotate to change");
-    draw_row(6, 0, "click to commit");
 #endif
 }
 
@@ -754,11 +814,21 @@ void commit_edit() {
 }
 
 void dispatch_edit_value(Event e) {
-    if (e == Event::RotateLeft) s.edit.current -= s.edit.step;
-    if (e == Event::RotateRight) s.edit.current += s.edit.step;
-    if (s.edit.current < s.edit.min) s.edit.current = s.edit.min;
-    if (s.edit.current > s.edit.max) s.edit.current = s.edit.max;
+    if (e == Event::RotateLeft || e == Event::RotateRight) {
+        // Acceleration only makes sense for plain integers; enums/bools have
+        // tiny ranges where a ×10 jump would just slam into the clamp.
+        const int32_t mult  = (s.edit.kind == ValueKind::Int) ? accel_note_rotation() : 1;
+        const int32_t step  = s.edit.step * mult;
+        s.edit.current     += (e == Event::RotateRight) ? step : -step;
+        if (s.edit.current < s.edit.min) s.edit.current = s.edit.min;
+        if (s.edit.current > s.edit.max) s.edit.current = s.edit.max;
+        // Live strip preview while the pixel count moves.
+        if (s.edit.field == Field::ChPixels && dmx::pixel_preview_channel() == s.edit.channel) {
+            dmx::set_pixel_preview(s.edit.channel, static_cast<uint16_t>(s.edit.current));
+        }
+    }
     if (e == Event::Click) {
+        dmx::clear_pixel_preview();
         commit_edit();
         s.screen = s.edit.return_screen;
     }
@@ -818,13 +888,9 @@ void render_edit_string() {
         const int col    = cursor - win_start;
         const int high_x = kIndent + col * kFontCellWidth * kTxtSc;
         canvas_fill_rect(high_x, kHdrH + 20 + kTxtH + 4, kFontCellWidth * kTxtSc, 4, color::Cyan);
-        canvas_draw_text(kIndent, kTH - kHdrH, "rotate=char  click=next", color::DarkGray,
-                         color::Black, 1);
     } else {
         canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 10, "[end of string]", color::Orange,
                          color::Black, kTxtSc);
-        canvas_draw_text(kIndent, kTH - kHdrH, "rotate=back  click=commit", color::DarkGray,
-                         color::Black, 1);
     }
 #else
     canvas_clear();
@@ -839,12 +905,8 @@ void render_edit_string() {
             caret[i] = ' ';
         if (col >= 0 && col < kWin) caret[col] = '^';
         draw_row(3, 0, caret);
-        draw_row(5, 0, "rotate=change char");
-        draw_row(6, 0, "click=next char");
     } else {
         draw_row(3, 0, "[end of string]");
-        draw_row(5, 0, "rotate=back to chr");
-        draw_row(6, 0, "click=commit & exit");
     }
 #endif
 }
@@ -900,6 +962,7 @@ void enter_edit_ip(IpField field, uint32_t current, const char* label, Screen re
     s.ip_edit.label         = label;
     s.ip_edit.return_screen = return_screen;
     s.screen                = Screen::EditIp;
+    accel_reset();
 }
 
 void render_edit_ip() {
@@ -932,26 +995,17 @@ void render_edit_ip() {
 
     canvas_draw_text(kIndent, kHdrH + 30, ip_line, color::Cyan, color::Black, kTxtSc);
 
-    if (s.ip_edit.cursor < 4) {
-        canvas_draw_text(kIndent, kTH - kHdrH, "rotate=octet  click=next", color::DarkGray,
-                         color::Black, 1);
-    } else {
+    if (s.ip_edit.cursor >= 4) {
         canvas_draw_text(kIndent, kHdrH + 30 + kTxtH + 16, "[ready to commit]", color::Orange,
                          color::Black, kTxtSc);
-        canvas_draw_text(kIndent, kTH - kHdrH, "click=commit & exit", color::DarkGray, color::Black,
-                         1);
     }
 #else
     canvas_clear();
     draw_row(0, 0, title);
     draw_row(3, 0, ip_line);
 
-    if (s.ip_edit.cursor < 4) {
-        draw_row(5, 0, "rotate=change oct");
-        draw_row(6, 0, "click=next octet");
-    } else {
+    if (s.ip_edit.cursor >= 4) {
         draw_row(5, 0, "[ready to commit]");
-        draw_row(6, 0, "click=commit & exit");
     }
 #endif
 }
@@ -970,15 +1024,17 @@ void commit_edit_ip() {
 void dispatch_edit_ip(Event e) {
     if (s.ip_edit.cursor < 4) {
         if (e == Event::RotateLeft || e == Event::RotateRight) {
-            const int shift  = (3 - s.ip_edit.cursor) * 8;
-            int32_t oct      = (s.ip_edit.value >> shift) & 0xFF;
-            oct             += (e == Event::RotateRight) ? 1 : -1;
+            const int32_t step  = accel_note_rotation();
+            const int shift     = (3 - s.ip_edit.cursor) * 8;
+            int32_t oct         = (s.ip_edit.value >> shift) & 0xFF;
+            oct                += (e == Event::RotateRight) ? step : -step;
             if (oct < 0) oct = 0;
             if (oct > 255) oct = 255;
             const uint32_t mask = ~(0xFFu << shift);
             s.ip_edit.value     = (s.ip_edit.value & mask) | (static_cast<uint32_t>(oct) << shift);
         } else if (e == Event::Click) {
             s.ip_edit.cursor++;
+            accel_reset();
         }
     } else {
         if (e == Event::RotateLeft) {
@@ -1213,6 +1269,9 @@ void dispatch_channel_menu(Event e) {
         // DMX512 maps one universe → up to 512 slots; LED strips go up to 1024 px.
         enter_edit(Field::ChPixels, ValueKind::Int, cc.pixel_count, 1, dmx ? 512 : 1024, 1,
                    dmx ? "Slots" : "Pixels", ret, ch);
+        // Light the strip as a live ruler while the count is being edited
+        // (LED protocols only — a DMX512 universe has nothing to show).
+        if (!dmx) dmx::set_pixel_preview(ch, cc.pixel_count);
         break;
     case ChItem::Order:
         enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, static_cast<int32_t>(cc.color_order),
@@ -1240,6 +1299,54 @@ void dispatch_channel_menu(Event e) {
     }
 }
 
+// ── Long press: commit-as-is and climb one level ────────────────────────────
+// In any edit screen the current state is committed instantly (a string edit
+// keeps every remaining character as-is); in a list menu it acts as Back.
+
+void dispatch_long_press() {
+    switch (s.screen) {
+    case Screen::Home: break;
+    case Screen::MainMenu:
+        s.screen = Screen::Home;
+        s.cursor = 0;
+        break;
+    case Screen::ArtnetMenu:
+        s.screen = Screen::MainMenu;
+        s.cursor = 0;
+        break;
+    case Screen::NetworkMenu:
+        s.screen = Screen::MainMenu;
+        s.cursor = 1;
+        break;
+    case Screen::ChannelMenu:
+        s.screen = Screen::MainMenu;
+        s.cursor = 2 + s.channel_index;
+        break;
+    case Screen::TestPatternMenu:
+        lcd::set_calibration_mode(-1);
+        s.screen = Screen::MainMenu;
+        s.cursor = 10;
+        break;
+    case Screen::About:
+        s.screen = Screen::MainMenu;
+        s.cursor = 11;
+        break;
+    case Screen::EditValue:
+        dmx::clear_pixel_preview();
+        commit_edit();
+        s.screen = s.edit.return_screen;
+        break;
+    case Screen::EditString:
+        commit_edit_string();
+        s.screen = s.str_edit.return_screen;
+        break;
+    case Screen::EditIp:
+        commit_edit_ip();
+        s.screen = s.ip_edit.return_screen;
+        break;
+    }
+}
+
 }  // namespace
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -1256,6 +1363,7 @@ void menu_render() {
     case Screen::NetworkMenu: render_network_menu(); break;
     case Screen::ChannelMenu: render_channel_menu(); break;
     case Screen::TestPatternMenu: render_test_pattern_menu(); break;
+    case Screen::About: render_about(); break;
     case Screen::EditValue: render_edit_value(); break;
     case Screen::EditString: render_edit_string(); break;
     case Screen::EditIp: render_edit_ip(); break;
@@ -1263,6 +1371,10 @@ void menu_render() {
 }
 
 void menu_dispatch(Event e) {
+    if (e == Event::LongPress) {
+        dispatch_long_press();
+        return;
+    }
     switch (s.screen) {
     case Screen::Home:
         if (e == Event::Click) {
@@ -1275,6 +1387,7 @@ void menu_dispatch(Event e) {
     case Screen::NetworkMenu: dispatch_network_menu(e); break;
     case Screen::ChannelMenu: dispatch_channel_menu(e); break;
     case Screen::TestPatternMenu: dispatch_test_pattern_menu(e); break;
+    case Screen::About: dispatch_about(e); break;
     case Screen::EditValue: dispatch_edit_value(e); break;
     case Screen::EditString: dispatch_edit_string(e); break;
     case Screen::EditIp: dispatch_edit_ip(e); break;
@@ -1282,6 +1395,7 @@ void menu_dispatch(Event e) {
 }
 
 void menu_on_idle_timeout() {
+    dmx::clear_pixel_preview();
     s.screen = Screen::Home;
     s.cursor = 0;
 }
@@ -1293,8 +1407,8 @@ bool menu_is_home() {
 #ifdef PIXFROG_EMULATOR
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     static const char* const kNames[] = {
-        "Home",      "MainMenu",   "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
-        "EditValue", "EditString", "EditIp",
+        "Home",  "MainMenu",  "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
+        "About", "EditValue", "EditString", "EditIp",
     };
     if (screen_name) *screen_name = kNames[static_cast<uint8_t>(s.screen)];
     if (cursor) *cursor = s.cursor;

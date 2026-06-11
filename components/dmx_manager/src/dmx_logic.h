@@ -50,6 +50,31 @@ inline bool channel_fits_budget(const config::ChannelConfig& cc, uint32_t pclk_h
     return channel_t_dma_us(cc, pclk_hz) <= budget_us;
 }
 
+// ── Pixel-count preview pattern ─────────────────────────────────────────────
+//
+// Strip visualization while the user edits a channel's pixel count:
+//   LED i in [1..N):  white 10%   (orientation / extent)
+//   LED i % 10 == 0:  white 50%   (decade ruler marks)
+//   LED N:            white 100%  (the count being edited)
+// Levels are baked into the buffer; the caller bypasses per-channel
+// brightness so the pattern reads the same on every strip.
+
+constexpr uint8_t kPreviewLevelLow  = 26;   // 10 %
+constexpr uint8_t kPreviewLevelMid  = 128;  // 50 %
+constexpr uint8_t kPreviewLevelFull = 255;  // 100 %
+
+inline void fill_preview_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                                 uint8_t bytes_per_pixel) {
+    const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
+    if (total > dst_capacity || bytes_per_pixel == 0) return;
+    for (uint16_t i = 1; i <= pixel_count; ++i) {
+        uint8_t level = kPreviewLevelLow;
+        if (i % 10 == 0) level = kPreviewLevelMid;
+        if (i == pixel_count) level = kPreviewLevelFull;
+        std::memset(dst + static_cast<size_t>(i - 1) * bytes_per_pixel, level, bytes_per_pixel);
+    }
+}
+
 // ── Pixel decoder ───────────────────────────────────────────────────────────
 //
 // Copies bytes from one or more universes into the destination buffer,

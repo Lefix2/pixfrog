@@ -9,6 +9,7 @@ idf_component_register(
         led_protocols
         ui
         esp_system
+        esp_app_format
         json
         freertos
 )

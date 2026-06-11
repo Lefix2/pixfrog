@@ -12,7 +12,7 @@ namespace pixfrog::ui::detail {
 
 // ── Input events ──────────────────────────────────────────────────────────────
 
-enum class Event : uint8_t { None, RotateLeft, RotateRight, Click };
+enum class Event : uint8_t { None, RotateLeft, RotateRight, Click, LongPress };
 
 // ── Color (RGB565) ─────────────────────────────────────────────────────────────
 // On OLED: any non-Black fg = pixel ON. bg is ignored.
@@ -103,6 +103,16 @@ int tft_height();
 
 bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio);
 Event encoder_poll();
+
+// ── Platform hooks (firmware: ui.cpp; emulator: encoder_host.cpp) ────────────
+
+// Monotonic milliseconds — used by the menu for rotation-acceleration timing.
+uint32_t now_ms();
+
+// Firmware version (git describe: tag, +N-g<hash> when past the tag) and a
+// one-line build info string (IDF version + compile date).
+const char* fw_version();
+const char* fw_build_info();
 
 // On-board NeoPixel feedback (Adafruit 4991). init() after encoder_init().
 // set_active(false) breathes green on the status screen; set_active(true) holds

@@ -37,6 +37,12 @@ ChanBufs g_chan_bufs[config::kNumChannels]{};
 Stats g_stats{};
 std::atomic<bool> g_sync_pending{ false };
 
+// Pixel-count preview state: channel (high 16 bits) + count (low 16 bits)
+// packed into one atomic so render_task always reads a consistent pair.
+// 0xFFFF in the channel half = preview inactive.
+constexpr uint32_t kPreviewOff = 0xFFFF0000u;
+std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
+
 // Map a universe number to a slot in the bank. For v0 we use a simple
 // flat allocation: universe N → slot (N % kNumUniverses). On boot, the
 // config_store tells us which universes are routed to which channel; we
@@ -160,10 +166,39 @@ void handle_pending_remaps() {
     ESP_LOGI(TAG, "remap applied, bits=0x%lx", static_cast<unsigned long>(bits));
 }
 
+void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
+    if (channel_index >= config::kNumChannels) return;
+    g_pixel_preview.store((static_cast<uint32_t>(channel_index) << 16) | pixel_count,
+                          std::memory_order_relaxed);
+}
+
+void clear_pixel_preview() {
+    g_pixel_preview.store(kPreviewOff, std::memory_order_relaxed);
+}
+
+int pixel_preview_channel() {
+    const uint32_t v  = g_pixel_preview.load(std::memory_order_relaxed);
+    const uint32_t ch = v >> 16;
+    return ch == 0xFFFFu ? -1 : static_cast<int>(ch);
+}
+
+uint16_t pixel_preview_count() {
+    return static_cast<uint16_t>(g_pixel_preview.load(std::memory_order_relaxed) & 0xFFFFu);
+}
+
 bool decode_pixels_for_channel(size_t ch) {
     if (ch >= config::kNumChannels) return false;
     uint8_t* dst = pixel_back_buffer(ch);
     if (!dst) return false;
+
+    const uint32_t preview = g_pixel_preview.load(std::memory_order_relaxed);
+    if ((preview >> 16) == ch) {
+        const auto& cc = config::get_channel(ch);
+        logic::fill_preview_pattern(dst, kMaxBytesPerChan, static_cast<uint16_t>(preview & 0xFFFFu),
+                                    led::bytes_per_pixel(cc.protocol));
+        return true;
+    }
+
     return logic::decode_pixels(dst, kMaxBytesPerChan, config::get_channel(ch),
                                 [](uint16_t u) { return universe_front_buffer_for(u); });
 }

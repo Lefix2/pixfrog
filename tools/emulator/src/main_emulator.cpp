@@ -130,6 +130,8 @@ bool exec_cmd(const std::string& line) {
         emu_push_event(EmuEvent::RotateRight);
     } else if (line == "click") {
         emu_push_event(EmuEvent::Click);
+    } else if (line == "longclick") {
+        emu_push_event(EmuEvent::LongPress);
     } else if (line.rfind("shot", 0) == 0) {
         const char* p = line.c_str() + 4;
         while (*p == ' ')
@@ -178,6 +180,7 @@ void map_key(SDL_Keycode k) {
     case SDLK_RIGHT: emu_push_event(EmuEvent::RotateRight); break;
     case SDLK_RETURN:
     case SDLK_SPACE: emu_push_event(EmuEvent::Click); break;
+    case SDLK_BACKSPACE: emu_push_event(EmuEvent::LongPress); break;
     default: break;
     }
 }

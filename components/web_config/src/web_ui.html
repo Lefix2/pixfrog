@@ -36,6 +36,7 @@ button.sec:hover{background:#1a4a8a}
   <h1>&#128438; pixfrog</h1>
   <div id="link-dot" title="Ethernet link"></div>
   <span id="fps-label">--fps</span>
+  <span id="ver-label" style="color:#666;font-size:12px;margin-left:auto"></span>
 </div>
 
 <div class="tabs" id="tabs">
@@ -218,6 +219,7 @@ async function loadConfig(){
     const link=document.getElementById('link-dot');
     link.className=d.link?'up':'';
     document.getElementById('fps-label').textContent=d.fps+'fps';
+    if(d.version)document.getElementById('ver-label').textContent=d.version;
   }catch(e){console.error(e);}
 }
 

@@ -73,7 +73,11 @@ jobs:
       IDF_CCACHE_ENABLE: '1'
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
+      # Full history + tags: the firmware version is `git describe --tags`
+      # evaluated at CMake configure time (see top-level CMakeLists.txt).
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Cache ccache objects
         uses: actions/cache@v5
