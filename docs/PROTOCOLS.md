@@ -340,3 +340,27 @@ galvanic isolation. For long inter-building runs or fixtures on a different
 mains domain, prefer an isolated RS-485 transceiver (option B). Otherwise, on a
 common-ground install with a short-to-medium terminated run, option A with the
 33 Ω resistor and TVS is a robust differential DMX driver.
+
+---
+
+## 9. Network inputs (ArtNet / sACN)
+
+Both receivers feed the same universe pool; a channel maps `universe_start …
+universe_start + N-1` whichever protocol delivered the data.
+
+**ArtNet 4** (UDP 6454, always on): `ArtDmx` (filtered by configured
+net/subnet), `ArtPoll` → `ArtPollReply` (2 bind groups × 4 ports),
+`ArtSync` (early frame kick), `ArtAddress` (remote names/net/subnet/SwOut,
+persisted + replied), `ArtIpProg`/`ArtIpProgReply` (remote IP, reboot
+applies), `ArtTrigger` global KeyShow (SubKey 1..8 plays standalone scene
+N-1, 0 stops). `ArtNzs`/`ArtCommand`/`ArtTimeCode` are validated and counted
+(`stats artnet_ctrl_rx`) but not consumed yet.
+
+**sACN / E1.31** (UDP 5568, opt-in `sacn_enabled`): data packets matched on
+the flat universe number (no net/subnet concept), one IGMP join per
+configured universe (set refreshed every 5 s from live config; unicast always
+accepted). Per-universe source gate: highest priority wins, 2.5 s source
+timeout (§6.7.1), `stream_terminated` releases the slot **and** expires the
+owning channel's failsafe immediately, preview-flagged data ignored, E1.31
+sync packets and `force_sync` map to the ArtSync fast path. Equal-priority
+multi-source merge is not implemented (last writer wins — see TODO).

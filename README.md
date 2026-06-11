@@ -1,17 +1,21 @@
 # pixfrog
 
-> High-performance ArtNet → LED driver for ESP32-P4. 8 channels × 2 lines (DATA + CLOCK), supporting 1-wire protocols (WS2815, WS2812B, SK6812…) and clocked protocols (APA102, SK9822, LPD8806).
+> High-performance ArtNet / sACN → LED driver for ESP32-P4. 8 channels × 2 lines (DATA + CLOCK), supporting 1-wire protocols (WS2815, WS2812B, SK6812…) and clocked protocols (APA102, SK9822, LPD8806).
 
 ## Features
 
 - ESP32-P4 dual-core RISC-V at 400 MHz, 32 MB octal PSRAM
 - 10/100M Ethernet via external PHY (IP101GRI)
-- 8 parallel LED channels driven by LCD_CAM 16-bit + GDMA
-- ArtNet UDP receiver (up to 48 universes, with ArtPoll/ArtSync support)
-- Local UI: **compile-time selectable** — SSD1306 OLED 128×64 (default) **or** ST7789V TFT 320×240 colour (SPI), both sharing a common canvas API and menu FSM
-- Animated TFT boot splash + colour dashboard (channel activity, IP, FPS)
-- Adafruit seesaw rotary encoder on I2C
-- All configuration is **local** and **persisted** in NVS — no network config surface
+- 8 parallel LED channels on a 16-bit bus — **PARLIO TX loop DMA** (default) or legacy LCD_CAM backend
+- **ArtNet 4** receiver: ArtDmx/ArtPoll/ArtSync, remote config via ArtAddress + ArtIpProg, scene triggers via ArtTrigger (up to 48 universes)
+- **sACN (E1.31)** receiver (opt-in): multicast joins per configured universe, per-universe priority, stream-terminate handling
+- **Standalone scenes**: 8 parametric slots (solid / chase / rainbow, per-channel mask), playable at boot, from the desk (ArtTrigger), or any UI
+- **Signal-loss failsafe** per channel: hold / blackout / solid colour / scene after a configurable timeout
+- **Per-channel gamma + white balance**, baked into encode-time LUTs (validated bit-exact on a logic analyzer)
+- Local UI: **compile-time selectable** — SSD1306 OLED 128×64 (default) **or** ST7789V TFT 320×240 colour (SPI), shared canvas API and menu FSM; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning
+- **Web UI** (opt-in, port 80): full configuration SPA + REST API, **OTA firmware update** (A/B slots with boot-failure rollback), config **backup/restore** as JSON, optional HTTP Basic auth on every mutation
+- **UART control console**: every config field, telemetry, DMX injection, buffer readback (`tools/uartctl.sh`)
+- All configuration **persisted** in NVS with forward migration; network surfaces beyond ArtNet are **strictly opt-in** (no socket while disabled)
 
 ## Target hardware
 
@@ -48,7 +52,7 @@ TFT SPI GPIOs are configured in `boards/esp32_p4_devkit.h` (CLK=13, MOSI=11, CS=
 
 ## Host unit tests
 
-Three pure-C++ test suites that run anywhere a C++17 compiler is installed (no IDF required):
+Five pure-C++ test suites that run anywhere a C++17 compiler is installed (no IDF required):
 
 ```bash
 # LED encoders + timings + encode throughput
@@ -57,18 +61,30 @@ cd components/led_protocols/test && cmake -B build && cmake --build build && ./b
 # DMX manager logic (sizing, capacity, multi-universe decoder)
 cd components/dmx_manager/test  && cmake -B build && cmake --build build && ./build/test_dmx_logic
 
-# ArtNet parser (header, ArtDmx, net/subnet filter, ArtPollReply)
+# ArtNet parser (header, ArtDmx/Nzs/Address/IpProg, filter, replies)
 cd components/artnet/test       && cmake -B build && cmake --build build && ./build/test_artnet_parser
+
+# sACN parser (root/framing/DMP, sync, per-universe priority gate)
+cd components/sacn/test         && cmake -B build && cmake --build build && ./build/test_sacn_parser
+
+# config store (struct layout, NVS forward migration)
+cd components/config_store/test && cmake -B build && cmake --build build && ./build/test_config_store
 ```
+
+There is also an SDL2 **UI emulator** (`tools/emulator`) that compiles the real
+menu FSM for the host and drives it headlessly (`tools/emulator/smoke.sh`).
 
 ## CI
 
 `.github/workflows/ci.yml` runs on pushes to `main` and on pull requests
 targeting `main`:
 
-- the three host suites above
+- the five host suites above
+- the SDL2 emulator build + headless menu-FSM smoke test
 - `idf.py build` for `esp32p4` × **two display backends** (oled + tft) in the `espressif/idf:v5.5` container
 - `clang-format --dry-run` against `.clang-format` on every tracked C/C++ file
+
+`./tools/ci-local.sh` replays all of it locally and must be green before any push.
 
 ## Releases & browser flashing
 
@@ -91,11 +107,23 @@ Rendered online (with the browser flasher) at **<https://lefix2.github.io/pixfro
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — task topology, frame lifecycle, memory budget
 - [docs/HARDWARE.md](docs/HARDWARE.md) — pinout, PHY, level shifters, encoder + OLED wiring
 - [docs/PROTOCOLS.md](docs/PROTOCOLS.md) — per-protocol timings, PCLK formula, DMA encoding
-- [CLAUDE.md](CLAUDE.md) — conventions for working in this repo (humans and agents)
+- [AGENT.md](AGENT.md) — conventions, module map, hard rules (humans and agents)
+- [TODO.md](TODO.md) — the living roadmap; features land only from this list
+
+## Hardware companion
+
+`hardware/pixfrog_shield/` holds the KiCad project + JLCPCB production files of
+the **pixfrog shield**: 2× 74HCT245 re-drive the 16 bus lines at 5 V,
+DIP-selectable series termination, one TVS clamp per output, 8× JST-XH.
+See [its README](hardware/pixfrog_shield/README.md).
 
 ## Status
 
-Firmware feature-complete against the spec. The IDF-side surface (LCD_CAM, SSD1306/ST7789V, seesaw, Ethernet) is written against documented IDF v5.5 APIs but has not been validated on silicon — CI builds both OLED and TFT binaries on every push.
+Validated on silicon (Waveshare ESP32-P4 Module DEV-KIT): WS2815 NRZ timing,
+gamma LUTs and frame content verified bit-exact on a Saleae logic analyzer;
+ArtNet, sACN (unicast), OTA, auth, failsafe, scenes and backup/restore
+exercised end-to-end on the board. Remaining field items live in
+[TODO.md](TODO.md).
 
 ## License
 
