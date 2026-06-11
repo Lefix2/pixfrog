@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "led_protocols.h"
 
 #include "encoder_dmx.h"
@@ -78,6 +80,26 @@ size_t encode_channel(const ChannelDesc& desc, const uint8_t* pixels, uint16_t* 
         return detail::encode_spi(desc, pixels, out_samples, out_samples_capacity);
     }
     return detail::encode_nrz(desc, pixels, out_samples, out_samples_capacity);
+}
+
+void build_pixel_lut(PixelLut& lut, uint8_t gamma_x10, uint8_t wb_r, uint8_t wb_g, uint8_t wb_b) {
+    // Zero-filled config (pre-feature NVS blobs) must decode as identity.
+    if (gamma_x10 < 10) gamma_x10 = 10;
+    if (gamma_x10 > 40) gamma_x10 = 40;
+    if (wb_r == 0) wb_r = 255;
+    if (wb_g == 0) wb_g = 255;
+    if (wb_b == 0) wb_b = 255;
+
+    const float gamma = gamma_x10 / 10.0f;
+    for (int i = 0; i < 256; ++i) {
+        const float lin = (gamma_x10 == 10) ? static_cast<float>(i)
+                                            : powf(i / 255.0f, gamma) * 255.0f;
+        const float v   = lin + 0.5f;  // round-to-nearest before the wb scale
+        lut.r[i]        = static_cast<uint8_t>(static_cast<uint32_t>(v) * wb_r / 255);
+        lut.g[i]        = static_cast<uint8_t>(static_cast<uint32_t>(v) * wb_g / 255);
+        lut.b[i]        = static_cast<uint8_t>(static_cast<uint32_t>(v) * wb_b / 255);
+        lut.w[i]        = static_cast<uint8_t>(static_cast<uint32_t>(v));
+    }
 }
 
 }  // namespace pixfrog::led

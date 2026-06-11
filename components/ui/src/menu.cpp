@@ -88,6 +88,7 @@ enum class Field : uint8_t {
     ChDmx,
     ChPixels,
     ChBrightness,
+    ChGamma,
     ChGrouping,
     ChInvert,
     ChClock,
@@ -877,6 +878,13 @@ void commit_edit() {
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
+    case Field::ChGamma: {
+        auto c      = config::get_channel(s.edit.channel);
+        c.gamma_x10 = static_cast<uint8_t>(v);
+        config::set_channel(s.edit.channel, c);
+        dmx::mark_channel_dirty(s.edit.channel);
+        break;
+    }
     case Field::ChGrouping: {
         auto c     = config::get_channel(s.edit.channel);
         c.grouping = static_cast<uint8_t>(v);
@@ -1274,13 +1282,15 @@ enum class ChItem : uint8_t {
     Pixels,  // labelled "Slots" in DMX512 mode
     Order,
     Bright,
+    Gamma,
     Group,
     Invert,
     Clock,
+    Identify,
     Back,
 };
 
-// Fills `out` (capacity ≥ 10) with the ordered items for `cc` and returns count.
+// Fills `out` (capacity ≥ 12) with the ordered items for `cc` and returns count.
 uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     uint8_t n = 0;
     out[n++]  = ChItem::Proto;
@@ -1296,16 +1306,18 @@ uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     if (!led::is_dmx(cc.protocol)) {
         out[n++] = ChItem::Order;
         out[n++] = ChItem::Bright;
+        out[n++] = ChItem::Gamma;
         out[n++] = ChItem::Group;
         out[n++] = ChItem::Invert;
         if (led::is_clocked(cc.protocol)) out[n++] = ChItem::Clock;
+        out[n++] = ChItem::Identify;
     }
     out[n++] = ChItem::Back;
     return n;
 }
 
 uint8_t channel_item_count() {
-    ChItem items[10];
+    ChItem items[12];
     return channel_items(config::get_channel(s.channel_index), items);
 }
 
@@ -1315,7 +1327,8 @@ void render_channel_menu() {
     char title[kOledCols + 1];
     std::snprintf(title, sizeof(title), "CHANNEL %u", s.channel_index + 1);
 
-    char vproto[8], vuni[8], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12];
+    char vproto[8], vuni[8], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12],
+        vgam[8];
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
     std::snprintf(vuni, sizeof(vuni), "%u", cc.universe_start);
     std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
@@ -1325,10 +1338,11 @@ void render_channel_menu() {
     std::snprintf(vgrp, sizeof(vgrp), "%u", cc.grouping);
     std::snprintf(vinv, sizeof(vinv), "%s", cc.invert_direction ? "ON" : "OFF");
     std::snprintf(vclk, sizeof(vclk), "%lukHz", static_cast<unsigned long>(cc.clock_hz / 1000u));
+    std::snprintf(vgam, sizeof(vgam), "%u.%u", cc.gamma_x10 / 10, cc.gamma_x10 % 10);
 
-    ChItem order[10];
+    ChItem order[12];
     const uint8_t count = channel_items(cc, order);
-    ListItem items[10];
+    ListItem items[12];
     for (uint8_t i = 0; i < count; ++i) {
         switch (order[i]) {
         case ChItem::Proto: items[i] = { "Proto", vproto }; break;
@@ -1337,6 +1351,8 @@ void render_channel_menu() {
         case ChItem::Pixels: items[i] = { dmx ? "Slots" : "Pixels", vpix }; break;
         case ChItem::Order: items[i] = { "Order", vorder }; break;
         case ChItem::Bright: items[i] = { "Bright", vbri }; break;
+        case ChItem::Gamma: items[i] = { "Gamma", vgam }; break;
+        case ChItem::Identify: items[i] = { "Identify", "" }; break;
         case ChItem::Group: items[i] = { "Group", vgrp }; break;
         case ChItem::Invert: items[i] = { "Invert", vinv }; break;
         case ChItem::Clock: items[i] = { "Clock", vclk }; break;
@@ -1348,7 +1364,7 @@ void render_channel_menu() {
 
 void dispatch_channel_menu(Event e) {
     const auto& cc = config::get_channel(s.channel_index);
-    ChItem order[10];
+    ChItem order[12];
     const uint8_t count = channel_items(cc, order);
 
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
@@ -1386,6 +1402,13 @@ void dispatch_channel_menu(Event e) {
     case ChItem::Bright:
         enter_edit(Field::ChBrightness, ValueKind::Int, cc.brightness, 0, 255, 1, "Bright", ret,
                    ch);
+        break;
+    case ChItem::Gamma:
+        // Stored ×10: 10 = linear, 22 = the classic 2.2.
+        enter_edit(Field::ChGamma, ValueKind::Int, cc.gamma_x10, 10, 40, 1, "Gamma", ret, ch);
+        break;
+    case ChItem::Identify:
+        dmx::identify_start(ch);  // 10 s white blink on this strip; stay in menu
         break;
     case ChItem::Group:
         enter_edit(Field::ChGrouping, ValueKind::Int, cc.grouping, 1, 8, 1, "Group", ret, ch);

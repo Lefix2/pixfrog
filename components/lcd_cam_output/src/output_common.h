@@ -15,6 +15,31 @@
 
 namespace pixfrog::lcd::common {
 
+// Per-channel gamma/white-balance LUTs, rebuilt lazily when the source
+// values change (4-byte compare per frame; powf only on a config commit).
+// C++17 inline variables: one instance shared by both backends.
+struct LutCacheEntry {
+    led::PixelLut lut;
+    uint32_t key = 0;  // gamma_x10 | wb_r<<8 | wb_g<<16 | wb_b<<24; 0 = never built
+};
+inline LutCacheEntry g_lut_cache[config::kNumChannels];
+
+inline const led::PixelLut* channel_lut(size_t ch, const config::ChannelConfig& cc) {
+    const bool identity = (cc.gamma_x10 <= 10) && cc.wb_r == 255 && cc.wb_g == 255 &&
+                          cc.wb_b == 255;
+    if (identity) return nullptr;  // skip the per-byte lookups entirely
+    const uint32_t key = static_cast<uint32_t>(cc.gamma_x10) |
+                         (static_cast<uint32_t>(cc.wb_r) << 8) |
+                         (static_cast<uint32_t>(cc.wb_g) << 16) |
+                         (static_cast<uint32_t>(cc.wb_b) << 24);
+    auto& e = g_lut_cache[ch];
+    if (e.key != key) {
+        led::build_pixel_lut(e.lut, cc.gamma_x10, cc.wb_r, cc.wb_g, cc.wb_b);
+        e.key = key;
+    }
+    return &e.lut;
+}
+
 // Build a led::ChannelDesc from the current ChannelConfig + bus bit assignment.
 inline led::ChannelDesc desc_for_channel(size_t ch) {
     const auto& cc = config::get_channel(ch);
@@ -28,6 +53,7 @@ inline led::ChannelDesc desc_for_channel(size_t ch) {
     d.bus_bit_data     = static_cast<uint8_t>(ch * 2);
     d.bus_bit_clock    = static_cast<uint8_t>(ch * 2 + 1);
     d.clock_hz         = cc.clock_hz;
+    d.lut              = channel_lut(ch, cc);
 
     // Pixel-count preview: emit exactly the previewed number of physical
     // LEDs with the pattern's own levels — neutralize per-channel transforms

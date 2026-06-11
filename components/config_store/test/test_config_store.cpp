@@ -192,9 +192,9 @@ static void test_migrate_zero_size_blob_all_zero() {
 
 // ── ChannelConfig layout guard ───────────────────────────────────────────────
 
-// Snapshot of ChannelConfig at the last stable revision. If the struct grows
-// in the future, the migration logic must be extended to cover it too.
-struct ChannelConfigSnapshot {
+// Pre-gamma snapshot of ChannelConfig (before gamma_x10/wb_* were appended).
+// Used to prove the zero-fill migration + sanitize lands on identity.
+struct ChannelConfigPreGamma {
     Protocol protocol;
     ColorOrder color_order;
     uint16_t universe_start;
@@ -206,14 +206,33 @@ struct ChannelConfigSnapshot {
     uint32_t clock_hz;
 };
 
-static_assert(sizeof(ChannelConfig) == sizeof(ChannelConfigSnapshot),
-              "ChannelConfig size changed — update migration handling and this snapshot");
+static_assert(sizeof(ChannelConfig) > sizeof(ChannelConfigPreGamma),
+              "ChannelConfig must be larger than the pre-gamma snapshot");
 
-static_assert(offsetof(ChannelConfig, protocol) == offsetof(ChannelConfigSnapshot, protocol));
-static_assert(offsetof(ChannelConfig, color_order) == offsetof(ChannelConfigSnapshot, color_order));
+static_assert(offsetof(ChannelConfig, protocol) == offsetof(ChannelConfigPreGamma, protocol));
+static_assert(offsetof(ChannelConfig, color_order) == offsetof(ChannelConfigPreGamma, color_order));
 static_assert(offsetof(ChannelConfig, universe_start) ==
-              offsetof(ChannelConfigSnapshot, universe_start));
-static_assert(offsetof(ChannelConfig, clock_hz) == offsetof(ChannelConfigSnapshot, clock_hz));
+              offsetof(ChannelConfigPreGamma, universe_start));
+static_assert(offsetof(ChannelConfig, clock_hz) == offsetof(ChannelConfigPreGamma, clock_hz));
+
+static void test_channel_migration_sanitizes_to_identity() {
+    ChannelConfigPreGamma old{};
+    old.protocol    = Protocol::WS2815;
+    old.pixel_count = 144;
+    old.brightness  = 200;
+
+    ChannelConfig loaded{};
+    EXPECT_TRUE(migrate_blob(&old, sizeof(old), loaded));
+    // Zero-filled tail before sanitize: wb 0 would black the channel out.
+    EXPECT_EQ(loaded.gamma_x10, 0);
+    sanitize_channel(loaded);
+    EXPECT_EQ(loaded.gamma_x10, 10);
+    EXPECT_EQ(loaded.wb_r, 255);
+    EXPECT_EQ(loaded.wb_g, 255);
+    EXPECT_EQ(loaded.wb_b, 255);
+    EXPECT_EQ(loaded.brightness, 200);  // old fields preserved
+    EXPECT_EQ(loaded.pixel_count, 144);
+}
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
@@ -223,6 +242,7 @@ int main() {
     test_migrate_exact_size_ok();
     test_migrate_rejects_downgrade();
     test_migrate_zero_size_blob_all_zero();
+    test_channel_migration_sanitizes_to_identity();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

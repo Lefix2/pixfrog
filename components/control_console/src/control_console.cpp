@@ -338,6 +338,8 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
     printf("grouping=%u\n", c.grouping);
     printf("invert=%d\n", c.invert_direction ? 1 : 0);
     printf("clock_hz=%lu\n", static_cast<unsigned long>(c.clock_hz));
+    printf("gamma_x10=%u\n", c.gamma_x10);
+    printf("wb=%02x%02x%02x\n", c.wb_r, c.wb_g, c.wb_b);
 }
 
 int cmd_ch(int argc, char** argv) {
@@ -382,13 +384,22 @@ int cmd_ch(int argc, char** argv) {
         c.grouping = static_cast<uint8_t>(u);
     } else if (strcmp(key, "invert") == 0) {
         if (!parse_bool(val, c.invert_direction)) return err("invert: 0|1");
+    } else if (strcmp(key, "gamma_x10") == 0) {
+        if (!parse_u32_in(val, 10, 40, u)) return err("gamma_x10: 10 (linear)..40");
+        c.gamma_x10 = static_cast<uint8_t>(u);
+    } else if (strcmp(key, "wb") == 0) {
+        uint8_t rgb[3];
+        if (parse_hex(val, rgb, 3) != 3) return err("wb: rrggbb (ffffff = unity)");
+        c.wb_r = rgb[0] ? rgb[0] : 255;
+        c.wb_g = rgb[1] ? rgb[1] : 255;
+        c.wb_b = rgb[2] ? rgb[2] : 255;
     } else if (strcmp(key, "clock_hz") == 0) {
         if (!parse_u32_in(val, 100'000, led::kPclkHz / 2, u))
             return err("clock_hz: 100000..8000000");
         c.clock_hz = u;
     } else {
         return err("unknown key (protocol order universe dmx_start pixels brightness grouping "
-                   "invert clock_hz)");
+                   "invert clock_hz gamma_x10 wb)");
     }
 
     const bool persisted = config::set_channel(ch, c);
@@ -510,6 +521,22 @@ int cmd_reboot(int, char**) {
     return 0;
 }
 
+// ── channel identify ────────────────────────────────────────────────────────
+
+int cmd_identify(int argc, char** argv) {
+    if (argc == 2 && strcmp(argv[1], "stop") == 0) {
+        dmx::identify_stop();
+        return ok();
+    }
+    uint32_t ch = 0, secs = 10;
+    if (argc < 2 || argc > 3 || !parse_u32_in(argv[1], 0, config::kNumChannels - 1, ch))
+        return err("usage: identify <ch 0..7> [seconds] | identify stop");
+    if (argc == 3 && !parse_u32_in(argv[2], 1, 600, secs)) return err("seconds: 1..600");
+    dmx::identify_start(ch, static_cast<uint16_t>(secs));
+    printf("identify=ch%u for %us\n", static_cast<unsigned>(ch), static_cast<unsigned>(secs));
+    return ok();
+}
+
 // ── standalone scenes ───────────────────────────────────────────────────────
 
 const char* const kSceneFxNames[] = { "solid", "chase", "rainbow" };
@@ -616,6 +643,7 @@ void start() {
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
+    register_cmd("identify", "identify <ch> [s] — blink a strip white to locate it", cmd_identify);
     register_cmd("scene", "scene [play <n>|stop|name|set] — standalone scenes", cmd_scene);
     register_cmd("cal", "cal [-1|0|1|2|3] — get/set calibration pattern (3 = GPIO bit-bang probe)",
                  cmd_cal);

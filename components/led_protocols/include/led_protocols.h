@@ -121,6 +121,20 @@ Timing timing_for(Protocol p, uint32_t requested_clock_hz = 4'000'000);
 // Channel descriptor for the encoder
 // ────────────────────────────────────────────────────────────────────────────
 
+// Per-component 8-bit lookup tables: gamma correction + white balance,
+// applied to the SOURCE components (before colour-order mapping). Built by
+// build_pixel_lut(); a null pointer in ChannelDesc skips the lookup.
+struct PixelLut {
+    uint8_t r[256];
+    uint8_t g[256];
+    uint8_t b[256];
+    uint8_t w[256];  // gamma only — white balance has no meaning on the W die
+};
+
+// gamma_x10: 10 = linear (identity), 22 = gamma 2.2, clamped to [10, 40].
+// wb_*: 255 = unity gain, 0 is treated as 255 (zero-fill migration safety).
+void build_pixel_lut(PixelLut& lut, uint8_t gamma_x10, uint8_t wb_r, uint8_t wb_g, uint8_t wb_b);
+
 struct ChannelDesc {
     Protocol protocol;
     ColorOrder color_order;
@@ -128,9 +142,10 @@ struct ChannelDesc {
     uint8_t brightness;    // 0..255, applied at encode time
     uint8_t grouping;      // 1..8; N source pixels share one output pixel
     bool invert_direction;
-    uint8_t bus_bit_data;   // which bit of the 16-bit bus carries DATA   (0..15)
-    uint8_t bus_bit_clock;  // which bit carries CLOCK (clocked protocols only)
-    uint32_t clock_hz;      // requested CLOCK rate (clocked only)
+    uint8_t bus_bit_data;           // which bit of the 16-bit bus carries DATA   (0..15)
+    uint8_t bus_bit_clock;          // which bit carries CLOCK (clocked protocols only)
+    uint32_t clock_hz;              // requested CLOCK rate (clocked only)
+    const PixelLut* lut = nullptr;  // optional gamma/white-balance LUT
 };
 
 // ────────────────────────────────────────────────────────────────────────────

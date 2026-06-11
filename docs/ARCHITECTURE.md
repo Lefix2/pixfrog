@@ -37,12 +37,19 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 |----------------------|:----:|:----:|:-----:|-------------------------------|---------------------------------------------------|
 | `lwip_tcpip_thread`  | 0    | 18   | 4 kB  | lwIP mailbox                  | IDF TCP/IP stack (provided)                       |
 | `eth_rx_task`        | 0    | 19   | 2 kB  | Ethernet IRQ                  | RMII → lwIP (provided)                            |
-| `artnet_rx_task`     | 0    | 10   | 4 kB  | blocking `lwip_recvfrom`      | Parse packets, write `universe_pool[back]`        |
-| `render_task`        | 1    | 20   | 8 kB  | 60 Hz timer + `ArtSync`       | Swap universes, encode full frame to `fb_back`, draw_bitmap, wait `done_sem` |
-| `ui_task`            | 0    | 4    | 4 kB  | encoder IRQ + 100 ms tick     | Boot splash, read encoder, render display (OLED or TFT), persist NVS |
+| `artnet_rx_task`     | 0    | 10   | 4 kB  | blocking `lwip_recvfrom`      | Parse packets (Dmx/Poll/Sync/Address/IpProg/Trigger), write `universe_pool[back]` |
+| `sacn_rx_task`       | 0    | 10   | 4 kB  | blocking `recvfrom` (1 s t/o) | **Opt-in.** E1.31 data + sync, multicast joins (5 s refresh), priority gate |
+| `httpd`              | 0    | 5    | 8 kB  | TCP accept                    | **Opt-in.** Web SPA + REST API + OTA + backup/restore (esp_http_server) |
+| `render_task`        | 1    | 20   | 6 kB  | refresh timer + `ArtSync`     | Swap universes, decode/generate pixels, encode full frame, kick DMA |
+| `ui_task`            | 0    | 4    | 4 kB  | 33 ms tick                    | Boot splash, **time-polled** seesaw encoder (no IRQ — 4-wire harness), render display, persist NVS |
 | `idle_0` / `idle_1`  | 0/1  | 0    | 1 kB  | (FreeRTOS)                    | Power-save hooks                                  |
 
-> **Note**: no `lcd_cam_refill_task`. The full frame buffer lives in PSRAM; GDMA scans it in one transaction, the `on_color_trans_done` ISR releases `done_sem` at the end. The encoder has no sub-frame deadline.
+> **Note**: no refill task. The full frame buffer lives in PSRAM and the DMA
+> engine scans it autonomously. The default **PARLIO TX backend** runs in loop
+> transmission: the mounted buffer repeats gaplessly and a frame swap is a
+> single buffer remount at the next frame boundary. The legacy LCD_CAM backend
+> (Kconfig choice, not CI-built) paces on its vsync ISR instead. Either way
+> the encoder has no sub-frame deadline.
 
 ---
 
@@ -55,8 +62,17 @@ A frame is the interval between two LED renders (33.33 ms at 30 Hz, 16.67 ms at 
 When `render_task` wakes (t = 0), it runs, in order:
 
 1. Atomic swap `universe_front ↔ universe_back`.
-2. Per channel: decode universes → pixels (DMX offset, multi-universe spanning) into `pixel_back_buffer(ch)`, then `swap_pixels(ch)`.
-3. `lcd::render_frame()`: encode every channel into `fb_back` in a single pass (`led::encode_frame` — pure stores, no pre-zeroing, color order / brightness / grouping / invert applied inline) **while the previous frame is still emitting from the other FB**, `esp_cache_msync(…, DIR_C2M)` on the written region, wait `done_sem`, then `esp_lcd_panel_draw_bitmap(panel, fb_back)` — which swaps the active FB and kicks GDMA. Encode (CPU) and emission (GDMA) overlap; the frame rate is bounded by max of the two, not their sum.
+2. Per channel, fill `pixel_back_buffer(ch)` from the **first matching source**
+   in a fixed priority chain, then `swap_pixels(ch)`:
+   1. **Identify** — 2 Hz white blink (commissioning, auto-expires)
+   2. **Pixel-count preview** — live ruler while the count is edited
+   3. **Standalone scene** — parametric generator (solid/chase/rainbow) on the
+      scene's masked channels; overrides network until stopped
+   4. **Failsafe** — channel silent past the timeout: blackout / solid colour
+      / scene (hold = fall through to a normal decode of the stale data)
+   5. **Network decode** — universes → pixels (DMX offset, multi-universe
+      spanning)
+3. `lcd::render_frame()`: encode every channel into `fb_back` in a single pass (`led::encode_frame` — pure stores, no pre-zeroing; **gamma/white-balance LUT**, color order, brightness, grouping and invert applied inline per pixel) **while the previous frame is still emitting from the other FB**, `esp_cache_msync(…, DIR_C2M)` on the written region, then hand the buffer to the DMA engine (PARLIO loop remount, or draw_bitmap on the legacy LCD_CAM path). Encode (CPU) and emission (DMA) overlap; the frame rate is bounded by max of the two, not their sum.
 4. `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
 
 In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]`; an ArtSync calls `dmx::note_sync()`, which wakes `render_task` early via the semaphore.
@@ -187,12 +203,15 @@ transceiver is still preferable for long or terminated runs — see
 
 | Component            | Responsibility                                      | Depends on              |
 |----------------------|-----------------------------------------------------|-------------------------|
-| `lcd_cam_output`     | LCD_CAM 16-bit driver, PSRAM FBs, GDMA, ISR        | IDF HAL only            |
-| `led_protocols`      | Per-protocol encoders (NRZ, SPI-like, DMX512)      | (free)                  |
-| `artnet`             | UDP parser, ArtPollReply, writes universe pool     | `lwip`                  |
-| `dmx_manager`        | Universe pool + channel mapping + capacity check   | `artnet`, `config_store` |
-| `config_store`       | NVS wrappers + RAM cache                           | IDF NVS                 |
+| `lcd_cam_output`     | 16-bit bus output: PARLIO TX loop (default) or legacy LCD_CAM; PSRAM FBs, gamma-LUT cache | IDF HAL, `led_protocols`, `dmx_manager` |
+| `led_protocols`      | Per-protocol encoders (NRZ, SPI-like, DMX512) + gamma/WB LUT builder | (free)        |
+| `artnet`             | UDP parser, Dmx/Poll/Sync/Address/IpProg/Trigger, replies | `lwip`, `dmx_manager` |
+| `sacn`               | E1.31 receiver: multicast joins, priority gate, sync | `lwip`, `dmx_manager`  |
+| `dmx_manager`        | Universe pool, channel mapping, capacity check, scenes/failsafe/identify state | `config_store` |
+| `config_store`       | NVS wrappers + RAM cache + forward migration + web password hash | IDF NVS, mbedtls |
+| `web_config`         | Opt-in HTTP server: SPA, REST, OTA, backup/restore, Basic auth | esp_http_server, `app_update` |
 | `ui`                 | Canvas API (OLED or TFT) + seesaw + menu FSM + splash | IDF I2C / SPI, `config_store`, `esp_lcd` (TFT only) |
+| `control_console`    | UART0 REPL: full config, telemetry, DMX injection  | esp_console             |
 | `boards/<hw>.h`      | Pinout, hardware capabilities                      | (header-only)           |
 
 **Dependency rule**: `lcd_cam_output` knows nothing about ArtNet; `artnet` knows nothing about LCD_CAM. They meet in `main.cpp` via `dmx_manager`, which owns the pointer dance.
@@ -206,31 +225,44 @@ Per-module ESP_LOG tags: `ARTNET`, `LCD_CAM`, `UI`, `DMX`, `CFG`, `MAIN`. Defaul
 Internal counters exposed by `dmx_manager_get_stats()`:
 
 ```cpp
-struct DmxStats {
+struct Stats {
     uint64_t frames_emitted;
-    uint64_t artnet_packets_rx;
-    uint64_t artnet_bad_packets;
+    uint64_t artnet_packets_rx;   // ArtDmx routed to a mapped universe
+    uint64_t artnet_bad_packets;  // malformed (ArtNet or sACN)
+    uint64_t artnet_ctrl_rx;      // ArtAddress/IpProg/Nzs/Trigger/Command/TimeCode
+    uint64_t sacn_packets_rx;     // sACN data routed to a mapped universe
     uint32_t dma_underruns;
     uint32_t current_fps;
 };
 ```
 
-Read by HOME. No web server, no Prometheus — by design the only network surface is ArtNet.
+Read by HOME, the UART console (`stats`) and `/api/config`.
 
 ---
 
 ## 11. Security / robustness
 
 - No WiFi → no RF attack surface.
-- ArtNet exposes no configuration channel; the network can write DMX bytes only.
-- NVS encryption deliberately off (no secrets stored).
+- The only always-on listener is ArtNet UDP. sACN (UDP 5568) and the web UI
+  (TCP 80) are strictly opt-in — no socket while disabled.
+- ArtNet *can* reconfigure the node (ArtAddress/ArtIpProg, per Art-Net 4) and
+  trigger scenes (ArtTrigger) — standard desk-side behaviour.
+- Web mutations (config, OTA, reboot) sit behind optional HTTP Basic auth;
+  the password is stored as a salted SHA-256, never in clear, and the UART
+  console is the physical recovery channel.
+- OTA uses A/B slots with BOOTLOADER_APP_ROLLBACK: an image that fails to
+  reach boot-complete is reverted on the next reset; a power cut mid-upload
+  never touches the running slot.
 - Hardware watchdog enabled; `render_task` is subscribed and kicks every frame.
 
 ---
 
-## 12. Out of scope for v0
+## 12. Out of scope (see TODO.md for the live list)
 
-- Internal sequencer / FX engine
-- sACN E1.31 (would slot in next to ArtNet)
-- Web UI (would require a WiFi co-MCU)
+- Recorded-show playback (FSEQ from microSD — feasibility studied, see TODO)
+- Multi-source HTP/LTP merge on one universe
+- RDM (over ArtNet or on the wire)
 - Inter-controller frame sync (PTP)
+
+Formerly listed here and since shipped: sACN E1.31, the web UI (native on the
+P4 — no co-MCU needed), and the scene/FX engine.

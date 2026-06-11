@@ -10,6 +10,8 @@
 
 #include "led_protocols.h"
 
+#include "encoder_nrz.h"
+
 using namespace pixfrog::led;
 
 static int g_pass = 0;
@@ -568,6 +570,68 @@ static void test_perf_frame_8xdmx512() {
     }
 }
 
+// ── Gamma / white-balance LUT ───────────────────────────────────────────────
+
+static void test_lut_identity() {
+    PixelLut lut;
+    build_pixel_lut(lut, 10, 255, 255, 255);
+    for (int i = 0; i < 256; ++i) {
+        EXPECT_EQ(lut.r[i], i);
+        EXPECT_EQ(lut.g[i], i);
+        EXPECT_EQ(lut.b[i], i);
+        EXPECT_EQ(lut.w[i], i);
+    }
+}
+
+static void test_lut_zero_fill_is_identity() {
+    // Pre-feature NVS blobs decode as gamma_x10=0 / wb=0 — must be identity.
+    PixelLut lut;
+    build_pixel_lut(lut, 0, 0, 0, 0);
+    EXPECT_EQ(lut.r[128], 128);
+    EXPECT_EQ(lut.w[255], 255);
+}
+
+static void test_lut_gamma22() {
+    PixelLut lut;
+    build_pixel_lut(lut, 22, 255, 255, 255);
+    EXPECT_EQ(lut.r[0], 0);
+    EXPECT_EQ(lut.r[255], 255);  // endpoints exact
+    // mid-grey 128 → (128/255)^2.2*255 ≈ 56
+    EXPECT_TRUE(lut.r[128] >= 54 && lut.r[128] <= 58);
+    // monotonic
+    for (int i = 1; i < 256; ++i)
+        EXPECT_TRUE(lut.g[i] >= lut.g[i - 1]);
+}
+
+static void test_lut_white_balance() {
+    PixelLut lut;
+    build_pixel_lut(lut, 10, 255, 128, 64);
+    EXPECT_EQ(lut.r[200], 200);
+    EXPECT_EQ(lut.g[200], 200 * 128 / 255);
+    EXPECT_EQ(lut.b[200], 200 * 64 / 255);
+    EXPECT_EQ(lut.w[200], 200);  // W untouched by wb
+}
+
+static void test_lut_applied_by_nrz_encoder() {
+    // 1 px WS2815, lut halves green; verify the wire bytes follow the lut.
+    PixelLut lut;
+    build_pixel_lut(lut, 10, 255, 128, 255);
+    ChannelDesc d{};
+    d.protocol          = Protocol::WS2815;
+    d.color_order       = ColorOrder::RGB;  // keep order trivial
+    d.pixel_count       = 1;
+    d.brightness        = 255;
+    d.grouping          = 1;
+    d.bus_bit_data      = 0;
+    d.lut               = &lut;
+    const uint8_t px[3] = { 100, 200, 50 };
+    uint8_t out[4];
+    detail::transformed_pixel_bytes(d, px, 0, out);
+    EXPECT_EQ(out[0], 100);
+    EXPECT_EQ(out[1], 200 * 128 / 255);
+    EXPECT_EQ(out[2], 50);
+}
+
 int main() {
     test_timing_ws2815();
     test_timing_ws2812b();
@@ -592,6 +656,11 @@ int main() {
     test_frame_capacity_too_small();
     test_perf_frame_8x512();
     test_perf_frame_8xdmx512();
+    test_lut_identity();
+    test_lut_zero_fill_is_identity();
+    test_lut_gamma22();
+    test_lut_white_balance();
+    test_lut_applied_by_nrz_encoder();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

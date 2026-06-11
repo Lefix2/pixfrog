@@ -49,6 +49,10 @@ ChannelConfig make_default_channel(size_t idx) {
     c.grouping         = 1;
     c.invert_direction = false;
     c.clock_hz         = 4'000'000;
+    c.gamma_x10        = 10;   // linear
+    c.wb_r             = 255;  // unity
+    c.wb_g             = 255;
+    c.wb_b             = 255;
     return c;
 }
 
@@ -189,6 +193,7 @@ void init() {
             g_channels[i] = make_default_channel(i);
             nvs_save_blob(h, key, &g_channels[i], sizeof(ChannelConfig));
         }
+        sanitize_channel(g_channels[i]);
     }
 
     if (!nvs_load_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes))) {

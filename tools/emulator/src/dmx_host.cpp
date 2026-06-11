@@ -37,7 +37,17 @@ bool is_channel_failsafe(size_t /*channel_index*/) {
     return false;
 }
 namespace {
-int g_scene = -1;
+int g_scene    = -1;
+int g_identify = -1;
+}  // namespace
+void identify_start(size_t channel_index, uint16_t /*seconds*/) {
+    g_identify = static_cast<int>(channel_index);
+}
+void identify_stop() {
+    g_identify = -1;
+}
+int identify_channel() {
+    return g_identify;
 }
 void scene_start(uint8_t scene_index) {
     g_scene = scene_index;
