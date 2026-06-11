@@ -67,12 +67,14 @@ DMX512 encoder interleaving needed), `ArtTrigger` (waiting on scenes),
 
 ## Tech debt / infra
 
-- [ ] ★ **Emulator in CI** — it broke silently once already (missing
-      web_config stub, caught in #21). Add a CI job: build `tools/emulator`
-      + headless smoke test of the menu FSM via the stdin agent protocol.
-- [ ] **Encoder INT_N dead** (GPIO21 never fires; UI time-polls). Either trace
-      the schematic and fix, or remove the dead ISR path and document polling
-      as the design.
+- [x] **Emulator in CI** — `ci.yml` job + `tools/emulator/smoke.sh`: SDL2
+      build + headless menu-FSM smoke test (navigation, About, EditValue
+      commit by long-press, long-press-as-Back). Also in ci-local.sh.
+- [x] **Encoder INT_N removed** — analysis: ui_task already loops at ~30 Hz
+      for the LED animation + display refresh, so INT gained ≤ one tick of
+      latency and cost two extra I2C latch-clear reads per poll (and the
+      line never fired on this board). Polling is now the documented design;
+      the encoder harness is 4-wire (VCC/GND/SDA/SCL) and GPIO 21 is free.
 
 ## Hardware (next board rev)
 

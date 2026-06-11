@@ -270,22 +270,21 @@ extern "C" void app_main() {
     }
 
     pixfrog::ui::InitConfig ui_cfg{
-        .i2c_port         = pixfrog::board::kI2cPort,
-        .i2c_sda_gpio     = pixfrog::board::kI2cSdaGpio,
-        .i2c_scl_gpio     = pixfrog::board::kI2cSclGpio,
-        .i2c_freq_hz      = pixfrog::board::kI2cFreqHz,
-        .encoder_int_gpio = pixfrog::board::kEncoderIntGpio,
-        .encoder_addr     = pixfrog::board::kEncoderI2cAddr,
-        .oled_addr        = pixfrog::board::kOledI2cAddr,
-        .spi_host         = pixfrog::board::kDisplaySpiHost,
-        .spi_clk_gpio     = pixfrog::board::kDisplayClkGpio,
-        .spi_mosi_gpio    = pixfrog::board::kDisplayMosiGpio,
-        .spi_cs_gpio      = pixfrog::board::kDisplayCsGpio,
-        .tft_dc_gpio      = pixfrog::board::kDisplayDcGpio,
-        .tft_rst_gpio     = pixfrog::board::kDisplayRstGpio,
-        .spi_freq_hz      = pixfrog::board::kDisplaySpiFreqHz,
-        .tft_width        = 240,
-        .tft_height       = 320,
+        .i2c_port      = pixfrog::board::kI2cPort,
+        .i2c_sda_gpio  = pixfrog::board::kI2cSdaGpio,
+        .i2c_scl_gpio  = pixfrog::board::kI2cSclGpio,
+        .i2c_freq_hz   = pixfrog::board::kI2cFreqHz,
+        .encoder_addr  = pixfrog::board::kEncoderI2cAddr,
+        .oled_addr     = pixfrog::board::kOledI2cAddr,
+        .spi_host      = pixfrog::board::kDisplaySpiHost,
+        .spi_clk_gpio  = pixfrog::board::kDisplayClkGpio,
+        .spi_mosi_gpio = pixfrog::board::kDisplayMosiGpio,
+        .spi_cs_gpio   = pixfrog::board::kDisplayCsGpio,
+        .tft_dc_gpio   = pixfrog::board::kDisplayDcGpio,
+        .tft_rst_gpio  = pixfrog::board::kDisplayRstGpio,
+        .spi_freq_hz   = pixfrog::board::kDisplaySpiFreqHz,
+        .tft_width     = 240,
+        .tft_height    = 320,
     };
     pixfrog::ui::start(ui_cfg);
 

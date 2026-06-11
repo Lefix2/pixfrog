@@ -148,7 +148,9 @@ constexpr uint32_t kI2cFreqHz = 400'000;
 
 constexpr uint8_t kOledI2cAddr    = 0x3C;
 constexpr uint8_t kEncoderI2cAddr = 0x36;  // Adafruit seesaw 4991 default
-constexpr int kEncoderIntGpio     = 21;    // active-LOW IRQ from seesaw
+// Encoder INT_N is deliberately not wired: the firmware time-polls the seesaw
+// at ~30 Hz, so a 4-wire I2C harness (VCC/GND/SDA/SCL) is sufficient and
+// GPIO 21 stays free.
 
 // ────────────────────────────────────────────────────────────────────────────
 // SPI display — ST7789V or ILI9341

@@ -7,9 +7,9 @@
 // Pinout for the 4991 board:
 //   - Encoder A/B internal to the seesaw (no GPIO mapping needed)
 //   - Push-button on seesaw GPIO 24, active LOW with pull-up
-//   - INT_N: open-drain output, asserted (LOW) on any enabled int source.
-//     Cleared by reading GPIO_INTFLAG (for GPIO ints) and ENCODER_DELTA
-//     (for encoder ints).
+//   - INT_N: deliberately unused — ui_task time-polls at ~30 Hz, which the
+//     loop runs at anyway. No interrupt enables, no latch-clear reads;
+//     a 4-wire harness (VCC/GND/SDA/SCL) is all the encoder needs.
 
 #include "ui_internal.h"
 
@@ -33,13 +33,9 @@ constexpr uint8_t kSeeBaseEncoder = 0x11;
 constexpr uint8_t kSeeGpioDirClrBulk = 0x03;
 constexpr uint8_t kSeeGpioBulk       = 0x04;
 constexpr uint8_t kSeeGpioBulkSet    = 0x05;
-constexpr uint8_t kSeeGpioIntEnSet   = 0x08;
-constexpr uint8_t kSeeGpioIntFlag    = 0x0A;
 constexpr uint8_t kSeeGpioPullEnSet  = 0x0B;
 
-constexpr uint8_t kSeeEncoderIntEnSet = 0x10;
 constexpr uint8_t kSeeEncoderPosition = 0x30;
-constexpr uint8_t kSeeEncoderDelta    = 0x40;
 
 // On-board NeoPixel (seesaw NEOPIXEL module). The 4991's single WS2812 is wired
 // to seesaw GPIO 6 and is GRB-ordered.
@@ -60,7 +56,6 @@ constexpr int kSeeReadDelayUs = 250;
 constexpr int kI2cTimeoutMs   = 50;
 
 i2c_master_dev_handle_t g_dev = nullptr;
-int g_int_gpio                = -1;
 int32_t g_last_pos            = 0;
 bool g_last_btn               = false;
 
@@ -158,14 +153,6 @@ bool seesaw_read_button(bool& pressed) {
     return true;
 }
 
-// Reading INTFLAG / DELTA also clears the seesaw's internal interrupt
-// latches, releasing the INT_N line so the next change can fire our GPIO ISR.
-void seesaw_clear_ints() {
-    uint8_t scratch[4];
-    seesaw_read(kSeeBaseGpio, kSeeGpioIntFlag, scratch, 4);
-    seesaw_read(kSeeBaseEncoder, kSeeEncoderDelta, scratch, 4);
-}
-
 // ── On-board NeoPixel feedback ──────────────────────────────────────────────
 // Two modes, set from the UI loop:
 //   • status screen (set_active(false)): the LED slowly breathes theme green.
@@ -234,9 +221,8 @@ void led_render() {
 
 }  // namespace
 
-bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio) {
+bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr) {
     if (!bus) return false;
-    g_int_gpio = int_gpio;
 
     i2c_device_config_t dev_cfg{};
     dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -248,7 +234,7 @@ bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio) {
         return false;
     }
 
-    // Item 3: configure the switch pin and enable interrupts.
+    // Configure the switch pin (input + pull-up, no interrupts — polled).
     uint8_t mask_be[4];
     be32(kSeeSwitchMask, mask_be);
 
@@ -258,18 +244,12 @@ bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio) {
     if (!seesaw_write(kSeeBaseGpio, kSeeGpioPullEnSet, mask_be, 4)) return false;
     // 3. Set the pin high to bias the pull-up (some seesaws need this explicit step)
     if (!seesaw_write(kSeeBaseGpio, kSeeGpioBulkSet, mask_be, 4)) return false;
-    // 4. Enable GPIO interrupt on the switch pin
-    if (!seesaw_write(kSeeBaseGpio, kSeeGpioIntEnSet, mask_be, 4)) return false;
-    // 5. Enable encoder 0 interrupt
-    uint8_t one = 0x01;
-    if (!seesaw_write(kSeeBaseEncoder, kSeeEncoderIntEnSet, &one, 1)) return false;
 
-    // Read initial state (also clears any latched interrupts).
+    // Read initial state.
     seesaw_read_position(g_last_pos);
     seesaw_read_button(g_last_btn);
-    seesaw_clear_ints();
 
-    ESP_LOGI(TAG, "seesaw init OK at 0x%02X, INT_N on GPIO %d, start pos=%ld", addr, int_gpio,
+    ESP_LOGI(TAG, "seesaw init OK at 0x%02X (polled, INT_N unused), start pos=%ld", addr,
              static_cast<long>(g_last_pos));
     return true;
 }
@@ -278,12 +258,10 @@ Event encoder_poll() {
     Event e = pop_evt();
     if (e != Event::None) return e;
 
-    int32_t pos   = g_last_pos;
-    bool btn      = g_last_btn;
-    bool any_read = false;
+    int32_t pos = g_last_pos;
+    bool btn    = g_last_btn;
 
     if (seesaw_read_position(pos)) {
-        any_read            = true;
         const int32_t delta = pos - g_last_pos;
         g_last_pos          = pos;
         // Adafruit 4991 issues one tick per detent, but reads can occasionally
@@ -299,7 +277,6 @@ Event encoder_poll() {
     }
 
     if (seesaw_read_button(btn)) {
-        any_read          = true;
         const int64_t now = esp_timer_get_time();
         if (btn != g_last_btn) {
             if (now - g_last_btn_change_us >= kBtnDebounceUs) {
@@ -322,7 +299,6 @@ Event encoder_poll() {
         }
     }
 
-    if (any_read) seesaw_clear_ints();
     return pop_evt();
 }
 
