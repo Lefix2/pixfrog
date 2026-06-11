@@ -280,6 +280,121 @@ static void test_poll_reply_name_truncation() {
 
 // ── main ────────────────────────────────────────────────────────────────────
 
+// ── ArtNzs ──────────────────────────────────────────────────────────────────
+
+static void test_nzs_valid_extract() {
+    std::vector<uint8_t> pkt(18 + 4, 0);
+    std::memcpy(pkt.data(), "Art-Net\0", 8);
+    pkt[8]  = 0x00;
+    pkt[9]  = 0x51;
+    pkt[12] = 7;     // sequence
+    pkt[13] = 0xCC;  // start code
+    pkt[14] = 0x23;  // sub_uni
+    pkt[15] = 0x01;  // net
+    pkt[16] = 0x00;
+    pkt[17] = 0x04;  // length 4
+    pkt[18] = 0xAA;
+    NzsFields f{};
+    EXPECT_TRUE(parse_nzs(pkt.data(), pkt.size(), &f));
+    EXPECT_EQ(f.universe, (1 << 8) | 0x23);
+    EXPECT_EQ(f.start_code, 0xCC);
+    EXPECT_EQ(f.data_len, 4);
+    EXPECT_EQ(f.data[0], 0xAA);
+}
+
+static void test_nzs_rejects_truncated() {
+    std::vector<uint8_t> pkt(18 + 2, 0);
+    std::memcpy(pkt.data(), "Art-Net\0", 8);
+    pkt[16] = 0x00;
+    pkt[17] = 0x04;  // claims 4 bytes, only 2 present
+    EXPECT_TRUE(!parse_nzs(pkt.data(), pkt.size(), nullptr));
+}
+
+// ── ArtAddress ──────────────────────────────────────────────────────────────
+
+static std::vector<uint8_t> make_address_packet() {
+    std::vector<uint8_t> pkt(kAddressSize, 0);
+    std::memcpy(pkt.data(), "Art-Net\0", 8);
+    pkt[8]  = 0x00;
+    pkt[9]  = 0x60;
+    pkt[11] = 14;  // ProtVer
+    return pkt;
+}
+
+static void test_address_program_bits() {
+    auto pkt = make_address_packet();
+    pkt[12]  = 0x85;  // program net = 5
+    pkt[13]  = 2;     // bind index 2
+    std::memcpy(pkt.data() + 14, "newshort", 8);
+    std::memcpy(pkt.data() + 32, "newlong", 7);
+    pkt[100] = 0x8A;  // port 0: program universe nibble A
+    pkt[101] = 0x00;  // port 1: no change
+    pkt[104] = 0x83;  // program subnet = 3
+    pkt[106] = 0x04;  // AcLedLocate
+
+    AddressFields f{};
+    EXPECT_TRUE(parse_address(pkt.data(), pkt.size(), &f));
+    EXPECT_EQ(f.net_switch, 0x85);
+    EXPECT_EQ(f.sub_switch, 0x83);
+    EXPECT_EQ(f.bind_index, 2);
+    EXPECT_EQ(f.sw_out[0], 0x8A);
+    EXPECT_EQ(f.sw_out[1], 0x00);
+    EXPECT_EQ(f.command, 0x04);
+    EXPECT_TRUE(std::memcmp(f.short_name, "newshort", 8) == 0);
+    EXPECT_TRUE(std::memcmp(f.long_name, "newlong", 7) == 0);
+}
+
+static void test_address_rejects_short_packet() {
+    auto pkt = make_address_packet();
+    EXPECT_TRUE(!parse_address(pkt.data(), kAddressSize - 1, nullptr));
+}
+
+// ── ArtIpProg + reply ───────────────────────────────────────────────────────
+
+static void test_ip_prog_extract() {
+    std::vector<uint8_t> pkt(30, 0);
+    std::memcpy(pkt.data(), "Art-Net\0", 8);
+    pkt[8]  = 0x00;
+    pkt[9]  = 0xF8;
+    pkt[14] = 0x86;  // enable + program IP + program subnet
+    pkt[16] = 192;
+    pkt[17] = 168;
+    pkt[18] = 1;
+    pkt[19] = 99;
+    pkt[20] = 255;
+    pkt[21] = 255;
+    pkt[22] = 255;
+    pkt[23] = 0;
+    pkt[26] = 192;
+    pkt[27] = 168;
+    pkt[28] = 1;
+    pkt[29] = 1;
+    IpProgFields f{};
+    EXPECT_TRUE(parse_ip_prog(pkt.data(), pkt.size(), &f));
+    EXPECT_EQ(f.command, 0x86);
+    EXPECT_EQ(f.prog_ip, 0xC0A80163u);
+    EXPECT_EQ(f.prog_mask, 0xFFFFFF00u);
+    EXPECT_EQ(f.prog_gw, 0xC0A80101u);
+}
+
+static void test_ip_prog_reply_layout() {
+    uint8_t pkt[kIpProgReplySize];
+    IpProgReplyInputs in{};
+    in.ip           = 0x0A000001u;  // 10.0.0.1
+    in.mask         = 0xFF000000u;
+    in.gw           = 0x0A0000FEu;
+    in.dhcp_enabled = true;
+    build_ip_prog_reply(pkt, in);
+    EXPECT_EQ(pkt[8], 0x00);
+    EXPECT_EQ(pkt[9], 0xF9);  // OpIpProgReply LE
+    EXPECT_EQ(pkt[16], 10);
+    EXPECT_EQ(pkt[19], 1);
+    EXPECT_EQ(pkt[20], 255);
+    EXPECT_EQ(pkt[26], 0x40);  // Status: DHCP enabled
+    EXPECT_EQ(pkt[28], 10);
+    EXPECT_EQ(pkt[31], 0xFE);
+}
+
 int main() {
     test_header_too_short();
     test_header_wrong_magic();
@@ -296,6 +411,12 @@ int main() {
     test_poll_reply_net_subnet_masked();
     test_poll_reply_sw_out_masked();
     test_poll_reply_name_truncation();
+    test_nzs_valid_extract();
+    test_nzs_rejects_truncated();
+    test_address_program_bits();
+    test_address_rejects_short_packet();
+    test_ip_prog_extract();
+    test_ip_prog_reply_layout();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

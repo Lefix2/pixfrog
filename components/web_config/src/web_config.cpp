@@ -14,6 +14,7 @@
 #include "config_store.h"
 #include "dmx_manager.h"
 #include "led_protocols.h"
+#include "sacn.h"
 #include "ui.h"
 
 namespace pixfrog::web {
@@ -140,6 +141,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddNumberToObject(jg, "refresh_hz", g.refresh_rate_hz);
     cJSON_AddNumberToObject(jg, "home_timeout_s", g.home_timeout_s);
     cJSON_AddBoolToObject(jg, "web_enabled", g.web_enabled);
+    cJSON_AddBoolToObject(jg, "sacn_enabled", g.sacn_enabled);
 
     // Channels
     cJSON* jchs = cJSON_AddArrayToObject(root, "channels");
@@ -250,10 +252,22 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     }
     if (get_u32("home_timeout_s", 0, 65535, u)) g.home_timeout_s = static_cast<uint16_t>(u);
     if (get_bool("web_enabled", b)) g.web_enabled = b;
+    bool sacn_changed = false;
+    if (get_bool("sacn_enabled", b)) {
+        sacn_changed   = (g.sacn_enabled != b);
+        g.sacn_enabled = b;
+    }
 
     cJSON_Delete(j);
     config::set_global(g);
     dmx::mark_global_dirty();
+
+    if (sacn_changed) {
+        if (g.sacn_enabled)
+            sacn::start();
+        else
+            sacn::stop();
+    }
 
     cJSON* resp = cJSON_CreateObject();
     cJSON_AddBoolToObject(resp, "ok", true);

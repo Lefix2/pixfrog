@@ -40,12 +40,26 @@ jobs:
           cmake --build build --parallel
           ./build/test_dmx_logic
 
-      - name: artnet_parser (header, dmx, filter, PollReply)
+      - name: artnet_parser (header, dmx, filter, PollReply, Address, IpProg, Nzs)
         run: |
           cd components/artnet/test
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
           ./build/test_artnet_parser
+
+      - name: config_store (struct layout, NVS migration)
+        run: |
+          cd components/config_store/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_config_store
+
+      - name: sacn_parser (root/framing/DMP, sync, source gate)
+        run: |
+          cd components/sacn/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_sacn_parser
 
   idf-build:
     name: ESP-IDF build for esp32p4 (${{ matrix.variant }})

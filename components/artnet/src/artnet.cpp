@@ -115,6 +115,145 @@ void handle_sync(const uint8_t* /*buf*/, size_t /*len*/) {
     dmx::note_sync();
 }
 
+// ArtAddress — remote programming from the desk: names, net/subnet switch,
+// per-port universe low nibble. Applied fields persist to NVS; always answer
+// with an ArtPollReply to the sender so it sees the new state.
+void handle_address(const uint8_t* buf, size_t len, const sockaddr_in& from) {
+    parser::AddressFields f{};
+    if (!parser::parse_address(buf, len, &f)) {
+        dmx::note_packet_bad();
+        return;
+    }
+    dmx::note_ctrl_rx();
+
+    config::GlobalConfig g = config::get_global();
+    bool global_changed    = false;
+
+    if (f.net_switch & 0x80) {
+        g.artnet_net   = f.net_switch & 0x7F;
+        global_changed = true;
+    }
+    if (f.sub_switch & 0x80) {
+        g.artnet_subnet = f.sub_switch & 0x0F;
+        global_changed  = true;
+    }
+    if (f.short_name[0] != '\0') {
+        std::memset(g.short_name, 0, sizeof(g.short_name));
+        std::memcpy(g.short_name, f.short_name, sizeof(g.short_name) - 1);
+        global_changed = true;
+    }
+    if (f.long_name[0] != '\0') {
+        std::memset(g.long_name, 0, sizeof(g.long_name));
+        std::memcpy(g.long_name, f.long_name, sizeof(g.long_name) - 1);
+        global_changed = true;
+    }
+
+    // SwOut programs the low nibble of a port's universe. BindIndex 0/1 →
+    // channels 1-4, BindIndex 2 → channels 5-8 (mirrors our ArtPollReply).
+    const uint8_t bind   = (f.bind_index <= 1) ? 1 : f.bind_index;
+    const size_t base_ch = static_cast<size_t>(bind - 1) * 4;
+    for (uint8_t p = 0; p < 4; ++p) {
+        if (!(f.sw_out[p] & 0x80)) continue;
+        const size_t ch = base_ch + p;
+        if (ch >= config::kNumChannels) continue;
+        auto c           = config::get_channel(ch);
+        c.universe_start = static_cast<uint16_t>((c.universe_start & ~0x0Fu) |
+                                                 (f.sw_out[p] & 0x0F));
+        config::set_channel(ch, c);
+        dmx::mark_channel_dirty(ch);
+    }
+
+    if (global_changed) {
+        config::set_global(g);
+        dmx::mark_global_dirty();
+    }
+    if (f.command != 0x00) {
+        ESP_LOGI(TAG, "ArtAddress command 0x%02X ignored", f.command);
+    }
+
+    send_poll_reply(from.sin_addr.s_addr);
+}
+
+// ArtIpProg — remote IP configuration. Same constraint as the UI/console
+// paths: network changes apply after reboot. Always answer ArtIpProgReply
+// with the *configured* values.
+void handle_ip_prog(const uint8_t* buf, size_t len, const sockaddr_in& from) {
+    parser::IpProgFields f{};
+    if (!parser::parse_ip_prog(buf, len, &f)) {
+        dmx::note_packet_bad();
+        return;
+    }
+    dmx::note_ctrl_rx();
+
+    config::GlobalConfig g = config::get_global();
+    if (f.command & 0x80) {  // programming enabled
+        if (f.command & 0x10) {
+            // Reset to defaults: DHCP on, static fields cleared.
+            g.use_dhcp       = true;
+            g.static_ip      = 0;
+            g.static_mask    = 0;
+            g.static_gateway = 0;
+        } else {
+            if (f.command & 0x40) g.use_dhcp = true;
+            if (f.command & 0x04) {
+                g.static_ip = f.prog_ip;
+                g.use_dhcp  = false;
+            }
+            if (f.command & 0x02) g.static_mask = f.prog_mask;
+            if (f.command & 0x08) g.static_gateway = f.prog_gw;
+        }
+        config::set_global(g);
+        dmx::mark_global_dirty();
+        ESP_LOGI(TAG, "ArtIpProg applied (cmd 0x%02X) — reboot to take effect", f.command);
+    }
+
+    if (g_sock < 0) return;
+    uint8_t pkt[parser::kIpProgReplySize];
+    parser::IpProgReplyInputs in{};
+    in.ip           = g.use_dhcp ? g_local_ip : g.static_ip;
+    in.mask         = g.static_mask;
+    in.gw           = g.static_gateway;
+    in.dhcp_enabled = g.use_dhcp;
+    parser::build_ip_prog_reply(pkt, in);
+
+    sockaddr_in dst{};
+    dst.sin_family      = AF_INET;
+    dst.sin_addr.s_addr = from.sin_addr.s_addr;
+    dst.sin_port        = htons(kArtnetPort);
+    sendto(g_sock, pkt, sizeof(pkt), 0, reinterpret_cast<sockaddr*>(&dst), sizeof(dst));
+}
+
+// ArtNzs — non-zero-start-code DMX. Validated and counted; the payload is
+// NOT routed: the universe pool stores start-code-0 levels only, and the
+// DMX512 encoder emits SC=0 frames (alternate-SC interleaving is future work).
+void handle_nzs(const uint8_t* buf, size_t len) {
+    parser::NzsFields f{};
+    if (!parser::parse_nzs(buf, len, &f)) {
+        dmx::note_packet_bad();
+        return;
+    }
+    dmx::note_ctrl_rx();
+}
+
+// ArtTrigger / ArtCommand / ArtTimeCode — validated + counted so controllers
+// see them land (stats artnet_ctrl_rx); consumers (scenes, console mirror,
+// timecode sync) are future work per TODO.md.
+void handle_counted_only(uint16_t op, const uint8_t* buf, size_t len) {
+    size_t min_len = 0;
+    switch (op) {
+    case parser::kOpTrigger: min_len = 18; break;
+    case parser::kOpCommand: min_len = 16; break;
+    case parser::kOpTimeCode: min_len = 19; break;
+    default: return;
+    }
+    if (len < min_len) {
+        dmx::note_packet_bad();
+        return;
+    }
+    (void)buf;
+    dmx::note_ctrl_rx();
+}
+
 void task_main(void*) {
     g_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (g_sock < 0) {
@@ -155,6 +294,12 @@ void task_main(void*) {
         case parser::kOpDmx: handle_dmx(buf, n); break;
         case parser::kOpPoll: handle_poll(buf, n, from); break;
         case parser::kOpSync: handle_sync(buf, n); break;
+        case parser::kOpAddress: handle_address(buf, n, from); break;
+        case parser::kOpIpProg: handle_ip_prog(buf, n, from); break;
+        case parser::kOpNzs: handle_nzs(buf, n); break;
+        case parser::kOpTrigger:
+        case parser::kOpCommand:
+        case parser::kOpTimeCode: handle_counted_only(op, buf, n); break;
         default: break;
         }
     }

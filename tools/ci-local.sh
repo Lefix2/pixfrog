@@ -12,7 +12,7 @@ echo "==[1/3] clang-format (CI: format-check) =="
 git ls-files '*.cpp' '*.h' | xargs clang-format --dry-run -Werror --style=file
 
 echo "==[2/3] host unit tests (CI: host-tests) =="
-for t in components/led_protocols/test components/dmx_manager/test components/artnet/test components/config_store/test; do
+for t in components/led_protocols/test components/dmx_manager/test components/artnet/test components/config_store/test components/sacn/test; do
     cmake -S "$t" -B "$t/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
     cmake --build "$t/build" --parallel >/dev/null
 done
@@ -20,6 +20,7 @@ done
 ./components/dmx_manager/test/build/test_dmx_logic
 ./components/artnet/test/build/test_artnet_parser
 ./components/config_store/test/build/test_config_store
+./components/sacn/test/build/test_sacn_parser
 
 echo "==[3/3] IDF builds oled + tft + lcdcam (CI: idf-build matrix) =="
 # Separate build dir + sdkconfig per overlay: SDKCONFIG_DEFAULTS only applies

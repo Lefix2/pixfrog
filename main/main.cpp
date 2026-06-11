@@ -30,6 +30,7 @@
 #include "dmx_manager.h"
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
+#include "sacn.h"
 #include "ui.h"
 #include "web_config.h"
 
@@ -291,6 +292,7 @@ extern "C" void app_main() {
     init_network();
     pixfrog::artnet::start();
 
+    if (pixfrog::config::get_global().sacn_enabled) pixfrog::sacn::start();
     if (pixfrog::config::get_global().web_enabled) pixfrog::web::start();
 
     xTaskCreatePinnedToCore(render_task, "render", 6144, nullptr, 20, nullptr, 1);

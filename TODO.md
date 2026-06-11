@@ -6,10 +6,11 @@ picks are marked ★.
 
 ## Protocol / network
 
-- [ ] **sACN (E1.31) receiver** — the biggest gap vs. commercial controllers
-      (xLights, consoles default to it). Second UDP receiver feeding the same
-      universe pool; sACN per-universe priority; multicast (IGMP join per
-      configured universe).
+- [x] **sACN (E1.31) receiver** — `components/sacn`, opt-in via
+      `sacn_enabled`. Multicast joins per configured universe (5 s refresh),
+      per-universe priority gate with 2.5 s source timeout, E1.31 sync →
+      frame sync. Equal-priority multi-source merge still pending (see next
+      item).
 - [ ] **2-source merge (HTP/LTP)** — today two senders on one universe fight
       (last write wins). Standard: track up to 2 sources per universe, merge
       HTP (dimmers) or LTP, drop a source after ~10 s silence. Mode is
@@ -20,17 +21,18 @@ picks are marked ★.
 
 ## ArtNet opcodes not yet handled
 
-Currently handled: `ArtDmx` (0x5000), `ArtPoll` (0x2000), `ArtPollReply`
-(0x2100, emitted), `ArtSync` (0x5200). Candidates, most useful first:
+Handled: `ArtDmx`, `ArtPoll`, `ArtPollReply` (emitted), `ArtSync`,
+`ArtAddress` (names/net/subnet/SwOut applied + reply), `ArtIpProg` (+ reply;
+reboot applies). Validated + counted in `stats artnet_ctrl_rx` but not yet
+consumed: `ArtNzs` (payload not routed — alternate-start-code storage and
+DMX512 encoder interleaving needed), `ArtTrigger` (waiting on scenes),
+`ArtCommand`, `ArtTimeCode`. Remaining candidates:
 
 | Opcode | Value | What it brings |
 |---|---|---|
-| `ArtAddress` | 0x6000 | Remote config from the lighting desk: net/subnet, universe swap-in, short/long name, merge mode, indicator state. Replies with ArtPollReply. Pairs with the merge item above. |
-| `ArtIpProg` / `ArtIpProgReply` | 0xF800 / 0xF900 | Remote IP/DHCP programming — same fields our web UI exposes, but desk-driven. |
-| `ArtNzs` | 0x5100 | Non-zero start-code DMX frames (incl. ArtVlc). Needed for RDM-adjacent and text payloads; cheap to parse, route to DMX512 channels only. |
-| `ArtTrigger` | 0x9900 | Show macros/triggers — natural hook for the future standalone scenes (trigger scene N). |
-| `ArtTimeCode` | 0x9700 | Timecode distribution — only relevant if scenes/effects become time-synced. |
-| `ArtCommand` | 0x2400 | Free-text property commands — could mirror the UART console (`key=value`). |
+| `ArtNzs` routing | 0x5100 | Store alternate-start-code frames + emit them on DMX512 channels (encoder interleaving). |
+| `ArtTrigger` consumer | 0x9900 | Fire standalone scenes once they exist. |
+| `ArtCommand` consumer | 0x2400 | Mirror the UART console (`key=value`). |
 | `ArtDiagData` | 0x2300 | Emit diagnostics to subscribed controllers (we'd be a sender; ArtPoll already tells us who wants them). |
 | `ArtTodRequest/TodData/TodControl/Rdm/RdmSub` | 0x8000–0x8400 | RDM over ArtNet — only meaningful for DMX512 output channels, and needs RDM on the wire (driver work). Large. |
 | `ArtFirmwareMaster/Reply` | 0xF200 / 0xF300 | OTA via ArtNet — prefer web OTA below; note for completeness. |

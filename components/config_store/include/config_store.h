@@ -46,6 +46,9 @@ struct GlobalConfig {
 
     // Web UI — opt-in; no TCP socket opened when false (default)
     bool web_enabled;
+
+    // sACN (E1.31) receiver — opt-in; no UDP socket opened when false (default)
+    bool sacn_enabled;
 };
 
 // ────────────────────────────────────────────────────────────────────────────

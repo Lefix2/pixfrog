@@ -12,6 +12,7 @@ idf_component_register(
         config_store
         dmx_manager
         artnet
+        sacn
         lcd_cam_output
         ui
         control_console
