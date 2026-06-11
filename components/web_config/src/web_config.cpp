@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "cJSON.h"
+#include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -118,6 +119,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     // Status (live)
     cJSON_AddBoolToObject(root, "link", ui::is_link_up());
     cJSON_AddNumberToObject(root, "fps", static_cast<double>(dmx::get_stats().current_fps));
+    cJSON_AddStringToObject(root, "version", esp_app_get_description()->version);
 
     // Global config
     cJSON* jg = cJSON_AddObjectToObject(root, "global");

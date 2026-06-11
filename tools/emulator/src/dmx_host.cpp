@@ -34,6 +34,28 @@ bool is_channel_capacity_ok(size_t ch) {
 void mark_channel_dirty(size_t /*channel_index*/) {}
 void mark_global_dirty() {}
 
+// Pixel-count preview: the emulator has no LED output, but the state is kept
+// so the menu's set/clear/update logic can be exercised through the agent API.
+namespace {
+int g_preview_ch         = -1;
+uint16_t g_preview_count = 0;
+}  // namespace
+
+void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
+    g_preview_ch    = static_cast<int>(channel_index);
+    g_preview_count = pixel_count;
+}
+void clear_pixel_preview() {
+    g_preview_ch    = -1;
+    g_preview_count = 0;
+}
+int pixel_preview_channel() {
+    return g_preview_ch;
+}
+uint16_t pixel_preview_count() {
+    return g_preview_count;
+}
+
 // Emulator setters (same TU, can reach the anonymous-namespace state).
 void emu_set_stats(uint32_t fps, uint64_t pkts) {
     g_stats.current_fps       = fps;

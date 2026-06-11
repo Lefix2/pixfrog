@@ -42,6 +42,8 @@ bool splash_render(uint32_t t_ms, bool clicked) {
                      color::FrogBg, kScale);
     canvas_draw_text(wx, kH / 2 + kFontHeight * kScale / 2 + 2, "ARTNET . LED DRIVER",
                      color::SplashSub, color::FrogBg, 1);
+    canvas_draw_text(wx, kH / 2 + kFontHeight * kScale / 2 + 14, fw_version(), color::SplashSub,
+                     color::FrogBg, 1);
 
     const int idx = static_cast<int>(t_ms / frame_ms);
     canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
@@ -94,10 +96,19 @@ bool splash_render(uint32_t t_ms, bool clicked) {
     const int fw = frog_oled_w(), fh = frog_oled_h();
     blit_mask((kW - fw) / 2, 0, fw, fh, frog_oled_data());
 
-    constexpr int kScale = 2;
+    // 45px frog + wordmark + version just fit the 64 rows at scale 1.
     constexpr int kChars = 7;  // "pixfrog"
-    const int wordmark_w = kChars * kFontCellWidth * kScale;
-    blit_text((kW - wordmark_w) / 2, fh + 3, "pixfrog", kScale);
+    const int wordmark_w = kChars * kFontCellWidth;
+    blit_text((kW - wordmark_w) / 2, fh + 2, "pixfrog", 1);
+
+    // Truncate to the display width so a long git-describe still centres.
+    constexpr int kMaxVerChars = kW / kFontCellWidth;  // 21
+    char ver[kMaxVerChars + 1];
+    int ver_len = 0;
+    for (const char* p = fw_version(); *p && ver_len < kMaxVerChars; ++p)
+        ver[ver_len++] = *p;
+    ver[ver_len] = '\0';
+    blit_text((kW - ver_len * kFontCellWidth) / 2, fh + 11, ver, 1);
 
     oled_flush();
     return false;

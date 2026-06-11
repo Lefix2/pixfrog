@@ -5,7 +5,10 @@
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "esp_app_desc.h"
+#include "esp_idf_version.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -107,6 +110,27 @@ void task_main(void*) {
 }
 
 }  // namespace
+
+namespace detail {
+
+uint32_t now_ms() {
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
+
+const char* fw_version() {
+    return esp_app_get_description()->version;
+}
+
+const char* fw_build_info() {
+    static char buf[64];
+    if (buf[0] == '\0') {
+        const esp_app_desc_t* app = esp_app_get_description();
+        std::snprintf(buf, sizeof(buf), "IDF %s  %s", esp_get_idf_version(), app->date);
+    }
+    return buf;
+}
+
+}  // namespace detail
 
 bool start(const InitConfig& cfg) {
     g_cfg        = cfg;

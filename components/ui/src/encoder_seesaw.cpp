@@ -70,6 +70,13 @@ bool g_last_btn               = false;
 constexpr int64_t kBtnDebounceUs = 20'000;  // 20 ms
 int64_t g_last_btn_change_us     = 0;
 
+// Long-press: holding past this threshold emits LongPress immediately (no
+// need to release); the subsequent release is then swallowed so a single
+// hold never produces both events. Short presses emit Click on release.
+constexpr int64_t kLongPressUs = 600'000;  // 600 ms
+int64_t g_press_start_us       = 0;
+bool g_long_fired              = false;
+
 // ── Pending event ring ──────────────────────────────────────────────────────
 constexpr size_t kEvtQ = 8;
 Event g_q[kEvtQ];
@@ -290,16 +297,26 @@ Event encoder_poll() {
     }
 
     if (seesaw_read_button(btn)) {
-        any_read = true;
+        any_read          = true;
+        const int64_t now = esp_timer_get_time();
         if (btn != g_last_btn) {
-            const int64_t now = esp_timer_get_time();
             if (now - g_last_btn_change_us >= kBtnDebounceUs) {
-                if (btn && !g_last_btn) push_evt(Event::Click);
+                if (btn && !g_last_btn) {
+                    // Press down: start the long-press timer.
+                    g_press_start_us = now;
+                    g_long_fired     = false;
+                } else if (!btn && g_last_btn) {
+                    // Release: short press = Click, unless LongPress already fired.
+                    if (!g_long_fired) push_evt(Event::Click);
+                }
                 g_last_btn           = btn;
                 g_last_btn_change_us = now;
             }
             // Else: bounce, ignore the transition; the next poll will see
             // either the stable new state or a return to old state.
+        } else if (btn && !g_long_fired && now - g_press_start_us >= kLongPressUs) {
+            push_evt(Event::LongPress);
+            g_long_fired = true;
         }
     }
 

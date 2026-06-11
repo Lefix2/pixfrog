@@ -10,6 +10,7 @@
 #include "driver/gpio.h"
 
 #include "config_store.h"
+#include "dmx_manager.h"
 #include "led_protocols.h"
 
 namespace pixfrog::lcd::common {
@@ -27,6 +28,16 @@ inline led::ChannelDesc desc_for_channel(size_t ch) {
     d.bus_bit_data     = static_cast<uint8_t>(ch * 2);
     d.bus_bit_clock    = static_cast<uint8_t>(ch * 2 + 1);
     d.clock_hz         = cc.clock_hz;
+
+    // Pixel-count preview: emit exactly the previewed number of physical
+    // LEDs with the pattern's own levels — neutralize per-channel transforms
+    // so LED N on the wire is LED N on the screen.
+    if (dmx::pixel_preview_channel() == static_cast<int>(ch)) {
+        d.pixel_count      = dmx::pixel_preview_count();
+        d.brightness       = 255;
+        d.grouping         = 1;
+        d.invert_direction = false;
+    }
     return d;
 }
 

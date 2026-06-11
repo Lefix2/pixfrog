@@ -242,6 +242,56 @@ static void test_decode_dmx_start_in_second_universe() {
     EXPECT_EQ(pixels[2], 0xBB);
 }
 
+// ── Pixel-count preview pattern ─────────────────────────────────────────────
+
+static void test_preview_pattern_levels() {
+    uint8_t buf[64 * 3] = {};
+    fill_preview_pattern(buf, sizeof(buf), 25, 3);
+
+    // LED 1 (index 0): low
+    EXPECT_EQ(buf[0], kPreviewLevelLow);
+    EXPECT_EQ(buf[1], kPreviewLevelLow);
+    EXPECT_EQ(buf[2], kPreviewLevelLow);
+    // LED 10 and 20: decade marks at mid level
+    EXPECT_EQ(buf[9 * 3], kPreviewLevelMid);
+    EXPECT_EQ(buf[19 * 3], kPreviewLevelMid);
+    // LED 25 (the count): full
+    EXPECT_EQ(buf[24 * 3], kPreviewLevelFull);
+    EXPECT_EQ(buf[24 * 3 + 2], kPreviewLevelFull);
+    // LED 24: plain low
+    EXPECT_EQ(buf[23 * 3], kPreviewLevelLow);
+    // Nothing written past LED 25
+    EXPECT_EQ(buf[25 * 3], 0);
+}
+
+static void test_preview_pattern_last_led_wins_over_decade() {
+    // N = 30: LED 30 is both a decade mark and the count — full wins.
+    uint8_t buf[32 * 3] = {};
+    fill_preview_pattern(buf, sizeof(buf), 30, 3);
+    EXPECT_EQ(buf[29 * 3], kPreviewLevelFull);
+    EXPECT_EQ(buf[19 * 3], kPreviewLevelMid);
+}
+
+static void test_preview_pattern_rgbw() {
+    uint8_t buf[10 * 4] = {};
+    fill_preview_pattern(buf, sizeof(buf), 10, 4);
+    EXPECT_EQ(buf[0], kPreviewLevelLow);
+    EXPECT_EQ(buf[3], kPreviewLevelLow);  // W byte of LED 1
+    EXPECT_EQ(buf[9 * 4], kPreviewLevelFull);
+}
+
+static void test_preview_pattern_single_pixel() {
+    uint8_t buf[3] = {};
+    fill_preview_pattern(buf, sizeof(buf), 1, 3);
+    EXPECT_EQ(buf[0], kPreviewLevelFull);
+}
+
+static void test_preview_pattern_overflow_is_noop() {
+    uint8_t buf[3 * 3] = {};
+    fill_preview_pattern(buf, sizeof(buf), 4, 3);  // 12 bytes > 9-byte buffer
+    EXPECT_EQ(buf[0], 0);
+}
+
 int main() {
     test_total_bytes_rgb();
     test_total_bytes_rgbw();
@@ -256,6 +306,11 @@ int main() {
     test_decode_missing_universe();
     test_decode_dst_too_small();
     test_decode_dmx_start_in_second_universe();
+    test_preview_pattern_levels();
+    test_preview_pattern_last_led_wins_over_decade();
+    test_preview_pattern_rgbw();
+    test_preview_pattern_single_pixel();
+    test_preview_pattern_overflow_is_noop();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
