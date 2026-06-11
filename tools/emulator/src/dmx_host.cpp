@@ -33,6 +33,10 @@ bool is_channel_capacity_ok(size_t ch) {
 
 void mark_channel_dirty(size_t /*channel_index*/) {}
 void mark_global_dirty() {}
+bool is_channel_failsafe(size_t /*channel_index*/) {
+    return false;
+}
+void note_universe_terminated(uint16_t /*universe_number*/) {}
 
 // Pixel-count preview: the emulator has no LED output, but the state is kept
 // so the menu's set/clear/update logic can be exercised through the agent API.
