@@ -124,7 +124,15 @@ button.sec:hover{background:#1a4a8a}
     <div class="row"><label>sACN (E1.31)</label><input id="a-sacn" type="checkbox">
       <span class="note">also listen on UDP 5568</span>
     </div>
-    <button onclick="saveGlobal(['net','subnet','short_name','long_name','reply_unicast','sacn_enabled'])">Save</button>
+    <div class="row"><label>Failsafe</label>
+      <select id="a-fsmode"><option value="0">Hold last look</option><option value="1">Blackout</option><option value="2">Solid colour</option></select>
+    </div>
+    <div class="row"><label>Failsafe after</label>
+      <input id="a-fstimeout" type="number" min="0" max="3600">
+      <span class="note">seconds without signal (0 = off)</span>
+    </div>
+    <div class="row"><label>Failsafe colour</label><input id="a-fscolor" type="color" value="#000000"></div>
+    <button onclick="saveGlobal(['net','subnet','short_name','long_name','reply_unicast','sacn_enabled','failsafe_mode','failsafe_timeout_s','failsafe_color'])">Save</button>
     <div class="status" id="st-artnet"></div>
   </div>
 </div>
@@ -228,6 +236,9 @@ async function loadConfig(){
     setVal('a-long',g.long_name);
     setChk('a-unicast',g.reply_unicast);
     setChk('a-sacn',g.sacn_enabled);
+    setVal('a-fsmode',g.failsafe_mode??0);
+    setVal('a-fstimeout',g.failsafe_timeout_s??0);
+    setVal('a-fscolor',g.failsafe_color||'#000000');
     // Channels
     for(let i=0;i<8;i++){
       const c=d.channels[i];
@@ -267,6 +278,9 @@ const FIELD_MAP={
   'long_name':()=>document.getElementById('a-long').value,
   'reply_unicast':()=>document.getElementById('a-unicast').checked?1:0,
   'sacn_enabled':()=>document.getElementById('a-sacn').checked?1:0,
+  'failsafe_mode':()=>parseInt(document.getElementById('a-fsmode').value),
+  'failsafe_timeout_s':()=>parseInt(document.getElementById('a-fstimeout').value),
+  'failsafe_color':()=>document.getElementById('a-fscolor').value,
   'refresh_hz':()=>parseInt(document.getElementById('g-refresh').value),
   'home_timeout_s':()=>parseInt(document.getElementById('g-home').value),
   'web_enabled':()=>document.getElementById('g-web').checked?1:0,
@@ -274,7 +288,7 @@ const FIELD_MAP={
 
 const STATUS_MAP={
   'dhcp':'st-network','ip':'st-network','mask':'st-network','gw':'st-network',
-  'net':'st-artnet','subnet':'st-artnet','short_name':'st-artnet','long_name':'st-artnet','reply_unicast':'st-artnet','sacn_enabled':'st-artnet',
+  'net':'st-artnet','subnet':'st-artnet','short_name':'st-artnet','long_name':'st-artnet','reply_unicast':'st-artnet','sacn_enabled':'st-artnet','failsafe_mode':'st-artnet','failsafe_timeout_s':'st-artnet','failsafe_color':'st-artnet',
   'refresh_hz':'st-global','home_timeout_s':'st-global','web_enabled':'st-global',
 };
 

@@ -76,6 +76,8 @@ enum class Field : uint8_t {
     ArtnetSubnet,
     ArtnetReplyUnicast,
     ArtnetSacn,
+    ArtnetFailsafeMode,
+    ArtnetFailsafeTimeout,
     GlobalRefresh,
     NetworkDhcp,
     NetworkWebEnabled,
@@ -106,6 +108,7 @@ enum class ValueKind : uint8_t {
     Bool,
     Protocol,
     ColorOrder,
+    Failsafe,
 };
 
 struct EditCtx {
@@ -246,10 +249,21 @@ void truncate(char* dst, size_t cap, const char* src) {
     dst[i] = '\0';
 }
 
+const char* failsafe_name(uint8_t m) {
+    switch (m) {
+    case config::kFailsafeBlackout: return "Black";
+    case config::kFailsafeColor: return "Color";
+    default: return "Hold";
+    }
+}
+
 void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
     switch (e.kind) {
     case ValueKind::Int: std::snprintf(out, cap, "%ld", static_cast<long>(v)); return;
     case ValueKind::Bool: std::snprintf(out, cap, "%s", v ? "ON" : "OFF"); return;
+    case ValueKind::Failsafe:
+        std::snprintf(out, cap, "%s", failsafe_name(static_cast<uint8_t>(v)));
+        return;
     case ValueKind::Protocol:
         std::snprintf(out, cap, "%s", protocol_name(static_cast<led::Protocol>(v)));
         return;
@@ -444,7 +458,11 @@ void render_home() {
         // Activity indicator dot on the right edge
         const bool active   = dmx::is_channel_active(i);
         const bool ok       = dmx::is_channel_capacity_ok(i);
-        const Color act_col = !ok ? color::Red : (active ? color::Green : color::DarkGray);
+        const bool fsafe    = dmx::is_channel_failsafe(i);
+        const Color act_col = !ok    ? color::Red
+                            : fsafe  ? color::Orange
+                            : active ? color::Green
+                                     : color::DarkGray;
         canvas_fill_rect(kTW - 10, cy + 2, 8, kChH - 4, act_col);
     }
 #else
@@ -491,6 +509,8 @@ void render_home() {
             glyph = 'o';
         else if (!dmx::is_channel_capacity_ok(i))
             glyph = '!';
+        else if (dmx::is_channel_failsafe(i))
+            glyph = 'F';
         else if (dmx::is_channel_active(i))
             glyph = '*';
         ch_line[3 + i * 2]     = glyph;
@@ -718,6 +738,20 @@ void commit_edit() {
     case Field::ArtnetReplyUnicast: {
         auto g                      = config::get_global();
         g.artnet_poll_reply_unicast = (v != 0);
+        config::set_global(g);
+        dmx::mark_global_dirty();
+        break;
+    }
+    case Field::ArtnetFailsafeMode: {
+        auto g          = config::get_global();
+        g.failsafe_mode = static_cast<uint8_t>(v);
+        config::set_global(g);
+        dmx::mark_global_dirty();
+        break;
+    }
+    case Field::ArtnetFailsafeTimeout: {
+        auto g               = config::get_global();
+        g.failsafe_timeout_s = static_cast<uint16_t>(v);
         config::set_global(g);
         dmx::mark_global_dirty();
         break;
@@ -1061,7 +1095,7 @@ void dispatch_edit_ip(Event e) {
 // ── ARTNET MENU ─────────────────────────────────────────────────────────────
 
 void render_artnet_menu() {
-    char vnet[8], vsub[8], vrefresh[8], vunicast[8], vsacn[8];
+    char vnet[8], vsub[8], vrefresh[8], vunicast[8], vsacn[8], vfsm[8], vfst[8];
     char vshort[14], vlong[14];
     const auto& g = config::get_global();
     std::snprintf(vnet, sizeof(vnet), "%u", g.artnet_net);
@@ -1069,18 +1103,21 @@ void render_artnet_menu() {
     std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
     std::snprintf(vunicast, sizeof(vunicast), "%s", g.artnet_poll_reply_unicast ? "ON" : "OFF");
     std::snprintf(vsacn, sizeof(vsacn), "%s", g.sacn_enabled ? "ON" : "OFF");
+    std::snprintf(vfsm, sizeof(vfsm), "%s", failsafe_name(g.failsafe_mode));
+    std::snprintf(vfst, sizeof(vfst), "%us", g.failsafe_timeout_s);
     truncate(vshort, sizeof(vshort), g.short_name);
     truncate(vlong, sizeof(vlong), g.long_name);
 
-    ListItem items[8] = {
+    ListItem items[10] = {
         { "Net", vnet },         { "Sub", vsub },         { "Short", vshort }, { "Long", vlong },
-        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },   { "[Back]", "" },
+        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },   { "FSafe", vfsm },
+        { "FSafeS", vfst },      { "[Back]", "" },
     };
-    render_list("ARTNET", items, 8, s.cursor);
+    render_list("ARTNET", items, 10, s.cursor);
 }
 
 void dispatch_artnet_menu(Event e) {
-    constexpr uint8_t kCount = 8;
+    constexpr uint8_t kCount = 10;
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1) s.cursor++;
     if (e != Event::Click) return;
@@ -1116,6 +1153,14 @@ void dispatch_artnet_menu(Event e) {
                    Screen::ArtnetMenu);
         break;
     case 7:
+        enter_edit(Field::ArtnetFailsafeMode, ValueKind::Failsafe, g.failsafe_mode, 0, 2, 1,
+                   "FSafe", Screen::ArtnetMenu);
+        break;
+    case 8:
+        enter_edit(Field::ArtnetFailsafeTimeout, ValueKind::Int, g.failsafe_timeout_s, 0, 3600, 1,
+                   "FSafeS", Screen::ArtnetMenu);
+        break;
+    case 9:
         s.screen = Screen::MainMenu;
         s.cursor = 0;
         break;

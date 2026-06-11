@@ -199,6 +199,21 @@ bool decode_pixels_for_channel(size_t ch) {
         return true;
     }
 
+    // Signal-loss failsafe: a channel silent past the timeout stops decoding
+    // (stale) universes and emits the fallback instead. Hold mode never gets
+    // here — stale decode IS the hold. DMX512 outputs degrade colour→blackout
+    // (an RGB fill has no meaning on a generic universe).
+    const auto& g = config::get_global();
+    if (g.failsafe_mode != config::kFailsafeHold &&
+        logic::failsafe_due(g_last_activity_us[ch], esp_timer_get_time(), g.failsafe_timeout_s)) {
+        const auto& cc     = config::get_channel(ch);
+        const uint8_t mode = led::is_dmx(cc.protocol) ? config::kFailsafeBlackout : g.failsafe_mode;
+        logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
+                                     led::bytes_per_pixel(cc.protocol), mode, g.failsafe_r,
+                                     g.failsafe_g, g.failsafe_b);
+        return true;
+    }
+
     return logic::decode_pixels(dst, kMaxBytesPerChan, config::get_channel(ch),
                                 [](uint16_t u) { return universe_front_buffer_for(u); });
 }
@@ -246,6 +261,22 @@ bool is_channel_active(size_t channel_index) {
     const int64_t last = g_last_activity_us[channel_index];
     if (last == 0) return false;
     return (esp_timer_get_time() - last) < kActivityWindowUs;
+}
+
+bool is_channel_failsafe(size_t channel_index) {
+    if (channel_index >= config::kNumChannels) return false;
+    const auto& g = config::get_global();
+    if (g.failsafe_mode == config::kFailsafeHold) return false;
+    return logic::failsafe_due(g_last_activity_us[channel_index], esp_timer_get_time(),
+                               g.failsafe_timeout_s);
+}
+
+void note_universe_terminated(uint16_t universe_number) {
+    const int ch = channel_for_universe(universe_number);
+    if (ch < 0) return;
+    // Age the timestamp to the epoch+1µs: still "was active once", but past
+    // any timeout — the next render tick applies the failsafe.
+    if (g_last_activity_us[ch] != 0) g_last_activity_us[ch] = 1;
 }
 
 uint8_t* universe_back_buffer_for(uint16_t universe_number) {

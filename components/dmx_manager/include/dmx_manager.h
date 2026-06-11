@@ -67,6 +67,15 @@ int channel_for_universe(uint16_t universe_number);
 // last second. Used by ui::set_channel_active() at HOME refresh time.
 bool is_channel_active(size_t channel_index);
 
+// True if the channel is currently held in signal-loss failsafe (was active
+// once, then silent past GlobalConfig::failsafe_timeout_s, mode != hold).
+bool is_channel_failsafe(size_t channel_index);
+
+// sACN stream_terminated (E1.31 §6.7.1): the source announced its end —
+// expire the owning channel's activity immediately instead of waiting for
+// the failsafe timeout. No-op for unmapped or never-active channels.
+void note_universe_terminated(uint16_t universe_number);
+
 // ── Configuration change propagation (item 7) ──────────────────────────────
 // The UI commits config changes from `ui_task` (core 0) but the actual
 // runtime state lives in render_task (core 1). To bridge them safely we

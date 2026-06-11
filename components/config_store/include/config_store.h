@@ -54,7 +54,20 @@ struct GlobalConfig {
     // hash all-zero = no password set = auth disabled (the default).
     uint8_t web_auth_salt[8];
     uint8_t web_auth_hash[32];  // SHA-256(salt || password)
+
+    // Signal-loss failsafe — global setting, triggered per channel when no
+    // packet touched any of its universes for failsafe_timeout_s. Zero-fill
+    // migration = Hold + disabled = today's behaviour.
+    uint8_t failsafe_mode;        // 0=hold last look, 1=blackout, 2=solid colour
+    uint16_t failsafe_timeout_s;  // 0 = failsafe disabled
+    uint8_t failsafe_r;           // solid-colour fill (mode 2)
+    uint8_t failsafe_g;
+    uint8_t failsafe_b;
 };
+
+constexpr uint8_t kFailsafeHold     = 0;
+constexpr uint8_t kFailsafeBlackout = 1;
+constexpr uint8_t kFailsafeColor    = 2;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Per-channel configuration
