@@ -112,7 +112,7 @@ Fonts and splash are **generated**; regenerate instead of editing the tables
 
 ## Don'ts
 
-- Don't add features that aren't on the user's TODO list.
+- Don't add features that aren't on the user's TODO list ([TODO.md](TODO.md)).
 - Don't add WiFi, mDNS, or any extra network surface — design rule, ArtNet UDP is the only one.
 - Don't write to NVS from `render_task` or ISRs — only from `ui_task`.
 - Don't put a frame-buffer-sized allocation in SRAM — that lives in PSRAM.
