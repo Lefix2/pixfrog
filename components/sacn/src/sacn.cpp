@@ -116,6 +116,7 @@ void handle_data(const uint8_t* buf, size_t len) {
     if (f.options & parser::kOptPreview) return;  // visualizer-only data
 
     const bool terminated = (f.options & parser::kOptTerminated) != 0;
+    if (terminated) dmx::note_universe_terminated(f.universe);  // immediate failsafe (E1.31)
     if (!parser::gate_accept(g_gates, f.universe, f.priority, terminated, now_ms())) return;
     if (f.start_code != 0) return;  // alternate start codes: not routed (cf. ArtNzs)
 

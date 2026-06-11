@@ -186,10 +186,10 @@ int cmd_stats(int, char**) {
 int cmd_chstat(int, char**) {
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& c = config::get_channel(ch);
-        printf("ch%u protocol=%s universe=%u pixels=%u active=%d capacity_ok=%d\n",
+        printf("ch%u protocol=%s universe=%u pixels=%u active=%d capacity_ok=%d failsafe=%d\n",
                static_cast<unsigned>(ch), kProtocolNames[static_cast<size_t>(c.protocol)],
                c.universe_start, c.pixel_count, dmx::is_channel_active(ch) ? 1 : 0,
-               dmx::is_channel_capacity_ok(ch) ? 1 : 0);
+               dmx::is_channel_capacity_ok(ch) ? 1 : 0, dmx::is_channel_failsafe(ch) ? 1 : 0);
     }
     return ok();
 }
@@ -215,6 +215,10 @@ void print_global(const config::GlobalConfig& g) {
     printf("web_enabled=%d\n", g.web_enabled ? 1 : 0);
     printf("sacn_enabled=%d\n", g.sacn_enabled ? 1 : 0);
     printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
+    static const char* const kFailsafeNames[] = { "hold", "blackout", "color" };
+    printf("failsafe_mode=%s\n", kFailsafeNames[g.failsafe_mode <= 2 ? g.failsafe_mode : 0]);
+    printf("failsafe_timeout_s=%u\n", g.failsafe_timeout_s);
+    printf("failsafe_color=%02x%02x%02x\n", g.failsafe_r, g.failsafe_g, g.failsafe_b);
 }
 
 int cmd_global(int argc, char** argv) {
@@ -264,6 +268,20 @@ int cmd_global(int argc, char** argv) {
         if (!parse_bool(val, g.web_enabled)) return err("web_enabled: 0|1");
     } else if (strcmp(key, "sacn_enabled") == 0) {
         if (!parse_bool(val, g.sacn_enabled)) return err("sacn_enabled: 0|1");
+    } else if (strcmp(key, "failsafe_mode") == 0) {
+        static const char* const kFailsafeNames[] = { "hold", "blackout", "color" };
+        const int m                               = lookup_name(kFailsafeNames, 3, val);
+        if (m < 0) return err("failsafe_mode: hold|blackout|color or 0..2");
+        g.failsafe_mode = static_cast<uint8_t>(m);
+    } else if (strcmp(key, "failsafe_timeout_s") == 0) {
+        if (!parse_u32_in(val, 0, 3600, u)) return err("failsafe_timeout_s: 0..3600 (0=off)");
+        g.failsafe_timeout_s = static_cast<uint16_t>(u);
+    } else if (strcmp(key, "failsafe_color") == 0) {
+        uint8_t rgb[3];
+        if (parse_hex(val, rgb, 3) != 3) return err("failsafe_color: rrggbb");
+        g.failsafe_r = rgb[0];
+        g.failsafe_g = rgb[1];
+        g.failsafe_b = rgb[2];
     } else if (strcmp(key, "web_password") == 0) {
         // UART = the trusted physical recovery channel. `-` clears (auth off).
         const bool cleared = (strcmp(val, "-") == 0);
@@ -272,7 +290,8 @@ int cmd_global(int argc, char** argv) {
         return ok();
     } else {
         return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
-                   "refresh_hz home_timeout_s web_enabled sacn_enabled web_password)");
+                   "refresh_hz home_timeout_s web_enabled sacn_enabled web_password "
+                   "failsafe_mode failsafe_timeout_s failsafe_color)");
     }
 
     const bool persisted = config::set_global(g);

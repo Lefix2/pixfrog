@@ -75,6 +75,40 @@ inline void fill_preview_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pix
     }
 }
 
+// ── Signal-loss failsafe ────────────────────────────────────────────────────
+//
+// A channel is "due" for failsafe when it has been active at least once
+// (last_activity_us != 0 — a never-driven channel is already black and must
+// not light a fallback scene) and its last packet is older than the timeout.
+// timeout_s == 0 disables the feature entirely.
+
+inline bool failsafe_due(int64_t last_activity_us, int64_t now_us, uint16_t timeout_s) {
+    if (timeout_s == 0 || last_activity_us == 0) return false;
+    return (now_us - last_activity_us) > static_cast<int64_t>(timeout_s) * 1'000'000;
+}
+
+// Fill the pixel buffer with the failsafe pattern. Blackout zeroes the
+// channel; solid colour writes r,g,b per pixel (any extra bytes — W on RGBW
+// strips — stay 0 so the white die is not driven blind).
+inline void fill_failsafe_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                                  uint8_t bytes_per_pixel, uint8_t mode, uint8_t r, uint8_t g,
+                                  uint8_t b) {
+    const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
+    if (total > dst_capacity || bytes_per_pixel == 0) return;
+    if (mode != 2 /* colour */) {
+        std::memset(dst, 0, total);
+        return;
+    }
+    for (uint16_t i = 0; i < pixel_count; ++i) {
+        uint8_t* p = dst + static_cast<size_t>(i) * bytes_per_pixel;
+        p[0]       = r;
+        if (bytes_per_pixel > 1) p[1] = g;
+        if (bytes_per_pixel > 2) p[2] = b;
+        for (uint8_t k = 3; k < bytes_per_pixel; ++k)
+            p[k] = 0;
+    }
+}
+
 // ── Pixel decoder ───────────────────────────────────────────────────────────
 //
 // Copies bytes from one or more universes into the destination buffer,

@@ -186,6 +186,11 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddBoolToObject(jg, "web_enabled", g.web_enabled);
     cJSON_AddBoolToObject(jg, "sacn_enabled", g.sacn_enabled);
     cJSON_AddBoolToObject(jg, "auth_enabled", config::web_password_set());
+    cJSON_AddNumberToObject(jg, "failsafe_mode", g.failsafe_mode);
+    cJSON_AddNumberToObject(jg, "failsafe_timeout_s", g.failsafe_timeout_s);
+    char fscol[8];
+    snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
+    cJSON_AddStringToObject(jg, "failsafe_color", fscol);
 
     // Channels
     cJSON* jchs = cJSON_AddArrayToObject(root, "channels");
@@ -297,6 +302,16 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     }
     if (get_u32("home_timeout_s", 0, 65535, u)) g.home_timeout_s = static_cast<uint16_t>(u);
     if (get_bool("web_enabled", b)) g.web_enabled = b;
+    if (get_u32("failsafe_mode", 0, 2, u)) g.failsafe_mode = static_cast<uint8_t>(u);
+    if (get_u32("failsafe_timeout_s", 0, 3600, u)) g.failsafe_timeout_s = static_cast<uint16_t>(u);
+    if ((s = get_str("failsafe_color"))) {
+        unsigned fr, fg, fb;
+        if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &fr, &fg, &fb) == 3) {
+            g.failsafe_r = static_cast<uint8_t>(fr);
+            g.failsafe_g = static_cast<uint8_t>(fg);
+            g.failsafe_b = static_cast<uint8_t>(fb);
+        }
+    }
     bool sacn_changed = false;
     if (get_bool("sacn_enabled", b)) {
         sacn_changed   = (g.sacn_enabled != b);

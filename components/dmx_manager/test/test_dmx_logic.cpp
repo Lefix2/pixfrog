@@ -292,6 +292,54 @@ static void test_preview_pattern_overflow_is_noop() {
     EXPECT_EQ(buf[0], 0);
 }
 
+// ── Signal-loss failsafe ────────────────────────────────────────────────────
+
+static void test_failsafe_due_logic() {
+    // Disabled timeout → never due.
+    EXPECT_TRUE(!failsafe_due(1'000'000, 100'000'000, 0));
+    // Never active → never due, even with timeout set.
+    EXPECT_TRUE(!failsafe_due(0, 100'000'000, 5));
+    // Active 2 s ago, timeout 5 s → not due yet.
+    EXPECT_TRUE(!failsafe_due(8'000'000, 10'000'000, 5));
+    // Active 6 s ago, timeout 5 s → due.
+    EXPECT_TRUE(failsafe_due(4'000'000, 10'500'000, 5));
+    // Exactly at the boundary → not due (strictly greater).
+    EXPECT_TRUE(!failsafe_due(5'000'000, 10'000'000, 5));
+}
+
+static void test_failsafe_fill_blackout() {
+    uint8_t buf[4 * 3];
+    std::memset(buf, 0xAA, sizeof(buf));
+    fill_failsafe_pattern(buf, sizeof(buf), 4, 3, 1 /*blackout*/, 10, 20, 30);
+    for (size_t i = 0; i < sizeof(buf); ++i)
+        EXPECT_EQ(buf[i], 0);
+}
+
+static void test_failsafe_fill_color_rgb() {
+    uint8_t buf[3 * 3] = {};
+    fill_failsafe_pattern(buf, sizeof(buf), 3, 3, 2 /*colour*/, 0x40, 0x20, 0x10);
+    EXPECT_EQ(buf[0], 0x40);
+    EXPECT_EQ(buf[1], 0x20);
+    EXPECT_EQ(buf[2], 0x10);
+    EXPECT_EQ(buf[6], 0x40);  // pixel 3
+    EXPECT_EQ(buf[8], 0x10);
+}
+
+static void test_failsafe_fill_color_rgbw_white_off() {
+    uint8_t buf[2 * 4];
+    std::memset(buf, 0xFF, sizeof(buf));
+    fill_failsafe_pattern(buf, sizeof(buf), 2, 4, 2 /*colour*/, 1, 2, 3);
+    EXPECT_EQ(buf[3], 0);  // W byte cleared
+    EXPECT_EQ(buf[7], 0);
+    EXPECT_EQ(buf[4], 1);
+}
+
+static void test_failsafe_fill_overflow_is_noop() {
+    uint8_t buf[5] = {};
+    fill_failsafe_pattern(buf, sizeof(buf), 2, 3, 2, 9, 9, 9);  // 6 bytes > 5
+    EXPECT_EQ(buf[0], 0);
+}
+
 int main() {
     test_total_bytes_rgb();
     test_total_bytes_rgbw();
@@ -311,6 +359,11 @@ int main() {
     test_preview_pattern_rgbw();
     test_preview_pattern_single_pixel();
     test_preview_pattern_overflow_is_noop();
+    test_failsafe_due_logic();
+    test_failsafe_fill_blackout();
+    test_failsafe_fill_color_rgb();
+    test_failsafe_fill_color_rgbw_white_off();
+    test_failsafe_fill_overflow_is_noop();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

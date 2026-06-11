@@ -21,9 +21,13 @@ picks are marked ★.
       (last write wins). Standard: track up to 2 sources per universe, merge
       HTP (dimmers) or LTP, drop a source after ~10 s silence. Mode is
       signalled in ArtPollReply and set via ArtAddress.
-- [ ] ★ **Failsafe on signal loss** — configurable behaviour when ArtNet stops:
-      hold last look / blackout / fallback scene, after a configurable
-      timeout. Today the strips hold the last frame forever.
+- [x] **Failsafe on signal loss** — global mode (hold / blackout / solid
+      colour) + timeout (0 = off), triggered per channel from its activity
+      timestamp; never-active channels stay dark; sACN stream_terminated
+      expires immediately (E1.31); DMX512 channels degrade colour→blackout.
+      Surfaced in menu (FSafe/FSafeS), web UI (colour picker), UART
+      (`failsafe_mode|timeout_s|color`), chstat + HOME indicator. Validated
+      10/10 on hardware.
 
 ## ArtNet opcodes not yet handled
 
