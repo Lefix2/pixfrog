@@ -56,9 +56,13 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 
 ## Hard rules
 
+- **Never commit to `main`** — it is protected on GitHub (PR-only, CI checks
+  required, no force-push). Every change, however small (fix, docs, tooling),
+  goes on a feature branch (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and lands
+  through a pull request once CI is green.
 - **CI must pass locally before any push**: `./tools/ci-local.sh` replays every
-  `ci.yml` job (format check, three host suites, oled + tft IDF builds). Never
-  push and "let CI find out".
+  `ci.yml` job (format check, three host suites, oled + tft + parlio IDF
+  builds). Never push and "let CI find out".
 - A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
   host suite green.
 - The canonical proof for IDF-bound refactors is `idf.py build` — natively in
