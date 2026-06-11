@@ -50,8 +50,7 @@ static int g_pass = 0, g_fail = 0;
 // Returns false when old_size > size (downgrade scenario — blob is larger
 // than the struct the firmware knows about).
 
-template <typename T>
-bool migrate_blob(const void* old_data, size_t old_size, T& dst) {
+template <typename T> bool migrate_blob(const void* old_data, size_t old_size, T& dst) {
     if (old_size > sizeof(T)) return false;
     std::memset(&dst, 0, sizeof(T));
     std::memcpy(&dst, old_data, old_size);
@@ -82,7 +81,8 @@ static_assert(sizeof(GlobalConfig) > sizeof(GlobalConfigPreWeb),
               "GlobalConfig must be larger than pre-web snapshot");
 
 // web_enabled must live after home_timeout_s.
-static_assert(offsetof(GlobalConfig, web_enabled) >= offsetof(GlobalConfig, home_timeout_s) + sizeof(uint16_t),
+static_assert(offsetof(GlobalConfig, web_enabled) >=
+                  offsetof(GlobalConfig, home_timeout_s) + sizeof(uint16_t),
               "web_enabled must follow home_timeout_s in struct");
 
 // ── Migration tests ──────────────────────────────────────────────────────────
@@ -90,12 +90,12 @@ static_assert(offsetof(GlobalConfig, web_enabled) >= offsetof(GlobalConfig, home
 static void test_migrate_from_pre_web_fields_preserved() {
     // Build a realistic old blob with known non-default values.
     GlobalConfigPreWeb old{};
-    old.use_dhcp   = false;
-    old.static_ip  = 0xC0A801C8u;  // 192.168.1.200
-    old.static_mask     = 0xFFFFFF00u;
-    old.static_gateway  = 0xC0A80101u;  // 192.168.1.1
-    old.artnet_net      = 3;
-    old.artnet_subnet   = 7;
+    old.use_dhcp       = false;
+    old.static_ip      = 0xC0A801C8u;  // 192.168.1.200
+    old.static_mask    = 0xFFFFFF00u;
+    old.static_gateway = 0xC0A80101u;  // 192.168.1.1
+    old.artnet_net     = 3;
+    old.artnet_subnet  = 7;
     std::strncpy(old.short_name, "myfrog", sizeof(old.short_name) - 1);
     std::strncpy(old.long_name, "My pixfrog controller", sizeof(old.long_name) - 1);
     old.artnet_poll_reply_unicast = true;
@@ -163,7 +163,10 @@ static void test_migrate_rejects_downgrade() {
     const uint8_t* p = reinterpret_cast<const uint8_t*>(&loaded);
     bool untouched   = true;
     for (size_t i = 0; i < sizeof(loaded); ++i)
-        if (p[i] != 0xCC) { untouched = false; break; }
+        if (p[i] != 0xCC) {
+            untouched = false;
+            break;
+        }
     EXPECT_TRUE(untouched);
 }
 
@@ -180,7 +183,10 @@ static void test_migrate_zero_size_blob_all_zero() {
     const uint8_t* p = reinterpret_cast<const uint8_t*>(&loaded);
     bool all_zero    = true;
     for (size_t i = 0; i < sizeof(loaded); ++i)
-        if (p[i] != 0) { all_zero = false; break; }
+        if (p[i] != 0) {
+            all_zero = false;
+            break;
+        }
     EXPECT_TRUE(all_zero);
 }
 
@@ -205,7 +211,8 @@ static_assert(sizeof(ChannelConfig) == sizeof(ChannelConfigSnapshot),
 
 static_assert(offsetof(ChannelConfig, protocol) == offsetof(ChannelConfigSnapshot, protocol));
 static_assert(offsetof(ChannelConfig, color_order) == offsetof(ChannelConfigSnapshot, color_order));
-static_assert(offsetof(ChannelConfig, universe_start) == offsetof(ChannelConfigSnapshot, universe_start));
+static_assert(offsetof(ChannelConfig, universe_start) ==
+              offsetof(ChannelConfigSnapshot, universe_start));
 static_assert(offsetof(ChannelConfig, clock_hz) == offsetof(ChannelConfigSnapshot, clock_hz));
 
 // ── main ──────────────────────────────────────────────────────────────────────
