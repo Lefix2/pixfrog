@@ -20,7 +20,7 @@ done
 ./components/dmx_manager/test/build/test_dmx_logic
 ./components/artnet/test/build/test_artnet_parser
 
-echo "==[3/3] IDF builds oled + tft + parlio (CI: idf-build matrix) =="
+echo "==[3/3] IDF builds oled + tft + lcdcam (CI: idf-build matrix) =="
 # Separate build dir + sdkconfig per overlay: SDKCONFIG_DEFAULTS only applies
 # when the sdkconfig file does not exist yet, so overlay builds must not
 # share the default ./sdkconfig.
@@ -30,9 +30,9 @@ if command -v idf.py >/dev/null 2>&1; then
         -D SDKCONFIG=build.tft/sdkconfig \
         -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft" \
         build
-    idf.py -B build.parlio \
-        -D SDKCONFIG=build.parlio/sdkconfig \
-        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.parlio" \
+    idf.py -B build.lcdcam \
+        -D SDKCONFIG=build.lcdcam/sdkconfig \
+        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.lcdcam" \
         build
 else
     docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
@@ -43,9 +43,9 @@ else
         -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft" \
         build
     docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
-        espressif/idf:v5.5 idf.py -B build.parlio \
-        -D SDKCONFIG=build.parlio/sdkconfig \
-        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.parlio" \
+        espressif/idf:v5.5 idf.py -B build.lcdcam \
+        -D SDKCONFIG=build.lcdcam/sdkconfig \
+        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.lcdcam" \
         build
 fi
 

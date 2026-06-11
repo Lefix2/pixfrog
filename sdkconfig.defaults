@@ -98,3 +98,10 @@ CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 #
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+#
+# LED bus output backend — PARLIO TX loop transmission (also the Kconfig
+# default; stated here explicitly so the choice is visible). The LCD_CAM
+# backend stays buildable via the sdkconfig.ci.lcdcam overlay.
+#
+CONFIG_PIXFROG_LED_OUTPUT_PARLIO=y

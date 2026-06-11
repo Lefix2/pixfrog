@@ -25,7 +25,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 |--------------------------------|---------------------------------------------------------|
 | `boards/esp32_p4_devkit.h`     | Single source of truth for pinout / I2C addrs           |
 | `components/led_protocols`     | Pure C++ NRZ + SPI + DMX512 encoders (host-testable)    |
-| `components/lcd_cam_output`    | 16-bit LED bus output: LCD_CAM RGB (default) or PARLIO TX loop backend (Kconfig choice), PSRAM double-buffer, calibration |
+| `components/lcd_cam_output`    | 16-bit LED bus output: PARLIO TX loop (default) or LCD_CAM RGB backend (Kconfig choice), PSRAM double-buffer, calibration |
 | `components/artnet`            | UDP receiver + parser + ArtPollReply                    |
 | `components/dmx_manager`       | Universe pool, channel mapping, capacity check, sync    |
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |

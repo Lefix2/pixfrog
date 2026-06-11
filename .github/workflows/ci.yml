@@ -60,9 +60,10 @@ jobs:
         # initializers that g++ rejects (fixed in v5.5).
         idf_version: ['v5.5']
         # Build every config variant so each compile path stays green:
-        # oled = the default sdkconfig; tft = overlay selecting ST7789;
-        # parlio = overlay selecting the PARLIO TX LED output backend.
-        variant: ['oled', 'tft', 'parlio']
+        # oled = the default sdkconfig (PARLIO LED backend); tft = overlay
+        # selecting ST7789; lcdcam = overlay selecting the LCD_CAM LED
+        # output backend.
+        variant: ['oled', 'tft', 'lcdcam']
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
@@ -91,8 +92,8 @@ jobs:
           idf.py --version
           if [ "${{ matrix.variant }}" = "tft" ]; then
             export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft"
-          elif [ "${{ matrix.variant }}" = "parlio" ]; then
-            export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.parlio"
+          elif [ "${{ matrix.variant }}" = "lcdcam" ]; then
+            export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.lcdcam"
           fi
           idf.py set-target esp32p4
           idf.py build

@@ -107,15 +107,15 @@ bool create_unit(size_t samples) {
     }
 
     parlio_tx_unit_config_t cfg{};
-    cfg.clk_src           = PARLIO_CLK_SRC_DEFAULT;  // PLL_F160M → /10 = 16 MHz exact
-    cfg.clk_in_gpio_num   = GPIO_NUM_NC;
+    cfg.clk_src            = PARLIO_CLK_SRC_DEFAULT;  // PLL_F160M → /10 = 16 MHz exact
+    cfg.clk_in_gpio_num    = GPIO_NUM_NC;
     cfg.output_clk_freq_hz = g_cfg.pclk_hz;
-    cfg.data_width        = 16;
+    cfg.data_width         = 16;
     for (int i = 0; i < 16; ++i) {
         cfg.data_gpio_nums[i] = static_cast<gpio_num_t>(g_cfg.bus_gpio_16[i]);
     }
-    cfg.clk_out_gpio_num = GPIO_NUM_NC;  // per-channel clocks are data bits, PCLK stays internal
-    cfg.valid_gpio_num   = GPIO_NUM_NC;
+    cfg.clk_out_gpio_num  = GPIO_NUM_NC;  // per-channel clocks are data bits, PCLK stays internal
+    cfg.valid_gpio_num    = GPIO_NUM_NC;
     cfg.trans_queue_depth = 4;
     cfg.max_transfer_size = bytes;
     cfg.dma_burst_size    = 64;
@@ -133,14 +133,15 @@ bool create_unit(size_t samples) {
         return false;
     }
 
-    g_fb_samples  = samples;
-    g_back_idx    = 0;
-    g_written[0]  = 0;
-    g_written[1]  = 0;
+    g_fb_samples   = samples;
+    g_back_idx     = 0;
+    g_written[0]   = 0;
+    g_written[1]   = 0;
     g_loop_running = false;
 
-    ESP_LOGI(TAG, "tx unit up: fb_a=%p fb_b=%p, %zu bytes each, %zu samples @ %lu Hz "
-                  "(%lld µs/frame, loop)",
+    ESP_LOGI(TAG,
+             "tx unit up: fb_a=%p fb_b=%p, %zu bytes each, %zu samples @ %lu Hz "
+             "(%lld µs/frame, loop)",
              static_cast<void*>(g_fb[0]), static_cast<void*>(g_fb[1]), bytes, samples,
              static_cast<unsigned long>(g_cfg.pclk_hz), frame_duration_us());
     return true;
@@ -177,10 +178,10 @@ void wait_back_buffer_free() {
 // driver write-backs the payload cache itself.
 bool submit_loop_frame(uint16_t* fb) {
     parlio_transmit_config_t tx{};
-    tx.idle_value                 = 0;
-    tx.flags.loop_transmission    = 1;
-    const size_t payload_bits     = g_fb_samples * 16;
-    const esp_err_t err           = parlio_tx_unit_transmit(g_unit, fb, payload_bits, &tx);
+    tx.idle_value              = 0;
+    tx.flags.loop_transmission = 1;
+    const size_t payload_bits  = g_fb_samples * 16;
+    const esp_err_t err        = parlio_tx_unit_transmit(g_unit, fb, payload_bits, &tx);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "transmit: %s", esp_err_to_name(err));
         return false;
@@ -237,8 +238,7 @@ bool render_frame(uint32_t timeout_ms) {
     const size_t written = led::encode_frame(descs, pixels, config::kNumChannels, samples,
                                              g_fb_samples);
     if (written == 0) {
-        ESP_LOGE(TAG, "encode_frame wrote nothing (needed=%zu capacity=%zu)", needed,
-                 g_fb_samples);
+        ESP_LOGE(TAG, "encode_frame wrote nothing (needed=%zu capacity=%zu)", needed, g_fb_samples);
         return false;
     }
 
@@ -277,8 +277,7 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
 
 void dump_stats() {
     ESP_LOGI(TAG, "stats: submits=%lu, frame=%lld µs, loop=%d",
-             static_cast<unsigned long>(g_submits), frame_duration_us(),
-             g_loop_running ? 1 : 0);
+             static_cast<unsigned long>(g_submits), frame_duration_us(), g_loop_running ? 1 : 0);
 }
 
 DebugCounters get_debug_counters() {

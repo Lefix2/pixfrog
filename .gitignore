@@ -29,4 +29,5 @@ log/
 
 # overlay local builds (tools/ci-local.sh)
 build.tft/
+build.lcdcam/
 build.parlio/
