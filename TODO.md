@@ -89,7 +89,9 @@ DMX512 encoder interleaving needed), `ArtTrigger` (waiting on scenes),
 
 ## Hardware (next board rev)
 
-- [ ] **Output buffers** — bus outputs are raw 3.3 V GPIO; for WS2815 (12 V
-      strips) over real cable runs, a 74HCT245 per bank would make levels
-      robust. The VDD_IO_5/LDO VO4 incident (#22) shows how little margin
-      there is today.
+- [x] **Output buffers** — designed as the **pixfrog shield**
+      (`hardware/pixfrog_shield/`, KiCad 10 + JLCPCB production files):
+      2× 74HCT245 re-drive the 16 bus lines at 5 V, DIP-selectable series
+      termination per line (DATA 249 Ω ↔ ≈34 Ω, CLOCK 33 Ω ↔ ≈18 Ω), one
+      5 V TVS clamp per output, 8× JST-XH. Field validation on a long
+      cable run still to do once boards arrive.

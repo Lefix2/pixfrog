@@ -39,6 +39,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `tools/oledsplash`             | Host tool: TFT splash frame → `splash_oled.cpp` (static OLED frog logo) |
 | `tools/emulator`               | SDL2 host emulator of the TFT UI (no IDF)               |
 | `tools/uartctl.sh`             | One-shot client for the control console                 |
+| `hardware/pixfrog_shield/`     | KiCad shield: 74HCT245 5V buffers, TVS, JST outputs (see its README) |
 | `docs/img/frog-anim.svg`       | Animated logo: source for web + baked splash            |
 
 ## Workflows → skills

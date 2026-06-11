@@ -165,6 +165,14 @@ The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
 > Alternatives: **SN74LVC1T45** per GPIO (overkill but very clean), or **TXS0108E** (avoid — its auto-direction is too slow for fast clocked protocols).
 
+**Realised as the pixfrog shield** — KiCad project + JLCPCB production files in
+[`hardware/pixfrog_shield/`](../hardware/pixfrog_shield/README.md): 2× 74HCT245,
+DIP-selectable series termination per line (DATA 249 Ω ↔ ≈34 Ω, CLOCK 33 Ω ↔ ≈18 Ω),
+one 5 V TVS clamp per output, 8× JST-XH (DATA/CLOCK/GND), plugs onto the
+devkit's 2×20 header.
+
+![pixfrog shield](img/pixfrog-shield.png)
+
 ---
 
 ## 7. Encoder wiring (Adafruit seesaw 4991)
