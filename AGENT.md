@@ -25,7 +25,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 |--------------------------------|---------------------------------------------------------|
 | `boards/esp32_p4_devkit.h`     | Single source of truth for pinout / I2C addrs           |
 | `components/led_protocols`     | Pure C++ NRZ + SPI + DMX512 encoders (host-testable)    |
-| `components/lcd_cam_output`    | LCD_CAM 16-bit driver, PSRAM double-buffer, calibration |
+| `components/lcd_cam_output`    | 16-bit LED bus output: PARLIO TX loop (default) or LCD_CAM RGB backend (Kconfig choice), PSRAM double-buffer, calibration |
 | `components/artnet`            | UDP receiver + parser + ArtPollReply                    |
 | `components/dmx_manager`       | Universe pool, channel mapping, capacity check, sync    |
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |
@@ -56,9 +56,13 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 
 ## Hard rules
 
+- **Never commit to `main`** — it is protected on GitHub (PR-only, CI checks
+  required, no force-push). Every change, however small (fix, docs, tooling),
+  goes on a feature branch (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and lands
+  through a pull request once CI is green.
 - **CI must pass locally before any push**: `./tools/ci-local.sh` replays every
-  `ci.yml` job (format check, three host suites, oled + tft IDF builds). Never
-  push and "let CI find out".
+  `ci.yml` job (format check, three host suites, oled + tft + parlio IDF
+  builds). Never push and "let CI find out".
 - A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
   host suite green.
 - The canonical proof for IDF-bound refactors is `idf.py build` — natively in

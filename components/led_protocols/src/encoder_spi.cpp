@@ -5,7 +5,8 @@ namespace pixfrog::led::detail {
 namespace {
 
 uint8_t apply_brightness_spi(uint8_t component, uint8_t brightness) {
-    return static_cast<uint8_t>((static_cast<uint16_t>(component) * brightness + 128) >> 8);
+    // Same gain as encoder_nrz.h apply_brightness — exact identity at 255.
+    return static_cast<uint8_t>((static_cast<uint16_t>(component) * (brightness + 1)) >> 8);
 }
 
 // Emit one bit (`bit_value`) cadenced on CLOCK. Returns number of samples written.

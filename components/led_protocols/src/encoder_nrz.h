@@ -31,9 +31,10 @@ inline Reorder apply_order(ColorOrder order, uint8_t r, uint8_t g, uint8_t b, ui
 }
 
 inline uint8_t apply_brightness(uint8_t component, uint8_t brightness) {
-    // Cheap 8-bit gain: result = component * brightness / 255.
-    // Using (x * b + 128) / 256 ≈ x * b / 255 with single-rounding bias.
-    return static_cast<uint8_t>((static_cast<uint16_t>(component) * brightness + 128) >> 8);
+    // Cheap 8-bit gain ≈ component * brightness / 255. (x * (b+1)) >> 8 keeps
+    // brightness 255 an exact identity (the previous (x*b+128)>>8 capped full
+    // white at 0xfe — measured on the wire) and stays within 1 LSB of exact.
+    return static_cast<uint8_t>((static_cast<uint16_t>(component) * (brightness + 1)) >> 8);
 }
 
 // Resolve output pixel `out_pi` to its wire-order, brightness-scaled bytes,

@@ -1,0 +1,6 @@
+# Overlay: build with the LCD_CAM RGB LED output backend instead of the
+# default PARLIO TX — keeps the LCD_CAM compile path covered by CI.
+# Usage:
+#   idf.py -B build.lcdcam -D SDKCONFIG=build.lcdcam/sdkconfig \
+#          -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.lcdcam" build
+CONFIG_PIXFROG_LED_OUTPUT_LCD_CAM=y
