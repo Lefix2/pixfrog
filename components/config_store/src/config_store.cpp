@@ -3,6 +3,8 @@
 #include <cstring>
 
 #include "esp_log.h"
+#include "esp_random.h"
+#include "mbedtls/sha256.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -202,6 +204,56 @@ bool set_channel(size_t i, const ChannelConfig& cfg) {
     nvs_commit(h);
     nvs_close(h);
     return true;
+}
+
+namespace {
+
+void web_password_hash(const uint8_t salt[8], const char* password, uint8_t out[32]) {
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts(&ctx, 0);  // SHA-256 (not 224)
+    mbedtls_sha256_update(&ctx, salt, 8);
+    mbedtls_sha256_update(&ctx, reinterpret_cast<const unsigned char*>(password),
+                          std::strlen(password));
+    mbedtls_sha256_finish(&ctx, out);
+    mbedtls_sha256_free(&ctx);
+}
+
+bool hash_is_zero(const uint8_t hash[32]) {
+    uint8_t acc = 0;
+    for (int i = 0; i < 32; ++i)
+        acc |= hash[i];
+    return acc == 0;
+}
+
+}  // namespace
+
+bool set_web_password(const char* password) {
+    GlobalConfig g = g_global;
+    if (!password || password[0] == '\0') {
+        std::memset(g.web_auth_salt, 0, sizeof(g.web_auth_salt));
+        std::memset(g.web_auth_hash, 0, sizeof(g.web_auth_hash));
+    } else {
+        esp_fill_random(g.web_auth_salt, sizeof(g.web_auth_salt));
+        web_password_hash(g.web_auth_salt, password, g.web_auth_hash);
+    }
+    return set_global(g);
+}
+
+bool web_password_set() {
+    return !hash_is_zero(g_global.web_auth_hash);
+}
+
+bool check_web_password(const char* password) {
+    if (!web_password_set()) return true;  // auth disabled
+    if (!password) return false;
+    uint8_t candidate[32];
+    web_password_hash(g_global.web_auth_salt, password, candidate);
+    // Constant-time compare: no early exit on mismatch.
+    uint8_t diff = 0;
+    for (int i = 0; i < 32; ++i)
+        diff |= candidate[i] ^ g_global.web_auth_hash[i];
+    return diff == 0;
 }
 
 void reset_to_defaults() {

@@ -52,9 +52,12 @@ DMX512 encoder interleaving needed), `ArtTrigger` (waiting on scenes),
       BOOTLOADER_APP_ROLLBACK_ENABLE + confirmation at boot-complete — a
       crashing OTA image reverts on next reset. Validated on hardware:
       ota_0 → ota_1, "OTA image confirmed" in the boot log.
-- [ ] **Web UI auth** — anyone on the LAN can reconfigure and reboot the
-      device. A single password (HTTP basic over the LAN is acceptable here)
-      stored in GlobalConfig.
+- [x] **Web UI auth** — HTTP Basic on every mutating endpoint (config,
+      channel, OTA, reboot, factory-reset); GETs stay open. Disabled by
+      default: setting an admin password (SPA, `/api/global`, or UART
+      `global web_password <pwd|->`) enables it. Salted SHA-256 in
+      GlobalConfig, constant-time compare, 500 ms flat delay on failure;
+      UART is the recovery channel.
 - [ ] **Config export/import** — JSON dump/restore via the web UI: backup
       before changes, clone one box to the next.
 - [ ] **Standalone scenes** — a few built-in effects (solid colour, chase,

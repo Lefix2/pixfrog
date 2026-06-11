@@ -11,6 +11,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mbedtls/base64.h"
 
 #include "config_store.h"
 #include "dmx_manager.h"
@@ -85,6 +86,46 @@ static esp_err_t send_err(httpd_req_t* req, int code, const char* msg) {
     return httpd_resp_sendstr(req, buf);
 }
 
+// ── HTTP Basic auth gate (mutating endpoints only) ──────────────────────────
+// No password configured (the default) = open. Otherwise every POST must
+// carry `Authorization: Basic base64(user:password)`; the user part is
+// ignored. 401 + WWW-Authenticate makes browsers show their native prompt
+// and re-send credentials for the realm. A flat 500 ms delay on every
+// failure keeps LAN brute force impractical without lockout bookkeeping.
+
+static bool authorized(httpd_req_t* req) {
+    if (!config::web_password_set()) return true;
+
+    char header[160];
+    if (httpd_req_get_hdr_value_str(req, "Authorization", header, sizeof(header)) != ESP_OK)
+        return false;
+    if (strncmp(header, "Basic ", 6) != 0) return false;
+
+    unsigned char decoded[128];
+    size_t decoded_len = 0;
+    if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &decoded_len,
+                              reinterpret_cast<const unsigned char*>(header + 6),
+                              strlen(header + 6)) != 0)
+        return false;
+    decoded[decoded_len] = '\0';
+
+    // user:password — the user part is free-form and ignored.
+    const char* colon = strchr(reinterpret_cast<const char*>(decoded), ':');
+    if (!colon) return false;
+    return config::check_web_password(colon + 1);
+}
+
+// Returns true when the request may proceed; otherwise the 401 has been sent.
+static bool require_auth(httpd_req_t* req) {
+    if (authorized(req)) return true;
+    vTaskDelay(pdMS_TO_TICKS(500));  // flat anti-brute-force cost
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"pixfrog\"");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"error\":\"unauthorized\"}");
+    return false;
+}
+
 // ── Protocol / color-order name tables ──────────────────────────────────────
 
 static const char* const kProtoNames[] = { "Off",    "WS2815", "WS2812B", "WS2811",  "SK6812",
@@ -144,6 +185,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddNumberToObject(jg, "home_timeout_s", g.home_timeout_s);
     cJSON_AddBoolToObject(jg, "web_enabled", g.web_enabled);
     cJSON_AddBoolToObject(jg, "sacn_enabled", g.sacn_enabled);
+    cJSON_AddBoolToObject(jg, "auth_enabled", config::web_password_set());
 
     // Channels
     cJSON* jchs = cJSON_AddArrayToObject(root, "channels");
@@ -169,6 +211,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
 // ── POST /api/global ─────────────────────────────────────────────────────────
 
 static esp_err_t handle_post_global(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
     char buf[512];
     if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
 
@@ -260,8 +303,20 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
         g.sacn_enabled = b;
     }
 
+    // Admin password: separate setter (hashes + persists on its own); empty
+    // string clears it (auth off). Copied out before cJSON_Delete frees the
+    // backing buffer. Never echoed back.
+    char pwd[64];
+    bool password_changed = false;
+    if ((s = get_str("web_password"))) {
+        strncpy(pwd, s, sizeof(pwd) - 1);
+        pwd[sizeof(pwd) - 1] = '\0';
+        password_changed     = true;
+    }
+
     cJSON_Delete(j);
     config::set_global(g);
+    if (password_changed) config::set_web_password(pwd);
     dmx::mark_global_dirty();
 
     if (sacn_changed) {
@@ -281,6 +336,7 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
 // ── POST /api/channel/{n} ────────────────────────────────────────────────────
 
 static esp_err_t handle_post_channel(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
     // Extract channel index from URI (/api/channel/N)
     const char* uri        = req->uri;
     const char* last_slash = strrchr(uri, '/');
@@ -370,6 +426,7 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
 static bool g_ota_in_progress = false;
 
 static esp_err_t handle_ota(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
     if (g_ota_in_progress) return send_err(req, 500, "OTA already in progress");
 
     const esp_partition_t* update = esp_ota_get_next_update_partition(nullptr);
@@ -440,6 +497,7 @@ static esp_err_t handle_ota(httpd_req_t* req) {
 // ── POST /api/reboot ─────────────────────────────────────────────────────────
 
 static esp_err_t handle_reboot(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
     send_ok(req);
     vTaskDelay(pdMS_TO_TICKS(200));
     esp_restart();
@@ -449,6 +507,7 @@ static esp_err_t handle_reboot(httpd_req_t* req) {
 // ── POST /api/factory-reset ──────────────────────────────────────────────────
 
 static esp_err_t handle_factory_reset(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
     config::reset_to_defaults();
     dmx::mark_global_dirty();
     for (size_t ch = 0; ch < config::kNumChannels; ++ch)

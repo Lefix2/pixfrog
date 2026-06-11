@@ -49,6 +49,11 @@ struct GlobalConfig {
 
     // sACN (E1.31) receiver — opt-in; no UDP socket opened when false (default)
     bool sacn_enabled;
+
+    // Web UI admin password — salted SHA-256, never stored in clear.
+    // hash all-zero = no password set = auth disabled (the default).
+    uint8_t web_auth_salt[8];
+    uint8_t web_auth_hash[32];  // SHA-256(salt || password)
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -83,6 +88,14 @@ const ChannelConfig& get_channel(size_t channel_index);
 // Return true on success.
 bool set_global(const GlobalConfig& cfg);
 bool set_channel(size_t channel_index, const ChannelConfig& cfg);
+
+// ── Web UI admin password ───────────────────────────────────────────────────
+// Empty/null password clears the hash (auth disabled). Setting a password
+// generates a fresh random salt and stores SHA-256(salt || password).
+// All three are ui_task/console-context only (NVS write path).
+bool set_web_password(const char* password);
+bool web_password_set();
+bool check_web_password(const char* password);
 
 // Restore defaults (factory reset). Does NOT reboot.
 void reset_to_defaults();

@@ -71,6 +71,16 @@ button.sec:hover{background:#1a4a8a}
     <div class="status" id="st-global"></div>
   </div>
   <div class="card">
+    <h2>Admin password</h2>
+    <div class="row"><label>Status</label><span id="auth-state" class="note">--</span></div>
+    <div class="row"><label>New password</label>
+      <input id="g-pwd" type="password" autocomplete="new-password" placeholder="empty = disable auth">
+    </div>
+    <button onclick="savePassword()">Set password</button>
+    <span class="note">protects all changes (config, OTA, reboot); reading stays open</span>
+    <div class="status" id="st-pwd"></div>
+  </div>
+  <div class="card">
     <h2>Firmware</h2>
     <div class="row"><label>Running</label><span id="fw-info" style="color:#888;font-size:12px">--</span></div>
     <div class="row"><label>Update (.bin)</label><input id="ota-file" type="file" accept=".bin"></div>
@@ -238,6 +248,7 @@ async function loadConfig(){
     document.getElementById('fps-label').textContent=d.fps+'fps';
     if(d.version)document.getElementById('ver-label').textContent=d.version;
     document.getElementById('fw-info').textContent=(d.version||'?')+' on '+(d.ota_partition||'?');
+    document.getElementById('auth-state').textContent=g.auth_enabled?'enabled':'disabled (no password set)';
   }catch(e){console.error(e);}
 }
 
@@ -294,6 +305,17 @@ async function saveChan(i){
     await api('POST','/api/channel/'+i,body);
     status('st-ch'+i,'Saved','');
   }catch(e){status('st-ch'+i,'Error: '+e.message,true);}
+}
+
+async function savePassword(){
+  const p=document.getElementById('g-pwd').value;
+  if(p===''&&!confirm('Empty password disables authentication. Continue?'))return;
+  try{
+    await api('POST','/api/global',{web_password:p});
+    status('st-pwd',p?'Password set — auth enabled':'Password cleared — auth disabled','');
+    document.getElementById('g-pwd').value='';
+    loadConfig();
+  }catch(e){status('st-pwd','Error: '+e.message,true);}
 }
 
 function otaUpload(){
