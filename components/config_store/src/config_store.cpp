@@ -46,10 +46,18 @@ ChannelConfig make_default_channel(size_t idx) {
     return c;
 }
 
+// Loads a blob from NVS into dst (size bytes). Handles forward migration: if
+// the stored blob is smaller than size (struct grew), the tail is zero-filled
+// so new fields get their safe zero default. Returns false only on hard error
+// or if the stored blob is *larger* than expected (downgrade scenario).
 bool nvs_load_blob(nvs_handle_t handle, const char* key, void* dst, size_t size) {
-    size_t actual = size;
-    esp_err_t err = nvs_get_blob(handle, key, dst, &actual);
-    return err == ESP_OK && actual == size;
+    size_t actual = 0;
+    esp_err_t err = nvs_get_blob(handle, key, nullptr, &actual);
+    if (err != ESP_OK) return false;
+    if (actual > size) return false;  // stored blob larger than struct — reject
+    std::memset(dst, 0, size);
+    err = nvs_get_blob(handle, key, dst, &actual);
+    return err == ESP_OK;
 }
 
 void nvs_save_blob(nvs_handle_t handle, const char* key, const void* src, size_t size) {
@@ -130,9 +138,18 @@ void init() {
         }
     }
 
-    if (!nvs_load_blob(h, kKeyGlobal, &g_global, sizeof(g_global))) {
-        g_global = make_default_global();
-        nvs_save_blob(h, kKeyGlobal, &g_global, sizeof(g_global));
+    {
+        size_t stored_size = 0;
+        const bool exists  = nvs_get_blob(h, kKeyGlobal, nullptr, &stored_size) == ESP_OK;
+        if (!exists || !nvs_load_blob(h, kKeyGlobal, &g_global, sizeof(g_global))) {
+            g_global = make_default_global();
+            nvs_save_blob(h, kKeyGlobal, &g_global, sizeof(g_global));
+        } else if (stored_size < sizeof(g_global)) {
+            // Struct grew (firmware upgrade): persist the zero-filled tail now.
+            nvs_save_blob(h, kKeyGlobal, &g_global, sizeof(g_global));
+            ESP_LOGI(TAG, "global config migrated (%u→%u bytes)",
+                     static_cast<unsigned>(stored_size), static_cast<unsigned>(sizeof(g_global)));
+        }
     }
 
     char key[8];

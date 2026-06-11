@@ -43,6 +43,9 @@ struct GlobalConfig {
     // System
     uint8_t refresh_rate_hz;  // 30 or 60
     uint16_t home_timeout_s;  // 30 by default
+
+    // Web UI — opt-in; no TCP socket opened when false (default)
+    bool web_enabled;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
