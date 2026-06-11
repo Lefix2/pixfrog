@@ -8,6 +8,7 @@ idf_component_register(
         esp_timer
         esp_lcd
         nvs_flash
+        app_update
         led_protocols
         config_store
         dmx_manager

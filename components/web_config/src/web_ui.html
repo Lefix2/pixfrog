@@ -71,6 +71,19 @@ button.sec:hover{background:#1a4a8a}
     <div class="status" id="st-global"></div>
   </div>
   <div class="card">
+    <h2>Firmware</h2>
+    <div class="row"><label>Running</label><span id="fw-info" style="color:#888;font-size:12px">--</span></div>
+    <div class="row"><label>Update (.bin)</label><input id="ota-file" type="file" accept=".bin"></div>
+    <div class="row" id="ota-prog-row" style="display:none"><label>Progress</label>
+      <div style="flex:1;background:#0f3460;border-radius:4px;height:14px;overflow:hidden">
+        <div id="ota-bar" style="background:#e94560;height:100%;width:0%"></div>
+      </div>
+      <span id="ota-pct" class="note">0%</span>
+    </div>
+    <button onclick="otaUpload()">Flash firmware</button>
+    <div class="status" id="st-ota"></div>
+  </div>
+  <div class="card">
     <button class="sec" onclick="factoryReset()">Factory reset</button>
     <button class="sec" onclick="reboot()" style="margin-left:8px">Reboot</button>
     <div class="status" id="st-sys"></div>
@@ -224,6 +237,7 @@ async function loadConfig(){
     link.className=d.link?'up':'';
     document.getElementById('fps-label').textContent=d.fps+'fps';
     if(d.version)document.getElementById('ver-label').textContent=d.version;
+    document.getElementById('fw-info').textContent=(d.version||'?')+' on '+(d.ota_partition||'?');
   }catch(e){console.error(e);}
 }
 
@@ -280,6 +294,34 @@ async function saveChan(i){
     await api('POST','/api/channel/'+i,body);
     status('st-ch'+i,'Saved','');
   }catch(e){status('st-ch'+i,'Error: '+e.message,true);}
+}
+
+function otaUpload(){
+  const f=document.getElementById('ota-file').files[0];
+  if(!f){status('st-ota','Select a .bin first',true);return;}
+  if(!confirm('Flash '+f.name+' ('+Math.round(f.size/1024)+' kB)? The device reboots on success.'))return;
+  const row=document.getElementById('ota-prog-row');
+  const bar=document.getElementById('ota-bar');
+  const pct=document.getElementById('ota-pct');
+  row.style.display='';
+  status('st-ota','Uploading...','');
+  const xhr=new XMLHttpRequest();
+  xhr.open('POST','/api/ota');
+  xhr.upload.onprogress=e=>{
+    if(!e.lengthComputable)return;
+    const p=Math.round(100*e.loaded/e.total);
+    bar.style.width=p+'%';pct.textContent=p+'%';
+  };
+  xhr.onload=()=>{
+    if(xhr.status===200){
+      status('st-ota','Flashed — rebooting, reload in ~10 s','');
+      setTimeout(()=>location.reload(),12000);
+    }else{
+      status('st-ota','Error: '+xhr.responseText,true);
+    }
+  };
+  xhr.onerror=()=>status('st-ota','Upload failed (connection)',true);
+  xhr.send(f);
 }
 
 async function reboot(){

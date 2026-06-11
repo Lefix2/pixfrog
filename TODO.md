@@ -45,9 +45,13 @@ DMX512 encoder interleaving needed), `ArtTrigger` (waiting on scenes),
 
 ## Operations
 
-- [ ] ★ **OTA via web UI** — HTTP server exists; add a firmware-upload endpoint
-      (esp_ota API, A/B partitions — partition table needs a second app slot).
-      Removes the USB cable from every update.
+- [x] **OTA via web UI** — `POST /api/ota` (raw .bin → inactive slot,
+      esp_ota_end validation, reboot) + upload card with progress bar in the
+      SPA. A/B partition table (ota_0/ota_1 7 MB + otadata; nvs kept at its
+      old offset so config survived the one-time USB reflash). Rollback:
+      BOOTLOADER_APP_ROLLBACK_ENABLE + confirmation at boot-complete — a
+      crashing OTA image reverts on next reset. Validated on hardware:
+      ota_0 → ota_1, "OTA image confirmed" in the boot log.
 - [ ] **Web UI auth** — anyone on the LAN can reconfigure and reboot the
       device. A single password (HTTP basic over the LAN is acceptable here)
       stored in GlobalConfig.

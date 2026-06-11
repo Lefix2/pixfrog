@@ -94,10 +94,16 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 
 #
-# Partition table
+# Partition table — A/B OTA (ota_0/ota_1 + otadata)
 #
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+#
+# OTA — a freshly flashed image boots PENDING_VERIFY; app_main confirms it
+# at boot-complete, otherwise the bootloader rolls back to the previous slot.
+#
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 #
 # LED bus output backend — PARLIO TX loop transmission (also the Kconfig

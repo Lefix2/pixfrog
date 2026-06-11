@@ -7,6 +7,7 @@
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -121,6 +122,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddBoolToObject(root, "link", ui::is_link_up());
     cJSON_AddNumberToObject(root, "fps", static_cast<double>(dmx::get_stats().current_fps));
     cJSON_AddStringToObject(root, "version", esp_app_get_description()->version);
+    cJSON_AddStringToObject(root, "ota_partition", esp_ota_get_running_partition()->label);
 
     // Global config
     cJSON* jg = cJSON_AddObjectToObject(root, "global");
@@ -357,6 +359,84 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// ── POST /api/ota ────────────────────────────────────────────────────────────
+// Raw firmware binary in the request body → inactive OTA slot. esp_ota_end()
+// validates the image (magic, chip, SHA); on success the boot partition is
+// switched and the device restarts. With BOOTLOADER_APP_ROLLBACK_ENABLE the
+// new image must confirm itself at boot-complete or the bootloader rolls
+// back to the current slot — a power cut mid-flash is also safe (the running
+// slot is never touched).
+
+static bool g_ota_in_progress = false;
+
+static esp_err_t handle_ota(httpd_req_t* req) {
+    if (g_ota_in_progress) return send_err(req, 500, "OTA already in progress");
+
+    const esp_partition_t* update = esp_ota_get_next_update_partition(nullptr);
+    if (!update) return send_err(req, 500, "no OTA partition (single-app table?)");
+
+    const int total = req->content_len;
+    if (total <= 0) return send_err(req, 400, "empty body");
+    if (static_cast<size_t>(total) > update->size) return send_err(req, 400, "image too large");
+
+    g_ota_in_progress = true;
+    ESP_LOGI(TAG, "OTA: %d bytes -> %s", total, update->label);
+
+    esp_ota_handle_t ota = 0;
+    esp_err_t err        = esp_ota_begin(update, OTA_WITH_SEQUENTIAL_WRITES, &ota);
+    if (err != ESP_OK) {
+        g_ota_in_progress = false;
+        ESP_LOGE(TAG, "esp_ota_begin: %s", esp_err_to_name(err));
+        return send_err(req, 500, "esp_ota_begin failed");
+    }
+
+    // Static buffer: the httpd task stack is small and only one OTA can run
+    // at a time (guarded by g_ota_in_progress).
+    static char buf[4096];
+    int remaining = total;
+    while (remaining > 0) {
+        const int n = httpd_req_recv(
+            req, buf,
+            remaining < static_cast<int>(sizeof(buf)) ? remaining : static_cast<int>(sizeof(buf)));
+        if (n <= 0) {
+            esp_ota_abort(ota);
+            g_ota_in_progress = false;
+            return send_err(req, 400, "upload interrupted");
+        }
+        err = esp_ota_write(ota, buf, n);
+        if (err != ESP_OK) {
+            esp_ota_abort(ota);
+            g_ota_in_progress = false;
+            ESP_LOGE(TAG, "esp_ota_write: %s", esp_err_to_name(err));
+            return send_err(req, 500, "flash write failed");
+        }
+        remaining -= n;
+    }
+
+    err = esp_ota_end(ota);  // validates magic / chip / image integrity
+    if (err != ESP_OK) {
+        g_ota_in_progress = false;
+        ESP_LOGE(TAG, "esp_ota_end: %s", esp_err_to_name(err));
+        return send_err(req, 400, "image validation failed");
+    }
+    err = esp_ota_set_boot_partition(update);
+    if (err != ESP_OK) {
+        g_ota_in_progress = false;
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition: %s", esp_err_to_name(err));
+        return send_err(req, 500, "set boot partition failed");
+    }
+
+    ESP_LOGI(TAG, "OTA complete, rebooting into %s", update->label);
+    httpd_resp_set_type(req, "application/json");
+    char resp[96];
+    snprintf(resp, sizeof(resp), "{\"ok\":true,\"partition\":\"%s\",\"rebooting\":true}",
+             update->label);
+    httpd_resp_sendstr(req, resp);
+    vTaskDelay(pdMS_TO_TICKS(500));  // let the response flush
+    esp_restart();
+    return ESP_OK;
+}
+
 // ── POST /api/reboot ─────────────────────────────────────────────────────────
 
 static esp_err_t handle_reboot(httpd_req_t* req) {
@@ -386,6 +466,7 @@ void start() {
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
     cfg.max_uri_handlers = 8;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
+    cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
     if (httpd_start(&g_server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed");
@@ -407,6 +488,7 @@ void start() {
           .method   = HTTP_POST,
           .handler  = handle_post_channel,
           .user_ctx = nullptr },
+        { .uri = "/api/ota", .method = HTTP_POST, .handler = handle_ota, .user_ctx = nullptr },
         { .uri      = "/api/reboot",
           .method   = HTTP_POST,
           .handler  = handle_reboot,
