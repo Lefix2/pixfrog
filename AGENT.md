@@ -75,8 +75,8 @@ applies to *always-on* listeners; this one is opt-in and user-controlled.
   goes on a feature branch (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and lands
   through a pull request once CI is green.
 - **CI must pass locally before any push**: `./tools/ci-local.sh` replays every
-  `ci.yml` job (format check, five host suites, oled + tft IDF builds).
-  Never push and "let CI find out".
+  `ci.yml` job (format check, five host suites, emulator build + smoke test,
+  oled + tft IDF builds). Never push and "let CI find out".
 - A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
   host suite green.
 - The canonical proof for IDF-bound refactors is `idf.py build` — natively in

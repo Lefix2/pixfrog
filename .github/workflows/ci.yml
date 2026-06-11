@@ -61,6 +61,24 @@ jobs:
           cmake --build build --parallel
           ./build/test_sacn_parser
 
+  emulator:
+    name: UI emulator (SDL2 host build + smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+
+      - name: Build emulator
+        run: |
+          cd tools/emulator
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      - name: Headless menu-FSM smoke test
+        run: ./tools/emulator/smoke.sh
+
   idf-build:
     name: ESP-IDF build for esp32p4 (${{ matrix.variant }})
     runs-on: ubuntu-latest

@@ -8,10 +8,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "==[1/3] clang-format (CI: format-check) =="
+echo "==[1/4] clang-format (CI: format-check) =="
 git ls-files '*.cpp' '*.h' | xargs clang-format --dry-run -Werror --style=file
 
-echo "==[2/3] host unit tests (CI: host-tests) =="
+echo "==[2/4] host unit tests (CI: host-tests) =="
 for t in components/led_protocols/test components/dmx_manager/test components/artnet/test components/config_store/test components/sacn/test; do
     cmake -S "$t" -B "$t/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
     cmake --build "$t/build" --parallel >/dev/null
@@ -22,7 +22,12 @@ done
 ./components/config_store/test/build/test_config_store
 ./components/sacn/test/build/test_sacn_parser
 
-echo "==[3/3] IDF builds oled + tft (CI: idf-build matrix) =="
+echo "==[3/4] UI emulator build + smoke test (CI: emulator) =="
+cmake -S tools/emulator -B tools/emulator/build -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build tools/emulator/build --parallel >/dev/null
+./tools/emulator/smoke.sh
+
+echo "==[4/4] IDF builds oled + tft (CI: idf-build matrix) =="
 # Separate build dir + sdkconfig per overlay: SDKCONFIG_DEFAULTS only applies
 # when the sdkconfig file does not exist yet, so overlay builds must not
 # share the default ./sdkconfig.

@@ -25,7 +25,7 @@ std::deque<Event>& queue() {
 }
 }  // namespace
 
-bool encoder_init(i2c_master_bus_handle_t /*bus*/, uint8_t /*addr*/, int /*int_gpio*/) {
+bool encoder_init(i2c_master_bus_handle_t /*bus*/, uint8_t /*addr*/) {
     return true;
 }
 

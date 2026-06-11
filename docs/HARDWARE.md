@@ -81,7 +81,6 @@ The PHY's RMII pins are wired directly to the SoC on the DEV-KIT and are not bro
 |--------|-----:|--------------------------------------------------|
 | SDA    | 7    | `SDA(GPIO7)` on the header silkscreen           |
 | SCL    | 8    | `SCL(GPIO8)` on the header silkscreen           |
-| INT    | 21   | active-LOW IRQ from the seesaw                  |
 
 I2C addresses:
 
@@ -181,23 +180,24 @@ Vin (3-5 V)  ───► 3.3 V
 GND          ───► GND
 SDA          ───► GPIO 7  (I2C SDA)
 SCL          ───► GPIO 8  (I2C SCL)
-INT          ───► GPIO 21 (active LOW, internal pull-up on seesaw)
+INT          ───► not connected (see below)
 ADR (option) ───► float → address 0x36
 SS (option)  ───► unused (I2C only)
 ```
 
-The seesaw INT is configured to assert on:
+The seesaw INT_N line is **deliberately unused** — a 4-wire harness
+(VCC/GND/SDA/SCL) is all the encoder needs:
 
-- encoder rotation (every detent)
-- button (separate press / release)
+- `ui_task` already loops at ~30 Hz for the encoder-LED animation and the
+  diff-based display refresh, so time-polling adds at most one tick (~33 ms)
+  of input latency — imperceptible on a rotary detent.
+- Skipping the interrupt machinery removes two extra I2C reads per poll
+  (the `GPIO_INTFLAG` + `ENCODER_DELTA` latch clears the seesaw requires to
+  re-arm INT_N).
 
-Firmware path:
-
-1. Falling edge on GPIO 21 → `xSemaphoreGiveFromISR(ui_wakeup_sem)`
-2. `ui_task` consumes the semaphore, reads position + button over I2C
-3. Reads `GPIO_INTFLAG` + `ENCODER_DELTA` to clear the seesaw interrupts so the next change re-asserts INT
-
-A 100 ms polling fallback also runs (used to refresh HOME stats), so even if a seesaw interrupt is ever missed, the next poll picks it up.
+Firmware path: `ui_task` polls position + button over I2C every ~33 ms and
+queues RotateLeft/RotateRight/Click/LongPress events into the menu FSM.
+GPIO 21 (previously reserved for INT) is free.
 
 Reference: [Adafruit Learn — I2C QT Rotary Encoder](https://learn.adafruit.com/adafruit-i2c-qt-rotary-encoder).
 

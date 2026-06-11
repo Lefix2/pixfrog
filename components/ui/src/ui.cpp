@@ -3,14 +3,12 @@
 #include <cstdio>
 #include <cstring>
 
-#include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_app_desc.h"
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "config_store.h"
@@ -22,19 +20,12 @@ namespace {
 
 constexpr const char* TAG = "UI";
 
-SemaphoreHandle_t g_wakeup_sem = nullptr;
-TaskHandle_t g_task            = nullptr;
+TaskHandle_t g_task = nullptr;
 InitConfig g_cfg{};
 i2c_master_bus_handle_t g_bus = nullptr;
 
 uint32_t g_ip_host = 0;      // host-order IPv4; 0 = no link
 bool g_link_up     = false;  // ETH_EVENT_CONNECTED state
-
-void IRAM_ATTR encoder_isr(void*) {
-    BaseType_t hp = pdFALSE;
-    xSemaphoreGiveFromISR(g_wakeup_sem, &hp);
-    if (hp) portYIELD_FROM_ISR();
-}
 
 bool create_i2c_bus(const InitConfig& cfg) {
     i2c_master_bus_config_t bus_cfg{};
@@ -60,11 +51,8 @@ void task_main(void*) {
         const TickType_t t0 = xTaskGetTickCount();
         bool done           = false;
         while (!done) {
-            const uint32_t t_ms = static_cast<uint32_t>((xTaskGetTickCount() - t0) *
-                                                        portTICK_PERIOD_MS);
-            // Poll every frame; the INT_N wakeup is only a latency hint, so
-            // drain it but don't gate the read on it.
-            xSemaphoreTake(g_wakeup_sem, 0);
+            const uint32_t t_ms    = static_cast<uint32_t>((xTaskGetTickCount() - t0) *
+                                                           portTICK_PERIOD_MS);
             const detail::Event ev = detail::encoder_poll();
             detail::encoder_led_tick();  // breathe during the splash
             done = detail::splash_render(t_ms, ev == detail::Event::Click);
@@ -81,11 +69,10 @@ void task_main(void*) {
     TickType_t last_event         = xTaskGetTickCount();
 
     while (true) {
-        // Wake on the encoder ISR or at least every home_refresh (10 Hz), then
-        // always poll: the seesaw INT_N line is an optional latency hint, not a
-        // requirement, so time-based polling keeps the menu responsive even if
-        // INT_N isn't wired.
-        xSemaphoreTake(g_wakeup_sem, home_refresh);
+        // Time-based polling at ~30 Hz: the loop runs at this rate anyway for
+        // the encoder-LED animation and the diff-based display refresh, so a
+        // one-tick worst-case input latency costs nothing perceptible.
+        vTaskDelay(home_refresh);
         detail::Event e;
         while ((e = detail::encoder_poll()) != detail::Event::None) {
             detail::menu_dispatch(e);
@@ -133,9 +120,7 @@ const char* fw_build_info() {
 }  // namespace detail
 
 bool start(const InitConfig& cfg) {
-    g_cfg        = cfg;
-    g_wakeup_sem = xSemaphoreCreateBinary();
-    if (!g_wakeup_sem) return false;
+    g_cfg = cfg;
 
     if (!create_i2c_bus(cfg)) return false;
 
@@ -162,21 +147,11 @@ bool start(const InitConfig& cfg) {
         return false;
     }
 #endif
-    if (!detail::encoder_init(g_bus, cfg.encoder_addr, cfg.encoder_int_gpio)) {
+    if (!detail::encoder_init(g_bus, cfg.encoder_addr)) {
         ESP_LOGE(TAG, "encoder init failed");
         return false;
     }
     detail::encoder_led_init();
-
-    gpio_config_t io = {};
-    io.pin_bit_mask  = 1ULL << cfg.encoder_int_gpio;
-    io.mode          = GPIO_MODE_INPUT;
-    io.pull_up_en    = GPIO_PULLUP_ENABLE;
-    io.pull_down_en  = GPIO_PULLDOWN_DISABLE;
-    io.intr_type     = GPIO_INTR_NEGEDGE;
-    gpio_config(&io);
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(static_cast<gpio_num_t>(cfg.encoder_int_gpio), encoder_isr, nullptr);
 
     xTaskCreatePinnedToCore(task_main, "ui", 4096, nullptr, 4, &g_task, 0);
     ESP_LOGI(TAG, "started");

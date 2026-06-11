@@ -1,11 +1,13 @@
 // ui — OLED SSD1306 + Adafruit seesaw rotary encoder + menu state machine.
 //
 // Architecture:
-//   - The seesaw signals events via an INT line (active LOW).
-//   - A GPIO ISR gives a binary semaphore.
-//   - `ui_task` takes the semaphore, polls seesaw over I2C, dispatches events
-//     into the menu state machine, then redraws the display.
-//   - When idle, `ui_task` blocks on the semaphore + a 1 s timer for HOME refresh.
+//   - `ui_task` time-polls the seesaw over I2C at ~30 Hz (the loop already
+//     runs at that rate for the encoder-LED animation and display refresh),
+//     dispatches events into the menu state machine, then redraws.
+//   - The seesaw INT_N line is deliberately NOT used: at 30 Hz the worst-case
+//     input latency is one tick (~33 ms, imperceptible on a rotary detent),
+//     and skipping the interrupt machinery removes two extra I2C latch-clear
+//     reads per poll. A 4-wire harness (VCC/GND/SDA/SCL) is sufficient.
 
 #pragma once
 
@@ -19,7 +21,6 @@ struct InitConfig {
     int i2c_sda_gpio;
     int i2c_scl_gpio;
     uint32_t i2c_freq_hz;
-    int encoder_int_gpio;
     uint8_t encoder_addr;
     // OLED only (ignored in TFT mode)
     uint8_t oled_addr;
@@ -35,7 +36,7 @@ struct InitConfig {
     int tft_height;
 };
 
-// Initialize I2C, display, seesaw, GPIO ISR. Spawns ui_task on core 0 prio 4.
+// Initialize I2C, display, seesaw. Spawns ui_task on core 0 prio 4.
 // Must be called after config_store::init().
 bool start(const InitConfig& cfg);
 

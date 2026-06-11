@@ -101,7 +101,7 @@ int tft_height();
 
 // ── Encoder driver ────────────────────────────────────────────────────────────
 
-bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr, int int_gpio);
+bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr);
 Event encoder_poll();
 
 // ── Platform hooks (firmware: ui.cpp; emulator: encoder_host.cpp) ────────────
