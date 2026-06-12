@@ -46,8 +46,7 @@ void handle_sync(const parser::SyncFields& f) {
         }
         break;
 
-    case parser::kSyncOpen:
-        break;  // preload hint only
+    case parser::kSyncOpen: break;  // preload hint only
 
     case parser::kSyncStop:
         ESP_LOGI(TAG, "master stop");

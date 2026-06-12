@@ -50,8 +50,8 @@ inline bool parse_sync(const uint8_t* buf, size_t len, SyncFields* out) {
     if (buf[4] != kPktSync) return false;
     if (buf[7] > kSyncOpen) return false;
     if (out) {
-        out->action    = buf[7];
-        out->file_type = buf[8];
+        out->action       = buf[7];
+        out->file_type    = buf[8];
         out->frame_number = static_cast<uint32_t>(buf[9]) | (static_cast<uint32_t>(buf[10]) << 8) |
                             (static_cast<uint32_t>(buf[11]) << 16) |
                             (static_cast<uint32_t>(buf[12]) << 24);
