@@ -32,11 +32,11 @@
 
 // Forward-declare the zstd functions from third_party/zstddeclib.c.
 extern "C" {
-    typedef unsigned long long ZSTD_ULL;
-    size_t   ZSTD_decompress(void* dst, size_t dstCap, const void* src, size_t srcSz);
-    ZSTD_ULL ZSTD_getFrameContentSize(const void* src, size_t srcSz);
-    unsigned ZSTD_isError(size_t result);
-    const char* ZSTD_getErrorName(size_t result);
+typedef unsigned long long ZSTD_ULL;
+size_t ZSTD_decompress(void* dst, size_t dstCap, const void* src, size_t srcSz);
+ZSTD_ULL ZSTD_getFrameContentSize(const void* src, size_t srcSz);
+unsigned ZSTD_isError(size_t result);
+const char* ZSTD_getErrorName(size_t result);
 }
 
 namespace pixfrog::fseq {
@@ -50,20 +50,20 @@ constexpr const char* kMntPath = "/sdcard";
 constexpr uint16_t kUniverseBase = 1;
 
 // Per-frame buffer caps.
-constexpr size_t kMaxFrameBytes    = 512 * 1024;   // 512 KB; truncates huge shows safely
-constexpr size_t kMaxCompBlockBytes = 1024 * 1024; // 1 MB compressed input per block
-constexpr size_t kMaxDecompBytes    = 2 * 1024 * 1024; // 2 MB decompressed per block
+constexpr size_t kMaxFrameBytes     = 512 * 1024;       // 512 KB; truncates huge shows safely
+constexpr size_t kMaxCompBlockBytes = 1024 * 1024;      // 1 MB compressed input per block
+constexpr size_t kMaxDecompBytes    = 2 * 1024 * 1024;  // 2 MB decompressed per block
 
 sdmmc_card_t* g_card = nullptr;
 bool g_sd_mounted    = false;
 
 // Playback state
-char        g_active_file[kMaxNameLen] = {};
-Status      g_status = Status::Idle;
-char        g_error[80]  = {};
+char g_active_file[kMaxNameLen] = {};
+Status g_status                 = Status::Idle;
+char g_error[80]                = {};
 
-std::atomic<bool> g_run{false};
-TaskHandle_t      g_task_handle = nullptr;
+std::atomic<bool> g_run{ false };
+TaskHandle_t g_task_handle = nullptr;
 
 // Per-play heap allocations (PSRAM, freed when task exits).
 struct Buffers {
@@ -88,17 +88,16 @@ void inject_linear_frame(const uint8_t* data, uint32_t channel_count) {
 // Inject one sparse frame into the universe back-buffers.
 // Each SparseRange maps a contiguous run of FSEQ bytes to an absolute
 // channel offset; that offset is split into (universe, slot) pairs.
-void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges,
-                          uint8_t num_ranges) {
+void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges, uint8_t num_ranges) {
     const uint8_t* p = data;
     for (uint8_t r = 0; r < num_ranges; ++r) {
-        uint32_t ch_abs   = ranges[r].start_channel;
+        uint32_t ch_abs    = ranges[r].start_channel;
         uint32_t remaining = ranges[r].length;
         while (remaining > 0) {
-            const uint16_t uni     = channel_to_universe(ch_abs, kUniverseBase);
-            const uint16_t slot    = channel_to_slot(ch_abs);
-            const uint32_t avail   = 512u - slot;
-            const uint32_t chunk   = remaining < avail ? remaining : avail;
+            const uint16_t uni   = channel_to_universe(ch_abs, kUniverseBase);
+            const uint16_t slot  = channel_to_slot(ch_abs);
+            const uint32_t avail = 512u - slot;
+            const uint32_t chunk = remaining < avail ? remaining : avail;
             dmx::inject_universe(uni, slot, p, static_cast<size_t>(chunk));
             p         += chunk;
             ch_abs    += chunk;
@@ -110,8 +109,8 @@ void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges,
 // ── Playback task ─────────────────────────────────────────────────────────
 
 struct TaskArg {
-    char     filename[kMaxNameLen];
-    Buffers  bufs;
+    char filename[kMaxNameLen];
+    Buffers bufs;
 };
 
 void playback_task(void* arg_ptr) {
@@ -147,10 +146,9 @@ void playback_task(void* arg_ptr) {
             goto done;
         }
 
-        const uint32_t frame_bytes =
-            (hdr.channel_count > kMaxFrameBytes)
-            ? static_cast<uint32_t>(kMaxFrameBytes)
-            : hdr.channel_count;
+        const uint32_t frame_bytes = (hdr.channel_count > kMaxFrameBytes)
+                                       ? static_cast<uint32_t>(kMaxFrameBytes)
+                                       : hdr.channel_count;
 
         if (frame_bytes == 0 || hdr.frame_count == 0) {
             snprintf(g_error, sizeof(g_error), "Empty FSEQ file");
@@ -160,7 +158,7 @@ void playback_task(void* arg_ptr) {
         }
 
         // ── Read comp-block table ─────────────────────────────────────────
-        CompBlock  blocks[256] = {};
+        CompBlock blocks[256]  = {};
         SparseRange ranges[64] = {};
 
         if (hdr.num_comp_blocks > 0) {
@@ -196,26 +194,24 @@ void playback_task(void* arg_ptr) {
 
         // ── Playback loop ─────────────────────────────────────────────────
         const TickType_t frame_period = pdMS_TO_TICKS(hdr.step_time_ms ? hdr.step_time_ms : 25u);
-        TickType_t       last_wake    = xTaskGetTickCount();
+        TickType_t last_wake          = xTaskGetTickCount();
 
         // For zstd: track which block is currently decompressed.
-        int32_t  decomp_block_idx    = -1;   // -1 = none
-        uint32_t decomp_block_first  = 0;    // first frame of decomp'd block
-        uint32_t decomp_block_frames = 0;    // frames in decomp'd block
-        uint32_t decomp_block_offset = 0;    // file offset of this block's compressed data
+        int32_t decomp_block_idx     = -1;  // -1 = none
+        uint32_t decomp_block_first  = 0;   // first frame of decomp'd block
+        uint32_t decomp_block_frames = 0;   // frames in decomp'd block
+        uint32_t decomp_block_offset = 0;   // file offset of this block's compressed data
 
         g_status = Status::Playing;
         dmx::fseq_set_active(true);
 
-        for (uint32_t fn = 0; fn < hdr.frame_count && g_run.load(std::memory_order_acquire); ) {
-
+        for (uint32_t fn = 0; fn < hdr.frame_count && g_run.load(std::memory_order_acquire);) {
             if (hdr.compression_type == kCompNone) {
                 // ── Uncompressed: seek directly to frame ──────────────────
                 const long off = static_cast<long>(uncompressed_frame_offset(hdr, fn));
                 fseek(fp, off, SEEK_SET);
                 const size_t got = fread(buf.frame, 1, frame_bytes, fp);
-                if (got < frame_bytes)
-                    memset(buf.frame + got, 0, frame_bytes - got);
+                if (got < frame_bytes) memset(buf.frame + got, 0, frame_bytes - got);
 
             } else {
                 // ── zstd block: locate or (re)decompress the block ────────
@@ -223,10 +219,10 @@ void playback_task(void* arg_ptr) {
                 if (hdr.num_comp_blocks > 0) {
                     // Find which block contains frame fn.
                     for (int32_t b = 0; b < static_cast<int32_t>(hdr.num_comp_blocks); ++b) {
-                        const uint32_t last_frame =
-                            (b + 1 < static_cast<int32_t>(hdr.num_comp_blocks))
-                            ? blocks[b + 1].first_frame - 1
-                            : hdr.frame_count - 1;
+                        const uint32_t last_frame = (b + 1 <
+                                                     static_cast<int32_t>(hdr.num_comp_blocks))
+                                                      ? blocks[b + 1].first_frame - 1
+                                                      : hdr.frame_count - 1;
                         if (fn >= blocks[b].first_frame && fn <= last_frame) {
                             block_idx = b;
                             break;
@@ -265,8 +261,8 @@ void playback_task(void* arg_ptr) {
                         continue;
                     }
 
-                    const size_t decomp_sz =
-                        ZSTD_decompress(buf.decomp, kMaxDecompBytes, buf.comp, comp_sz);
+                    const size_t decomp_sz = ZSTD_decompress(buf.decomp, kMaxDecompBytes, buf.comp,
+                                                             comp_sz);
                     if (ZSTD_isError(decomp_sz)) {
                         ESP_LOGW(TAG, "zstd error block %d: %s", block_idx,
                                  ZSTD_getErrorName(decomp_sz));
@@ -315,7 +311,7 @@ done:
 
     dmx::fseq_set_active(false);
     if (g_status == Status::Playing) {
-        g_status = Status::Idle;
+        g_status         = Status::Idle;
         g_active_file[0] = '\0';
     }
     g_run.store(false, std::memory_order_release);
@@ -323,34 +319,32 @@ done:
     vTaskDelete(nullptr);
 }
 
-} // namespace
+}  // namespace
 
 bool init(const InitConfig& cfg) {
     if (g_sd_mounted) return true;
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED; // 40 MHz
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;  // 40 MHz
 
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot.clk   = static_cast<gpio_num_t>(cfg.clk_gpio);
-    slot.cmd   = static_cast<gpio_num_t>(cfg.cmd_gpio);
-    slot.d0    = static_cast<gpio_num_t>(cfg.d0_gpio);
-    slot.d1    = static_cast<gpio_num_t>(cfg.d1_gpio);
-    slot.d2    = static_cast<gpio_num_t>(cfg.d2_gpio);
-    slot.d3    = static_cast<gpio_num_t>(cfg.d3_gpio);
-    slot.width = 4;
-    slot.flags = 0;
+    slot.clk                 = static_cast<gpio_num_t>(cfg.clk_gpio);
+    slot.cmd                 = static_cast<gpio_num_t>(cfg.cmd_gpio);
+    slot.d0                  = static_cast<gpio_num_t>(cfg.d0_gpio);
+    slot.d1                  = static_cast<gpio_num_t>(cfg.d1_gpio);
+    slot.d2                  = static_cast<gpio_num_t>(cfg.d2_gpio);
+    slot.d3                  = static_cast<gpio_num_t>(cfg.d3_gpio);
+    slot.width               = 4;
+    slot.flags               = 0;
 
     esp_vfs_fat_mount_config_t mount_cfg = {};
     mount_cfg.format_if_mount_failed     = false;
     mount_cfg.max_files                  = 5;
     mount_cfg.allocation_unit_size       = 0;
 
-    const esp_err_t err =
-        esp_vfs_fat_sdmmc_mount(kMntPath, &host, &slot, &mount_cfg, &g_card);
+    const esp_err_t err = esp_vfs_fat_sdmmc_mount(kMntPath, &host, &slot, &mount_cfg, &g_card);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "SD mount failed (%s) — FSEQ player unavailable",
-                 esp_err_to_name(err));
+        ESP_LOGW(TAG, "SD mount failed (%s) — FSEQ player unavailable", esp_err_to_name(err));
         return false;
     }
     g_sd_mounted = true;
@@ -375,10 +369,8 @@ size_t list_files(char names[][kMaxNameLen], size_t max) {
         if (len < 5) continue;
         const char* ext = name + len - 5;
         // Match .fseq or .FSEQ (case-insensitive last 5 chars check)
-        if ((ext[0] == '.' || ext[0] == '.') &&
-            (ext[1] == 'f' || ext[1] == 'F') &&
-            (ext[2] == 's' || ext[2] == 'S') &&
-            (ext[3] == 'e' || ext[3] == 'E') &&
+        if ((ext[0] == '.' || ext[0] == '.') && (ext[1] == 'f' || ext[1] == 'F') &&
+            (ext[2] == 's' || ext[2] == 'S') && (ext[3] == 'e' || ext[3] == 'E') &&
             (ext[4] == 'q' || ext[4] == 'Q')) {
             strncpy(names[count], name, kMaxNameLen - 1);
             names[count][kMaxNameLen - 1] = '\0';
@@ -392,13 +384,13 @@ size_t list_files(char names[][kMaxNameLen], size_t max) {
 bool start(const char* filename) {
     if (!filename || !filename[0]) return false;
 
-    stop(); // stop any running playback first
+    stop();  // stop any running playback first
 
     // Allocate PSRAM buffers for the new playback session.
     Buffers bufs;
-    bufs.frame  = static_cast<uint8_t*>(heap_caps_malloc(kMaxFrameBytes,    MALLOC_CAP_SPIRAM));
+    bufs.frame  = static_cast<uint8_t*>(heap_caps_malloc(kMaxFrameBytes, MALLOC_CAP_SPIRAM));
     bufs.comp   = static_cast<uint8_t*>(heap_caps_malloc(kMaxCompBlockBytes, MALLOC_CAP_SPIRAM));
-    bufs.decomp = static_cast<uint8_t*>(heap_caps_malloc(kMaxDecompBytes,    MALLOC_CAP_SPIRAM));
+    bufs.decomp = static_cast<uint8_t*>(heap_caps_malloc(kMaxDecompBytes, MALLOC_CAP_SPIRAM));
     if (!bufs.frame || !bufs.comp || !bufs.decomp) {
         ESP_LOGE(TAG, "PSRAM alloc failed for FSEQ buffers");
         heap_caps_free(bufs.frame);
@@ -422,16 +414,16 @@ bool start(const char* filename) {
     }
     strncpy(arg->filename, filename, kMaxNameLen - 1);
     arg->filename[kMaxNameLen - 1] = '\0';
-    arg->bufs = bufs;
+    arg->bufs                      = bufs;
 
     strncpy(g_active_file, filename, kMaxNameLen - 1);
     g_active_file[kMaxNameLen - 1] = '\0';
-    g_error[0] = '\0';
-    g_status   = Status::Playing;
+    g_error[0]                     = '\0';
+    g_status                       = Status::Playing;
     g_run.store(true, std::memory_order_release);
 
-    const BaseType_t ok = xTaskCreatePinnedToCore(
-        playback_task, "fseq_play", 8192, arg, 5, &g_task_handle, 0);
+    const BaseType_t ok = xTaskCreatePinnedToCore(playback_task, "fseq_play", 8192, arg, 5,
+                                                  &g_task_handle, 0);
     if (ok != pdPASS) {
         g_run.store(false, std::memory_order_release);
         delete arg;
@@ -439,7 +431,7 @@ bool start(const char* filename) {
         heap_caps_free(bufs.comp);
         heap_caps_free(bufs.decomp);
         snprintf(g_error, sizeof(g_error), "Task create failed");
-        g_status = Status::Error;
+        g_status      = Status::Error;
         g_task_handle = nullptr;
         return false;
     }
@@ -457,7 +449,7 @@ void stop() {
     while (g_task_handle && xTaskGetTickCount() < deadline)
         vTaskDelay(pdMS_TO_TICKS(10));
 
-    g_status = Status::Idle;
+    g_status         = Status::Idle;
     g_active_file[0] = '\0';
     dmx::fseq_set_active(false);
     ESP_LOGI(TAG, "playback stopped");
@@ -475,4 +467,4 @@ const char* error_string() {
     return g_error;
 }
 
-} // namespace pixfrog::fseq
+}  // namespace pixfrog::fseq

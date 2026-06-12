@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS "src/fseq_player.cpp" "third_party/zstddeclib.c"
     INCLUDE_DIRS "include"
-    REQUIRES config_store dmx_manager sdmmc fatfs esp_log esp_timer freertos
+    REQUIRES config_store dmx_manager sdmmc fatfs esp_timer freertos
 )
 
 # Suppress warnings from the vendored single-file zstd decoder.

@@ -12,36 +12,36 @@ namespace pixfrog::fseq {
 // ── On-disk structures ───────────────────────────────────────────────────────
 
 struct Header {
-    uint8_t  magic[4];            // 'P','S','E','Q'
-    uint16_t channel_data_offset; // file offset to first frame byte
-    uint8_t  minor_version;
-    uint8_t  major_version;       // 1 or 2
-    uint16_t header_length;       // total byte length of all header sections
-    uint32_t channel_count;       // bytes per frame
+    uint8_t magic[4];              // 'P','S','E','Q'
+    uint16_t channel_data_offset;  // file offset to first frame byte
+    uint8_t minor_version;
+    uint8_t major_version;   // 1 or 2
+    uint16_t header_length;  // total byte length of all header sections
+    uint32_t channel_count;  // bytes per frame
     uint32_t frame_count;
-    uint8_t  step_time_ms;        // frame period (e.g. 25 → 40 Hz)
-    uint8_t  flags;
-    uint8_t  compression_type;    // 0=none 1=zstd 2=lz4
-    uint8_t  num_comp_blocks;
-    uint8_t  num_sparse_ranges;
-    uint8_t  reserved;
-    uint8_t  uuid[8];
+    uint8_t step_time_ms;  // frame period (e.g. 25 → 40 Hz)
+    uint8_t flags;
+    uint8_t compression_type;  // 0=none 1=zstd 2=lz4
+    uint8_t num_comp_blocks;
+    uint8_t num_sparse_ranges;
+    uint8_t reserved;
+    uint8_t uuid[8];
 } __attribute__((packed));
 
 static_assert(sizeof(Header) == 32, "FSEQ header must be 32 bytes");
 
 // Immediately after the fixed header (if compression_type != 0).
 struct CompBlock {
-    uint32_t first_frame; // first frame index in this block
-    uint32_t data_size;   // compressed byte count
+    uint32_t first_frame;  // first frame index in this block
+    uint32_t data_size;    // compressed byte count
 } __attribute__((packed));
 
 static_assert(sizeof(CompBlock) == 8, "CompBlock must be 8 bytes");
 
 // After the comp-block table (if num_sparse_ranges > 0).
 struct SparseRange {
-    uint32_t start_channel; // 0-based absolute channel index
-    uint16_t length;        // channels in this range
+    uint32_t start_channel;  // 0-based absolute channel index
+    uint16_t length;         // channels in this range
 } __attribute__((packed));
 
 static_assert(sizeof(SparseRange) == 6, "SparseRange must be 6 bytes");
@@ -65,11 +65,9 @@ enum class ParseResult : uint8_t {
 inline ParseResult parse_header(const uint8_t* buf, size_t len, Header& out) {
     if (len < sizeof(Header)) return ParseResult::TooShort;
     memcpy(&out, buf, sizeof(Header));
-    if (out.magic[0] != 'P' || out.magic[1] != 'S' ||
-        out.magic[2] != 'E' || out.magic[3] != 'Q')
+    if (out.magic[0] != 'P' || out.magic[1] != 'S' || out.magic[2] != 'E' || out.magic[3] != 'Q')
         return ParseResult::BadMagic;
-    if (out.major_version != 2)
-        return ParseResult::BadVersion;
+    if (out.major_version != 2) return ParseResult::BadVersion;
     if (out.channel_data_offset < static_cast<uint16_t>(sizeof(Header)))
         return ParseResult::BadOffsets;
     return ParseResult::Ok;
@@ -78,12 +76,11 @@ inline ParseResult parse_header(const uint8_t* buf, size_t len, Header& out) {
 // ── Header helpers ───────────────────────────────────────────────────────────
 
 // Byte offset in the file of the comp-block table.
-constexpr size_t kCompBlockTableOffset = sizeof(Header); // 32
+constexpr size_t kCompBlockTableOffset = sizeof(Header);  // 32
 
 // Byte offset in the file of the sparse-range table.
 inline size_t sparse_range_file_offset(const Header& h) {
-    return kCompBlockTableOffset +
-           static_cast<size_t>(h.num_comp_blocks) * sizeof(CompBlock);
+    return kCompBlockTableOffset + static_cast<size_t>(h.num_comp_blocks) * sizeof(CompBlock);
 }
 
 // File byte offset of frame `n` for an uncompressed FSEQ.
@@ -103,8 +100,7 @@ inline uint32_t sparse_frame_bytes(const SparseRange* ranges, uint8_t count) {
 
 // Map a per-frame byte offset `fseq_off` (within the sparse data) to the
 // absolute 0-based channel number.  Returns UINT32_MAX if out of range.
-inline uint32_t sparse_to_absolute(const SparseRange* ranges, uint8_t count,
-                                    uint32_t fseq_off) {
+inline uint32_t sparse_to_absolute(const SparseRange* ranges, uint8_t count, uint32_t fseq_off) {
     for (uint8_t i = 0; i < count; ++i) {
         if (fseq_off < static_cast<uint32_t>(ranges[i].length))
             return ranges[i].start_channel + fseq_off;
@@ -127,4 +123,4 @@ inline size_t frame_universe_count(uint32_t channel_count) {
     return (channel_count + 511u) / 512u;
 }
 
-} // namespace pixfrog::fseq
+}  // namespace pixfrog::fseq

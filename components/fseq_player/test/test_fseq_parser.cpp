@@ -13,35 +13,31 @@ using namespace pixfrog::fseq;
 static int g_pass = 0;
 static int g_fail = 0;
 
-#define CHECK(expr)                                               \
-    do {                                                          \
-        if (!(expr)) {                                            \
-            fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__,       \
-                    __LINE__, #expr);                             \
-            ++g_fail;                                             \
-        } else {                                                  \
-            ++g_pass;                                             \
-        }                                                         \
+#define CHECK(expr)                                                                                \
+    do {                                                                                           \
+        if (!(expr)) {                                                                             \
+            fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #expr);                        \
+            ++g_fail;                                                                              \
+        } else {                                                                                   \
+            ++g_pass;                                                                              \
+        }                                                                                          \
     } while (0)
 
-static void build_header(uint8_t* buf,
-                          uint16_t data_offset,
-                          uint8_t  major,
-                          uint32_t channel_count,
-                          uint32_t frame_count,
-                          uint8_t  step_ms,
-                          uint8_t  comp_type,
-                          uint8_t  num_comp_blocks,
-                          uint8_t  num_sparse) {
+static void build_header(uint8_t* buf, uint16_t data_offset, uint8_t major, uint32_t channel_count,
+                         uint32_t frame_count, uint8_t step_ms, uint8_t comp_type,
+                         uint8_t num_comp_blocks, uint8_t num_sparse) {
     memset(buf, 0, 32);
-    buf[0] = 'P'; buf[1] = 'S'; buf[2] = 'E'; buf[3] = 'Q';
-    buf[4]  = static_cast<uint8_t>(data_offset & 0xFF);
-    buf[5]  = static_cast<uint8_t>(data_offset >> 8);
-    buf[6]  = 0;         // minor version
-    buf[7]  = major;
+    buf[0] = 'P';
+    buf[1] = 'S';
+    buf[2] = 'E';
+    buf[3] = 'Q';
+    buf[4] = static_cast<uint8_t>(data_offset & 0xFF);
+    buf[5] = static_cast<uint8_t>(data_offset >> 8);
+    buf[6] = 0;  // minor version
+    buf[7] = major;
     // header_length (8..9): same as data_offset for simplicity
-    buf[8]  = static_cast<uint8_t>(data_offset & 0xFF);
-    buf[9]  = static_cast<uint8_t>(data_offset >> 8);
+    buf[8] = static_cast<uint8_t>(data_offset & 0xFF);
+    buf[9] = static_cast<uint8_t>(data_offset >> 8);
     // channel_count (10..13)
     buf[10] = static_cast<uint8_t>(channel_count & 0xFF);
     buf[11] = static_cast<uint8_t>((channel_count >> 8) & 0xFF);
@@ -53,11 +49,11 @@ static void build_header(uint8_t* buf,
     buf[16] = static_cast<uint8_t>((frame_count >> 16) & 0xFF);
     buf[17] = static_cast<uint8_t>((frame_count >> 24) & 0xFF);
     buf[18] = step_ms;
-    buf[19] = 0; // flags
+    buf[19] = 0;  // flags
     buf[20] = comp_type;
     buf[21] = num_comp_blocks;
     buf[22] = num_sparse;
-    buf[23] = 0; // reserved
+    buf[23] = 0;  // reserved
     // uuid (24..31): zeros
 }
 
@@ -132,9 +128,9 @@ static void test_uncompressed_offset() {
 static void test_sparse_frame_bytes() {
     SparseRange r[2];
     r[0].start_channel = 0;
-    r[0].length = 512;
+    r[0].length        = 512;
     r[1].start_channel = 1024;
-    r[1].length = 256;
+    r[1].length        = 256;
     CHECK(sparse_frame_bytes(r, 2) == 768);
     CHECK(sparse_frame_bytes(r, 0) == 0);
 }
@@ -142,9 +138,9 @@ static void test_sparse_frame_bytes() {
 static void test_sparse_to_absolute() {
     SparseRange r[2];
     r[0].start_channel = 0;
-    r[0].length = 512;
+    r[0].length        = 512;
     r[1].start_channel = 1024;
-    r[1].length = 256;
+    r[1].length        = 256;
 
     // First range: fseq offset 0..511 → absolute 0..511
     CHECK(sparse_to_absolute(r, 2, 0) == 0);
@@ -166,7 +162,7 @@ static void test_channel_to_universe() {
     CHECK(channel_to_universe(1023, 1) == 2);
     CHECK(channel_to_universe(1024, 1) == 3);
 
-    CHECK(channel_to_slot(0)   == 0);
+    CHECK(channel_to_slot(0) == 0);
     CHECK(channel_to_slot(511) == 511);
     CHECK(channel_to_slot(512) == 0);
     CHECK(channel_to_slot(513) == 1);
@@ -175,10 +171,10 @@ static void test_channel_to_universe() {
 // ── Test: frame_universe_count ───────────────────────────────────────────────
 
 static void test_frame_universe_count() {
-    CHECK(frame_universe_count(0)    == 0);
-    CHECK(frame_universe_count(1)    == 1);
-    CHECK(frame_universe_count(512)  == 1);
-    CHECK(frame_universe_count(513)  == 2);
+    CHECK(frame_universe_count(0) == 0);
+    CHECK(frame_universe_count(1) == 1);
+    CHECK(frame_universe_count(512) == 1);
+    CHECK(frame_universe_count(513) == 2);
     CHECK(frame_universe_count(1536) == 3);
     CHECK(frame_universe_count(1537) == 4);
 }

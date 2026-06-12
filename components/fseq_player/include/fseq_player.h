@@ -40,7 +40,7 @@ const char* active_file();
 
 enum class Status : uint8_t { Idle, Playing, Error };
 
-Status      status();
-const char* error_string(); // last error, or "" if none
+Status status();
+const char* error_string();  // last error, or "" if none
 
-} // namespace pixfrog::fseq
+}  // namespace pixfrog::fseq

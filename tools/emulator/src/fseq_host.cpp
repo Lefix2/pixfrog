@@ -9,12 +9,12 @@
 namespace pixfrog::fseq {
 
 namespace {
-char   g_active[kMaxNameLen] = {};
-Status g_status              = Status::Idle;
+char g_active[kMaxNameLen] = {};
+Status g_status            = Status::Idle;
 }  // namespace
 
 bool init(const InitConfig& /*cfg*/) {
-    return false; // no SD card in emulator
+    return false;  // no SD card in emulator
 }
 
 size_t list_files(char /*names*/[][kMaxNameLen], size_t /*max*/) {
@@ -25,7 +25,7 @@ bool start(const char* filename) {
     if (!filename || !filename[0]) return false;
     strncpy(g_active, filename, kMaxNameLen - 1);
     g_active[kMaxNameLen - 1] = '\0';
-    g_status = Status::Playing;
+    g_status                  = Status::Playing;
     return true;
 }
 
