@@ -1,7 +1,7 @@
 // PARLIO TX backend for the 16-bit LED bus — ESP32-P4.
 //
-// Alternative to the LCD_CAM RGB backend (lcd_cam_output.cpp), selected with
-// CONFIG_PIXFROG_LED_OUTPUT_PARLIO. Implements the same pixfrog::lcd::
+// Alternative to the LCD_CAM RGB backend (led_output.cpp), selected with
+// CONFIG_PIXFROG_LED_OUTPUT_PARLIO. Implements the same pixfrog::output::
 // interface so main.cpp and the control console are backend-agnostic.
 //
 // Why PARLIO: the TX unit is a plain "N-bit bus + clock, fed by DMA" engine —
@@ -26,7 +26,7 @@
 #include "sdkconfig.h"
 #if CONFIG_PIXFROG_LED_OUTPUT_PARLIO
 
-#include "lcd_cam_output.h"
+#include "led_output.h"
 
 #include <cstring>
 
@@ -42,7 +42,7 @@
 #include "led_protocols.h"
 #include "output_common.h"
 
-namespace pixfrog::lcd {
+namespace pixfrog::output {
 
 namespace {
 
@@ -307,6 +307,6 @@ int8_t get_calibration_mode() {
     return g_cal_mode;
 }
 
-}  // namespace pixfrog::lcd
+}  // namespace pixfrog::output
 
 #endif  // CONFIG_PIXFROG_LED_OUTPUT_PARLIO

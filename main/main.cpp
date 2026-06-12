@@ -3,7 +3,7 @@
 // Boot sequence:
 //   1. NVS init + load config            (config_store)
 //   2. Universe pool + pixel buffers     (dmx_manager)
-//   3. LCD_CAM driver                    (lcd_cam_output)
+//   3. LCD_CAM driver                    (led_output)
 //   4. UI (OLED + encoder)               (ui)
 //   5. Network: Ethernet + lwIP + events (main::init_network)
 //   6. ArtNet UDP receiver               (artnet)
@@ -30,7 +30,7 @@
 #include "control_console.h"
 #include "dmx_manager.h"
 #include "fseq_player.h"
-#include "lcd_cam_output.h"
+#include "led_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
 #include "ui.h"
@@ -183,9 +183,9 @@ void render_task(void*) {
         // render loop emits that pattern instead of pixel data. This
         // makes scope debugging persistent across many frames without
         // requiring a recompile.
-        const int8_t cal_mode = pixfrog::lcd::get_calibration_mode();
+        const int8_t cal_mode = pixfrog::output::get_calibration_mode();
         if (cal_mode >= 0) {
-            pixfrog::lcd::emit_calibration_pattern(static_cast<uint8_t>(cal_mode));
+            pixfrog::output::emit_calibration_pattern(static_cast<uint8_t>(cal_mode));
         } else {
             // Item 1: decode each channel's universes into its pixel back
             // buffer (DMX start offset, multi-universe spanning), then
@@ -197,7 +197,7 @@ void render_task(void*) {
                 pixfrog::dmx::decode_pixels_for_channel(ch);
                 pixfrog::dmx::swap_pixels(ch);
             }
-            pixfrog::lcd::render_frame();
+            pixfrog::output::render_frame();
         }
 
         // Item 4: publish FPS once per second.
@@ -272,12 +272,12 @@ extern "C" void app_main() {
         pixfrog::fseq::init(sd_cfg);
     }
 
-    pixfrog::lcd::InitConfig lcd_cfg{
+    pixfrog::output::InitConfig lcd_cfg{
         .bus_gpio_16           = pixfrog::board::kLedBusGpio,
         .pclk_hz               = pixfrog::led::kPclkHz,
         .max_samples_per_frame = pixfrog::led::kMaxSamplesPerFrame,
     };
-    if (!pixfrog::lcd::init(lcd_cfg)) {
+    if (!pixfrog::output::init(lcd_cfg)) {
         ESP_LOGE(TAG, "lcd_cam init failed — aborting");
         return;
     }

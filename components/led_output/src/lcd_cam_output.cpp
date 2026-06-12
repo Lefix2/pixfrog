@@ -21,7 +21,7 @@
 #include "sdkconfig.h"
 #if !CONFIG_PIXFROG_LED_OUTPUT_PARLIO
 
-#include "lcd_cam_output.h"
+#include "led_output.h"
 
 #include <cstring>
 
@@ -41,7 +41,7 @@
 #include "led_protocols.h"
 #include "output_common.h"
 
-namespace pixfrog::lcd {
+namespace pixfrog::output {
 
 namespace {
 
@@ -526,6 +526,6 @@ int8_t get_calibration_mode() {
     return g_cal_mode;
 }
 
-}  // namespace pixfrog::lcd
+}  // namespace pixfrog::output
 
 #endif  // !CONFIG_PIXFROG_LED_OUTPUT_PARLIO

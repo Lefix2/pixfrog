@@ -93,7 +93,7 @@ jobs:
       fail-fast: false
       matrix:
         # ESP32-P4 needs IDF v5.5+: the LCD_CAM RGB panel driver used by
-        # lcd_cam_output is gated behind SOC_LCD_RGB_SUPPORTED, which is only
+        # led_output is gated behind SOC_LCD_RGB_SUPPORTED, which is only
         # enabled for the P4 from v5.4 (IDF-7465), and the v5.4 esp_eth
         # ETH_ESP32_EMAC_DEFAULT_CONFIG() macro uses out-of-order designated
         # initializers that g++ rejects (fixed in v5.5).

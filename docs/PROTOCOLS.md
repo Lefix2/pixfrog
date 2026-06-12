@@ -230,7 +230,7 @@ Unit tests (`components/led_protocols/test/`):
 
 Integration tests (hardware required):
 
-1. Emit a calibration pattern (1 kHz square wave) on each of the 16 GPIOs, observe on scope (`lcd::emit_calibration_pattern(0)`).
+1. Emit a calibration pattern (1 kHz square wave) on each of the 16 GPIOs, observe on scope (`output::emit_calibration_pattern(0)`).
 2. Verify CLOCK is strictly synchronous with DATA on the same channel (delta < 5 ns).
 3. Verify there are no glitches on back-to-back transitions.
 

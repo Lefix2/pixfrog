@@ -14,7 +14,7 @@ idf_component_register(
         dmx_manager
         artnet
         sacn
-        lcd_cam_output
+        led_output
         ui
         control_console
         web_config

@@ -29,7 +29,7 @@ Any other ESP32-P4 board with octal PSRAM and an MII/RMII PHY works; just clone 
 ## Build
 
 ESP-IDF v5.5+ with ESP32-P4 support (`idf.py set-target esp32p4`). The P4
-LCD_CAM RGB panel driver that `lcd_cam_output` relies on is only available
+LCD_CAM RGB panel driver that `led_output` relies on is only available
 from v5.5.
 
 ```bash

@@ -1,4 +1,4 @@
-// Helpers shared by the two LED bus output backends (lcd_cam_output.cpp and
+// Helpers shared by the two LED bus output backends (led_output.cpp and
 // parlio_output.cpp): config→descriptor mapping, frame sizing, calibration
 // pattern fills, and the GPIO bit-bang bring-up probe. Everything here is
 // backend-agnostic and side-effect free except the GPIO probe.
@@ -13,7 +13,7 @@
 #include "dmx_manager.h"
 #include "led_protocols.h"
 
-namespace pixfrog::lcd::common {
+namespace pixfrog::output::common {
 
 // Per-channel gamma/white-balance LUTs, rebuilt lazily when the source
 // values change (4-byte compare per frame; powf only on a config commit).
@@ -154,4 +154,4 @@ inline void gpio_bitbang_probe_tick(const int* bus_gpio_16) {
     }
 }
 
-}  // namespace pixfrog::lcd::common
+}  // namespace pixfrog::output::common

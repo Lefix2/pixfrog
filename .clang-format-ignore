@@ -7,3 +7,4 @@ components/ui/src/font_data.cpp
 components/ui/src/splash_anim.cpp
 components/ui/src/font_oled.cpp
 components/ui/src/splash_oled.cpp
+components/fseq_player/third_party/zstddeclib.c
