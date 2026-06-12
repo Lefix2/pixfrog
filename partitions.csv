@@ -7,3 +7,8 @@ phy_init, data, phy,     0xf000,   0x1000,
 otadata,  data, ota,     0x10000,  0x2000,
 ota_0,    app,  ota_0,   0x20000,  0x700000,
 ota_1,    app,  ota_1,   0x720000, 0x700000,
+# Crash post-mortems (esp_core_dump). Appended after ota_1: existing
+# offsets are untouched, but adding it requires ONE USB reflash of the
+# partition table — coredump-less tables in the field stay functional,
+# the firmware just logs that the partition is missing.
+coredump, data, coredump, 0xE20000, 0x10000,

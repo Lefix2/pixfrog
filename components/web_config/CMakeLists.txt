@@ -12,9 +12,12 @@ idf_component_register(
         sacn
         ui
         esp_system
+        esp_timer
         esp_app_format
         app_update
         mbedtls
         json
+        espcoredump
+        esp_partition
         freertos
 )

@@ -7,13 +7,16 @@
 
 #include "cJSON.h"
 #include "esp_app_desc.h"
+#include "esp_core_dump.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mbedtls/base64.h"
+#include "mdns.h"
 
 #include "config_store.h"
 #include "dmx_manager.h"
@@ -250,6 +253,86 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
     return send_json(req, root);
+}
+
+// ── GET /api/status ─────────────────────────────────────────────────────────
+// Lightweight live status for SPA polling: no config blobs, just the values
+// that change at runtime. Unauthenticated like the other GETs.
+
+static esp_err_t handle_get_status(httpd_req_t* req) {
+    const auto st = dmx::get_stats();
+    cJSON* root   = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "link", ui::is_link_up());
+    cJSON_AddNumberToObject(root, "fps", static_cast<double>(st.current_fps));
+    cJSON_AddNumberToObject(root, "uptime_s", static_cast<double>(esp_timer_get_time() / 1000000));
+    cJSON_AddNumberToObject(root, "heap_free", static_cast<double>(esp_get_free_heap_size()));
+    cJSON_AddNumberToObject(root, "heap_min",
+                            static_cast<double>(esp_get_minimum_free_heap_size()));
+    cJSON_AddNumberToObject(root, "artnet_rx", static_cast<double>(st.artnet_packets_rx));
+    cJSON_AddNumberToObject(root, "sacn_rx", static_cast<double>(st.sacn_packets_rx));
+    cJSON_AddNumberToObject(root, "bad_rx", static_cast<double>(st.artnet_bad_packets));
+
+    cJSON_AddNumberToObject(root, "active_scene", dmx::active_scene());
+    cJSON_AddNumberToObject(root, "identify_channel", dmx::identify_channel());
+    cJSON_AddBoolToObject(root, "sacn_running", sacn::is_running());
+    cJSON_AddBoolToObject(root, "fpp_running", fpp::is_running());
+
+    cJSON* jf             = cJSON_CreateObject();
+    const char* fseq_file = fseq::active_file();
+    cJSON_AddStringToObject(jf, "active", fseq_file ? fseq_file : "");
+    cJSON_AddBoolToObject(jf, "sd", fseq::sd_state() == fseq::SdState::Mounted);
+    cJSON_AddNumberToObject(jf, "position_ms", fseq::position_ms());
+    cJSON_AddNumberToObject(jf, "duration_ms", fseq::duration_ms());
+    cJSON_AddItemToObject(root, "fseq", jf);
+
+    cJSON* jchs = cJSON_CreateArray();
+    for (size_t i = 0; i < config::kNumChannels; ++i) {
+        cJSON* jc = cJSON_CreateObject();
+        cJSON_AddBoolToObject(jc, "active", dmx::is_channel_active(i));
+        cJSON_AddBoolToObject(jc, "failsafe", dmx::is_channel_failsafe(i));
+        cJSON_AddItemToArray(jchs, jc);
+    }
+    cJSON_AddItemToObject(root, "channels", jchs);
+    return send_json(req, root);
+}
+
+// ── GET/DELETE /api/coredump ────────────────────────────────────────────────
+// Raw ELF post-mortem from the coredump partition. 404 when no crash is
+// stored (or the partition is absent — pre-coredump tables in the field).
+
+static esp_err_t handle_coredump_get(httpd_req_t* req) {
+    size_t addr = 0, size = 0;
+    if (esp_core_dump_image_get(&addr, &size) != ESP_OK || size == 0) {
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"error\":\"no coredump\"}");
+    }
+    const esp_partition_t* part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, nullptr);
+    if (!part) return send_err(req, 500, "no coredump partition");
+
+    httpd_resp_set_type(req, "application/octet-stream");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-coredump.elf\"");
+    static char buf[4096];  // httpd stack is small; one download at a time
+    size_t off       = addr - part->address;
+    size_t remaining = size;
+    while (remaining > 0) {
+        const size_t n = remaining < sizeof(buf) ? remaining : sizeof(buf);
+        if (esp_partition_read(part, off, buf, n) != ESP_OK) {
+            httpd_resp_sendstr_chunk(req, nullptr);
+            return ESP_FAIL;
+        }
+        if (httpd_resp_send_chunk(req, buf, n) != ESP_OK) return ESP_FAIL;
+        off       += n;
+        remaining -= n;
+    }
+    return httpd_resp_send_chunk(req, nullptr, 0);
+}
+
+static esp_err_t handle_coredump_delete(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    if (esp_core_dump_image_erase() != ESP_OK) return send_err(req, 500, "erase failed");
+    return send_ok(req);
 }
 
 // ── GET /api/backup + POST /api/restore ─────────────────────────────────────
@@ -983,6 +1066,32 @@ static esp_err_t handle_factory_reset(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// ── mDNS ────────────────────────────────────────────────────────────────────
+// pixfrog.local, advertised only while the web UI is enabled — mDNS rides
+// the web_enabled opt-in, no extra flag. Instance name = the ArtNet short
+// name so several boxes are distinguishable in a browser.
+
+static bool g_mdns_up = false;
+
+static void start_mdns() {
+    if (g_mdns_up) return;
+    if (mdns_init() != ESP_OK) {
+        ESP_LOGW(TAG, "mdns_init failed");
+        return;
+    }
+    mdns_hostname_set("pixfrog");
+    mdns_instance_name_set(config::get_global().short_name);
+    mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0);
+    g_mdns_up = true;
+    ESP_LOGI(TAG, "mDNS: pixfrog.local");
+}
+
+static void stop_mdns() {
+    if (!g_mdns_up) return;
+    mdns_free();
+    g_mdns_up = false;
+}
+
 }  // namespace
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -991,7 +1100,7 @@ void start() {
     if (g_server) return;
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 20;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -1053,17 +1162,31 @@ void start() {
           .method   = HTTP_POST,
           .handler  = handle_fseq_upload,
           .user_ctx = nullptr },
+        { .uri      = "/api/status",
+          .method   = HTTP_GET,
+          .handler  = handle_get_status,
+          .user_ctx = nullptr },
+        { .uri      = "/api/coredump",
+          .method   = HTTP_GET,
+          .handler  = handle_coredump_get,
+          .user_ctx = nullptr },
+        { .uri      = "/api/coredump",
+          .method   = HTTP_DELETE,
+          .handler  = handle_coredump_delete,
+          .user_ctx = nullptr },
     };
     for (const auto& r : routes)
         httpd_register_uri_handler(g_server, &r);
 
     ESP_LOGI(TAG, "HTTP server started on port %u", cfg.server_port);
+    start_mdns();
 }
 
 void stop() {
     if (!g_server) return;
     httpd_stop(g_server);
     g_server = nullptr;
+    stop_mdns();
     ESP_LOGI(TAG, "HTTP server stopped");
 }
 
