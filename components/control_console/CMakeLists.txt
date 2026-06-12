@@ -5,6 +5,7 @@ idf_component_register(
         console
         config_store
         dmx_manager
+        fpp_sync
         fseq_player
         led_output
         ui

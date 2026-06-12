@@ -29,6 +29,7 @@
 #include "config_store.h"
 #include "control_console.h"
 #include "dmx_manager.h"
+#include "fpp_sync.h"
 #include "fseq_player.h"
 #include "led_output.h"
 #include "led_protocols.h"
@@ -305,6 +306,7 @@ extern "C" void app_main() {
     pixfrog::artnet::start();
 
     if (pixfrog::config::get_global().sacn_enabled) pixfrog::sacn::start();
+    if (pixfrog::config::get_global().fpp_remote) pixfrog::fpp::start();
     if (pixfrog::config::get_global().boot_scene > 0)
         pixfrog::dmx::scene_start(pixfrog::config::get_global().boot_scene - 1);
     if (pixfrog::config::get_global().web_enabled) pixfrog::web::start();

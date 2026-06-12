@@ -353,8 +353,10 @@ net/subnet), `ArtPoll` → `ArtPollReply` (2 bind groups × 4 ports),
 `ArtSync` (early frame kick), `ArtAddress` (remote names/net/subnet/SwOut,
 persisted + replied), `ArtIpProg`/`ArtIpProgReply` (remote IP, reboot
 applies), `ArtTrigger` global KeyShow (SubKey 1..8 plays standalone scene
-N-1, 0 stops). `ArtNzs`/`ArtCommand`/`ArtTimeCode` are validated and counted
-(`stats artnet_ctrl_rx`) but not consumed yet.
+N-1, 0 stops), `ArtTimeCode` (slaves a *running* FSEQ playback to the desk
+clock — re-seeks beyond 100 ms drift, never auto-starts a file).
+`ArtNzs`/`ArtCommand` are validated and counted (`stats artnet_ctrl_rx`)
+but not consumed yet.
 
 **sACN / E1.31** (UDP 5568, opt-in `sacn_enabled`): data packets matched on
 the flat universe number (no net/subnet concept), one IGMP join per
@@ -363,4 +365,10 @@ accepted). Per-universe source gate: highest priority wins, 2.5 s source
 timeout (§6.7.1), `stream_terminated` releases the slot **and** expires the
 owning channel's failsafe immediately, preview-flagged data ignored, E1.31
 sync packets and `force_sync` map to the ArtSync fast path. Equal-priority
-multi-source merge is not implemented (last writer wins — see TODO).
+sources go through the shared 2-source HTP/LTP merge (keyed by CID hash,
+same engine as concurrent ArtDmx senders).
+
+**FPP MultiSync** (UDP 32320 + multicast 239.70.80.80, opt-in `fpp_remote`):
+the box follows an FPP/xSchedule master — START plays the named local
+`.fseq`, STOP stops, periodic SYNC corrects drift > 100 ms and hot-joins a
+show already running on the master. Media sync packets are ignored.

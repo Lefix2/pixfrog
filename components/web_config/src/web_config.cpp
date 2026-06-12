@@ -1,6 +1,8 @@
 #include "web_config.h"
 
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "cJSON.h"
@@ -15,6 +17,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "fpp_sync.h"
 #include "fseq_player.h"
 #include "led_protocols.h"
 #include "sacn.h"
@@ -176,6 +179,7 @@ static cJSON* build_global_json() {
     cJSON_AddNumberToObject(jg, "home_timeout_s", g.home_timeout_s);
     cJSON_AddBoolToObject(jg, "web_enabled", g.web_enabled);
     cJSON_AddBoolToObject(jg, "sacn_enabled", g.sacn_enabled);
+    cJSON_AddBoolToObject(jg, "fpp_remote", g.fpp_remote);
     cJSON_AddBoolToObject(jg, "auth_enabled", config::web_password_set());
     cJSON_AddNumberToObject(jg, "failsafe_mode", g.failsafe_mode);
     cJSON_AddNumberToObject(jg, "failsafe_timeout_s", g.failsafe_timeout_s);
@@ -547,6 +551,11 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
         sacn_changed   = (g.sacn_enabled != b);
         g.sacn_enabled = b;
     }
+    bool fpp_changed = false;
+    if (get_bool("fpp_remote", b)) {
+        fpp_changed  = (g.fpp_remote != b);
+        g.fpp_remote = b;
+    }
 
     // Admin password: separate setter (hashes + persists on its own); empty
     // string clears it (auth off). Copied out before cJSON_Delete frees the
@@ -569,6 +578,12 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
             sacn::start();
         else
             sacn::stop();
+    }
+    if (fpp_changed) {
+        if (g.fpp_remote)
+            fpp::start();
+        else
+            fpp::stop();
     }
 
     cJSON* resp = cJSON_CreateObject();
@@ -871,6 +886,94 @@ static esp_err_t handle_fseq_stop(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// ── POST /api/fseq/upload?name=<file.fseq> ──────────────────────────────────
+// Raw body streamed to the SD card. The data lands in a .part temp file
+// first and is renamed on success, so an interrupted upload never leaves a
+// truncated .fseq visible to the player.
+
+static bool g_fseq_upload_in_progress = false;
+
+// Decode %XX sequences in-place (httpd_query_key_value does not URL-decode).
+static void url_decode(char* s) {
+    char* w = s;
+    for (; *s; ++w) {
+        if (s[0] == '%' && isxdigit((unsigned char)s[1]) && isxdigit((unsigned char)s[2])) {
+            char hex[3]  = { s[1], s[2], 0 };
+            *w           = static_cast<char>(strtol(hex, nullptr, 16));
+            s           += 3;
+        } else {
+            *w = (*s == '+') ? ' ' : *s;
+            ++s;
+        }
+    }
+    *w = '\0';
+}
+
+static esp_err_t handle_fseq_upload(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    if (g_fseq_upload_in_progress) return send_err(req, 500, "upload already in progress");
+    if (fseq::sd_state() != fseq::SdState::Mounted) return send_err(req, 500, "no SD card");
+
+    char query[fseq::kMaxNameLen * 3 + 16] = {};
+    char name[fseq::kMaxNameLen]           = {};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "name", name, sizeof(name)) != ESP_OK || !name[0])
+        return send_err(req, 400, "missing ?name=<file.fseq>");
+    url_decode(name);
+
+    if (strchr(name, '/') || strchr(name, '\\') || name[0] == '.')
+        return send_err(req, 400, "bad filename");
+    const size_t nl = strlen(name);
+    if (nl < 6 || strcasecmp(name + nl - 5, ".fseq") != 0)
+        return send_err(req, 400, "filename must end in .fseq");
+
+    const int total = req->content_len;
+    if (total <= 0) return send_err(req, 400, "empty body");
+
+    // Overwriting the file currently playing: stop playback to release it.
+    const char* active = fseq::active_file();
+    if (active && strcasecmp(active, name) == 0) fseq::stop();
+
+    char tmp_path[96];
+    char path[96 + fseq::kMaxNameLen];
+    snprintf(tmp_path, sizeof(tmp_path), "%s/upload.part", fseq::kMountPath);
+    snprintf(path, sizeof(path), "%s/%s", fseq::kMountPath, name);
+
+    FILE* fp = fopen(tmp_path, "wb");
+    if (!fp) return send_err(req, 500, "cannot create file on SD");
+    g_fseq_upload_in_progress = true;
+    ESP_LOGI(TAG, "FSEQ upload: %d bytes -> %s", total, name);
+
+    // Static buffer: the httpd task stack is small and only one upload can
+    // run at a time (guarded by g_fseq_upload_in_progress).
+    static char buf[4096];
+    int remaining = total;
+    while (remaining > 0) {
+        const int n = httpd_req_recv(
+            req, buf,
+            remaining < static_cast<int>(sizeof(buf)) ? remaining : static_cast<int>(sizeof(buf)));
+        if (n <= 0 || fwrite(buf, 1, n, fp) != static_cast<size_t>(n)) {
+            fclose(fp);
+            remove(tmp_path);
+            g_fseq_upload_in_progress = false;
+            return send_err(req, n <= 0 ? 400 : 500,
+                            n <= 0 ? "upload interrupted" : "SD write failed (card full?)");
+        }
+        remaining -= n;
+    }
+    fclose(fp);
+
+    remove(path);  // FATFS rename does not overwrite
+    if (rename(tmp_path, path) != 0) {
+        remove(tmp_path);
+        g_fseq_upload_in_progress = false;
+        return send_err(req, 500, "rename failed");
+    }
+    g_fseq_upload_in_progress = false;
+    ESP_LOGI(TAG, "FSEQ upload complete: %s", name);
+    return send_ok(req);
+}
+
 static esp_err_t handle_factory_reset(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
     config::reset_to_defaults();
@@ -888,7 +991,7 @@ void start() {
     if (g_server) return;
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 15;
+    cfg.max_uri_handlers = 16;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -945,6 +1048,10 @@ void start() {
         { .uri      = "/api/fseq/stop",
           .method   = HTTP_POST,
           .handler  = handle_fseq_stop,
+          .user_ctx = nullptr },
+        { .uri      = "/api/fseq/upload",
+          .method   = HTTP_POST,
+          .handler  = handle_fseq_upload,
           .user_ctx = nullptr },
     };
     for (const auto& r : routes)

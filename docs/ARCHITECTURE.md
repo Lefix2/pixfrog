@@ -39,7 +39,10 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 | `eth_rx_task`        | 0    | 19   | 2 kB  | Ethernet IRQ                  | RMII → lwIP (provided)                            |
 | `artnet_rx_task`     | 0    | 10   | 4 kB  | blocking `lwip_recvfrom`      | Parse packets (Dmx/Poll/Sync/Address/IpProg/Trigger), write `universe_pool[back]` |
 | `sacn_rx_task`       | 0    | 10   | 4 kB  | blocking `recvfrom` (1 s t/o) | **Opt-in.** E1.31 data + sync, multicast joins (5 s refresh), priority gate |
-| `httpd`              | 0    | 5    | 8 kB  | TCP accept                    | **Opt-in.** Web SPA + REST API + OTA + backup/restore (esp_http_server) |
+| `fpp_sync`           | 0    | 9    | 4 kB  | blocking `recvfrom`           | **Opt-in.** FPP MultiSync remote: master start/stop/seek of local FSEQ files |
+| `fseq_play`          | 0    | 5    | 8 kB  | `vTaskDelayUntil` (step_time) | Per-playback: read/decompress FSEQ frames, inject into `universe_pool[back]` |
+| `sd_mon`             | 0    | 2    | 4 kB  | 1 s tick                      | microSD hot-plug mount/unmount |
+| `httpd`              | 0    | 5    | 8 kB  | TCP accept                    | **Opt-in.** Web SPA + REST API + OTA + backup/restore + live status (esp_http_server); mDNS `pixfrog.local` while running |
 | `render_task`        | 1    | 20   | 6 kB  | refresh timer + `ArtSync`     | Swap universes, decode/generate pixels, encode full frame, kick DMA |
 | `ui_task`            | 0    | 4    | 4 kB  | 33 ms tick                    | Boot splash, **time-polled** seesaw encoder (no IRQ — 4-wire harness), render display, persist NVS |
 | `idle_0` / `idle_1`  | 0/1  | 0    | 1 kB  | (FreeRTOS)                    | Power-save hooks                                  |
@@ -259,10 +262,9 @@ Read by HOME, the UART console (`stats`) and `/api/config`.
 
 ## 12. Out of scope (see TODO.md for the live list)
 
-- Recorded-show playback (FSEQ from microSD — feasibility studied, see TODO)
-- Multi-source HTP/LTP merge on one universe
 - RDM (over ArtNet or on the wire)
 - Inter-controller frame sync (PTP)
 
 Formerly listed here and since shipped: sACN E1.31, the web UI (native on the
-P4 — no co-MCU needed), and the scene/FX engine.
+P4 — no co-MCU needed), the scene/FX engine, the FSEQ player from microSD
+(plus ArtTimeCode / FPP MultiSync slaving), and the 2-source HTP/LTP merge.
