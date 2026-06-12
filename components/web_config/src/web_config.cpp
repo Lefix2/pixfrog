@@ -846,20 +846,20 @@ static esp_err_t handle_fseq_play(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
     char body[fseq::kMaxNameLen + 32];
     const int len = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (len <= 0) return send_err(req, "Empty body");
+    if (len <= 0) return send_err(req, 400, "Empty body");
     body[len]   = '\0';
     cJSON* root = cJSON_Parse(body);
-    if (!root) return send_err(req, "Invalid JSON");
+    if (!root) return send_err(req, 400, "Invalid JSON");
     cJSON* fn = cJSON_GetObjectItemCaseSensitive(root, "filename");
     if (!cJSON_IsString(fn) || !fn->valuestring || !fn->valuestring[0]) {
         cJSON_Delete(root);
-        return send_err(req, "Missing filename");
+        return send_err(req, 400, "Missing filename");
     }
     char filename[fseq::kMaxNameLen];
     strncpy(filename, fn->valuestring, sizeof(filename) - 1);
     filename[sizeof(filename) - 1] = '\0';
     cJSON_Delete(root);
-    if (!fseq::start(filename)) return send_err(req, fseq::error_string());
+    if (!fseq::start(filename)) return send_err(req, 500, fseq::error_string());
     return send_ok(req);
 }
 
