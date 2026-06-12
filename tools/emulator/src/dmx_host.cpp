@@ -99,6 +99,9 @@ void emu_set_stats(uint32_t fps, uint64_t pkts) {
     g_stats.current_fps       = fps;
     g_stats.artnet_packets_rx = pkts;
 }
+void emu_set_pkts(uint64_t pkts) {
+    g_stats.artnet_packets_rx = pkts;
+}
 void emu_set_active(size_t ch, bool on) {
     if (ch < config::kNumChannels) g_active[ch] = on;
 }
@@ -108,6 +111,9 @@ void emu_set_active(size_t ch, bool on) {
 // ── Emulator-facing telemetry injection (free functions) ─────────────────────
 void emu_dmx_set_stats(uint32_t fps, uint64_t pkts) {
     pixfrog::dmx::emu_set_stats(fps, pkts);
+}
+void emu_dmx_set_pkts(uint64_t pkts) {
+    pixfrog::dmx::emu_set_pkts(pkts);
 }
 void emu_dmx_set_active(int ch, bool on) {
     pixfrog::dmx::emu_set_active(static_cast<size_t>(ch), on);

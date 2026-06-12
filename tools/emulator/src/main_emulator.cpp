@@ -160,6 +160,8 @@ bool exec_cmd(const std::string& line) {
         ui::set_link_up(false);
     } else if (line.rfind("set fps ", 0) == 0) {
         emu_dmx_set_stats(static_cast<uint32_t>(std::strtoul(line.c_str() + 8, nullptr, 10)), 0);
+    } else if (line.rfind("set pkts ", 0) == 0) {
+        emu_dmx_set_pkts(std::strtoull(line.c_str() + 9, nullptr, 10));
     } else if (line.rfind("set active ", 0) == 0) {
         int ch = std::atoi(line.c_str() + 11);
         emu_dmx_set_active(ch, true);

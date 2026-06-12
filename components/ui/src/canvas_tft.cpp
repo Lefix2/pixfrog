@@ -11,8 +11,8 @@ namespace {
 // Scan-line buffer: one row x max width (landscape = 320px)
 static uint16_t s_row_buf[320];
 
-// Text block buffer: max 320px wide x 24px tall
-static uint16_t s_text_buf[320 * 24];
+// Text block buffer: max 320px wide x 32px tall (large font at scale 4)
+static uint16_t s_text_buf[320 * 32];
 
 // ST7789 expects big-endian RGB565; swap bytes since ESP32 is little-endian.
 inline uint16_t to_hw(Color c) {
@@ -60,33 +60,32 @@ void canvas_vline(int x, int y, int h, Color c) {
         tft_draw_bitmap(x, row, x + 1, row + 1, s_row_buf);
 }
 
+// Corner inset for a corner row: r minus the half-width of the circle at the
+// row centre (dy + 0.5 from the circle centre), in integer maths:
+// span = max dx with (2dx)² + (2dy+1)² ≤ (2r)².
+static int round_rect_inset(int r, int dy) {
+    const int d2 = (2 * dy + 1) * (2 * dy + 1);
+    int span     = 0;
+    while (4 * (span + 1) * (span + 1) + d2 <= 4 * r * r)
+        ++span;
+    return r - span;
+}
+
 void canvas_fill_round_rect(int x, int y, int w, int h, int r, Color c) {
     if (w <= 0 || h <= 0) return;
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
     if (r <= 0) {
         canvas_fill_rect(x, y, w, h, c);
         return;
     }
-    if (r > w / 2) r = w / 2;
-    if (r > h / 2) r = h / 2;
     const uint16_t hw = to_hw(c);
     for (int row = 0; row < h; ++row) {
         int x_off = 0;
         if (row < r) {
-            const int dy = r - 1 - row;
-            for (int dx = 0; dx <= r; ++dx) {
-                if (dx * dx + dy * dy <= r * r) {
-                    x_off = r - dx;
-                    break;
-                }
-            }
+            x_off = round_rect_inset(r, r - 1 - row);
         } else if (row >= h - r) {
-            const int dy = row - (h - r);
-            for (int dx = 0; dx <= r; ++dx) {
-                if (dx * dx + dy * dy <= r * r) {
-                    x_off = r - dx;
-                    break;
-                }
-            }
+            x_off = round_rect_inset(r, row - (h - r));
         }
         const int row_w = w - 2 * x_off;
         if (row_w <= 0) continue;
@@ -149,16 +148,23 @@ inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a) {
 
 void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t scale) {
     if (!str || !*str) return;
-    const int s  = (scale < 1) ? 1 : scale;
-    const int cw = kFontCellWidth * s;
-    const int ch = kFontHeight * s;
+    int s = (scale < 1) ? 1 : scale;
+    // Even scales swap in the natively rasterised 12×16 cell at half the scale:
+    // identical advance/line metrics in small-cell units, but crisp glyphs
+    // instead of pixel-doubled 6×8 ones.
+    const bool large = (s % 2 == 0);
+    const int cell_w = large ? kFontLargeCellWidth : kFontCellWidth;
+    const int cell_h = large ? kFontLargeHeight : kFontHeight;
+    if (large) s /= 2;
+    const int cw = cell_w * s;
+    const int ch = cell_h * s;
     int len      = 0;
     while (str[len])
         ++len;
     const int tw = len * cw;
     const int th = ch;
 
-    if (tw <= 0 || tw > 320 || th > 24) return;
+    if (tw <= 0 || tw > 320 || th > 32) return;
 
     // Blend in native RGB565, byte-swap once on store (to_hw handles the swap).
     const uint16_t nat_bg = bg.v;
@@ -167,11 +173,11 @@ void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t
         s_text_buf[i] = hw_bg;
 
     for (int ci = 0; ci < len; ci++) {
-        const uint8_t* glyph = font_alpha_for(str[ci]);
+        const uint8_t* glyph = large ? font_large_alpha_for(str[ci]) : font_alpha_for(str[ci]);
         const int cx         = ci * cw;
-        for (int col = 0; col < kFontCellWidth; col++) {
-            for (int row = 0; row < kFontHeight; row++) {
-                const uint8_t a = glyph[row * kFontCellWidth + col];
+        for (int col = 0; col < cell_w; col++) {
+            for (int row = 0; row < cell_h; row++) {
+                const uint8_t a = glyph[row * cell_w + col];
                 if (a == 0) continue;  // bg already written
                 const uint16_t pix = __builtin_bswap16(blend565(fg.v, nat_bg, a));
                 for (int sy = 0; sy < s; sy++) {

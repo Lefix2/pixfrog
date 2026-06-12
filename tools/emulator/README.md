@@ -52,6 +52,7 @@ starts at HOME for deterministic runs.
 | `set ip a.b.c.d`   | set the displayed IP (HOME)                        |
 | `set link up/down` | set link state (HOME)                              |
 | `set fps <n>`      | inject a fake FPS counter (HOME)                   |
+| `set pkts <n>`     | inject a fake ArtNet RX packet counter (HOME)      |
 | `set active <ch>`  | mark channel `ch` (0–7) active (HOME dot)          |
 | `quit`             | exit                                               |
 
