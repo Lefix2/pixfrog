@@ -39,6 +39,7 @@ add_executable(pixfrog_emu
     src/led_output_host.cpp
     src/web_host.cpp
     src/sacn_host.cpp
+    src/fpp_host.cpp
     src/main_emulator.cpp
 )
 
@@ -56,6 +57,7 @@ target_include_directories(pixfrog_emu PRIVATE
     ${REPO}/components/led_protocols/include
     ${REPO}/components/web_config/include
     ${REPO}/components/sacn/include
+    ${REPO}/components/fpp_sync/include
 )
 
 target_link_libraries(pixfrog_emu PRIVATE SDL2::SDL2)

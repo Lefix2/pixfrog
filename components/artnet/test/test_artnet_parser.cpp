@@ -310,6 +310,54 @@ static void test_nzs_rejects_truncated() {
     EXPECT_TRUE(!parse_nzs(pkt.data(), pkt.size(), nullptr));
 }
 
+// ── ArtTimeCode ─────────────────────────────────────────────────────────────
+
+static std::vector<uint8_t> make_time_code_packet(uint8_t fr, uint8_t s, uint8_t m, uint8_t h,
+                                                  uint8_t type) {
+    std::vector<uint8_t> pkt(kTimeCodeSize, 0);
+    std::memcpy(pkt.data(), "Art-Net\0", 8);
+    pkt[8]  = 0x00;
+    pkt[9]  = 0x97;
+    pkt[11] = 14;  // ProtVer
+    pkt[14] = fr;
+    pkt[15] = s;
+    pkt[16] = m;
+    pkt[17] = h;
+    pkt[18] = type;
+    return pkt;
+}
+
+static void test_time_code_extract_and_ms() {
+    auto pkt = make_time_code_packet(12, 34, 5, 1, 1);  // 01:05:34:12 @ EBU 25fps
+    TimeCodeFields tc{};
+    EXPECT_TRUE(parse_time_code(pkt.data(), pkt.size(), &tc));
+    EXPECT_EQ(tc.frames, 12);
+    EXPECT_EQ(tc.seconds, 34);
+    EXPECT_EQ(tc.minutes, 5);
+    EXPECT_EQ(tc.hours, 1);
+    EXPECT_EQ(tc.type, 1);
+    // 1h + 5min + 34s = 3934s; 12 frames @ 40 ms = 480 ms.
+    EXPECT_EQ(time_code_to_ms(tc), 3934000u + 480u);
+}
+
+static void test_time_code_frame_rates() {
+    TimeCodeFields tc{};
+    tc.frames = 23;
+    tc.type   = 0;  // film 24 fps → 23 * 41.667 ms
+    EXPECT_EQ(time_code_to_ms(tc), 23u * 41667u / 1000u);
+    tc.frames = 29;
+    tc.type   = 3;  // SMPTE 30 fps
+    EXPECT_EQ(time_code_to_ms(tc), 29u * 33333u / 1000u);
+}
+
+static void test_time_code_rejects_bad() {
+    auto pkt = make_time_code_packet(0, 0, 0, 0, 4);  // type 4 = invalid
+    EXPECT_TRUE(!parse_time_code(pkt.data(), pkt.size(), nullptr));
+    auto short_pkt = make_time_code_packet(0, 0, 0, 0, 0);
+    short_pkt.resize(kTimeCodeSize - 1);
+    EXPECT_TRUE(!parse_time_code(short_pkt.data(), short_pkt.size(), nullptr));
+}
+
 // ── ArtAddress ──────────────────────────────────────────────────────────────
 
 static std::vector<uint8_t> make_address_packet() {
@@ -451,6 +499,9 @@ int main() {
     test_poll_reply_name_truncation();
     test_nzs_valid_extract();
     test_nzs_rejects_truncated();
+    test_time_code_extract_and_ms();
+    test_time_code_frame_rates();
+    test_time_code_rejects_bad();
     test_address_program_bits();
     test_address_rejects_short_packet();
     test_address_merge_commands();

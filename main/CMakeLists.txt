@@ -19,4 +19,5 @@ idf_component_register(
         control_console
         web_config
         fseq_player
+        fpp_sync
 )

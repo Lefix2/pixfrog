@@ -68,6 +68,13 @@ jobs:
           cmake --build build --parallel
           ./build/test_fseq_parser
 
+      - name: fpp_sync_parser (MultiSync wire format)
+        run: |
+          cd components/fpp_sync/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_fpp_sync_parser
+
   emulator:
     name: UI emulator (SDL2 host build + smoke test)
     runs-on: ubuntu-latest
