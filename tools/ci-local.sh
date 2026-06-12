@@ -12,7 +12,7 @@ echo "==[1/4] clang-format (CI: format-check) =="
 git ls-files '*.cpp' '*.h' | xargs clang-format --dry-run -Werror --style=file
 
 echo "==[2/4] host unit tests (CI: host-tests) =="
-for t in components/led_protocols/test components/dmx_manager/test components/artnet/test components/config_store/test components/sacn/test; do
+for t in components/led_protocols/test components/dmx_manager/test components/artnet/test components/config_store/test components/sacn/test components/fseq_player/test; do
     cmake -S "$t" -B "$t/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
     cmake --build "$t/build" --parallel >/dev/null
 done
@@ -21,6 +21,7 @@ done
 ./components/artnet/test/build/test_artnet_parser
 ./components/config_store/test/build/test_config_store
 ./components/sacn/test/build/test_sacn_parser
+./components/fseq_player/test/build/test_fseq_parser
 
 echo "==[3/4] UI emulator build + smoke test (CI: emulator) =="
 cmake -S tools/emulator -B tools/emulator/build -DCMAKE_BUILD_TYPE=Release >/dev/null

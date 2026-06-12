@@ -29,6 +29,7 @@
 #include "config_store.h"
 #include "control_console.h"
 #include "dmx_manager.h"
+#include "fseq_player.h"
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
@@ -258,6 +259,17 @@ extern "C" void app_main() {
     if (!pixfrog::dmx::init()) {
         ESP_LOGE(TAG, "dmx_manager init failed — aborting");
         return;
+    }
+
+    {
+        pixfrog::fseq::InitConfig sd_cfg;
+        sd_cfg.clk_gpio = pixfrog::board::kSdmmcClkGpio;
+        sd_cfg.cmd_gpio = pixfrog::board::kSdmmcCmdGpio;
+        sd_cfg.d0_gpio  = pixfrog::board::kSdmmcD0Gpio;
+        sd_cfg.d1_gpio  = pixfrog::board::kSdmmcD1Gpio;
+        sd_cfg.d2_gpio  = pixfrog::board::kSdmmcD2Gpio;
+        sd_cfg.d3_gpio  = pixfrog::board::kSdmmcD3Gpio;
+        pixfrog::fseq::init(sd_cfg);
     }
 
     pixfrog::lcd::InitConfig lcd_cfg{

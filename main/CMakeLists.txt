@@ -18,4 +18,5 @@ idf_component_register(
         ui
         control_console
         web_config
+        fseq_player
 )

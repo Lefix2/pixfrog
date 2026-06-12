@@ -172,6 +172,26 @@ constexpr uint32_t kDisplaySpiFreqHz = 40'000'000;
 // Miscellaneous
 // ────────────────────────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────────────────────
+// microSD — SDMMC 4-bit (GPIO39-44, VDD_IO_5 domain = LDO VO4 @ 3.3 V)
+// ────────────────────────────────────────────────────────────────────────────
+//
+// GPIO39-44 are in the VDD_IO_5 pad domain, powered by the same LDO VO4
+// that is programmed to 3.3 V by power_vdd_io5_pads() at boot.
+// None of these GPIOs appear in the LED bus, SPI display, I2C, ETH, or UART
+// pin lists, so they are freely available for the SD slot.
+
+constexpr int kSdmmcClkGpio = 39;
+constexpr int kSdmmcCmdGpio = 40;
+constexpr int kSdmmcD0Gpio  = 41;
+constexpr int kSdmmcD1Gpio  = 42;
+constexpr int kSdmmcD2Gpio  = 43;
+constexpr int kSdmmcD3Gpio  = 44;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Miscellaneous
+// ────────────────────────────────────────────────────────────────────────────
+
 constexpr int kStatusLedGpio = 1;
 
 // UART0 console (TXD/RXD) is on the dedicated pins GPIO 37 / GPIO 38

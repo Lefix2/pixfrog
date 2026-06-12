@@ -82,6 +82,18 @@ uint16_t pixel_preview_count() {
     return g_preview_count;
 }
 
+// FSEQ playback active flag.
+namespace {
+bool g_fseq_active = false;
+}  // namespace
+
+void fseq_set_active(bool active) {
+    g_fseq_active = active;
+}
+bool fseq_is_active() {
+    return g_fseq_active;
+}
+
 // Emulator setters (same TU, can reach the anonymous-namespace state).
 void emu_set_stats(uint32_t fps, uint64_t pkts) {
     g_stats.current_fps       = fps;

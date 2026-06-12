@@ -46,6 +46,9 @@ std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
 // Active standalone scene (-1 = none).
 std::atomic<int8_t> g_active_scene{ -1 };
 
+// FSEQ playback active flag.
+std::atomic<bool> g_fseq_active{ false };
+
 // Identify blink: channel in the high byte (0xFF = off), expiry in ms since
 // boot in the low 24 bits won't fit — use two relaxed atomics; tearing across
 // them costs at most one oddly-timed frame.
@@ -235,6 +238,14 @@ int identify_channel() {
     return ch;
 }
 
+void fseq_set_active(bool active) {
+    g_fseq_active.store(active, std::memory_order_relaxed);
+}
+
+bool fseq_is_active() {
+    return g_fseq_active.load(std::memory_order_relaxed);
+}
+
 void scene_start(uint8_t scene_index) {
     if (scene_index >= config::kNumScenes) return;
     g_active_scene.store(static_cast<int8_t>(scene_index), std::memory_order_relaxed);
@@ -289,6 +300,14 @@ bool decode_pixels_for_channel(size_t ch) {
                                       static_cast<uint32_t>(esp_timer_get_time() / 1000));
             return true;
         }
+    }
+
+    // FSEQ playback: data is already in the universe banks via inject_universe().
+    // Suppress the failsafe check while FSEQ is active so a seek/block-load
+    // pause doesn't momentarily blackout channels that are being played back.
+    if (g_fseq_active.load(std::memory_order_relaxed)) {
+        return logic::decode_pixels(dst, kMaxBytesPerChan, config::get_channel(ch),
+                                    [](uint16_t u) { return universe_front_buffer_for(u); });
     }
 
     const auto& g = config::get_global();
