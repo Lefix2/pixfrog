@@ -15,6 +15,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "fseq_player.h"
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
@@ -64,6 +65,7 @@ enum class Screen : uint8_t {
     ChannelMenu,
     TestPatternMenu,
     ScenesMenu,
+    FSeqMenu,
     About,
     EditValue,
     EditString,
@@ -153,6 +155,11 @@ struct State {
 };
 
 State s;
+
+// Cached FSEQ file list — populated when entering FSeqMenu.
+constexpr uint8_t kFseqMenuMaxFiles = 8;
+static char g_fseq_names[kFseqMenuMaxFiles][fseq::kMaxNameLen];
+static uint8_t g_fseq_file_count = 0;
 
 // ── Rotation acceleration ───────────────────────────────────────────────────
 // Sustained rotation escalates the per-detent step ×10 then ×100, whatever
@@ -526,11 +533,11 @@ void render_home() {
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
 
-constexpr uint8_t kMainItemCount                  = 14;
+constexpr uint8_t kMainItemCount                  = 15;
 constexpr const char* kMainLabels[kMainItemCount] = {
-    "ArtNet",    "Network",      "Channel 1", "Channel 2",      "Channel 3",
-    "Channel 4", "Channel 5",    "Channel 6", "Channel 7",      "Channel 8",
-    "Scenes",    "Test pattern", "About",     "[Back to HOME]",
+    "ArtNet",    "Network",   "Channel 1",    "Channel 2", "Channel 3",
+    "Channel 4", "Channel 5", "Channel 6",    "Channel 7", "Channel 8",
+    "Scenes",    "FSEQ",      "Test pattern", "About",     "[Back to HOME]",
 };
 
 void render_main_menu() {
@@ -569,9 +576,14 @@ void dispatch_main_menu(Event e) {
             s.screen = Screen::ScenesMenu;
             s.cursor = 0;
         } else if (s.cursor == 11) {
-            s.screen = Screen::TestPatternMenu;
+            g_fseq_file_count = static_cast<uint8_t>(
+                fseq::list_files(g_fseq_names, kFseqMenuMaxFiles));
+            s.screen = Screen::FSeqMenu;
             s.cursor = 0;
         } else if (s.cursor == 12) {
+            s.screen = Screen::TestPatternMenu;
+            s.cursor = 0;
+        } else if (s.cursor == 13) {
             s.screen = Screen::About;
             s.cursor = 0;
         } else {
@@ -610,7 +622,7 @@ void render_about() {
 void dispatch_about(Event e) {
     if (e == Event::Click) {
         s.screen = Screen::MainMenu;
-        s.cursor = 12;
+        s.cursor = 13;
     }
 }
 
@@ -652,7 +664,7 @@ void dispatch_test_pattern_menu(Event e) {
         // Stop calibration and return.
         lcd::set_calibration_mode(-1);
         s.screen = Screen::MainMenu;
-        s.cursor = 11;
+        s.cursor = 12;
     }
 }
 
@@ -692,6 +704,62 @@ void dispatch_scenes_menu(Event e) {
     } else {
         s.screen = Screen::MainMenu;
         s.cursor = 10;
+    }
+}
+
+// ── FSEQ MENU ────────────────────────────────────────────────────────────────
+// Shows .fseq files on the SD card.  Clicking a filename starts playback.
+// The file list is cached when entering the screen.
+
+void render_fseq_menu() {
+    // items: [0..n-1] = files, n = [Stop], n+1 = [Back]
+    // If no files: item 0 = note, item 1 = [Back]
+    const uint8_t n     = g_fseq_file_count;
+    const uint8_t total = n > 0 ? (n + 2) : 2;
+
+    char marked[kFseqMenuMaxFiles][fseq::kMaxNameLen + 3];
+    memset(marked, 0, sizeof(marked));
+    ListItem items[kFseqMenuMaxFiles + 2];
+
+    const char* playing = fseq::active_file();
+    if (n == 0) {
+        items[0] = { "(no FSEQ files)", "" };
+        items[1] = { "[Back]", "" };
+    } else {
+        for (uint8_t i = 0; i < n; ++i) {
+            if (playing && strcmp(g_fseq_names[i], playing) == 0) {
+                snprintf(marked[i], sizeof(marked[i]), "%s *", g_fseq_names[i]);
+                items[i] = { marked[i], "" };
+            } else {
+                items[i] = { g_fseq_names[i], "" };
+            }
+        }
+        items[n]     = { "[Stop]", "" };
+        items[n + 1] = { "[Back]", "" };
+    }
+    render_list("FSEQ", items, total, s.cursor);
+}
+
+void dispatch_fseq_menu(Event e) {
+    const uint8_t n     = g_fseq_file_count;
+    const uint8_t total = n > 0 ? (n + 2) : 2;
+    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
+    if (e == Event::RotateRight && s.cursor < total - 1) s.cursor++;
+    if (e != Event::Click) return;
+
+    if (n == 0) {
+        // item 0 = note (no action), item 1 = [Back]
+        if (s.cursor == 1) {
+            s.screen = Screen::MainMenu;
+            s.cursor = 11;
+        }
+    } else if (s.cursor < n) {
+        fseq::start(g_fseq_names[s.cursor]);
+    } else if (s.cursor == n) {
+        fseq::stop();
+    } else {
+        s.screen = Screen::MainMenu;
+        s.cursor = 11;
     }
 }
 
@@ -1454,15 +1522,19 @@ void dispatch_long_press() {
     case Screen::TestPatternMenu:
         lcd::set_calibration_mode(-1);
         s.screen = Screen::MainMenu;
-        s.cursor = 11;
+        s.cursor = 12;
         break;
     case Screen::ScenesMenu:
         s.screen = Screen::MainMenu;
         s.cursor = 10;
         break;
+    case Screen::FSeqMenu:
+        s.screen = Screen::MainMenu;
+        s.cursor = 11;
+        break;
     case Screen::About:
         s.screen = Screen::MainMenu;
-        s.cursor = 12;
+        s.cursor = 13;
         break;
     case Screen::EditValue:
         dmx::clear_pixel_preview();
@@ -1497,6 +1569,7 @@ void menu_render() {
     case Screen::ChannelMenu: render_channel_menu(); break;
     case Screen::TestPatternMenu: render_test_pattern_menu(); break;
     case Screen::ScenesMenu: render_scenes_menu(); break;
+    case Screen::FSeqMenu: render_fseq_menu(); break;
     case Screen::About: render_about(); break;
     case Screen::EditValue: render_edit_value(); break;
     case Screen::EditString: render_edit_string(); break;
@@ -1522,6 +1595,7 @@ void menu_dispatch(Event e) {
     case Screen::ChannelMenu: dispatch_channel_menu(e); break;
     case Screen::TestPatternMenu: dispatch_test_pattern_menu(e); break;
     case Screen::ScenesMenu: dispatch_scenes_menu(e); break;
+    case Screen::FSeqMenu: dispatch_fseq_menu(e); break;
     case Screen::About: dispatch_about(e); break;
     case Screen::EditValue: dispatch_edit_value(e); break;
     case Screen::EditString: dispatch_edit_string(e); break;
@@ -1543,7 +1617,7 @@ bool menu_is_home() {
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     static const char* const kNames[] = {
         "Home",       "MainMenu", "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
-        "ScenesMenu", "About",    "EditValue",  "EditString",  "EditIp",
+        "ScenesMenu", "FSeqMenu", "About",      "EditValue",   "EditString",  "EditIp",
     };
     if (screen_name) *screen_name = kNames[static_cast<uint8_t>(s.screen)];
     if (cursor) *cursor = s.cursor;

@@ -44,6 +44,7 @@ button.sec:hover{background:#1a4a8a}
   <div class="tab" data-panel="network">Network</div>
   <div class="tab" data-panel="artnet">ArtNet</div>
   <div class="tab" data-panel="scenes">Scenes</div>
+  <div class="tab" data-panel="fseq">FSEQ</div>
   <div class="tab" data-panel="ch0">Ch1</div>
   <div class="tab" data-panel="ch1">Ch2</div>
   <div class="tab" data-panel="ch2">Ch3</div>
@@ -167,6 +168,17 @@ button.sec:hover{background:#1a4a8a}
   <div id="scene-cards"></div>
 </div>
 
+<!-- FSEQ panel -->
+<div class="panel" id="panel-fseq">
+  <div class="card">
+    <div class="row"><label>Now playing</label><span id="fseq-active" class="note">none</span>
+      <button class="sec" onclick="fseqStop()" style="margin-top:0">Stop</button>
+    </div>
+    <div class="status" id="st-fseq"></div>
+  </div>
+  <div id="fseq-cards"></div>
+</div>
+
 <!-- Channel panels (ch0..ch7) -->
 <script>
 const PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806','DMX512'];
@@ -260,6 +272,37 @@ async function sceneStop(){
   catch(e){status('st-scenes','Error: '+e.message,true);}
 }
 
+async function fseqStop(){
+  try{await api('POST','/api/fseq/stop',{});status('st-fseq','Stopped','');loadFseqFiles();}
+  catch(e){status('st-fseq','Error: '+e.message,true);}
+}
+
+async function fseqPlay(filename){
+  try{await api('POST','/api/fseq/play',{filename});status('st-fseq','Playing: '+filename,'');loadFseqFiles();}
+  catch(e){status('st-fseq','Error: '+e.message,true);}
+}
+
+async function loadFseqFiles(){
+  try{
+    const d=await (await fetch('/api/fseq/files')).json();
+    document.getElementById('fseq-active').textContent=d.active||'none';
+    const host=document.getElementById('fseq-cards');
+    host.innerHTML='';
+    if(!d.files||d.files.length===0){
+      const p=document.createElement('div');p.className='card';
+      p.innerHTML='<span class="note">No .fseq files found on SD card</span>';
+      host.appendChild(p);return;
+    }
+    d.files.forEach(f=>{
+      const card=document.createElement('div');card.className='card';
+      const playing=f===d.active;
+      card.innerHTML=`<div class="row"><label style="max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${f}">${f}${playing?' ★':''}</label>
+        <button class="sec" onclick="fseqPlay('${f.replace(/'/g,"\\'")}')">Play</button></div>`;
+      host.appendChild(card);
+    });
+  }catch(e){document.getElementById('fseq-cards').innerHTML='<div class="card"><span class="note">SD card unavailable</span></div>';}
+}
+
 function updateChanVis(i) {
   const proto=document.getElementById('ch'+i+'-proto').value;
   const isDmx=DMX_P.includes(proto);
@@ -291,6 +334,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
   tab.classList.add('active');
   const panel=document.getElementById('panel-'+tab.dataset.panel);
   if(panel)panel.classList.add('active');
+  if(tab.dataset.panel==='fseq')loadFseqFiles();
 });
 
 // ── API helpers ──────────────────────────────────────────────────────────────
@@ -335,6 +379,7 @@ async function loadConfig(){
     setVal('sc-boot',g.boot_scene??0);
     document.getElementById('sc-active').textContent=
       (d.active_scene??-1)>=0?('#'+(d.active_scene+1)+' '+(d.scenes?.[d.active_scene]?.name||'')):'none';
+    document.getElementById('fseq-active').textContent=d.active_fseq||'none';
     if(d.scenes)for(let i=0;i<8;i++){
       const sc=d.scenes[i];if(!sc)continue;
       setVal('sc'+i+'-name',sc.name);

@@ -35,6 +35,7 @@ add_executable(pixfrog_emu
     src/encoder_host.cpp
     src/config_host.cpp
     src/dmx_host.cpp
+    src/fseq_host.cpp
     src/lcd_host.cpp
     src/web_host.cpp
     src/sacn_host.cpp
@@ -50,6 +51,7 @@ target_include_directories(pixfrog_emu PRIVATE
     ${REPO}/components/ui/include
     ${REPO}/components/config_store/include
     ${REPO}/components/dmx_manager/include
+    ${REPO}/components/fseq_player/include
     ${REPO}/components/lcd_cam_output/include
     ${REPO}/components/led_protocols/include
     ${REPO}/components/web_config/include

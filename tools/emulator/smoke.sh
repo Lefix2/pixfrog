@@ -9,10 +9,10 @@ BIN=${1:-build/pixfrog_emu}
 
 out=$(printf '%s\n' \
     click state \
-    right right right right right right right right right right right right state \
+    right right right right right right right right right right right right right state \
     click state \
     longclick state \
-    left left left left left left left left left left left left \
+    left left left left left left left left left left left left left \
     click click right right right state \
     longclick state \
     longclick longclick state \
@@ -29,7 +29,7 @@ expect() {
 }
 
 expect '"screen":"MainMenu","cursor":0'    # click on HOME opens the menu
-expect '"screen":"MainMenu","cursor":12'   # 12 detents land on About
+expect '"screen":"MainMenu","cursor":13'   # 13 detents land on About
 expect '"screen":"About"'                  # click enters About
 expect '"screen":"EditValue"'              # ArtNet → Net edit
 expect '"screen":"ArtnetMenu"'             # long-press commits the edit

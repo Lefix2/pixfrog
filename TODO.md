@@ -76,7 +76,7 @@ scenes. Remaining candidates:
       priority over network traffic. Triggers: Scenes menu, web tab, UART
       `scene` command, `boot_scene`, ArtTrigger KeyShow (SubKey 1..8 / 0),
       failsafe mode "scene". Validated 12/12 on hardware.
-- [ ] **FSEQ player from microSD** — the xLights ecosystem standard for
+- [x] **FSEQ player from microSD** — the xLights ecosystem standard for
       recorded shows (v2, zstd-compressed frames; played by Falcon/FPP/
       ESPixelStick). Feasible: devkit microSD on GPIO39-44 (no LED-bus
       conflict) and its power rail is the LDO VO4 we already program;

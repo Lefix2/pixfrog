@@ -19,6 +19,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "fseq_player.h"
 #include "lcd_cam_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
@@ -611,6 +612,45 @@ int cmd_scene(int argc, char** argv) {
     return err("usage: scene [play <n> | stop | name <n> <text> | set <n> ...]");
 }
 
+// ── FSEQ player ─────────────────────────────────────────────────────────────
+
+int cmd_fseq(int argc, char** argv) {
+    if (argc == 1) {
+        const char* f = fseq::active_file();
+        printf("status=%s active=%s\n",
+               fseq::status() == fseq::Status::Playing ? "playing" : "idle", f ? f : "none");
+        if (fseq::status() == fseq::Status::Error) printf("error=%s\n", fseq::error_string());
+        // List available files
+        char names[fseq::kMaxFiles][fseq::kMaxNameLen];
+        const size_t n = fseq::list_files(names, fseq::kMaxFiles);
+        for (size_t i = 0; i < n; ++i)
+            printf("file%u=%s\n", static_cast<unsigned>(i), names[i]);
+        return ok();
+    }
+    if (strcmp(argv[1], "play") == 0) {
+        if (argc != 3) return err("usage: fseq play <filename>");
+        if (!fseq::start(argv[2])) {
+            printf("ERR %s\n", fseq::error_string());
+            return 1;
+        }
+        printf("active=%s\n", argv[2]);
+        return ok();
+    }
+    if (strcmp(argv[1], "stop") == 0) {
+        fseq::stop();
+        return ok();
+    }
+    if (strcmp(argv[1], "list") == 0) {
+        char names[fseq::kMaxFiles][fseq::kMaxNameLen];
+        const size_t n = fseq::list_files(names, fseq::kMaxFiles);
+        printf("count=%u\n", static_cast<unsigned>(n));
+        for (size_t i = 0; i < n; ++i)
+            printf("file%u=%s\n", static_cast<unsigned>(i), names[i]);
+        return ok();
+    }
+    return err("usage: fseq [list | play <filename> | stop]");
+}
+
 void register_cmd(const char* name, const char* help, esp_console_cmd_func_t fn) {
     const esp_console_cmd_t cmd = {
         .command        = name,
@@ -654,6 +694,7 @@ void start() {
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
     register_cmd("identify", "identify <ch> [s] — blink a strip white to locate it", cmd_identify);
     register_cmd("scene", "scene [play <n>|stop|name|set] — standalone scenes", cmd_scene);
+    register_cmd("fseq", "fseq [list | play <file> | stop] — FSEQ show player", cmd_fseq);
     register_cmd("cal", "cal [-1|0|1|2|3] — get/set calibration pattern (3 = GPIO bit-bang probe)",
                  cmd_cal);
     register_cmd("loglevel", "loglevel <none..verbose> — set global log level", cmd_loglevel);

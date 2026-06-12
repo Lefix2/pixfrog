@@ -6,6 +6,7 @@ idf_component_register(
         esp_http_server
         config_store
         dmx_manager
+        fseq_player
         led_protocols
         sacn
         ui

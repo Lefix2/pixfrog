@@ -61,6 +61,13 @@ jobs:
           cmake --build build --parallel
           ./build/test_sacn_parser
 
+      - name: fseq_parser (header, offsets, sparse ranges, channel mapping)
+        run: |
+          cd components/fseq_player/test
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ./build/test_fseq_parser
+
   emulator:
     name: UI emulator (SDL2 host build + smoke test)
     runs-on: ubuntu-latest

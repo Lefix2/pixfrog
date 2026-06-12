@@ -15,6 +15,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "fseq_player.h"
 #include "led_protocols.h"
 #include "sacn.h"
 #include "ui.h"
@@ -239,6 +240,8 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddStringToObject(root, "ota_partition", esp_ota_get_running_partition()->label);
     cJSON_AddNumberToObject(root, "active_scene", dmx::active_scene());
     cJSON_AddNumberToObject(root, "identify_channel", dmx::identify_channel());
+    const char* fseq_file = fseq::active_file();
+    cJSON_AddStringToObject(root, "active_fseq", fseq_file ? fseq_file : "");
     cJSON_AddItemToObject(root, "global", build_global_json());
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
@@ -822,6 +825,52 @@ static esp_err_t handle_reboot(httpd_req_t* req) {
 
 // ── POST /api/factory-reset ──────────────────────────────────────────────────
 
+// ── GET /api/fseq/files ──────────────────────────────────────────────────────
+
+static esp_err_t handle_fseq_files(httpd_req_t* req) {
+    char names[fseq::kMaxFiles][fseq::kMaxNameLen];
+    const size_t n = fseq::list_files(names, fseq::kMaxFiles);
+    cJSON* arr     = cJSON_CreateArray();
+    for (size_t i = 0; i < n; ++i)
+        cJSON_AddItemToArray(arr, cJSON_CreateString(names[i]));
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "files", arr);
+    const char* playing = fseq::active_file();
+    cJSON_AddStringToObject(root, "active", playing ? playing : "");
+    return send_json(req, root);
+}
+
+// ── POST /api/fseq/play ──────────────────────────────────────────────────────
+
+static esp_err_t handle_fseq_play(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    char body[fseq::kMaxNameLen + 32];
+    const int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len <= 0) return send_err(req, "Empty body");
+    body[len]   = '\0';
+    cJSON* root = cJSON_Parse(body);
+    if (!root) return send_err(req, "Invalid JSON");
+    cJSON* fn = cJSON_GetObjectItemCaseSensitive(root, "filename");
+    if (!cJSON_IsString(fn) || !fn->valuestring || !fn->valuestring[0]) {
+        cJSON_Delete(root);
+        return send_err(req, "Missing filename");
+    }
+    char filename[fseq::kMaxNameLen];
+    strncpy(filename, fn->valuestring, sizeof(filename) - 1);
+    filename[sizeof(filename) - 1] = '\0';
+    cJSON_Delete(root);
+    if (!fseq::start(filename)) return send_err(req, fseq::error_string());
+    return send_ok(req);
+}
+
+// ── POST /api/fseq/stop ──────────────────────────────────────────────────────
+
+static esp_err_t handle_fseq_stop(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    fseq::stop();
+    return send_ok(req);
+}
+
 static esp_err_t handle_factory_reset(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
     config::reset_to_defaults();
@@ -839,7 +888,7 @@ void start() {
     if (g_server) return;
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 12;
+    cfg.max_uri_handlers = 15;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -884,6 +933,18 @@ void start() {
         { .uri      = "/api/factory-reset",
           .method   = HTTP_POST,
           .handler  = handle_factory_reset,
+          .user_ctx = nullptr },
+        { .uri      = "/api/fseq/files",
+          .method   = HTTP_GET,
+          .handler  = handle_fseq_files,
+          .user_ctx = nullptr },
+        { .uri      = "/api/fseq/play",
+          .method   = HTTP_POST,
+          .handler  = handle_fseq_play,
+          .user_ctx = nullptr },
+        { .uri      = "/api/fseq/stop",
+          .method   = HTTP_POST,
+          .handler  = handle_fseq_stop,
           .user_ctx = nullptr },
     };
     for (const auto& r : routes)

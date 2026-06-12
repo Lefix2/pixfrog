@@ -5,6 +5,7 @@ idf_component_register(
         console
         config_store
         dmx_manager
+        fseq_player
         lcd_cam_output
         ui
         led_protocols

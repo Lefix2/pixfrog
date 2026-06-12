@@ -157,6 +157,13 @@ void scene_start(uint8_t scene_index);  // 0..config::kNumScenes-1
 void scene_stop();
 int active_scene();  // -1 = none
 
+// ── FSEQ playback ────────────────────────────────────────────────────────────
+// fseq_player calls fseq_set_active(true) while a show is running.
+// decode_pixels_for_channel() skips the failsafe check while FSEQ is active
+// so a buffering pause doesn't blackout the output.
+void fseq_set_active(bool active);
+bool fseq_is_active();
+
 // Signal that an ArtSync was received (forces frame emission ASAP).
 void note_sync();
 
