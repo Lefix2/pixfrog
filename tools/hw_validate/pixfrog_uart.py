@@ -118,13 +118,14 @@ def prime_network():
 
 
 def curl(*args, timeout=120):
-    """HTTP helper returning (status_code, body)."""
+    """HTTP helper returning (status_code, body). Binary-safe: bodies are
+    decoded with errors=replace (some endpoints return raw octets)."""
     r = subprocess.run(
         ["curl", "-s", "-m", str(timeout), "-w", "\n%{http_code}", *args],
         capture_output=True,
-        text=True,
     )
-    body, _, code = r.stdout.rpartition("\n")
+    out = r.stdout.decode(errors="replace")
+    body, _, code = out.rpartition("\n")
     return int(code or 0), body
 
 

@@ -297,8 +297,10 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
 }
 
 // ── GET/DELETE /api/coredump ────────────────────────────────────────────────
-// Raw ELF post-mortem from the coredump partition. 404 when no crash is
-// stored (or the partition is absent — pre-coredump tables in the field).
+// Raw core-dump image from the coredump partition (24-byte esp_core_dump
+// header + ELF) — exactly the input `espcoredump.py info_corefile --core
+// <file> --core-format raw build/pixfrog.elf` expects. 404 when no crash
+// is stored (or the partition is absent — pre-coredump tables in the field).
 
 static esp_err_t handle_coredump_get(httpd_req_t* req) {
     size_t addr = 0, size = 0;
@@ -312,7 +314,7 @@ static esp_err_t handle_coredump_get(httpd_req_t* req) {
     if (!part) return send_err(req, 500, "no coredump partition");
 
     httpd_resp_set_type(req, "application/octet-stream");
-    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-coredump.elf\"");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-coredump.bin\"");
     static char buf[4096];  // httpd stack is small; one download at a time
     size_t off       = addr - part->address;
     size_t remaining = size;

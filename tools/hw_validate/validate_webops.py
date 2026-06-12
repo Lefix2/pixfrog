@@ -55,17 +55,24 @@ def run(board: Board):
     c.check("link back after crash", board.wait_link())
     prime_network()
 
-    r = subprocess.run(
-        ["curl", "-s", "-m", "30", "-o", "/tmp/pixfrog-core.elf", "-w", "%{http_code}",
-         f"http://{BOARD_IP}/api/coredump"],
-        capture_output=True, text=True)
-    c.check("GET /api/coredump is 200 after crash", r.stdout.strip() == "200")
-    elf_ok = False
-    if os.path.exists("/tmp/pixfrog-core.elf"):
-        with open("/tmp/pixfrog-core.elf", "rb") as f:
-            magic = f.read(4)
-        elf_ok = magic == b"\x7fELF" and os.path.getsize("/tmp/pixfrog-core.elf") > 4096
-    c.check("download is a real ELF (> 4 KB)", elf_ok)
+    code = ""
+    for _ in range(3):  # first HTTP hit after the panic-reboot can be flaky
+        r = subprocess.run(
+            ["curl", "-s", "-m", "30", "-o", "/tmp/pixfrog-core.bin", "-w", "%{http_code}",
+             f"http://{BOARD_IP}/api/coredump"],
+            capture_output=True, text=True)
+        code = r.stdout.strip()
+        if code == "200":
+            break
+        time.sleep(2)
+    c.check("GET /api/coredump is 200 after crash", code == "200")
+    # Raw image = 24-byte esp_core_dump header, then the ELF.
+    dump_ok = False
+    if os.path.exists("/tmp/pixfrog-core.bin"):
+        with open("/tmp/pixfrog-core.bin", "rb") as f:
+            head = f.read(64)
+        dump_ok = b"\x7fELF" in head and os.path.getsize("/tmp/pixfrog-core.bin") > 4096
+    c.check("download is a core image with embedded ELF (> 4 KB)", dump_ok)
 
     code, body = http("/api/coredump", "-X", "DELETE")
     c.check("DELETE /api/coredump is 200", code == 200 and '"ok":true' in body)
