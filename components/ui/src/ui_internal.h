@@ -37,13 +37,12 @@ constexpr Color DarkGray{ 0x39E7 };
 constexpr Color LightGray{ 0xC618 };
 constexpr Color DarkBlue{ 0x000F };
 constexpr Color HeaderBg{ 0x1083 };     // near-black header bar (#14121a)
-constexpr Color HeaderLine{ 0x2928 };   // faint accent line under header
 constexpr Color FrogBg{ 0x0842 };       // splash backdrop — near-black (#0c0a14)
 constexpr Color FrogLine{ 0x7691 };     // splash frog ink — spring green (#70d18b)
 constexpr Color Cream{ 0xF77B };        // splash / label text — warm white (#f4eedc)
 constexpr Color SplashSub{ 0x8C14 };    // splash subtitle — muted blue-grey (#8a83a0)
 constexpr Color Gold{ 0xFE2C };         // value text — warm gold (#f8c662)
-constexpr Color CursorBg{ 0x3963 };     // warm dark amber cursor highlight (#3a2f1c)
+constexpr Color CursorBg{ 0x1A45 };     // dark spring-green cursor highlight (#1b4a2d)
 constexpr Color BadgeGreen{ 0x7691 };   // channel badge — NRZ strips (#70d18b)
 constexpr Color BadgePurple{ 0xACDC };  // channel badge — clocked SPI (#a89be0)
 constexpr Color AltRowBg{ 0x18C3 };     // slightly lighter dark for alternating rows
@@ -71,6 +70,9 @@ void canvas_fill_rect(int x, int y, int w, int h, Color c);
 void canvas_hline(int x, int y, int w, Color c);
 void canvas_vline(int x, int y, int h, Color c);
 void canvas_fill_round_rect(int x, int y, int w, int h, int r, Color c);
+// Anti-aliased variant (w == h == 2r gives a circle): edge pixels are blended
+// toward `bg`, the colour already behind the shape. TFT backend only.
+void canvas_fill_round_rect_aa(int x, int y, int w, int h, int r, Color fg, Color bg);
 // mask: 1bpp MSB-first data; bg.v==0xFFFF means transparent (TFT only).
 void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
                       Color bg = color::Black);
