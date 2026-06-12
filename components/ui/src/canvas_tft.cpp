@@ -2,6 +2,7 @@
 #include "ui_internal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace pixfrog::ui::detail {
@@ -132,6 +133,42 @@ void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
             tft_draw_bitmap(x + col_start, py, x + col_end, py + 1, s_row_buf);
         }
     }
+}
+
+// Forward declaration (defined below, shared with the AA shape fill).
+inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a);
+
+// Anti-aliased rounded rectangle (w == h == 2r gives a circle). Edge pixels
+// are blended toward `bg` — the colour already behind the shape — because the
+// panel cannot be read back. Renders the whole block through s_text_buf, so
+// it must be issued before any text that lands on top of it.
+void canvas_fill_round_rect_aa(int x, int y, int w, int h, int r, Color fg, Color bg) {
+    if (w <= 0 || h <= 0) return;
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
+    if (w * h > static_cast<int>(sizeof(s_text_buf) / sizeof(s_text_buf[0]))) {
+        canvas_fill_round_rect(x, y, w, h, r, fg);
+        return;
+    }
+    const float half_w = w * 0.5f, half_h = h * 0.5f, rr = static_cast<float>(r);
+    for (int py = 0; py < h; ++py) {
+        const float qy = std::fabs(py + 0.5f - half_h) - (half_h - rr);
+        for (int px = 0; px < w; ++px) {
+            // Signed distance to the rounded box, sampled at the pixel centre;
+            // coverage ramps over the one-pixel band around the contour.
+            const float qx    = std::fabs(px + 0.5f - half_w) - (half_w - rr);
+            const float ax    = qx > 0.0f ? qx : 0.0f;
+            const float ay    = qy > 0.0f ? qy : 0.0f;
+            const float inner = qx > qy ? qx : qy;
+            const float dist  = std::sqrt(ax * ax + ay * ay) + (inner < 0.0f ? inner : 0.0f) - rr;
+            float cov         = 0.5f - dist;
+            if (cov < 0.0f) cov = 0.0f;
+            if (cov > 1.0f) cov = 1.0f;
+            const uint8_t a         = static_cast<uint8_t>(cov * 255.0f + 0.5f);
+            s_text_buf[py * w + px] = __builtin_bswap16(blend565(fg.v, bg.v, a));
+        }
+    }
+    tft_draw_bitmap(x, y, x + w, y + h, s_text_buf);
 }
 
 // Blend fg over bg by 8-bit coverage in RGB565 channel space.

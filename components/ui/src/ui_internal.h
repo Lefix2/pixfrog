@@ -70,6 +70,9 @@ void canvas_fill_rect(int x, int y, int w, int h, Color c);
 void canvas_hline(int x, int y, int w, Color c);
 void canvas_vline(int x, int y, int h, Color c);
 void canvas_fill_round_rect(int x, int y, int w, int h, int r, Color c);
+// Anti-aliased variant (w == h == 2r gives a circle): edge pixels are blended
+// toward `bg`, the colour already behind the shape. TFT backend only.
+void canvas_fill_round_rect_aa(int x, int y, int w, int h, int r, Color fg, Color bg);
 // mask: 1bpp MSB-first data; bg.v==0xFFFF means transparent (TFT only).
 void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
                       Color bg = color::Black);

@@ -62,12 +62,29 @@ void draw_tft_header(const char* title, Color title_col = color::Cream) {
     canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, title_col, color::HeaderBg, kTxtSc);
 }
 
-// Small-font status pill; returns the x just past it (+ gap).
-int draw_pill(int x, int y, const char* txt, Color bg, Color fg) {
-    const int w = static_cast<int>(std::strlen(txt)) * kFontCellWidth + 10;
-    canvas_fill_round_rect(x, y, w, 14, 4, bg);
-    canvas_draw_text(x + 5, y + 3, txt, fg, bg, 1);
+// Small-font status capsule over a solid backdrop; returns the x past it.
+constexpr int kPillH = 14;
+
+int pill_width(const char* txt) {
+    return static_cast<int>(std::strlen(txt)) * kFontCellWidth + 12;
+}
+
+int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
+    const int w = pill_width(txt);
+    canvas_fill_round_rect_aa(x, y, w, kPillH, kPillH / 2, bg, behind);
+    // Small-font caps ink spans rows 0..5 of the 8px cell: +4 centres it.
+    canvas_draw_text(x + 6, y + 4, txt, fg, bg, 1);
     return x + w + 6;
+}
+
+// Channel-number badge: AA rounded square with the digit's ink optically
+// centred (large-cell digits ink: cols 1..8 → centre ≈4.75, rows 0..12 →
+// centre 6 of the 12×16 cell).
+void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col, Color behind) {
+    canvas_fill_round_rect_aa(x, y, side, side, 4, badge_col, behind);
+    char num[8];
+    std::snprintf(num, sizeof(num), "%d", number);
+    canvas_draw_text(x + side / 2 - 5, y + side / 2 - 6, num, num_col, badge_col, kTxtSc);
 }
 
 // Right-aligned standard-scale text; returns the x where the text starts.
@@ -348,20 +365,18 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 
         if (sel) {
             // Rounded highlight with a signature-green bar on the left edge.
-            canvas_fill_round_rect(3, ry + 1, kTW - 6, kItemH - 2, 6, color::CursorBg);
-            canvas_fill_round_rect(3, ry + 3, 4, kItemH - 6, 2, color::FrogLine);
+            canvas_fill_round_rect_aa(3, ry + 1, kTW - 6, kItemH - 2, 6, color::CursorBg,
+                                      color::Black);
+            canvas_fill_round_rect_aa(5, ry + 4, 4, kItemH - 8, 2, color::FrogLine,
+                                      color::CursorBg);
         }
 
         // Left gutter: numbered channel badge when present. A grey badge marks
         // a disabled channel — lighten the digit so it stays readable.
         if (it.badge >= 0) {
-            canvas_fill_round_rect(5, ry + 3, kBadge, kBadge, 4, it.badge_col);
-            char num[8];
-            std::snprintf(num, sizeof(num), "%d", it.badge + 1);
-            const int nx        = 5 + (kBadge - kFontCellWidth * kTxtSc) / 2;
             const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
                                                                     : color::Black;
-            canvas_draw_text(nx, ry + kPad, num, num_col, it.badge_col, kTxtSc);
+            draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, text_bg);
         }
 
         canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
@@ -442,7 +457,8 @@ void render_home() {
                      kTxtSc);
     const int after_mark = kIndent + 7 * kFontCellWidth * kTxtSc + 8;
     if (!config::is_persistence_ok()) {
-        draw_pill(after_mark, (kHdrH - 2 - 14) / 2, "NVS!", color::Red, color::Black);
+        draw_pill(after_mark, (kHdrH - 2 - kPillH) / 2, "NVS!", color::Red, color::Black,
+                  color::HeaderBg);
     } else {
         char ver[13];
         truncate(ver, sizeof(ver), fw_version());
@@ -452,11 +468,13 @@ void render_home() {
     }
     int hx = kTW - kIndent;
     if (ui::is_link_up()) {
-        hx -= static_cast<int>(std::strlen("LINK")) * kFontCellWidth + 10;
-        draw_pill(hx, (kHdrH - 2 - 14) / 2, "LINK", color::BadgeGreen, color::Black);
+        hx -= pill_width("LINK");
+        draw_pill(hx, (kHdrH - 2 - kPillH) / 2, "LINK", color::BadgeGreen, color::Black,
+                  color::HeaderBg);
     } else {
-        hx -= static_cast<int>(std::strlen("NO LINK")) * kFontCellWidth + 10;
-        draw_pill(hx, (kHdrH - 2 - 14) / 2, "NO LINK", color::Red, color::Black);
+        hx -= pill_width("NO LINK");
+        draw_pill(hx, (kHdrH - 2 - kPillH) / 2, "NO LINK", color::Red, color::Black,
+                  color::HeaderBg);
     }
     std::snprintf(line, sizeof(line), "%lufps", static_cast<unsigned long>(stats.current_fps));
     draw_text_r(hx - 8, (kHdrH - kTxtH) / 2, line, color::Gold, color::HeaderBg);
@@ -488,13 +506,13 @@ void render_home() {
     // ── Services row: opt-in listeners + the live playback source ───────────
     ry           += kInfoH;
     int px        = kIndent;
-    const int py  = ry + (kSvcH - 14) / 2;
+    const int py  = ry + (kSvcH - kPillH) / 2;
     px            = draw_pill(px, py, "sACN", g.sacn_enabled ? color::BadgeGreen : color::HeaderBg,
-                   g.sacn_enabled ? color::Black : color::DarkGray);
+                   g.sacn_enabled ? color::Black : color::DarkGray, color::Black);
     px            = draw_pill(px, py, "WEB", g.web_enabled ? color::BadgeGreen : color::HeaderBg,
-                   g.web_enabled ? color::Black : color::DarkGray);
+                   g.web_enabled ? color::Black : color::DarkGray, color::Black);
     std::snprintf(line, sizeof(line), "%uHz", g.refresh_rate_hz);
-    draw_pill(px, py, line, color::HeaderBg, color::DarkGray);
+    draw_pill(px, py, line, color::HeaderBg, color::DarkGray, color::Black);
     const int scene = dmx::active_scene();
     if (output::get_calibration_mode() >= 0) {
         draw_text_r(kTW - kIndent, ry, "TEST PATTERN", color::Orange, color::Black);
@@ -530,10 +548,8 @@ void render_home() {
         const int ty   = cy + (kChH - kTxtH) / 2;
 
         // Numbered badge, colour-coded by wiring family (grey when disabled).
-        canvas_fill_round_rect(kColBadge, cy + 1, kChH - 3, kChH - 3, 4, badge_color(cc.protocol));
-        std::snprintf(line, sizeof(line), "%d", i + 1);
-        canvas_draw_text(kColBadge + (kChH - 3 - kFontCellWidth * kTxtSc) / 2 + 1, ty, line,
-                         off ? color::LightGray : color::Black, badge_color(cc.protocol), kTxtSc);
+        draw_badge(kColBadge, cy + 1, kChH - 3, i + 1, badge_color(cc.protocol),
+                   off ? color::LightGray : color::Black, row_bg);
 
         canvas_draw_text(kColProto, ty, protocol_name(cc.protocol),
                          off ? color::DarkGray : color::Cream, row_bg, kTxtSc);
@@ -558,7 +574,8 @@ void render_home() {
                             : fsafe                     ? color::Orange
                             : dmx::is_channel_active(i) ? color::FrogLine
                                                         : color::DarkGray;
-        canvas_fill_round_rect(kColDot, cy + (kChH - kDotD) / 2, kDotD, kDotD, kDotD / 2, act_col);
+        canvas_fill_round_rect_aa(kColDot, cy + (kChH - kDotD) / 2, kDotD, kDotD, kDotD / 2,
+                                  act_col, row_bg);
     }
 #else
     // ── OLED classic home ─────────────────────────────────────────────────────
