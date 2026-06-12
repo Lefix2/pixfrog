@@ -541,6 +541,17 @@ int cmd_reboot(int, char**) {
     return 0;
 }
 
+// Deliberate panic so the flash-coredump path can be exercised end to end
+// (UART-only: physical access is the trust boundary, same as web_password).
+int cmd_crash(int argc, char** argv) {
+    if (argc != 2 || strcmp(argv[1], "confirm") != 0)
+        return err("usage: crash confirm — abort() to test the coredump");
+    printf("OK\n");
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    abort();
+}
+
 // ── channel identify ────────────────────────────────────────────────────────
 
 int cmd_identify(int argc, char** argv) {
@@ -714,12 +725,14 @@ void start() {
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
     register_cmd("identify", "identify <ch> [s] — blink a strip white to locate it", cmd_identify);
     register_cmd("scene", "scene [play <n>|stop|name|set] — standalone scenes", cmd_scene);
-    register_cmd("fseq", "fseq [list | play <file> | stop] — FSEQ show player", cmd_fseq);
+    register_cmd("fseq", "fseq [list | play <file> | stop | seek <ms>] — FSEQ show player",
+                 cmd_fseq);
     register_cmd("cal", "cal [-1|0|1|2|3] — get/set calibration pattern (3 = GPIO bit-bang probe)",
                  cmd_cal);
     register_cmd("loglevel", "loglevel <none..verbose> — set global log level", cmd_loglevel);
     register_cmd("factory-reset", "Restore default config (no reboot)", cmd_factory_reset);
     register_cmd("reboot", "Restart the device", cmd_reboot);
+    register_cmd("crash", "crash confirm — deliberate abort() to test the coredump", cmd_crash);
 
     if (esp_console_start_repl(repl) != ESP_OK) {
         ESP_LOGE(TAG, "REPL start failed");
