@@ -15,6 +15,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "fpp_sync.h"
 #include "fseq_player.h"
 #include "led_output.h"
 #include "led_protocols.h"
@@ -129,6 +130,7 @@ enum class Field : uint8_t {
     ArtnetSubnet,
     ArtnetReplyUnicast,
     ArtnetSacn,
+    ArtnetFpp,
     ArtnetFailsafeMode,
     ArtnetFailsafeTimeout,
     GlobalRefresh,
@@ -997,6 +999,16 @@ void commit_edit() {
             sacn::stop();
         break;
     }
+    case Field::ArtnetFpp: {
+        auto g       = config::get_global();
+        g.fpp_remote = (v != 0);
+        config::set_global(g);
+        if (g.fpp_remote)
+            fpp::start();
+        else
+            fpp::stop();
+        break;
+    }
     case Field::GlobalRefresh: {
         auto g            = config::get_global();
         g.refresh_rate_hz = static_cast<uint8_t>(v);
@@ -1331,7 +1343,7 @@ void dispatch_edit_ip(Event e) {
 // ── ARTNET MENU ─────────────────────────────────────────────────────────────
 
 void render_artnet_menu() {
-    char vnet[8], vsub[8], vrefresh[8], vunicast[8], vsacn[8], vfsm[8], vfst[8];
+    char vnet[8], vsub[8], vrefresh[8], vunicast[8], vsacn[8], vfpp[8], vfsm[8], vfst[8];
     char vshort[14], vlong[14];
     const auto& g = config::get_global();
     std::snprintf(vnet, sizeof(vnet), "%u", g.artnet_net);
@@ -1339,21 +1351,22 @@ void render_artnet_menu() {
     std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
     std::snprintf(vunicast, sizeof(vunicast), "%s", g.artnet_poll_reply_unicast ? "ON" : "OFF");
     std::snprintf(vsacn, sizeof(vsacn), "%s", g.sacn_enabled ? "ON" : "OFF");
+    std::snprintf(vfpp, sizeof(vfpp), "%s", g.fpp_remote ? "ON" : "OFF");
     std::snprintf(vfsm, sizeof(vfsm), "%s", failsafe_name(g.failsafe_mode));
     std::snprintf(vfst, sizeof(vfst), "%us", g.failsafe_timeout_s);
     truncate(vshort, sizeof(vshort), g.short_name);
     truncate(vlong, sizeof(vlong), g.long_name);
 
-    ListItem items[10] = {
+    ListItem items[11] = {
         { "Net", vnet },         { "Sub", vsub },         { "Short", vshort }, { "Long", vlong },
-        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },   { "FSafe", vfsm },
-        { "FSafeS", vfst },      { "[Back]", "" },
+        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },   { "FPP", vfpp },
+        { "FSafe", vfsm },       { "FSafeS", vfst },      { "[Back]", "" },
     };
-    render_list("ARTNET", items, 10, s.cursor);
+    render_list("ARTNET", items, 11, s.cursor);
 }
 
 void dispatch_artnet_menu(Event e) {
-    constexpr uint8_t kCount = 10;
+    constexpr uint8_t kCount = 11;
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1) s.cursor++;
     if (e != Event::Click) return;
@@ -1389,14 +1402,18 @@ void dispatch_artnet_menu(Event e) {
                    Screen::ArtnetMenu);
         break;
     case 7:
+        enter_edit(Field::ArtnetFpp, ValueKind::Bool, g.fpp_remote ? 1 : 0, 0, 1, 1, "FPP",
+                   Screen::ArtnetMenu);
+        break;
+    case 8:
         enter_edit(Field::ArtnetFailsafeMode, ValueKind::Failsafe, g.failsafe_mode, 0, 3, 1,
                    "FSafe", Screen::ArtnetMenu);
         break;
-    case 8:
+    case 9:
         enter_edit(Field::ArtnetFailsafeTimeout, ValueKind::Int, g.failsafe_timeout_s, 0, 3600, 1,
                    "FSafeS", Screen::ArtnetMenu);
         break;
-    case 9:
+    case 10:
         s.screen = Screen::MainMenu;
         s.cursor = 0;
         break;

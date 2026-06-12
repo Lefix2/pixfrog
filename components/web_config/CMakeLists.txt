@@ -6,14 +6,18 @@ idf_component_register(
         esp_http_server
         config_store
         dmx_manager
+        fpp_sync
         fseq_player
         led_protocols
         sacn
         ui
         esp_system
+        esp_timer
         esp_app_format
         app_update
         mbedtls
         json
+        espcoredump
+        esp_partition
         freertos
 )

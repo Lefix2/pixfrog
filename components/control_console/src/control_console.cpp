@@ -19,6 +19,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "fpp_sync.h"
 #include "fseq_player.h"
 #include "led_output.h"
 #include "led_protocols.h"
@@ -217,6 +218,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("home_timeout_s=%u\n", g.home_timeout_s);
     printf("web_enabled=%d\n", g.web_enabled ? 1 : 0);
     printf("sacn_enabled=%d\n", g.sacn_enabled ? 1 : 0);
+    printf("fpp_remote=%d\n", g.fpp_remote ? 1 : 0);
     printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
     static const char* const kFailsafeNames[] = { "hold", "blackout", "color", "scene" };
     printf("failsafe_mode=%s\n", kFailsafeNames[g.failsafe_mode <= 3 ? g.failsafe_mode : 0]);
@@ -274,6 +276,8 @@ int cmd_global(int argc, char** argv) {
         if (!parse_bool(val, g.web_enabled)) return err("web_enabled: 0|1");
     } else if (strcmp(key, "sacn_enabled") == 0) {
         if (!parse_bool(val, g.sacn_enabled)) return err("sacn_enabled: 0|1");
+    } else if (strcmp(key, "fpp_remote") == 0) {
+        if (!parse_bool(val, g.fpp_remote)) return err("fpp_remote: 0|1");
     } else if (strcmp(key, "failsafe_mode") == 0) {
         static const char* const kFailsafeNames[] = { "hold", "blackout", "color", "scene" };
         const int m                               = lookup_name(kFailsafeNames, 4, val);
@@ -308,7 +312,7 @@ int cmd_global(int argc, char** argv) {
         return ok();
     } else {
         return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
-                   "refresh_hz home_timeout_s web_enabled sacn_enabled web_password "
+                   "refresh_hz home_timeout_s web_enabled sacn_enabled fpp_remote web_password "
                    "failsafe_mode failsafe_timeout_s failsafe_color failsafe_scene boot_scene "
                    "merge_mode)");
     }
@@ -330,6 +334,12 @@ int cmd_global(int argc, char** argv) {
             sacn::start();
         else
             sacn::stop();
+    }
+    if (strcmp(key, "fpp_remote") == 0) {
+        if (g.fpp_remote)
+            fpp::start();
+        else
+            fpp::stop();
     }
 
     return ok();
@@ -531,6 +541,17 @@ int cmd_reboot(int, char**) {
     return 0;
 }
 
+// Deliberate panic so the flash-coredump path can be exercised end to end
+// (UART-only: physical access is the trust boundary, same as web_password).
+int cmd_crash(int argc, char** argv) {
+    if (argc != 2 || strcmp(argv[1], "confirm") != 0)
+        return err("usage: crash confirm — abort() to test the coredump");
+    printf("OK\n");
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    abort();
+}
+
 // ── channel identify ────────────────────────────────────────────────────────
 
 int cmd_identify(int argc, char** argv) {
@@ -619,6 +640,9 @@ int cmd_fseq(int argc, char** argv) {
         const char* f = fseq::active_file();
         printf("status=%s active=%s\n",
                fseq::status() == fseq::Status::Playing ? "playing" : "idle", f ? f : "none");
+        if (fseq::status() == fseq::Status::Playing)
+            printf("position_ms=%u\nduration_ms=%u\n", static_cast<unsigned>(fseq::position_ms()),
+                   static_cast<unsigned>(fseq::duration_ms()));
         if (fseq::status() == fseq::Status::Error) printf("error=%s\n", fseq::error_string());
         // List available files
         char names[fseq::kMaxFiles][fseq::kMaxNameLen];
@@ -640,6 +664,13 @@ int cmd_fseq(int argc, char** argv) {
         fseq::stop();
         return ok();
     }
+    if (strcmp(argv[1], "seek") == 0) {
+        uint32_t ms = 0;
+        if (argc != 3 || !parse_u32(argv[2], ms)) return err("usage: fseq seek <ms>");
+        if (!fseq::seek_ms(ms)) return err("nothing playing");
+        printf("position_ms=%u\n", static_cast<unsigned>(ms));
+        return ok();
+    }
     if (strcmp(argv[1], "list") == 0) {
         char names[fseq::kMaxFiles][fseq::kMaxNameLen];
         const size_t n = fseq::list_files(names, fseq::kMaxFiles);
@@ -648,7 +679,7 @@ int cmd_fseq(int argc, char** argv) {
             printf("file%u=%s\n", static_cast<unsigned>(i), names[i]);
         return ok();
     }
-    return err("usage: fseq [list | play <filename> | stop]");
+    return err("usage: fseq [list | play <filename> | stop | seek <ms>]");
 }
 
 void register_cmd(const char* name, const char* help, esp_console_cmd_func_t fn) {
@@ -694,12 +725,14 @@ void start() {
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
     register_cmd("identify", "identify <ch> [s] — blink a strip white to locate it", cmd_identify);
     register_cmd("scene", "scene [play <n>|stop|name|set] — standalone scenes", cmd_scene);
-    register_cmd("fseq", "fseq [list | play <file> | stop] — FSEQ show player", cmd_fseq);
+    register_cmd("fseq", "fseq [list | play <file> | stop | seek <ms>] — FSEQ show player",
+                 cmd_fseq);
     register_cmd("cal", "cal [-1|0|1|2|3] — get/set calibration pattern (3 = GPIO bit-bang probe)",
                  cmd_cal);
     register_cmd("loglevel", "loglevel <none..verbose> — set global log level", cmd_loglevel);
     register_cmd("factory-reset", "Restore default config (no reboot)", cmd_factory_reset);
     register_cmd("reboot", "Restart the device", cmd_reboot);
+    register_cmd("crash", "crash confirm — deliberate abort() to test the coredump", cmd_crash);
 
     if (esp_console_start_repl(repl) != ESP_OK) {
         ESP_LOGE(TAG, "REPL start failed");

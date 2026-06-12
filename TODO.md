@@ -27,6 +27,21 @@ picks are marked ★.
       UART `global merge_mode`, or the web API; reported in ArtPollReply
       GoodOutputA bits 1+3 and `chstat merge=`. sACN priority takeover
       resets the universe's merge so an outranked source can't blend in.
+- [x] **ArtTimeCode → FSEQ sync** — `fseq::seek_ms/position_ms/duration_ms`
+      (atomic seek consumed at frame boundaries, pacing clock re-anchored);
+      the ArtTimeCode handler slaves a *running* playback to the desk clock,
+      re-seeking only beyond 100 ms drift. Never auto-starts playback.
+      `fseq seek <ms>` on the console for manual control.
+- [x] **FPP MultiSync remote** — `components/fpp_sync`, opt-in via
+      `fpp_remote` (console/web/menu, zero-fill default off). UDP 32320 +
+      multicast 239.70.80.80: master START/STOP/SYNC drive the local FSEQ
+      player; SYNC hot-joins a show already running on the master and
+      corrects drift > 100 ms. Wire parser host-tested.
+- [x] **.fseq upload over the web** — `POST /api/fseq/upload?name=` streams
+      the body to the SD card (.part + rename, never a truncated .fseq
+      visible), SPA upload card with progress bar. hw_validate
+      `validate_fseq.py` uploads its own test sequence, so the suite only
+      needs an empty FAT card.
 - [x] **Failsafe on signal loss** — global mode (hold / blackout / solid
       colour) + timeout (0 = off), triggered per channel from its activity
       timestamp; never-active channels stay dark; sACN stream_terminated
@@ -39,11 +54,12 @@ picks are marked ★.
 
 Handled: `ArtDmx`, `ArtPoll`, `ArtPollReply` (emitted), `ArtSync`,
 `ArtAddress` (names/net/subnet/SwOut applied + reply), `ArtIpProg` (+ reply;
-reboot applies). Validated + counted in `stats artnet_ctrl_rx` but not yet
-consumed: `ArtNzs` (payload not routed — alternate-start-code storage and
-DMX512 encoder interleaving needed), `ArtCommand`, `ArtTimeCode`.
-`ArtTrigger` is now consumed: global KeyShow plays/stops the standalone
-scenes. Remaining candidates:
+reboot applies), `ArtTrigger` (global KeyShow plays/stops the standalone
+scenes), `ArtTimeCode` (slaves a running FSEQ playback to the desk clock,
+100 ms drift tolerance). Validated + counted in `stats artnet_ctrl_rx` but
+not yet consumed: `ArtNzs` (payload not routed — alternate-start-code
+storage and DMX512 encoder interleaving needed), `ArtCommand`.
+Remaining candidates:
 
 | Opcode | Value | What it brings |
 |---|---|---|
@@ -71,6 +87,18 @@ scenes. Remaining candidates:
 - [x] **Config export/import** — `GET /api/backup` (download, no password
       hash) / `POST /api/restore` (best-effort apply: global + channels +
       scenes), Backup card in the web UI. Round-trip validated on hardware.
+- [x] **Live status in the web UI** — `GET /api/status` (heap, fps, uptime,
+      rx counters, per-channel active/failsafe, scene + FSEQ position),
+      polled every 3 s by the SPA: header live line, green/orange dots on
+      the channel tabs, FSEQ progress.
+- [x] **Coredump in flash** — 64 KB `coredump` partition appended after
+      ota_1 (ONE USB reflash of the partition table; field tables without
+      it keep working, dumps just aren't stored),
+      `ESP_COREDUMP_ENABLE_TO_FLASH` (ELF), `GET /api/coredump` downloads,
+      `DELETE /api/coredump` erases (auth), Crash dump card in the SPA.
+- [x] **mDNS `pixfrog.local`** — espressif/mdns managed component,
+      advertised (`_http._tcp` + hostname) only while `web_enabled`; no
+      extra opt-in flag. Instance name = ArtNet short name.
 - [x] **Standalone scenes** — 8 parametric slots (solid / chase / rainbow,
       colour, speed, param, per-channel mask) persisted in NVS. Manual-stop
       priority over network traffic. Triggers: Scenes menu, web tab, UART

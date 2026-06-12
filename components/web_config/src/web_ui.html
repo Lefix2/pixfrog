@@ -24,6 +24,8 @@ button.sec:hover{background:#1a4a8a}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .tab{background:#0f3460;border:1px solid #4a4a7a;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px}
 .tab.active{background:#e94560;border-color:#e94560;color:#fff}
+.tab.act::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#0f0;margin-left:5px;vertical-align:middle}
+.tab.fsafe::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#fa0;margin-left:5px;vertical-align:middle}
 .panel{display:none}.panel.active{display:block}
 #header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
 #link-dot{width:10px;height:10px;border-radius:50%;background:#f55;flex-shrink:0}
@@ -36,6 +38,8 @@ button.sec:hover{background:#1a4a8a}
   <h1>&#128438; pixfrog</h1>
   <div id="link-dot" title="Ethernet link"></div>
   <span id="fps-label">--fps</span>
+  <span id="heap-label" style="color:#888;font-size:12px" title="free heap"></span>
+  <span id="live-label" style="color:#888;font-size:12px"></span>
   <span id="ver-label" style="color:#666;font-size:12px;margin-left:auto"></span>
 </div>
 
@@ -106,6 +110,14 @@ button.sec:hover{background:#1a4a8a}
     <div class="status" id="st-ota"></div>
   </div>
   <div class="card">
+    <h2>Crash dump</h2>
+    <a class="sec" href="/api/coredump" download="pixfrog-coredump.bin"
+       style="display:inline-block;background:#0f3460;border:1px solid #4a4a7a;border-radius:4px;color:#e0e0e0;font:13px monospace;padding:6px 18px;text-decoration:none">Download</a>
+    <button class="sec" onclick="coredumpDelete()" style="margin-left:8px">Delete</button>
+    <span class="note">404 = no crash stored</span>
+    <div class="status" id="st-coredump"></div>
+  </div>
+  <div class="card">
     <button class="sec" onclick="factoryReset()">Factory reset</button>
     <button class="sec" onclick="reboot()" style="margin-left:8px">Reboot</button>
     <div class="status" id="st-sys"></div>
@@ -136,6 +148,9 @@ button.sec:hover{background:#1a4a8a}
     <div class="row"><label>sACN (E1.31)</label><input id="a-sacn" type="checkbox">
       <span class="note">also listen on UDP 5568</span>
     </div>
+    <div class="row"><label>FPP MultiSync</label><input id="a-fpp" type="checkbox">
+      <span class="note">follow an FPP/xSchedule master (UDP 32320) for FSEQ playback</span>
+    </div>
     <div class="row"><label>Failsafe</label>
       <select id="a-fsmode"><option value="0">Hold last look</option><option value="1">Blackout</option><option value="2">Solid colour</option><option value="3">Scene</option></select>
     </div>
@@ -148,7 +163,7 @@ button.sec:hover{background:#1a4a8a}
       <select id="a-fsscene"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select>
       <span class="note">used when mode = Scene</span>
     </div>
-    <button onclick="saveGlobal(['net','subnet','short_name','long_name','reply_unicast','sacn_enabled','failsafe_mode','failsafe_timeout_s','failsafe_color','failsafe_scene'])">Save</button>
+    <button onclick="saveGlobal(['net','subnet','short_name','long_name','reply_unicast','sacn_enabled','fpp_remote','failsafe_mode','failsafe_timeout_s','failsafe_color','failsafe_scene'])">Save</button>
     <div class="status" id="st-artnet"></div>
   </div>
 </div>
@@ -175,6 +190,17 @@ button.sec:hover{background:#1a4a8a}
       <button class="sec" onclick="fseqStop()" style="margin-top:0">Stop</button>
     </div>
     <div class="status" id="st-fseq"></div>
+  </div>
+  <div class="card">
+    <div class="row"><label>Upload (.fseq)</label><input id="fseq-file" type="file" accept=".fseq"></div>
+    <div class="row" id="fseq-prog-row" style="display:none"><label>Progress</label>
+      <div style="flex:1;background:#0f3460;border-radius:4px;height:14px;overflow:hidden">
+        <div id="fseq-bar" style="background:#e94560;height:100%;width:0%"></div>
+      </div>
+      <span id="fseq-pct" class="note">0%</span>
+    </div>
+    <button onclick="fseqUpload()">Upload to SD card</button>
+    <div class="status" id="st-fseq-up"></div>
   </div>
   <div id="fseq-cards"></div>
 </div>
@@ -372,6 +398,7 @@ async function loadConfig(){
     setVal('a-long',g.long_name);
     setChk('a-unicast',g.reply_unicast);
     setChk('a-sacn',g.sacn_enabled);
+    setChk('a-fpp',g.fpp_remote);
     setVal('a-fsmode',g.failsafe_mode??0);
     setVal('a-fstimeout',g.failsafe_timeout_s??0);
     setVal('a-fscolor',g.failsafe_color||'#000000');
@@ -430,6 +457,7 @@ const FIELD_MAP={
   'long_name':()=>document.getElementById('a-long').value,
   'reply_unicast':()=>document.getElementById('a-unicast').checked?1:0,
   'sacn_enabled':()=>document.getElementById('a-sacn').checked?1:0,
+  'fpp_remote':()=>document.getElementById('a-fpp').checked?1:0,
   'failsafe_mode':()=>parseInt(document.getElementById('a-fsmode').value),
   'failsafe_timeout_s':()=>parseInt(document.getElementById('a-fstimeout').value),
   'failsafe_color':()=>document.getElementById('a-fscolor').value,
@@ -442,7 +470,7 @@ const FIELD_MAP={
 
 const STATUS_MAP={
   'dhcp':'st-network','ip':'st-network','mask':'st-network','gw':'st-network',
-  'net':'st-artnet','subnet':'st-artnet','short_name':'st-artnet','long_name':'st-artnet','reply_unicast':'st-artnet','sacn_enabled':'st-artnet','failsafe_mode':'st-artnet','failsafe_timeout_s':'st-artnet','failsafe_color':'st-artnet','failsafe_scene':'st-artnet','boot_scene':'st-scenes',
+  'net':'st-artnet','subnet':'st-artnet','short_name':'st-artnet','long_name':'st-artnet','reply_unicast':'st-artnet','sacn_enabled':'st-artnet','fpp_remote':'st-artnet','failsafe_mode':'st-artnet','failsafe_timeout_s':'st-artnet','failsafe_color':'st-artnet','failsafe_scene':'st-artnet','boot_scene':'st-scenes',
   'refresh_hz':'st-global','home_timeout_s':'st-global','web_enabled':'st-global',
 };
 
@@ -530,10 +558,46 @@ function otaUpload(){
   xhr.send(f);
 }
 
+function fseqUpload(){
+  const f=document.getElementById('fseq-file').files[0];
+  if(!f){status('st-fseq-up','Select a .fseq first',true);return;}
+  if(!f.name.toLowerCase().endsWith('.fseq')){status('st-fseq-up','File must end in .fseq',true);return;}
+  const row=document.getElementById('fseq-prog-row');
+  const bar=document.getElementById('fseq-bar');
+  const pct=document.getElementById('fseq-pct');
+  row.style.display='';
+  status('st-fseq-up','Uploading...','');
+  const xhr=new XMLHttpRequest();
+  xhr.open('POST','/api/fseq/upload?name='+encodeURIComponent(f.name));
+  xhr.upload.onprogress=e=>{
+    if(!e.lengthComputable)return;
+    const p=Math.round(100*e.loaded/e.total);
+    bar.style.width=p+'%';pct.textContent=p+'%';
+  };
+  xhr.onload=()=>{
+    if(xhr.status===200){
+      status('st-fseq-up','Uploaded: '+f.name,'');
+      loadFseqFiles();
+    }else{
+      status('st-fseq-up','Error: '+xhr.responseText,true);
+    }
+  };
+  xhr.onerror=()=>status('st-fseq-up','Upload failed (connection)',true);
+  xhr.send(f);
+}
+
 async function reboot(){
   if(!confirm('Reboot device?'))return;
   try{await api('POST','/api/reboot',{});status('st-sys','Rebooting...','');}
   catch(e){status('st-sys','Sent (connection will drop)','');}
+}
+
+async function coredumpDelete(){
+  try{
+    const r=await fetch('/api/coredump',{method:'DELETE'});
+    if(!r.ok)throw new Error(await r.text());
+    status('st-coredump','Erased','');
+  }catch(e){status('st-coredump','Error: '+e.message,true);}
 }
 
 async function factoryReset(){
@@ -543,6 +607,38 @@ async function factoryReset(){
 }
 
 loadConfig();
+
+// Live status poll: cheap endpoint, updates the header + channel-tab dots
+// without touching the form fields the user may be editing.
+async function pollStatus(){
+  try{
+    const d=await (await fetch('/api/status')).json();
+    document.getElementById('link-dot').className=d.link?'up':'';
+    document.getElementById('fps-label').textContent=d.fps+'fps';
+    document.getElementById('heap-label').textContent=Math.round(d.heap_free/1024)+'k';
+    let live='';
+    if(d.fseq&&d.fseq.active)
+      live='&#9654; '+d.fseq.active+' '+fmtMs(d.fseq.position_ms)+'/'+fmtMs(d.fseq.duration_ms);
+    else if((d.active_scene??-1)>=0)live='&#9654; scene '+(d.active_scene+1);
+    document.getElementById('live-label').innerHTML=live;
+    const fa=document.getElementById('fseq-active');
+    if(fa)fa.textContent=d.fseq&&d.fseq.active?
+      d.fseq.active+' ('+fmtMs(d.fseq.position_ms)+'/'+fmtMs(d.fseq.duration_ms)+')':'none';
+    document.querySelectorAll('.tab').forEach(t=>{
+      const m=/^ch(\d)$/.exec(t.dataset.panel);
+      if(!m)return;
+      const ch=d.channels?.[+m[1]];
+      t.classList.toggle('fsafe',!!ch?.failsafe);
+      t.classList.toggle('act',!!ch?.active&&!ch?.failsafe);
+    });
+  }catch(e){/* board unreachable: keep last state */}
+}
+function fmtMs(ms){
+  const s=Math.floor(ms/1000);
+  return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+}
+setInterval(pollStatus,3000);
+pollStatus();
 </script>
 </body>
 </html>

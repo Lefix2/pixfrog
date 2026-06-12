@@ -12,6 +12,7 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "fseq_player.h"
 #include "led_protocols.h"
 
 namespace pixfrog::artnet {
@@ -274,16 +275,34 @@ void handle_trigger(const uint8_t* buf, size_t len) {
     }
 }
 
-// ArtCommand / ArtTimeCode — validated + counted so controllers see them
-// land (stats artnet_ctrl_rx); consumers are future work per TODO.md.
-void handle_counted_only(uint16_t op, const uint8_t* buf, size_t len) {
-    size_t min_len = 0;
-    switch (op) {
-    case parser::kOpCommand: min_len = 16; break;
-    case parser::kOpTimeCode: min_len = 19; break;
-    default: return;
+// ArtTimeCode — slaves FSEQ playback to the controller's clock. Only active
+// while a file is playing (a timecode never auto-starts playback); small
+// drift is tolerated so per-frame timecode doesn't thrash the pacing clock.
+constexpr uint32_t kTimeCodeToleranceMs = 100;
+
+void handle_time_code(const uint8_t* buf, size_t len) {
+    parser::TimeCodeFields tc{};
+    if (!parser::parse_time_code(buf, len, &tc)) {
+        dmx::note_packet_bad();
+        return;
     }
-    if (len < min_len) {
+    dmx::note_ctrl_rx();
+    if (fseq::status() != fseq::Status::Playing) return;
+    const uint32_t target = parser::time_code_to_ms(tc);
+    const uint32_t pos    = fseq::position_ms();
+    const uint32_t drift  = target > pos ? target - pos : pos - target;
+    if (drift > kTimeCodeToleranceMs) {
+        fseq::seek_ms(target);
+        ESP_LOGI(TAG, "ArtTimeCode: seek %u ms (drift %u ms)", static_cast<unsigned>(target),
+                 static_cast<unsigned>(drift));
+    }
+}
+
+// ArtCommand — validated + counted so controllers see it land (stats
+// artnet_ctrl_rx); a consumer is future work per TODO.md.
+void handle_counted_only(uint16_t op, const uint8_t* buf, size_t len) {
+    if (op != parser::kOpCommand) return;
+    if (len < 16) {
         dmx::note_packet_bad();
         return;
     }
@@ -335,8 +354,8 @@ void task_main(void*) {
         case parser::kOpIpProg: handle_ip_prog(buf, n, from); break;
         case parser::kOpNzs: handle_nzs(buf, n); break;
         case parser::kOpTrigger: handle_trigger(buf, n); break;
-        case parser::kOpCommand:
-        case parser::kOpTimeCode: handle_counted_only(op, buf, n); break;
+        case parser::kOpTimeCode: handle_time_code(buf, n); break;
+        case parser::kOpCommand: handle_counted_only(op, buf, n); break;
         default: break;
         }
     }

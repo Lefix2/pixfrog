@@ -210,6 +210,41 @@ inline void build_ip_prog_reply(uint8_t pkt[kIpProgReplySize], const IpProgReply
     detail::write_ip(pkt + 28, in.gw);
 }
 
+// ── ArtTimeCode body ────────────────────────────────────────────────────────
+// Wall-clock timecode broadcast by the controller (Art-Net 4 §9.1). Used to
+// slave FSEQ playback to a master desk/player.
+
+constexpr size_t kTimeCodeSize = 19;
+
+struct TimeCodeFields {
+    uint8_t frames;   // 0..fps-1
+    uint8_t seconds;  // 0..59
+    uint8_t minutes;  // 0..59
+    uint8_t hours;    // 0..23
+    uint8_t type;     // 0=Film 24fps, 1=EBU 25fps, 2=DF 29.97fps, 3=SMPTE 30fps
+};
+
+inline bool parse_time_code(const uint8_t* buf, size_t len, TimeCodeFields* out) {
+    if (!buf || len < kTimeCodeSize) return false;
+    if (buf[18] > 3) return false;
+    if (out) {
+        out->frames  = buf[14];
+        out->seconds = buf[15];
+        out->minutes = buf[16];
+        out->hours   = buf[17];
+        out->type    = buf[18];
+    }
+    return true;
+}
+
+// Milliseconds since 00:00:00:00 represented by a timecode value.
+inline uint32_t time_code_to_ms(const TimeCodeFields& tc) {
+    // Frame duration in µs per type (29.97 DF = 30000/1001 fps ≈ 33.367 ms).
+    static constexpr uint32_t kFrameUs[4] = { 41667u, 40000u, 33367u, 33333u };
+    const uint32_t base_ms = (tc.hours * 3600u + tc.minutes * 60u + tc.seconds) * 1000u;
+    return base_ms + tc.frames * kFrameUs[tc.type & 3] / 1000u;
+}
+
 // ── Net/subnet filter ───────────────────────────────────────────────────────
 
 inline bool universe_matches(uint16_t universe, uint8_t our_net, uint8_t our_subnet) {

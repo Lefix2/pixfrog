@@ -47,7 +47,7 @@ namespace pixfrog::fseq {
 namespace {
 
 constexpr const char* TAG      = "FSEQ";
-constexpr const char* kMntPath = "/sdcard";
+constexpr const char* kMntPath = kMountPath;
 
 // Universe number of FSEQ byte 0 (xLights default = 1).
 constexpr uint16_t kUniverseBase = 1;
@@ -69,6 +69,13 @@ char g_error[80]                = {};
 
 std::atomic<bool> g_run{ false };
 TaskHandle_t g_task_handle = nullptr;
+
+// Seek/position channel between the API and the playback task.
+// g_seek_frame: target frame requested by seek_ms(), -1 when none pending.
+std::atomic<int64_t> g_seek_frame{ -1 };
+std::atomic<uint32_t> g_cur_frame{ 0 };    // last frame injected
+std::atomic<uint32_t> g_step_ms{ 0 };      // step_time of the active file
+std::atomic<uint32_t> g_frame_count{ 0 };  // frame count of the active file
 
 // Per-play heap allocations (PSRAM, freed when task exits).
 struct Buffers {
@@ -270,9 +277,20 @@ void playback_task(void* arg_ptr) {
         uint32_t decomp_block_offset = 0;   // file offset of this block's compressed data
 
         g_status = Status::Playing;
+        g_step_ms.store(hdr.step_time_ms ? hdr.step_time_ms : 25u, std::memory_order_release);
+        g_frame_count.store(hdr.frame_count, std::memory_order_release);
+        g_seek_frame.store(-1, std::memory_order_release);
         dmx::fseq_set_active(true);
 
         for (uint32_t fn = 0; fn < hdr.frame_count && g_run.load(std::memory_order_acquire);) {
+            // Consume a pending seek at the frame boundary.
+            const int64_t seek = g_seek_frame.exchange(-1, std::memory_order_acq_rel);
+            if (seek >= 0) {
+                fn = (seek < hdr.frame_count) ? static_cast<uint32_t>(seek) : hdr.frame_count - 1;
+                last_wake = xTaskGetTickCount();  // re-anchor the pacing clock
+            }
+            g_cur_frame.store(fn, std::memory_order_release);
+
             if (hdr.compression_type == kCompNone) {
                 // ── Uncompressed: seek directly to frame ──────────────────
                 const long off = static_cast<long>(uncompressed_frame_offset(hdr, fn));
@@ -377,6 +395,10 @@ done:
     delete arg;
 
     dmx::fseq_set_active(false);
+    g_step_ms.store(0, std::memory_order_release);
+    g_frame_count.store(0, std::memory_order_release);
+    g_cur_frame.store(0, std::memory_order_release);
+    g_seek_frame.store(-1, std::memory_order_release);
     if (g_status == Status::Playing) {
         g_status         = Status::Idle;
         g_active_file[0] = '\0';
@@ -499,6 +521,23 @@ void stop() {
     if (!g_run.load(std::memory_order_acquire)) return;
     stop_task();
     ESP_LOGI(TAG, "playback stopped");
+}
+
+bool seek_ms(uint32_t ms) {
+    if (!g_run.load(std::memory_order_acquire)) return false;
+    const uint32_t step = g_step_ms.load(std::memory_order_acquire);
+    if (step == 0) return false;
+    g_seek_frame.store(static_cast<int64_t>(ms / step), std::memory_order_release);
+    return true;
+}
+
+uint32_t position_ms() {
+    return g_cur_frame.load(std::memory_order_acquire) * g_step_ms.load(std::memory_order_acquire);
+}
+
+uint32_t duration_ms() {
+    return g_frame_count.load(std::memory_order_acquire) *
+           g_step_ms.load(std::memory_order_acquire);
 }
 
 const char* active_file() {

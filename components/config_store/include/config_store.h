@@ -71,6 +71,11 @@ struct GlobalConfig {
     // 2-source merge policy when two senders feed one universe. Zero-fill
     // migration = HTP, the Art-Net default. Settable via ArtAddress too.
     uint8_t merge_mode;  // 0 = HTP (per-slot max), 1 = LTP (last frame wins)
+
+    // FPP MultiSync remote — opt-in; when true the box follows an FPP/xSchedule
+    // master (UDP 32320): start/stop/seek of local FSEQ files. Zero-fill
+    // migration = false (no socket opened).
+    bool fpp_remote;
 };
 
 constexpr uint8_t kFailsafeHold     = 0;
