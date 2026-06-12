@@ -87,6 +87,18 @@ Remaining candidates:
 - [x] **Config export/import** — `GET /api/backup` (download, no password
       hash) / `POST /api/restore` (best-effort apply: global + channels +
       scenes), Backup card in the web UI. Round-trip validated on hardware.
+- [x] **Live status in the web UI** — `GET /api/status` (heap, fps, uptime,
+      rx counters, per-channel active/failsafe, scene + FSEQ position),
+      polled every 3 s by the SPA: header live line, green/orange dots on
+      the channel tabs, FSEQ progress.
+- [x] **Coredump in flash** — 64 KB `coredump` partition appended after
+      ota_1 (ONE USB reflash of the partition table; field tables without
+      it keep working, dumps just aren't stored),
+      `ESP_COREDUMP_ENABLE_TO_FLASH` (ELF), `GET /api/coredump` downloads,
+      `DELETE /api/coredump` erases (auth), Crash dump card in the SPA.
+- [x] **mDNS `pixfrog.local`** — espressif/mdns managed component,
+      advertised (`_http._tcp` + hostname) only while `web_enabled`; no
+      extra opt-in flag. Instance name = ArtNet short name.
 - [x] **Standalone scenes** — 8 parametric slots (solid / chase / rainbow,
       colour, speed, param, per-channel mask) persisted in NVS. Manual-stop
       priority over network traffic. Triggers: Scenes menu, web tab, UART
