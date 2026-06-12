@@ -18,8 +18,12 @@ struct InitConfig {
     int d3_gpio;
 };
 
-// Attempt to mount the microSD card.  Called once at boot.
-// Returns true on success.  The FSEQ menu shows "No SD card" on failure.
+// SD-card presence state, updated by the background monitor task.
+enum class SdState : uint8_t { Absent, Mounted };
+
+// Initialise the SDMMC host, attempt an immediate mount, and start the 1 s
+// monitor task that handles hot-plug insertion and removal.
+// Returns false only if the monitor task cannot be created (fatal).
 bool init(const InitConfig& cfg);
 
 // List .fseq files in the root directory of the SD card.
@@ -29,7 +33,7 @@ size_t list_files(char names[][kMaxNameLen], size_t max);
 
 // Start playing filename (null-terminated, 8.3 FAT name or short path).
 // Stops any currently playing file first.
-// Returns false if the file cannot be opened or parsed.
+// Returns false if no SD card is present, or the file cannot be opened/parsed.
 bool start(const char* filename);
 
 // Stop playback.
@@ -40,6 +44,7 @@ const char* active_file();
 
 enum class Status : uint8_t { Idle, Playing, Error };
 
+SdState sd_state();
 Status status();
 const char* error_string();  // last error, or "" if none
 

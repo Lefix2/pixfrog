@@ -713,8 +713,9 @@ void dispatch_scenes_menu(Event e) {
 
 void render_fseq_menu() {
     // items: [0..n-1] = files, n = [Stop], n+1 = [Back]
-    // If no files: item 0 = note, item 1 = [Back]
-    const uint8_t n     = g_fseq_file_count;
+    // If no card / no files: item 0 = note, item 1 = [Back]
+    const bool no_card  = (fseq::sd_state() == fseq::SdState::Absent);
+    const uint8_t n     = no_card ? 0 : g_fseq_file_count;
     const uint8_t total = n > 0 ? (n + 2) : 2;
 
     char marked[kFseqMenuMaxFiles][fseq::kMaxNameLen + 3];
@@ -722,8 +723,11 @@ void render_fseq_menu() {
     ListItem items[kFseqMenuMaxFiles + 2];
 
     const char* playing = fseq::active_file();
-    if (n == 0) {
-        items[0] = { "(no FSEQ files)", "" };
+    if (no_card) {
+        items[0] = { "No SD card", "" };
+        items[1] = { "[Back]", "" };
+    } else if (n == 0) {
+        items[0] = { "No .fseq files", "" };
         items[1] = { "[Back]", "" };
     } else {
         for (uint8_t i = 0; i < n; ++i) {
@@ -741,8 +745,11 @@ void render_fseq_menu() {
 }
 
 void dispatch_fseq_menu(Event e) {
-    const uint8_t n     = g_fseq_file_count;
+    const bool no_card  = (fseq::sd_state() == fseq::SdState::Absent);
+    const uint8_t n     = no_card ? 0 : g_fseq_file_count;
     const uint8_t total = n > 0 ? (n + 2) : 2;
+    // Clamp cursor in case the card was removed while browsing.
+    if (s.cursor >= total) s.cursor = 0;
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < total - 1) s.cursor++;
     if (e != Event::Click) return;

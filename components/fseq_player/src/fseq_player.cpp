@@ -55,7 +55,9 @@ constexpr size_t kMaxCompBlockBytes = 1024 * 1024;      // 1 MB compressed input
 constexpr size_t kMaxDecompBytes    = 2 * 1024 * 1024;  // 2 MB decompressed per block
 
 sdmmc_card_t* g_card = nullptr;
-bool g_sd_mounted    = false;
+std::atomic<SdState> g_sd_state{ SdState::Absent };
+InitConfig g_init_cfg = {};
+bool g_init_done      = false;
 
 // Playback state
 char g_active_file[kMaxNameLen] = {};
@@ -71,6 +73,68 @@ struct Buffers {
     uint8_t* comp;    // compressed block input
     uint8_t* decomp;  // decompressed block output
 };
+
+// ── SD card hot-plug ─────────────────────────────────────────────────────────
+
+// Reconstruct host+slot config from g_init_cfg and attempt a fresh mount.
+// Called from the monitor task; returns true on success.
+static bool do_mount() {
+    sdmmc_host_t host               = SDMMC_HOST_DEFAULT();
+    host.max_freq_khz               = SDMMC_FREQ_HIGHSPEED;
+    sdmmc_slot_config_t slot        = SDMMC_SLOT_CONFIG_DEFAULT();
+    slot.clk                        = static_cast<gpio_num_t>(g_init_cfg.clk_gpio);
+    slot.cmd                        = static_cast<gpio_num_t>(g_init_cfg.cmd_gpio);
+    slot.d0                         = static_cast<gpio_num_t>(g_init_cfg.d0_gpio);
+    slot.d1                         = static_cast<gpio_num_t>(g_init_cfg.d1_gpio);
+    slot.d2                         = static_cast<gpio_num_t>(g_init_cfg.d2_gpio);
+    slot.d3                         = static_cast<gpio_num_t>(g_init_cfg.d3_gpio);
+    slot.width                      = 4;
+    slot.flags                      = 0;
+    esp_vfs_fat_mount_config_t mcfg = {};
+    mcfg.format_if_mount_failed     = false;
+    mcfg.max_files                  = 5;
+    const esp_err_t err = esp_vfs_fat_sdmmc_mount(kMntPath, &host, &slot, &mcfg, &g_card);
+    if (err != ESP_OK) return false;
+    g_sd_state.store(SdState::Mounted, std::memory_order_release);
+    ESP_LOGI(TAG, "SD card mounted at %s", kMntPath);
+    return true;
+}
+
+// Kill any running playback task and reset playback state.
+// Shared between the public stop() and do_unmount().
+static void stop_task() {
+    if (!g_run.load(std::memory_order_acquire)) return;
+    g_run.store(false, std::memory_order_release);
+    dmx::fseq_set_active(false);
+    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
+    while (g_task_handle && xTaskGetTickCount() < deadline)
+        vTaskDelay(pdMS_TO_TICKS(10));
+    g_status         = Status::Idle;
+    g_active_file[0] = '\0';
+}
+
+// Stop any running playback, unmount the FAT volume, and transition to Absent.
+// Called only from sd_monitor_task.
+static void do_unmount() {
+    stop_task();
+    esp_vfs_fat_sdcard_unmount(kMntPath, g_card);
+    g_card = nullptr;
+    g_sd_state.store(SdState::Absent, std::memory_order_release);
+    ESP_LOGI(TAG, "SD card unmounted");
+}
+
+// Background task: polls every 1 s for card insertion / removal.
+static void sd_monitor_task(void* /*arg*/) {
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (g_sd_state.load(std::memory_order_acquire) == SdState::Absent) {
+            do_mount();
+        } else if (sdmmc_get_status(g_card) != ESP_OK) {
+            ESP_LOGW(TAG, "SD card removed");
+            do_unmount();
+        }
+    }
+}
 
 // Inject one flat frame (no sparse ranges) into the universe back-buffers.
 void inject_linear_frame(const uint8_t* data, uint32_t channel_count) {
@@ -322,40 +386,24 @@ done:
 }  // namespace
 
 bool init(const InitConfig& cfg) {
-    if (g_sd_mounted) return true;
+    if (g_init_done) return true;
+    g_init_cfg  = cfg;
+    g_init_done = true;
 
-    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;  // 40 MHz
+    // Try an immediate mount; the monitor task will retry every second if absent.
+    do_mount();
 
-    sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot.clk                 = static_cast<gpio_num_t>(cfg.clk_gpio);
-    slot.cmd                 = static_cast<gpio_num_t>(cfg.cmd_gpio);
-    slot.d0                  = static_cast<gpio_num_t>(cfg.d0_gpio);
-    slot.d1                  = static_cast<gpio_num_t>(cfg.d1_gpio);
-    slot.d2                  = static_cast<gpio_num_t>(cfg.d2_gpio);
-    slot.d3                  = static_cast<gpio_num_t>(cfg.d3_gpio);
-    slot.width               = 4;
-    slot.flags               = 0;
-
-    esp_vfs_fat_mount_config_t mount_cfg = {};
-    mount_cfg.format_if_mount_failed     = false;
-    mount_cfg.max_files                  = 5;
-    mount_cfg.allocation_unit_size       = 0;
-
-    const esp_err_t err = esp_vfs_fat_sdmmc_mount(kMntPath, &host, &slot, &mount_cfg, &g_card);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "SD mount failed (%s) — FSEQ player unavailable", esp_err_to_name(err));
+    const BaseType_t ok = xTaskCreate(sd_monitor_task, "sd_mon", 4096, nullptr, 2, nullptr);
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create SD monitor task");
         return false;
     }
-    g_sd_mounted = true;
-    ESP_LOGI(TAG, "SD card mounted at %s (%s, %s)", kMntPath,
-             g_card->csd.capacity ? "SDHC" : "SDSC",
-             g_card->host.max_freq_khz >= 40000 ? "40 MHz" : "low speed");
     return true;
 }
 
 size_t list_files(char names[][kMaxNameLen], size_t max) {
-    if (!g_sd_mounted || !names || max == 0) return 0;
+    if (g_sd_state.load(std::memory_order_acquire) != SdState::Mounted || !names || max == 0)
+        return 0;
 
     DIR* dir = opendir(kMntPath);
     if (!dir) return 0;
@@ -383,6 +431,11 @@ size_t list_files(char names[][kMaxNameLen], size_t max) {
 
 bool start(const char* filename) {
     if (!filename || !filename[0]) return false;
+    if (g_sd_state.load(std::memory_order_acquire) != SdState::Mounted) {
+        snprintf(g_error, sizeof(g_error), "No SD card");
+        g_status = Status::Error;
+        return false;
+    }
 
     stop();  // stop any running playback first
 
@@ -441,22 +494,16 @@ bool start(const char* filename) {
 
 void stop() {
     if (!g_run.load(std::memory_order_acquire)) return;
-    g_run.store(false, std::memory_order_release);
-
-    // Wait for the task to exit (it checks g_run each frame and calls
-    // vTaskDelete(nullptr) before returning, so this is bounded by one frame).
-    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
-    while (g_task_handle && xTaskGetTickCount() < deadline)
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-    g_status         = Status::Idle;
-    g_active_file[0] = '\0';
-    dmx::fseq_set_active(false);
+    stop_task();
     ESP_LOGI(TAG, "playback stopped");
 }
 
 const char* active_file() {
     return g_active_file[0] ? g_active_file : nullptr;
+}
+
+SdState sd_state() {
+    return g_sd_state.load(std::memory_order_acquire);
 }
 
 Status status() {

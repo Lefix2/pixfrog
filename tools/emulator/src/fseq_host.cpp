@@ -38,6 +38,10 @@ const char* active_file() {
     return g_active[0] ? g_active : nullptr;
 }
 
+SdState sd_state() {
+    return SdState::Absent;  // emulator has no SD card
+}
+
 Status status() {
     return g_status;
 }
