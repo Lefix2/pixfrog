@@ -24,6 +24,8 @@ button.sec:hover{background:#1a4a8a}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .tab{background:#0f3460;border:1px solid #4a4a7a;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px}
 .tab.active{background:#e94560;border-color:#e94560;color:#fff}
+.tab.act::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#0f0;margin-left:5px;vertical-align:middle}
+.tab.fsafe::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#fa0;margin-left:5px;vertical-align:middle}
 .panel{display:none}.panel.active{display:block}
 #header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
 #link-dot{width:10px;height:10px;border-radius:50%;background:#f55;flex-shrink:0}
@@ -36,6 +38,8 @@ button.sec:hover{background:#1a4a8a}
   <h1>&#128438; pixfrog</h1>
   <div id="link-dot" title="Ethernet link"></div>
   <span id="fps-label">--fps</span>
+  <span id="heap-label" style="color:#888;font-size:12px" title="free heap"></span>
+  <span id="live-label" style="color:#888;font-size:12px"></span>
   <span id="ver-label" style="color:#666;font-size:12px;margin-left:auto"></span>
 </div>
 
@@ -104,6 +108,14 @@ button.sec:hover{background:#1a4a8a}
     </div>
     <button onclick="otaUpload()">Flash firmware</button>
     <div class="status" id="st-ota"></div>
+  </div>
+  <div class="card">
+    <h2>Crash dump</h2>
+    <a class="sec" href="/api/coredump" download="pixfrog-coredump.bin"
+       style="display:inline-block;background:#0f3460;border:1px solid #4a4a7a;border-radius:4px;color:#e0e0e0;font:13px monospace;padding:6px 18px;text-decoration:none">Download</a>
+    <button class="sec" onclick="coredumpDelete()" style="margin-left:8px">Delete</button>
+    <span class="note">404 = no crash stored</span>
+    <div class="status" id="st-coredump"></div>
   </div>
   <div class="card">
     <button class="sec" onclick="factoryReset()">Factory reset</button>
@@ -580,6 +592,14 @@ async function reboot(){
   catch(e){status('st-sys','Sent (connection will drop)','');}
 }
 
+async function coredumpDelete(){
+  try{
+    const r=await fetch('/api/coredump',{method:'DELETE'});
+    if(!r.ok)throw new Error(await r.text());
+    status('st-coredump','Erased','');
+  }catch(e){status('st-coredump','Error: '+e.message,true);}
+}
+
 async function factoryReset(){
   if(!confirm('Factory reset? All config will be lost.'))return;
   try{await api('POST','/api/factory-reset',{});status('st-sys','Done — reboot recommended','');}
@@ -587,6 +607,38 @@ async function factoryReset(){
 }
 
 loadConfig();
+
+// Live status poll: cheap endpoint, updates the header + channel-tab dots
+// without touching the form fields the user may be editing.
+async function pollStatus(){
+  try{
+    const d=await (await fetch('/api/status')).json();
+    document.getElementById('link-dot').className=d.link?'up':'';
+    document.getElementById('fps-label').textContent=d.fps+'fps';
+    document.getElementById('heap-label').textContent=Math.round(d.heap_free/1024)+'k';
+    let live='';
+    if(d.fseq&&d.fseq.active)
+      live='&#9654; '+d.fseq.active+' '+fmtMs(d.fseq.position_ms)+'/'+fmtMs(d.fseq.duration_ms);
+    else if((d.active_scene??-1)>=0)live='&#9654; scene '+(d.active_scene+1);
+    document.getElementById('live-label').innerHTML=live;
+    const fa=document.getElementById('fseq-active');
+    if(fa)fa.textContent=d.fseq&&d.fseq.active?
+      d.fseq.active+' ('+fmtMs(d.fseq.position_ms)+'/'+fmtMs(d.fseq.duration_ms)+')':'none';
+    document.querySelectorAll('.tab').forEach(t=>{
+      const m=/^ch(\d)$/.exec(t.dataset.panel);
+      if(!m)return;
+      const ch=d.channels?.[+m[1]];
+      t.classList.toggle('fsafe',!!ch?.failsafe);
+      t.classList.toggle('act',!!ch?.active&&!ch?.failsafe);
+    });
+  }catch(e){/* board unreachable: keep last state */}
+}
+function fmtMs(ms){
+  const s=Math.floor(ms/1000);
+  return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+}
+setInterval(pollStatus,3000);
+pollStatus();
 </script>
 </body>
 </html>

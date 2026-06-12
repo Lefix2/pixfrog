@@ -106,6 +106,14 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 #
+# Coredump — panics write an ELF post-mortem to the 64 KB coredump
+# partition; GET /api/coredump downloads it, DELETE erases it.
+#
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
+
+#
 # LED bus output backend — PARLIO TX loop transmission (also the Kconfig
 # default; stated here explicitly so the choice is visible). The LCD_CAM
 # backend stays buildable via the sdkconfig.ci.lcdcam overlay.
