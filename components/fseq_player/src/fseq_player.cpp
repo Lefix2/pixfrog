@@ -27,6 +27,8 @@
 #include "freertos/task.h"
 #include "sdmmc_cmd.h"
 
+#include <dirent.h>
+
 #include "dmx_manager.h"
 #include "fseq_format.h"
 

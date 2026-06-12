@@ -732,7 +732,8 @@ void render_fseq_menu() {
     } else {
         for (uint8_t i = 0; i < n; ++i) {
             if (playing && strcmp(g_fseq_names[i], playing) == 0) {
-                snprintf(marked[i], sizeof(marked[i]), "%s *", g_fseq_names[i]);
+                snprintf(marked[i], sizeof(marked[i]), "%.*s *",
+                         static_cast<int>(fseq::kMaxNameLen) - 1, g_fseq_names[i]);
                 items[i] = { marked[i], "" };
             } else {
                 items[i] = { g_fseq_names[i], "" };
