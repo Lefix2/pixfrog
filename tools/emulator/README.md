@@ -12,7 +12,7 @@ The UI only touches hardware through one function — `tft_draw_bitmap()`. The
 emulator reimplements that (`src/tft_sdl.cpp`) over an in-RAM 320×240 RGB565
 framebuffer, replaces the I2C rotary encoder with a host event queue
 (`src/encoder_host.cpp`), and stubs the neighbour components the menu reads
-(`config_store`, `dmx_manager`, `lcd_cam_output`) with in-RAM versions that
+(`config_store`, `dmx_manager`, `led_output`) with in-RAM versions that
 mirror the device defaults. Everything else is the device's own source,
 compiled with `-DCONFIG_PIXFROG_DISPLAY_TFT`.
 

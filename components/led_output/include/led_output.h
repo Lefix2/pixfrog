@@ -1,4 +1,4 @@
-// lcd_cam_output — drives the ESP32-P4 LCD_CAM peripheral as a free-running
+// led_output — drives the ESP32-P4 LCD_CAM peripheral as a free-running
 // 16-bit parallel bus with GDMA, emitting LED data for 8 channels at once.
 //
 // Architecture (cf. docs/ARCHITECTURE.md §4):
@@ -18,7 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-namespace pixfrog::lcd {
+namespace pixfrog::output {
 
 struct InitConfig {
     const int* bus_gpio_16;          // bit k of the bus → GPIO bus_gpio_16[k]
@@ -87,4 +87,4 @@ bool emit_calibration_pattern(uint8_t pattern_id);
 void set_calibration_mode(int8_t pattern_id);
 int8_t get_calibration_mode();
 
-}  // namespace pixfrog::lcd
+}  // namespace pixfrog::output

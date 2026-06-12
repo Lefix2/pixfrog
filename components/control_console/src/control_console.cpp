@@ -20,7 +20,7 @@
 #include "config_store.h"
 #include "dmx_manager.h"
 #include "fseq_player.h"
-#include "lcd_cam_output.h"
+#include "led_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
 #include "ui.h"
@@ -160,9 +160,9 @@ int cmd_status(int, char**) {
     printf("ip=%s\n", ip);
     printf("mac=%02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     printf("fps=%lu\n", static_cast<unsigned long>(dmx::get_stats().current_fps));
-    printf("cal=%d\n", static_cast<int>(lcd::get_calibration_mode()));
+    printf("cal=%d\n", static_cast<int>(output::get_calibration_mode()));
     printf("persist_ok=%d\n", config::is_persistence_ok() ? 1 : 0);
-    printf("fb_bytes=%u\n", static_cast<unsigned>(lcd::fb_bytes()));
+    printf("fb_bytes=%u\n", static_cast<unsigned>(output::fb_bytes()));
     printf("heap_free=%u\n", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
     printf("psram_free=%u\n", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
     return ok();
@@ -177,7 +177,7 @@ int cmd_stats(int, char**) {
     printf("sacn_packets_rx=%llu\n", static_cast<unsigned long long>(s.sacn_packets_rx));
     printf("dma_underruns=%lu\n", static_cast<unsigned long>(s.dma_underruns));
     printf("current_fps=%lu\n", static_cast<unsigned long>(s.current_fps));
-    const lcd::DebugCounters d = lcd::get_debug_counters();
+    const output::DebugCounters d = output::get_debug_counters();
     printf("lcd_trans_done=%lu\n", static_cast<unsigned long>(d.trans_done));
     printf("lcd_vsync=%lu\n", static_cast<unsigned long>(d.vsync));
     printf("lcd_msync_err=%lu\n", static_cast<unsigned long>(d.msync_err));
@@ -480,14 +480,14 @@ int cmd_pixr(int argc, char** argv) {
 
 int cmd_cal(int argc, char** argv) {
     if (argc == 1) {
-        printf("cal=%d\n", static_cast<int>(lcd::get_calibration_mode()));
+        printf("cal=%d\n", static_cast<int>(output::get_calibration_mode()));
         return ok();
     }
     if (argc != 2) return err("usage: cal [-1|0|1|2|3]");
     char* end    = nullptr;
     const long v = strtol(argv[1], &end, 10);
     if (end == argv[1] || *end != '\0' || v < -1 || v > 3) return err("mode: -1..3");
-    lcd::set_calibration_mode(static_cast<int8_t>(v));
+    output::set_calibration_mode(static_cast<int8_t>(v));
     printf("cal=%d\n", static_cast<int>(v));
     return ok();
 }

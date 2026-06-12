@@ -16,7 +16,7 @@
 #include "config_store.h"
 #include "dmx_manager.h"
 #include "fseq_player.h"
-#include "lcd_cam_output.h"
+#include "led_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
 #include "ui.h"
@@ -637,7 +637,7 @@ constexpr const char* kTestPatternLabels[kTestPatternItemCount] = {
 };
 
 void render_test_pattern_menu() {
-    const int8_t active                               = lcd::get_calibration_mode();
+    const int8_t active                               = output::get_calibration_mode();
     char marked[kTestPatternItemCount][kOledCols + 1] = {};
     ListItem items[kTestPatternItemCount];
     for (uint8_t i = 0; i < kTestPatternItemCount; ++i) {
@@ -659,10 +659,10 @@ void dispatch_test_pattern_menu(Event e) {
     if (s.cursor < 3) {
         // Activate the chosen pattern; stay in the menu so the user can
         // switch between patterns or stop without leaving.
-        lcd::set_calibration_mode(static_cast<int8_t>(s.cursor));
+        output::set_calibration_mode(static_cast<int8_t>(s.cursor));
     } else {
         // Stop calibration and return.
-        lcd::set_calibration_mode(-1);
+        output::set_calibration_mode(-1);
         s.screen = Screen::MainMenu;
         s.cursor = 12;
     }
@@ -1528,7 +1528,7 @@ void dispatch_long_press() {
         s.cursor = 2 + s.channel_index;
         break;
     case Screen::TestPatternMenu:
-        lcd::set_calibration_mode(-1);
+        output::set_calibration_mode(-1);
         s.screen = Screen::MainMenu;
         s.cursor = 12;
         break;
