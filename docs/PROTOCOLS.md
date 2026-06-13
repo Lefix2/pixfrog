@@ -41,16 +41,23 @@ Datasheet tolerance is typically ±150 ns per sub-time. pixfrog aims for the mid
 
 ---
 
-## 3. LCD_CAM clock formula
+## 3. Bus clock formula
 
 ### 3.1 Clock tree
 
-![LCD_CAM clock tree and the PCLK/bit/clock formulas](img/clock-tree.svg)
+![Bus clock tree and the PCLK/bit/clock formulas](img/clock-tree.svg)
+
+Both output backends clock the 16-bit bus at the same system-wide sample rate
+`f_PCLK = 16 MHz` (`led_protocols::kPclkHz`), reached from a PLL source by an
+integer divider:
+
+- **PARLIO TX** (default): `PARLIO_CLK_SRC_DEFAULT` = PLL_F160M, divided by 10 → **160 MHz / 10 = 16 MHz exact**.
+- **LCD_CAM** (legacy): `LCD_CLK_SRC_DEFAULT` divided so the requested `pclk_hz = 16 MHz` is realised.
 
 Formulas:
 
 ```
-f_PCLK   = f_PLL_source / CLK_DIV         CLK_DIV ∈ {2, 3, …, 256}
+f_PCLK   = f_PLL_source / CLK_DIV         integer divider
 T_PCLK   = 1 / f_PCLK                     period of one DMA sample
 T_bit    = samples_per_bit × T_PCLK       duration of one 1-wire DATA bit
 ```
@@ -168,13 +175,19 @@ End frame   : 0xFF × ceil(N/2)/8                    (propagation padding, see d
 
 ### 4.3 Latch / reset
 
-For 1-wire protocols, after the last pixel, DATA must stay LOW for TRESET (≥ 280 µs for WS2815). At 16 MHz that's 4 480 zero samples. They sit at the tail of the frame buffer; once GDMA finishes, the bus stays parked on those zeros until the next `esp_lcd_panel_draw_bitmap`.
+For 1-wire protocols, after the last pixel, DATA must stay LOW for TRESET (≥ 280 µs for WS2815). At 16 MHz that's 4 480 zero samples. They sit at the tail of the frame buffer:
 
-For clocked protocols there's no latch — the bus simply goes idle after the end frame.
+- **PARLIO TX** (default): the frame loops back-to-back, so the reset tail is what separates one repeat from the next — the strips re-latch every loop. The bus is never "parked"; it re-emits the same frame until a new buffer is mounted.
+- **LCD_CAM** (legacy): once GDMA finishes the single emission, the bus stays parked on those trailing zeros until the next `esp_lcd_panel_draw_bitmap`.
+
+For clocked protocols there's no latch — the bus simply repeats (PARLIO) or goes idle (LCD_CAM) after the end frame.
 
 ### 4.4 Single PSRAM frame buffer, no chunks
 
-The encoder produces **one complete PSRAM frame buffer** per frame, not a chain of small chunks. `esp_lcd_new_rgb_panel(flags.fb_in_psram = true, num_fbs = 2)` allocates two PSRAM buffers internally; the render task writes into the back buffer, flushes the cache, calls `esp_lcd_panel_draw_bitmap` (which swaps the active FB pointer), and GDMA streams the PSRAM directly without any CPU involvement.
+The encoder produces **one complete PSRAM frame buffer** per frame, not a chain of small chunks. Two PSRAM buffers are allocated up front; the render task writes into the back buffer, flushes the cache (`esp_cache_msync`, DIR_C2M), hands it to the DMA engine, and GDMA streams the PSRAM directly without any CPU involvement. How the swap is armed differs per backend:
+
+- **PARLIO TX** (default): a flat buffer mounted in loop transmission mode. `parlio_tx_unit_transmit` while looping concatenates the new buffer onto the tail of the running DMA link list, so it takes over at the next frame boundary, gapless. Loop mode marks no DMA EOF, so a retired buffer is known free only one frame duration after its swap was submitted — `render_frame()` waits that long before re-encoding into it.
+- **LCD_CAM** (legacy): `esp_lcd_new_rgb_panel(flags.fb_in_psram = true, num_fbs = 2)`; `esp_lcd_panel_draw_bitmap` swaps the active FB pointer and a `vsync` callback releases the previous one.
 
 Consequence for the encoder: **no sub-frame real-time deadline**. It has the full DMA emission window of the current frame (up to ~30 ms at 30 Hz with 1024 px WS2815) to produce the next one.
 
@@ -343,7 +356,7 @@ common-ground install with a short-to-medium terminated run, option A with the
 
 ---
 
-## 9. Network inputs (ArtNet / sACN)
+## 8. Network inputs (ArtNet / sACN)
 
 Both receivers feed the same universe pool; a channel maps `universe_start …
 universe_start + N-1` whichever protocol delivered the data.
