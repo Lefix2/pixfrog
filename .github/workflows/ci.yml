@@ -7,6 +7,31 @@ on:
     branches: [main]
 
 jobs:
+  # Decide whether the code-building jobs need to run at all. A branch that
+  # only touches documentation (Markdown anywhere, docs/, the GitHub Pages
+  # site, LICENSE/.gitignore) produces code='false', so the heavy IDF/host
+  # builds are skipped. The filter is a "everything minus docs" allowlist so
+  # it fails safe: an unrecognised path still triggers a full build.
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**/*'
+              - '!**/*.md'
+              - '!*.md'
+              - '!docs/**'
+              - '!.github/pages/**'
+              - '!LICENSE'
+              - '!.gitignore'
+
   format-check:
     name: clang-format
     runs-on: ubuntu-latest
@@ -22,6 +47,8 @@ jobs:
 
   host-tests:
     name: Host unit tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -77,6 +104,8 @@ jobs:
 
   emulator:
     name: UI emulator (SDL2 host build + smoke test)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -95,6 +124,8 @@ jobs:
 
   idf-build:
     name: ESP-IDF build for esp32p4 (${{ matrix.variant }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -154,3 +185,27 @@ jobs:
           . $IDF_PATH/export.sh
           idf.py size || true
           ccache -s || true
+
+  # Single aggregating gate: make THIS the only required status check on main.
+  # It runs on every PR (always()), so the required check is never stuck
+  # pending — unlike trigger-level paths-ignore. It passes when every upstream
+  # job either succeeded or was skipped (doc-only branch), and fails if any
+  # real job failed or was cancelled.
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs: [changes, format-check, host-tests, emulator, idf-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify no required job failed
+        shell: bash
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "Upstream job results: $results"
+          for r in $results; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A required CI job failed or was cancelled."
+              exit 1
+            fi
+          done
+          echo "All required jobs passed (or were skipped on a doc-only branch)."
