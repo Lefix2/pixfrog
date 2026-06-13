@@ -14,7 +14,7 @@ All pin assignments in this document are exposed on the user-facing header conne
 
 ![Waveshare ESP32-P4 Module DEV-KIT — the default pixfrog board](img/board-hero.jpg)
 
-- ESP32-P4 dual-core RISC-V @ 400 MHz
+- ESP32-P4 dual-core RISC-V @ 360 MHz
 - 32 MB octal PSRAM
 - 16 MB external flash
 - **IP101GRI Ethernet PHY** with onboard magnetic RJ45 jack (RMII pre-wired)

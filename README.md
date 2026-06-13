@@ -4,7 +4,7 @@
 
 ## Features
 
-- ESP32-P4 dual-core RISC-V at 400 MHz, 32 MB octal PSRAM
+- ESP32-P4 dual-core RISC-V at 360 MHz, 32 MB octal PSRAM
 - 10/100M Ethernet via external PHY (IP101GRI)
 - 8 parallel LED channels on a 16-bit bus — **PARLIO TX loop DMA** (default) or legacy LCD_CAM backend
 - **ArtNet 4** receiver: ArtDmx/ArtPoll/ArtSync, remote config via ArtAddress + ArtIpProg, scene triggers via ArtTrigger, ArtTimeCode sync (up to 48 universes)

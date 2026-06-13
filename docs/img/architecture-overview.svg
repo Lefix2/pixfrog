@@ -13,7 +13,7 @@
 
   <!-- Chip outline -->
   <rect x="24" y="84" width="1192" height="520" rx="14" fill="#fbfdfc" stroke="#cfdbd5" stroke-width="1.5"/>
-  <text x="44" y="112" font-size="15" font-weight="700" fill="#167a41">ESP32-P4 · dual-core RISC-V @ 400 MHz</text>
+  <text x="44" y="112" font-size="15" font-weight="700" fill="#167a41">ESP32-P4 · dual-core RISC-V @ 360 MHz</text>
 
   <!-- Column dividers / headers -->
   <text x="60" y="140" font-size="13" font-weight="700" fill="#5b6b64" letter-spacing="1">CORE 0 — INGEST · UI · STORAGE</text>
