@@ -31,8 +31,8 @@
     <text x="276" y="133" text-anchor="middle" fill="#11201a">swap</text>
     <text x="276" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">universes</text>
     <rect x="340" y="108" width="150" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="415" y="133" text-anchor="middle" fill="#11201a">decode</text>
-    <text x="415" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">→ pixels</text>
+    <text x="415" y="133" text-anchor="middle" fill="#11201a">fill pixels</text>
+    <text x="415" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">by source priority</text>
     <rect x="494" y="108" width="250" height="56" rx="6" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
     <text x="619" y="133" text-anchor="middle" fill="#11201a" font-weight="700">encode → fb_back</text>
     <text x="619" y="150" text-anchor="middle" fill="#167a41" font-size="11">color · brightness · grouping</text>
@@ -51,7 +51,7 @@
 
   <!-- core 0 lane -->
   <rect x="120" y="292" width="1060" height="48" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
-  <text x="640" y="321" text-anchor="middle" font-size="13" fill="#11201a" font-family="'DejaVu Sans Mono', monospace">artnet_rx_task drains UDP → universe_pool[back]   (all frame long, in parallel)</text>
+  <text x="640" y="321" text-anchor="middle" font-size="13" fill="#11201a" font-family="'DejaVu Sans Mono', monospace">artnet / sACN / fseq_play drain UDP + SD → universe_pool[back]   (all frame long, in parallel)</text>
 
   <!-- ArtSync early-wake marker -->
   <g>
@@ -60,5 +60,6 @@
     <text x="1080" y="373" text-anchor="middle" font-size="12" fill="#167a41" font-family="system-ui, sans-serif">ArtSync ↯ wakes render early</text>
   </g>
 
-  <text x="32" y="410" font-size="13" fill="#5b6b64">Wire-to-photon latency ≈ 2 frames (one wait + one emission). An ArtDmx mid-encode lands in frame N+1 — never half-and-half.</text>
+  <text x="32" y="404" font-size="13" fill="#5b6b64">Source priority per channel: identify › pixel-count preview › standalone scene › failsafe › network/FSEQ decode (first match wins).</text>
+  <text x="32" y="424" font-size="13" fill="#5b6b64">Wire-to-photon latency ≈ 2 frames (one wait + one emission). An ArtDmx mid-encode lands in frame N+1 — never half-and-half.</text>
 </svg>
