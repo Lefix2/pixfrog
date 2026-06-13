@@ -32,16 +32,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p site
-          # Static site assets (landing + flasher + docs viewer + about + theme).
-          cp .github/pages/index.html    site/index.html
-          cp .github/pages/flash.html    site/flash.html
-          cp .github/pages/docs.html     site/docs.html
-          cp .github/pages/about.html    site/about.html
-          cp .github/pages/style.css     site/style.css
-          # esp-web-tools manifest — points at the latest Release asset, so the
-          # flasher always serves the newest firmware without redeploying.
-          cp .github/pages/manifest.json site/manifest.json
-          # Technical docs, rendered client-side by docs.html.
+          # Ship every static asset in .github/pages: the root index.html
+          # language router, the language-suffixed content pages
+          # ({index,flash,docs,about}-{en,fr}.html), the lang.js switcher, theme
+          # (style.css) and the esp-web-tools manifest (points at the latest
+          # Release asset, so the flasher serves the newest firmware without
+          # redeploying). Copying the whole directory keeps EN/FR in lockstep —
+          # no per-file list to forget.
+          cp -r .github/pages/. site/
+          # Technical docs, rendered client-side by docs-{en,fr}.html.
           mkdir -p site/docs
           cp docs/ARCHITECTURE.md site/docs/architecture.md
           cp docs/HARDWARE.md     site/docs/hardware.md
