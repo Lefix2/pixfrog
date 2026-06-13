@@ -1,0 +1,5 @@
+# CI overlay: build the firmware with the OLED SSD1306 display backend selected
+# instead of the default TFT. Applied on top of sdkconfig.defaults via
+# SDKCONFIG_DEFAULTS so the idf-build matrix exercises both render paths.
+CONFIG_PIXFROG_DISPLAY_TFT=n
+CONFIG_PIXFROG_DISPLAY_OLED=y

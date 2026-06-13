@@ -1,44 +1,74 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 360" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 380" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
   <defs>
     <marker id="ls-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0L10 5L0 10z" fill="#1f9d55"/>
     </marker>
   </defs>
-  <rect width="980" height="360" fill="#ffffff"/>
-  <text x="32" y="40" font-size="24" font-weight="700" fill="#11201a">5 V level shifting — 74HCT245</text>
-  <text x="32" y="62" font-size="14" fill="#5b6b64">3.3 V CMOS can't reliably meet a 5 V strip's Vih (~3.5 V). The HCT buffer (Vih = 2.0 V) restores clean 5 V logic.</text>
+  <rect width="1180" height="380" fill="#ffffff"/>
+  <text x="32" y="40" font-size="24" font-weight="700" fill="#11201a">5 V level shifting &amp; output protection — 74HCT245</text>
+  <text x="32" y="62" font-size="14" fill="#5b6b64">3.3 V CMOS can't reliably meet a 5 V strip's Vih (~3.5 V). The HCT buffer (Vih = 2.0 V) restores clean 5 V logic; each output then adds a series resistor and a TVS clamp.</text>
 
   <!-- ESP32-P4 -->
-  <rect x="40" y="120" width="220" height="150" rx="10" fill="#f1f5f3" stroke="#cfdbd5"/>
-  <text x="150" y="160" text-anchor="middle" font-size="16" font-weight="700" fill="#11201a">ESP32-P4</text>
-  <text x="150" y="184" text-anchor="middle" font-size="13" fill="#5b6b64" font-family="'DejaVu Sans Mono', monospace">3.3 V CMOS</text>
-  <text x="150" y="232" text-anchor="middle" font-size="13" fill="#11201a" font-family="'DejaVu Sans Mono', monospace">16 GPIOs</text>
-  <text x="150" y="250" text-anchor="middle" font-size="12" fill="#5b6b64" font-family="'DejaVu Sans Mono', monospace">8×(DATA+CLK)</text>
+  <rect x="32" y="140" width="200" height="150" rx="10" fill="#f1f5f3" stroke="#cfdbd5"/>
+  <text x="132" y="180" text-anchor="middle" font-size="16" font-weight="700" fill="#11201a">ESP32-P4</text>
+  <text x="132" y="204" text-anchor="middle" font-size="13" fill="#5b6b64" font-family="'DejaVu Sans Mono', monospace">3.3 V CMOS</text>
+  <text x="132" y="250" text-anchor="middle" font-size="13" fill="#11201a" font-family="'DejaVu Sans Mono', monospace">16 GPIOs</text>
+  <text x="132" y="268" text-anchor="middle" font-size="12" fill="#5b6b64" font-family="'DejaVu Sans Mono', monospace">8×(DATA+CLK)</text>
 
   <!-- 74HCT245 -->
-  <rect x="380" y="104" width="220" height="182" rx="10" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.6"/>
-  <text x="490" y="134" text-anchor="middle" font-size="16" font-weight="700" fill="#11201a">74HCT245</text>
+  <rect x="300" y="124" width="200" height="182" rx="10" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.6"/>
+  <text x="400" y="154" text-anchor="middle" font-size="16" font-weight="700" fill="#11201a">74HCT245</text>
   <g font-family="'DejaVu Sans Mono', ui-monospace, monospace" font-size="13" fill="#167a41">
-    <text x="400" y="166">A0..A7  ← 3.3 V in</text>
-    <text x="400" y="188">B0..B7  → 5 V out</text>
-    <text x="400" y="214" fill="#11201a">DIR = H   (A → B)</text>
-    <text x="400" y="234" fill="#11201a">/OE = L   (enabled)</text>
-    <text x="400" y="254" fill="#11201a">Vcc = 5 V</text>
-    <text x="400" y="274" fill="#5b6b64">2 pkgs cover 16 GPIOs</text>
+    <text x="318" y="186">A0..A7  ← 3.3 V in</text>
+    <text x="318" y="208">B0..B7  → 5 V out</text>
+    <text x="318" y="234" fill="#11201a">DIR = H   (A → B)</text>
+    <text x="318" y="254" fill="#11201a">/OE = L   (enabled)</text>
+    <text x="318" y="274" fill="#11201a">Vcc = 5 V</text>
+    <text x="318" y="294" fill="#5b6b64">2 pkgs cover 16 GPIOs</text>
   </g>
 
   <!-- LED strip -->
-  <rect x="720" y="120" width="220" height="150" rx="10" fill="#11201a"/>
-  <text x="830" y="160" text-anchor="middle" font-size="16" font-weight="700" fill="#eafff3">LED strip</text>
-  <text x="830" y="184" text-anchor="middle" font-size="13" fill="#7bdcb5" font-family="'DejaVu Sans Mono', monospace">5 V CMOS</text>
-  <text x="830" y="232" text-anchor="middle" font-size="12.5" fill="#dff3ec" font-family="'DejaVu Sans Mono', monospace">WS2815 · APA102</text>
-  <text x="830" y="250" text-anchor="middle" font-size="12.5" fill="#dff3ec" font-family="'DejaVu Sans Mono', monospace">SK9822 · …</text>
+  <rect x="956" y="140" width="200" height="150" rx="10" fill="#11201a"/>
+  <text x="1056" y="180" text-anchor="middle" font-size="16" font-weight="700" fill="#eafff3">LED strip</text>
+  <text x="1056" y="204" text-anchor="middle" font-size="13" fill="#7bdcb5" font-family="'DejaVu Sans Mono', monospace">5 V CMOS</text>
+  <text x="1056" y="250" text-anchor="middle" font-size="12.5" fill="#dff3ec" font-family="'DejaVu Sans Mono', monospace">WS2815 · APA102</text>
+  <text x="1056" y="268" text-anchor="middle" font-size="12.5" fill="#dff3ec" font-family="'DejaVu Sans Mono', monospace">SK9822 · …</text>
 
-  <!-- flow arrows -->
-  <line x1="260" y1="195" x2="380" y2="195" stroke="#1f9d55" stroke-width="2.2" marker-end="url(#ls-ar)"/>
-  <text x="320" y="186" text-anchor="middle" font-size="12" fill="#167a41">3.3 V</text>
-  <line x1="600" y1="195" x2="720" y2="195" stroke="#1f9d55" stroke-width="2.2" marker-end="url(#ls-ar)"/>
-  <text x="660" y="186" text-anchor="middle" font-size="12" fill="#167a41">5 V</text>
+  <!-- 3.3V flow: ESP32 -> 74HCT245 -->
+  <line x1="232" y1="200" x2="300" y2="200" stroke="#1f9d55" stroke-width="2.2" marker-end="url(#ls-ar)"/>
+  <text x="266" y="191" text-anchor="middle" font-size="12" fill="#167a41">3.3 V</text>
 
-  <text x="40" y="324" font-size="13" fill="#5b6b64">Common MCU/strip ground. Use the <tspan font-weight="700" fill="#11201a">HCT</tspan> (not HC) variant — its TTL input threshold is what makes 3.3 V → 5 V reliable.</text>
+  <!-- output chain: 74HCT245 -> Rs -> node(TVS to GND) -> strip -->
+  <!-- wire 245 -> series resistor -->
+  <line x1="500" y1="200" x2="600" y2="200" stroke="#1f9d55" stroke-width="2.2"/>
+  <!-- series resistor -->
+  <rect x="600" y="188" width="56" height="24" rx="3" fill="#ffffff" stroke="#11201a" stroke-width="1.6"/>
+  <text x="628" y="180" text-anchor="middle" font-size="12" fill="#11201a">Rs</text>
+  <text x="628" y="232" text-anchor="middle" font-size="11" fill="#5b6b64">249 Ω DATA · 33 Ω CLK</text>
+  <!-- wire resistor -> output node -->
+  <line x1="656" y1="200" x2="800" y2="200" stroke="#1f9d55" stroke-width="2.2"/>
+  <!-- output node dot -->
+  <circle cx="780" cy="200" r="3.5" fill="#11201a"/>
+
+  <!-- TVS clamp from node to GND -->
+  <line x1="780" y1="200" x2="780" y2="246" stroke="#11201a" stroke-width="1.6"/>
+  <!-- cathode bar (to signal) with zener wings -->
+  <line x1="766" y1="246" x2="794" y2="246" stroke="#11201a" stroke-width="1.6"/>
+  <line x1="766" y1="246" x2="760" y2="240" stroke="#11201a" stroke-width="1.6"/>
+  <line x1="794" y1="246" x2="800" y2="252" stroke="#11201a" stroke-width="1.6"/>
+  <!-- anode triangle pointing up to cathode -->
+  <path d="M768 266 L792 266 L780 246 z" fill="#ffffff" stroke="#11201a" stroke-width="1.6"/>
+  <!-- anode wire down to GND -->
+  <line x1="780" y1="266" x2="780" y2="288" stroke="#11201a" stroke-width="1.6"/>
+  <!-- GND symbol -->
+  <line x1="766" y1="288" x2="794" y2="288" stroke="#11201a" stroke-width="2"/>
+  <line x1="771" y1="294" x2="789" y2="294" stroke="#11201a" stroke-width="2"/>
+  <line x1="775" y1="300" x2="785" y2="300" stroke="#11201a" stroke-width="2"/>
+  <text x="812" y="262" font-size="12" fill="#167a41">TVS 5 V → GND</text>
+
+  <!-- wire output node -> strip -->
+  <line x1="800" y1="200" x2="956" y2="200" stroke="#1f9d55" stroke-width="2.2" marker-end="url(#ls-ar)"/>
+  <text x="880" y="191" text-anchor="middle" font-size="12" fill="#167a41">5 V</text>
+
+  <text x="32" y="352" font-size="13" fill="#5b6b64">Common signal ground (board ↔ strip). Use the <tspan font-weight="700" fill="#11201a">HCT</tspan> (not HC) variant — its TTL input threshold is what makes 3.3 V → 5 V reliable. One series resistor + one TVS clamp per output.</text>
 </svg>

@@ -121,6 +121,13 @@ CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
 CONFIG_PIXFROG_LED_OUTPUT_PARLIO=y
 
 #
+# Display backend — ST7789 TFT (also the Kconfig default; stated here
+# explicitly so the choice is visible). The OLED SSD1306 backend stays
+# buildable via the sdkconfig.ci.oled overlay.
+#
+CONFIG_PIXFROG_DISPLAY_TFT=y
+
+#
 # microSD / FATFS — used by the FSEQ player.
 # SDMMC host driver + FATFS VFS integration.
 # format_if_mount_failed is left off; a bad SD card shows "No SD card" in the

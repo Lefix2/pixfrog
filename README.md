@@ -14,7 +14,7 @@
 - **Standalone scenes**: 8 parametric slots (solid / chase / rainbow, per-channel mask), playable at boot, from the desk (ArtTrigger), or any UI
 - **Signal-loss failsafe** per channel: hold / blackout / solid colour / scene after a configurable timeout
 - **Per-channel gamma + white balance**, baked into encode-time LUTs (validated bit-exact on a logic analyzer)
-- Local UI: **compile-time selectable** — SSD1306 OLED 128×64 (default) **or** ST7789V TFT 320×240 colour (SPI) with a live status dashboard (per-channel activity, link/services state) and natively rasterised anti-aliased fonts; shared canvas API and menu FSM; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning
+- Local UI: **compile-time selectable** — ST7789V TFT 320×240 colour (SPI, default) with a live status dashboard (per-channel activity, link/services state) and natively rasterised anti-aliased fonts, **or** SSD1306 OLED 128×64; shared canvas API and menu FSM; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning
 - **Web UI** (opt-in, port 80): full configuration SPA + REST API, live `/api/status` telemetry, **OTA firmware update** (A/B slots with boot-failure rollback), config **backup/restore** as JSON, crash **coredump download**, mDNS discovery while enabled, optional HTTP Basic auth on every mutation
 - **UART control console**: every config field, telemetry, DMX injection, buffer readback (`tools/uartctl.sh`)
 - All configuration **persisted** in NVS with forward migration; network surfaces beyond ArtNet are **strictly opt-in** (no socket while disabled)
@@ -47,8 +47,8 @@ Select at `idf.py menuconfig` → **Display backend** (or export `SDKCONFIG_DEFA
 
 | Kconfig symbol                | Display                      | Notes                          |
 |-------------------------------|------------------------------|--------------------------------|
-| `CONFIG_PIXFROG_DISPLAY_OLED` | SSD1306 128×64 I2C *(default)* | monochrome, diff-based flush  |
-| `CONFIG_PIXFROG_DISPLAY_TFT`  | ST7789V 320×240 SPI landscape | 16-bit colour, animated splash |
+| `CONFIG_PIXFROG_DISPLAY_TFT`  | ST7789V 320×240 SPI landscape *(default)* | 16-bit colour, animated splash |
+| `CONFIG_PIXFROG_DISPLAY_OLED` | SSD1306 128×64 I2C            | monochrome, diff-based flush  |
 
 TFT SPI GPIOs are configured in `boards/esp32_p4_devkit.h` (CLK=13, MOSI=11, CS=12, DC=10, RST=9, 40 MHz).
 

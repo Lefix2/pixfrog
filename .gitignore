@@ -28,6 +28,6 @@ log/
 *:Zone.Identifier
 
 # overlay local builds (tools/ci-local.sh)
-build.tft/
+build.oled/
 build.lcdcam/
 build.parlio/
