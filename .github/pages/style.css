@@ -10,6 +10,7 @@
   --brand-strong: #c98f23;
   --brand-ink: #1d3a2c;
   --accent: #1d3a2c;
+  --green: #70d18b; /* signature spring green — same ink as the device UI */
   --radius: 16px;
   --shadow: 0 10px 30px -12px rgba(29, 58, 44, 0.25);
   --maxw: 1080px;
@@ -173,8 +174,8 @@ header.nav {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--brand);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 25%, transparent);
+  background: var(--green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 25%, transparent);
 }
 .hero h1 {
   font-size: clamp(2.6rem, 7vw, 4.5rem);
@@ -218,6 +219,13 @@ esp-web-install-button {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
 }
+/* Device framebuffer renders: integer-upscaled, keep pixels crisp. */
+.ui-shot {
+  margin-top: 0;
+  width: min(100%, 640px);
+  height: auto;
+  image-rendering: pixelated;
+}
 
 /* Sections */
 section.block {
@@ -246,6 +254,11 @@ section.block {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.5rem;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
 }
 .card .ic {
   font-size: 1.6rem;

@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>pixfrog — ESP32-P4 LED-pixel firmware</title>
+    <title>pixfrog — ESP32-P4 Art-Net / sACN LED firmware</title>
     <meta
       name="description"
-      content="Flash the pixfrog LED-pixel controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
+      content="Flash the pixfrog Art-Net / sACN LED controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="pixfrog — ESP32-P4 LED-pixel firmware" />
+    <meta property="og:title" content="pixfrog — ESP32-P4 Art-Net / sACN LED firmware" />
     <meta
       property="og:description"
-      content="Flash the pixfrog LED-pixel controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
+      content="Flash the pixfrog Art-Net / sACN LED controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
     />
     <meta property="og:url" content="https://lefix2.github.io/pixfrog/" />
     <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
@@ -49,7 +49,8 @@
           </span>
           <h1>Flash your ESP32-P4<br />right from the browser</h1>
           <p class="lead">
-            pixfrog is a high-density LED-pixel controller firmware. Plug the
+            pixfrog is a high-density Art-Net / sACN LED controller firmware:
+            8 parallel pixel outputs, DMX512, FSEQ shows from microSD. Plug the
             board in over USB and install the latest build in seconds — no IDE,
             no toolchain, no command line.
           </p>
@@ -109,8 +110,9 @@
             </div>
             <div class="step">
               <h3>Configure</h3>
-              <p>Use the on-board OLED + rotary encoder to set protocol,
-                universe, channels and network — all persisted to NVS.</p>
+              <p>Use the on-board display + rotary encoder to set protocol,
+                universe, channels and network — or enable the embedded web UI
+                and do it from a browser. All persisted to NVS.</p>
             </div>
           </div>
         </div>
@@ -127,27 +129,52 @@
           <div class="grid">
             <div class="card">
               <span class="ic">🎚️</span>
-              <h3>8 LED protocols</h3>
-              <p>WS2815, WS2812B, WS2811, SK6812, WS2814, APA102, SK9822 and
-                LPD8806 — with per-channel color order.</p>
+              <h3>9 protocols + DMX512</h3>
+              <p>WS2815, WS2812B, WS2811, SK6812, WS2814, APA102, SK9822,
+                LPD8806 — or a full DMX512 universe out per channel, with
+                per-channel color order, gamma and brightness.</p>
             </div>
             <div class="card">
               <span class="ic">🌐</span>
-              <h3>Art-Net ingest</h3>
-              <p>UDP Art-Net over Ethernet with universe mapping, ArtPollReply
-                and a lwIP stack tuned for high packet rates.</p>
+              <h3>Art-Net 4 + sACN</h3>
+              <p>ArtDmx, Sync, Trigger, TimeCode and remote config over
+                Ethernet; opt-in sACN (E1.31) with priorities and 2-source
+                HTP/LTP merge — up to 48 universes.</p>
             </div>
             <div class="card">
               <span class="ic">⚡</span>
-              <h3>LCD_CAM parallel out</h3>
-              <p>The ESP32-P4 LCD_CAM peripheral clocks 8 parallel channels out
-                of PSRAM frame buffers via GDMA for rock-steady refresh.</p>
+              <h3>Parallel DMA output</h3>
+              <p>The ESP32-P4 PARLIO peripheral clocks all 8 channels in
+                parallel out of PSRAM double buffers via DMA for rock-steady,
+                jitter-free refresh.</p>
             </div>
             <div class="card">
               <span class="ic">🖥️</span>
               <h3>On-device UI</h3>
-              <p>SSD1306 OLED menu driven by a seesaw rotary encoder — live FPS,
-                IP, link state and full configuration, no laptop needed.</p>
+              <p>Colour TFT status dashboard (or classic OLED) driven by a
+                rotary encoder — live FPS, link, per-channel activity and full
+                configuration, no laptop needed.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🛰️</span>
+              <h3>Web UI &amp; OTA</h3>
+              <p>Opt-in embedded web app: full configuration, live status,
+                OTA updates with A/B rollback, JSON backup/restore, coredump
+                download, optional auth.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🎬</span>
+              <h3>FSEQ player</h3>
+              <p>Plays xLights/FPP <code>.fseq</code> shows from microSD
+                (zstd, hot-plug), free-running or slaved to ArtTimeCode and
+                FPP MultiSync.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🎭</span>
+              <h3>Scenes &amp; failsafe</h3>
+              <p>8 standalone scenes (solid / chase / rainbow) playable at
+                boot, from the desk or any UI — plus a per-channel
+                signal-loss failsafe.</p>
             </div>
             <div class="card">
               <span class="ic">💾</span>
@@ -165,6 +192,27 @@
           <p style="text-align: center; margin-top: 2rem">
             <a class="btn" href="./docs.html#architecture">Read the architecture →</a>
           </p>
+        </div>
+      </section>
+
+      <!-- On-device dashboard -->
+      <section class="block" id="dashboard">
+        <div class="wrap">
+          <h2>A real dashboard, on the device</h2>
+          <p class="sub">
+            The optional 320×240 colour TFT shows network, services and
+            per-channel activity at a glance — protocol, universe, pixels,
+            brightness and a live status LED per output.
+          </p>
+          <img
+            class="shot ui-shot"
+            src="./img/ui-home.png"
+            alt="pixfrog TFT status dashboard: IP, link, services and the 8-channel table"
+            width="640"
+            height="480"
+            loading="lazy"
+            onerror="this.style.display='none'"
+          />
         </div>
       </section>
 
