@@ -19,7 +19,7 @@ docs viewer hide any image that fails to load, so adding/replacing one is safe.
 | `hardware-pinout.jpg`       | JPG  | Waveshare DEV-KIT labelled header + interfaces                 | HARDWARE §2 |
 | `level-shifter.svg`         | SVG  | 3.3 V → 5 V buffering with a 74HCT245, series R + TVS clamp     | HARDWARE §3 |
 | `peripherals-wiring.svg`    | SVG  | OLED + seesaw encoder on the shared I²C bus                    | HARDWARE §4 |
-| `oled-ui.svg`               | SVG  | SSD1306 home-screen mockup                                     | HARDWARE §5 |
+| `oled-ui.svg`               | SVG  | SSD1306 home-screen mockup                                     | HARDWARE §6 |
 | `board-hero.jpg`            | JPG  | Photo of the ESP32-P4 DEV-KIT                                  | Landing hero + HARDWARE §1 |
 | `og-cover.png`              | PNG  | Social / link-preview cover (rendered from `og-cover.svg`)    | `og:image` |
 | `logo.svg`                  | SVG  | Frog mark — nav brand + favicon                               | Site |

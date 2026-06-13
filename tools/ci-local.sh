@@ -35,17 +35,17 @@ echo "==[4/4] IDF builds oled + tft (CI: idf-build matrix) =="
 # share the default ./sdkconfig.
 if command -v idf.py >/dev/null 2>&1; then
     idf.py build
-    idf.py -B build.tft \
-        -D SDKCONFIG=build.tft/sdkconfig \
-        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft" \
+    idf.py -B build.oled \
+        -D SDKCONFIG=build.oled/sdkconfig \
+        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.oled" \
         build
 else
     docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
         espressif/idf:v5.5 idf.py build
     docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
-        espressif/idf:v5.5 idf.py -B build.tft \
-        -D SDKCONFIG=build.tft/sdkconfig \
-        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.tft" \
+        espressif/idf:v5.5 idf.py -B build.oled \
+        -D SDKCONFIG=build.oled/sdkconfig \
+        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.oled" \
         build
 fi
 

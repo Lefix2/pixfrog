@@ -140,8 +140,6 @@ The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
 ![3.3 V → 5 V level shifting with a 74HCT245 buffer, series resistor and TVS clamp on each output](img/level-shifter.svg)
 
-> Alternative considered: **TXS0108E** (avoid — its auto-direction is too slow for fast clocked protocols).
-
 **Realised as the pixfrog shield** — KiCad project + JLCPCB production files in
 [`hardware/pixfrog_shield/`](../hardware/pixfrog_shield/README.md): 2× 74HCT245,
 DIP-selectable series termination per line (DATA 249 Ω ↔ ≈34 Ω, CLOCK 33 Ω ↔ ≈18 Ω),
@@ -188,20 +186,9 @@ Reference: [Adafruit Learn — I2C QT Rotary Encoder](https://learn.adafruit.com
 
 ---
 
-## 5. OLED display (SSD1306 — default)
+## 5. TFT display wiring (ST7789V / ILI9341 — default)
 
-The default display is a **SSD1306 128×64 I²C OLED**. It is supported as a
-display option and shares the I²C bus with the encoder (§2.3) — no dedicated
-wiring beyond that bus. Refresh is **10 Hz** via diff-based flush (only the
-pages whose pixels changed are pushed).
-
-![SSD1306 home screen mockup](img/oled-ui.svg)
-
----
-
-## 6. TFT display wiring (ST7789V / ILI9341 — optional, replaces OLED)
-
-When `CONFIG_PIXFROG_DISPLAY_TFT=y` is selected, a **ST7789V (or pin-compatible ILI9341) 320×240 SPI display** is used instead of the OLED. The TFT is driven in landscape orientation (320 wide × 240 tall) via `esp_lcd_new_panel_st7789`.
+The default display is a **ST7789V (or pin-compatible ILI9341) 320×240 SPI display** (`CONFIG_PIXFROG_DISPLAY_TFT`, selected by default). The TFT is driven in landscape orientation (320 wide × 240 tall) via `esp_lcd_new_panel_st7789`.
 
 ```
 ST7789V module    ESP32-P4
@@ -219,7 +206,15 @@ SPI host: `SPI2_HOST`, 40 MHz. The display is portrait 240×320 at the hardware 
 
 Color format: RGB565 big-endian (ST7789 native). `canvas_tft.cpp` applies `__builtin_bswap16` to every pixel value before writing to the DMA buffer.
 
-The OLED and TFT share the same I2C encoder wiring (§4 above). The I2C bus is still initialised regardless of display choice (encoder requires it).
+The TFT and OLED share the same I2C encoder wiring (§4 above). The I2C bus is still initialised regardless of display choice (encoder requires it).
+
+---
+
+## 6. OLED display (SSD1306 — optional)
+
+The alternative display is a **SSD1306 128×64 I²C OLED** (`CONFIG_PIXFROG_DISPLAY_OLED`). It shares the I²C bus with the encoder (§2.3) — no dedicated wiring beyond that bus. Refresh is **10 Hz** via diff-based flush (only the pages whose pixels changed are pushed).
+
+![SSD1306 home screen mockup](img/oled-ui.svg)
 
 ---
 

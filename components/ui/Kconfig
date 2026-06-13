@@ -2,7 +2,7 @@ menu "Display backend"
 
     choice PIXFROG_DISPLAY
         prompt "Display type"
-        default PIXFROG_DISPLAY_OLED
+        default PIXFROG_DISPLAY_TFT
         help
             Select the display connected to the UI port.
 
