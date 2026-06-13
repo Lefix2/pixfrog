@@ -275,7 +275,7 @@ static void test_spi_size() {
 // ── Perf: WS2815 1024 px must encode ≤ 20 ms on a reference CI runner ──────
 //
 // 20 ms is the budget for a single frame at ~50 Hz target on the ESP32-P4
-// (the actual hardware runs at 400 MHz; a typical CI runner at 2-4 GHz
+// (the actual hardware runs at 360 MHz; a typical CI runner at 2-4 GHz
 // will be 5-10× faster, so this is a generous ceiling that still catches
 // regressions where the encoder accidentally becomes O(n^2) or similar).
 

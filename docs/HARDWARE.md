@@ -14,7 +14,7 @@ All pin assignments in this document are exposed on the user-facing header conne
 
 ![Waveshare ESP32-P4 Module DEV-KIT — the default pixfrog board](img/board-hero.jpg)
 
-- ESP32-P4 dual-core RISC-V @ 400 MHz
+- ESP32-P4 dual-core RISC-V @ 360 MHz
 - 32 MB octal PSRAM
 - 16 MB external flash
 - **IP101GRI Ethernet PHY** with onboard magnetic RJ45 jack (RMII pre-wired)
@@ -34,11 +34,11 @@ External components added for pixfrog:
 
 ![Waveshare ESP32-P4 Module DEV-KIT — labelled header and interfaces](img/hardware-pinout.jpg)
 
-Validated against the Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin header). Strapping pins to avoid at boot: **GPIO 0** (bootloader entry), **GPIO 6** (download/normal mode), **GPIO 35** (SDIO). GPIO 16 is not exposed on P6 and must not be used.
+Validated against the Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin header). Strapping pins latched at reset (ESP32-P4 datasheet §3.3): **GPIO 35** (boot/download select, driven by the on-board BOOT button — also doubles as RMII TXD1), **GPIO 36** (must read HIGH for a reliable serial-download boot — exposed on P6 pin 21, keep it free), **GPIO 34** (JTAG source select). None of the LED pins below land on a strapping pin. GPIO 16 is not exposed on P6 and must not be used.
 
-### 2.1 LED 16-bit parallel bus (LCD_CAM)
+### 2.1 LED 16-bit parallel bus (PARLIO TX / LCD_CAM)
 
-ESP32-P4 routes every peripheral signal through the GPIO matrix, including the 16 data lines of the LCD_CAM bus. Any free GPIO is a valid LCD_CAM data line — the choices below pick header pins that are easy to route in pairs.
+ESP32-P4 routes every peripheral signal through the GPIO matrix, including the 16 data lines of the parallel LED bus. Any free GPIO is a valid bus data line — the choices below pick header pins that are easy to route in pairs. The bus is driven by the default **PARLIO TX** backend or the legacy **LCD_CAM** RGB backend (Kconfig choice); both clock the same 16 GPIOs from PSRAM via GDMA and emit identical sample streams (see §3 and `docs/PROTOCOLS.md` §3).
 
 | Bus bit | Signal    | GPIO | Notes                       |
 |--------:|-----------|-----:|-----------------------------|
@@ -59,21 +59,27 @@ ESP32-P4 routes every peripheral signal through the GPIO matrix, including the 1
 | 14      | CH8_DATA  | 53   |                             |
 | 15      | CH8_CLOCK | 54   |                             |
 
-> The LCD_CAM PCLK pin is configured with `pclk_gpio_num = -1` — it stays internal. CLOCK signals for clocked LED protocols (APA102, …) are encoded as bits 1, 3, 5, … of the parallel sample stream, not derived from PCLK. See `docs/PROTOCOLS.md` §3.
+> The bus clock (PCLK) pin stays internal on both backends — LCD_CAM with `pclk_gpio_num = -1`, PARLIO with `clk_out_gpio_num = GPIO_NUM_NC`. CLOCK signals for clocked LED protocols (APA102, …) are encoded as bits 1, 3, 5, … of the parallel sample stream, not derived from PCLK. See `docs/PROTOCOLS.md` §3.
 
 ### 2.2 Ethernet RMII (internal)
 
-The PHY's RMII pins are wired directly to the SoC on the DEV-KIT and are not brought out to the header, so they impose no constraint on the LED bus pinout above. Only MDC / MDIO / reset are configurable from firmware:
+The PHY's RMII + management pins use fixed SoC GPIOs that are wired directly on the DEV-KIT (verified against the schematic, PHY U7 = IP101GRI) and are not brought out to the P6 header, so they impose no constraint on the LED bus pinout above. The RMII data/clock pins equal the IDF v5.5 `ETH_ESP32_EMAC_DEFAULT_CONFIG()` defaults, which match the board wiring — so `main/init_network()` only overrides MDC / MDIO / reset:
 
-| Signal RMII           | GPIO P4         |
-|-----------------------|-----------------|
-| EMAC_REF_CLK          | internal        |
-| EMAC_TX_EN / TXD[0:1] | internal        |
-| EMAC_RXD[0:1] / CRS_DV | internal       |
-| MDC                   | GPIO 29         |
-| MDIO                  | GPIO 30         |
-| PHY reset             | -1 (PHY uses onboard RC POR) |
-| PHY address           | 0x01 (strapped) |
+| Signal RMII   | GPIO P4 | Note                                  |
+|---------------|--------:|---------------------------------------|
+| EMAC_REF_CLK  | 50      | 50 MHz, fixed                         |
+| EMAC_TX_EN    | 49      | fixed                                 |
+| EMAC_TXD0     | 34      | fixed (also a boot strap)             |
+| EMAC_TXD1     | 35      | fixed (also the BOOT-button strap)    |
+| EMAC_RXD0     | 29      | fixed                                 |
+| EMAC_RXD1     | 30      | fixed                                 |
+| EMAC_CRS_DV   | 28      | fixed                                 |
+| MDC           | 31      | U7 pin 22                             |
+| MDIO          | 52      | U7 pin 23                             |
+| PHY reset     | 51      | U7 pin 32 — drive HIGH to release     |
+| PHY address   | 0x01    | IP101GRI strap (AD0/AD3)              |
+
+> The old MDC=29 / MDIO=30 values were carried over from the Espressif Function EV Board and never link on the Waveshare DEV-KIT — GPIO 29/30 are actually the RMII RX data lines there. Use the values above.
 
 ### 2.3 I2C (OLED + encoder)
 
@@ -97,21 +103,42 @@ Bus frequency: **400 kHz** (Fast Mode). Enough for OLED refresh at ~10 Hz with d
 | DEBUG_TX     | 37   | UART0 console — `TXD(GPIO37)` on silkscreen |
 | DEBUG_RX     | 38   | UART0 — `RXD(GPIO38)`                       |
 
+### 2.5 microSD (SDMMC 4-bit)
+
+The FSEQ player reads `.fseq` shows from a microSD card on the SDMMC 4-bit bus:
+
+| Signal | GPIO | Signal | GPIO |
+|--------|-----:|--------|-----:|
+| CLK    | 39   | D0     | 41   |
+| CMD    | 40   | D1     | 42   |
+|        |      | D2     | 43   |
+|        |      | D3     | 44   |
+
+None of these GPIOs appear in the LED bus, SPI display, I2C, Ethernet or UART pin lists.
+
+### 2.6 Pad power domains (VDD_IO_5 LDO)
+
+GPIO 39–48 sit in the **VDD_IO_5** pad domain, powered by the SoC's internal LDO output **VO4**. Left unprogrammed, VO4 idles near **1.2 V**, so those pads only swing ~1.2 V — not enough to drive a 5 V buffer or an SD card. `main::power_vdd_io5_pads()` programs VO4 to **3.3 V** at boot. This domain covers **CH5 CLOCK (46)**, **CH7 DATA/CLOCK (47/48)** and the entire **microSD** bus (39–44), so the LDO step is mandatory for those outputs.
+
 ---
 
-## 3. Q1 — Can LCD_CAM produce a 16-bit free-running bus with an arbitrary clock?
+## 3. Q1 — Can the parallel bus run free-running with an arbitrary clock?
 
-**Yes.** ESP32-P4's LCD_CAM peripheral is a superset of the ESP32-S3 one:
+**Yes — two backends do this**, both selected at build time (Kconfig `PIXFROG_LED_OUTPUT_BACKEND`, default PARLIO). They emit identical sample streams and differ only in the engine moving the bytes:
 
-- **i80 mode** (Intel 8080): 8/16/24-bit + WR/RD strobes. Overkill for our use case.
-- **RGB (DPI) mode**: 16/24-bit with HSYNC/VSYNC. Ideal here — set HSYNC/VSYNC porches to 0 and the bus is effectively continuous, DMA-driven.
+**Default — PARLIO TX (loop transmission).** The PARLIO TX unit is a plain "N-bit bus + clock, fed by DMA" engine with no LCD line/frame timing registers:
 
-Our setup:
+1. `parlio_new_tx_unit` with `data_width = 16`, `clk_src = PARLIO_CLK_SRC_DEFAULT` (PLL_F160M), `output_clk_freq_hz = 16 MHz` (160 MHz / 10, exact), `clk_out_gpio_num = NC`.
+2. Two PSRAM frame buffers (`heap_caps_aligned_calloc`, `MALLOC_CAP_SPIRAM`); the render task encodes into the back buffer while the front one is on the wire.
+3. In **loop transmission** mode the mounted frame is a flat DMA buffer repeated back-to-back with no gap — the encoded reset tail separates repeats, so the strips simply see the last frame re-sent continuously, like a video signal.
+4. A new `parlio_tx_unit_transmit` while looping does not queue a transaction; the driver concatenates the new payload to the tail of the running link list, so the buffer swap happens at the next frame boundary, gapless.
 
-1. `esp_lcd_new_rgb_panel` with `data_width = 16`, `flags.fb_in_psram = true`, `num_fbs = 2`, `refresh_on_demand = true`.
-2. PCLK divides from `LCD_CLK_SRC_DEFAULT`; we ask for the exact frequency we computed (`pclk_hz = 16 MHz` — see `PROTOCOLS.md` §3).
-3. GDMA streams the PSRAM frame buffer to the 16 chosen GPIOs continuously while a frame is being emitted.
-4. The bus is free-running for the duration of one frame; between frames, the trailing samples (zeros) keep DATA low long enough to satisfy 1-wire latch (TRESET).
+**Legacy — LCD_CAM RGB panel** (`PIXFROG_LED_OUTPUT_LCD_CAM`, not CI-built). ESP32-P4's LCD_CAM peripheral is a superset of the ESP32-S3 one (i80 and RGB/DPI modes):
+
+1. `esp_lcd_new_rgb_panel` with `data_width = 16`, `flags.fb_in_psram = true`, `num_fbs = 2`, `refresh_on_demand = true`, `pclk_hz = 16 MHz`.
+2. The P4 LCD_CAM horizontal timing registers are only 12-bit, so a frame is laid out as `v_res` lines of ≤ 4095 samples — **not** one giant line (that silently truncates in hardware). Hardware inserts one blank PCLK per line (the HSYNC tick); `h_res` is chosen as a multiple of every active NRZ bit period so that tick always lands on an inter-bit LOW and merely stretches it by 62.5 ns.
+3. GDMA streams the PSRAM frame buffer to the 16 chosen GPIOs while a frame is being emitted; `esp_lcd_panel_draw_bitmap` re-arms the next emission.
+4. Between frames, the trailing samples (zeros) keep DATA low long enough to satisfy the 1-wire latch (TRESET).
 
 ---
 
@@ -130,11 +157,11 @@ Our setup:
 
 ---
 
-## 5. Q3 — Can the CLOCK line be a bit of the LCD_CAM bus?
+## 5. Q3 — Can the CLOCK line be a bit of the parallel bus?
 
 **Yes — and that's the chosen strategy.**
 
-The 16-bit bus is DMA-driven: every PCLK tick, all 16 GPIOs are updated simultaneously from the current sample word. So:
+The 16-bit bus is DMA-driven on both backends: every PCLK tick, all 16 GPIOs are updated simultaneously from the current sample word. So:
 
 1. **Hardware-guaranteed synchronism** between DATA and CLOCK of the same channel — they leave on the same PCLK edge.
 2. CLOCK waveform is **encoded into bits 1/3/5/.../15 of the DMA buffer**, exactly like the DATA bits.
@@ -230,9 +257,9 @@ OLED refresh: **10 Hz** via diff-based flush (only pages whose pixels changed ar
 
 ---
 
-## 9. TFT display wiring (ST7789V — optional, replaces OLED)
+## 9. TFT display wiring (ST7789V / ILI9341 — optional, replaces OLED)
 
-When `CONFIG_PIXFROG_DISPLAY_TFT=y` is selected, a **ST7789V 320×240 SPI display** is used instead of the OLED. The TFT is driven in landscape orientation (320 wide × 240 tall) via `esp_lcd_new_panel_st7789`.
+When `CONFIG_PIXFROG_DISPLAY_TFT=y` is selected, a **ST7789V (or pin-compatible ILI9341) 320×240 SPI display** is used instead of the OLED. The TFT is driven in landscape orientation (320 wide × 240 tall) via `esp_lcd_new_panel_st7789`.
 
 ```
 ST7789V module    ESP32-P4

@@ -2,7 +2,8 @@
 //
 // This component is the pure compute core: given a pixel buffer, a protocol
 // descriptor, and a target sample buffer, it emits the parallel-bus 16-bit
-// samples that drive the LCD_CAM peripheral.
+// samples that drive the 16-bit LED bus (PARLIO TX by default, or the legacy
+// LCD_CAM RGB backend — see led_output).
 //
 // It has no IDF or hardware dependency and is unit-testable on a host.
 //
@@ -84,7 +85,8 @@ enum class ColorOrder : uint8_t {
 // Timing — derived from f_PCLK (cf. docs/PROTOCOLS.md §3)
 // ────────────────────────────────────────────────────────────────────────────
 
-// PCLK frequency the LCD_CAM bus is configured at, system-wide.
+// PCLK frequency the 16-bit LED bus is configured at, system-wide (both the
+// PARLIO TX and LCD_CAM backends clock at this rate).
 // Changing this requires recomputing every Timing::samples_* constant.
 constexpr uint32_t kPclkHz = 16'000'000;
 
