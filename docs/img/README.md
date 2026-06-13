@@ -10,7 +10,7 @@ docs viewer hide any image that fails to load, so adding/replacing one is safe.
 
 | File (`docs/img/…`)         | Kind | Shows                                                            | Used by |
 |-----------------------------|------|-----------------------------------------------------------------|---------|
-| `architecture-overview.svg` | SVG  | System block diagram (ingest → pool → render → LCD_CAM → strips) | ARCHITECTURE §1 |
+| `architecture-overview.svg` | SVG  | System block diagram (ingest → pool → render → PARLIO TX → strips) | ARCHITECTURE §1 |
 | `task-topology.svg`         | SVG  | FreeRTOS tasks across the two cores, with priorities            | ARCHITECTURE §3 |
 | `frame-pipeline.svg`        | SVG  | One frame's render stages, GDMA + network in parallel          | ARCHITECTURE §4 |
 | `clock-tree.svg`            | SVG  | LCD_CAM clock tree + PCLK / bit / clock formulas               | PROTOCOLS §3.1 |

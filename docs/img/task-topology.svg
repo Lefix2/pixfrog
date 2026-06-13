@@ -39,7 +39,7 @@
     <rect x="542" y="130" width="402" height="126" rx="8" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
     <text x="562" y="158" font-size="16" font-weight="700" fill="#11201a">render_task</text>
     <text x="562" y="182" font-size="12.5" fill="#167a41">swap universes → encode frame →</text>
-    <text x="562" y="200" font-size="12.5" fill="#167a41">draw_bitmap → wait done_sem</text>
+    <text x="562" y="200" font-size="12.5" fill="#167a41">loop remount → wait frame retired</text>
     <text x="562" y="224" font-size="12" fill="#5b6b64">wake: 60 Hz timer + ArtSync</text>
     <text x="562" y="242" font-size="12" fill="#5b6b64">stack 8 kB · hot path</text>
     <text x="924" y="166" font-size="22" font-weight="700" fill="#1f9d55" text-anchor="end">20</text>
@@ -49,6 +49,6 @@
     <text x="924" y="431" font-size="18" font-weight="700" fill="#cfdbd5" text-anchor="end">0</text>
   </g>
 
-  <text x="56" y="494" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">No lcd_cam_refill_task: the full frame lives in PSRAM, GDMA scans it in one</text>
-  <text x="56" y="514" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">transaction and on_color_trans_done releases done_sem at the end.</text>
+  <text x="56" y="494" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">No refill task: the full frame lives in PSRAM and GDMA loops it gaplessly. The</text>
+  <text x="56" y="514" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">PARLIO default marks no EOF, so render_task waits one frame duration before reuse.</text>
 </svg>

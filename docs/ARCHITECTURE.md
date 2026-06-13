@@ -12,7 +12,7 @@ pixfrog is built around one principle: **decouple network ingest (bursty, jitter
 
 ![pixfrog system overview](img/architecture-overview.svg)
 
-**Key idea**: frame N+1 is encoded into `frame_buf[back]` (PSRAM) while GDMA streams frame N out of `frame_buf[front]`. The swap is a pointer exchange after `esp_cache_msync` + `esp_lcd_panel_draw_bitmap`. No underrun risk because the encoder has no sub-frame deadline: it has the full DMA emission window of the current frame to produce the next one.
+**Key idea**: frame N+1 is encoded into `frame_buf[back]` (PSRAM) while GDMA streams frame N out of `frame_buf[front]`. After `esp_cache_msync`, the swap is a pointer exchange: the default **PARLIO TX backend** stitches the new buffer onto the tail of its gapless loop so it takes over at the next frame boundary (the legacy LCD_CAM backend re-arms with `esp_lcd_panel_draw_bitmap`). No underrun risk because the encoder has no sub-frame deadline: it has the full DMA emission window of the current frame to produce the next one.
 
 ---
 
@@ -21,7 +21,7 @@ pixfrog is built around one principle: **decouple network ingest (bursty, jitter
 **Native ESP-IDF v5.5+ (CMake + `idf.py`).**
 
 1. **Stable ESP32-P4 support** in upstream IDF. PlatformIO historically lags new targets by months.
-2. **Low-level LCD_CAM access** through the `esp_lcd` RGB panel API — no abstraction in the way.
+2. **Low-level parallel-bus access** — the default PARLIO TX driver (and the legacy LCD_CAM `esp_lcd` RGB panel) clock the 16-bit bus straight from PSRAM via GDMA, with no framework abstraction in the way.
 3. **Granular `sdkconfig`** for PSRAM, FreeRTOS, lwIP, IRAM ISR placement.
 4. **Reproducible CI** via the official `espressif/idf:vX.Y` docker images.
 
@@ -108,9 +108,9 @@ In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `
 | Circular logs                     | 64 kB      | Post-mortem debug                                   |
 | Application headroom              | ~27 MB     | Future sequencer / FX engine / ...                  |
 
-**GDMA from PSRAM** is supported natively by `esp_lcd_new_rgb_panel(flags.fb_in_psram=true)` on ESP32-P4. The shared DMA bus tolerates 32 MB/s sustained on 200 MHz octal PSRAM (peak ~200 MB/s, shared with cache and other masters — comfortable headroom). One `esp_cache_msync(DIR_C2M)` is required after CPU writes and before the GDMA kick.
+**GDMA from PSRAM** is native on ESP32-P4: the PARLIO TX unit (default) streams its frame buffers straight out of octal PSRAM, as does the legacy LCD_CAM panel (`esp_lcd_new_rgb_panel(flags.fb_in_psram=true)`). The shared DMA bus tolerates 32 MB/s sustained on 200 MHz octal PSRAM (peak ~200 MB/s, shared with cache and other masters — comfortable headroom). One `esp_cache_msync(DIR_C2M)` is required after CPU writes and before the GDMA kick.
 
-`frame_buf` (and the panel's `h_res`, i.e. the DMA emission duration) tracks the actual config: the panel is recreated when a config commit changes the required frame length. Sizing to the worst case would pin the emission at 82 ms/frame (≈ 12 FPS) regardless of content.
+`frame_buf` (and thus the DMA emission duration) tracks the actual config: the output unit is recreated when a config commit changes the required frame length. Sizing to the worst case would pin the emission at 82 ms/frame (≈ 12 FPS) regardless of content.
 
 ### NVS
 
@@ -142,12 +142,21 @@ universe_back = universe_front.exchange(new_front, std::memory_order_acq_rel);
 
 No locks. With one writer (`artnet_rx_task`) and one reader (`render_task` after swap), acquire/release ordering provides correctness.
 
-### 6.2 Binary semaphore (end of DMA emission)
+### 6.2 Buffer-free wait (end of DMA emission)
+
+The default **PARLIO TX backend** runs in loop mode and marks no DMA EOF, so
+there is no completion interrupt. The buffer just retired by a swap is known
+free exactly one frame duration after the swap was submitted; `render_frame()`
+parks on that timed deadline before reusing it.
+
+The legacy **LCD_CAM backend** does fire a completion ISR, so it waits on a
+semaphore instead:
 
 - LCD_CAM `on_color_trans_done` ISR → `xSemaphoreGiveFromISR(done_sem)`
 - `render_task` → `xSemaphoreTake(done_sem, timeout)` before kicking the next frame
 
-If the take times out, `dma_underruns` is incremented and we proceed with the next frame anyway — no error cascade.
+Either way, if the wait expires `dma_underruns` is incremented and the next
+frame proceeds anyway — no error cascade.
 
 ### 6.3 ArtSync wake
 
@@ -168,11 +177,15 @@ NVS writes happen only from `ui_task` (low-prio, core 0). They can block for a f
 
 All ISRs are `IRAM_ATTR`:
 
-- LCD_CAM `on_color_trans_done` (only `xSemaphoreGiveFromISR`)
-- seesaw encoder IRQ (same)
 - Ethernet RX (IDF, already in IRAM)
+- LCD_CAM `on_color_trans_done` → `xSemaphoreGiveFromISR(done_sem)` — **legacy
+  backend only**; the default PARLIO loop backend marks no DMA EOF and takes no
+  per-frame completion interrupt.
 
-Required sdkconfig flags: `CONFIG_LCD_CAM_ISR_IRAM_SAFE=y`, `CONFIG_GDMA_ISR_IRAM_SAFE=y`.
+(The seesaw encoder is time-polled on the 4-wire harness — no IRQ.)
+
+Required sdkconfig flags: `CONFIG_GDMA_ISR_IRAM_SAFE=y` (both backends), plus
+`CONFIG_LCD_CAM_ISR_IRAM_SAFE=y` on the legacy LCD_CAM path.
 
 > The frame buffer lives in PSRAM (which goes through the CPU cache), but GDMA itself talks directly to PSRAM via the cache controller without CPU involvement. PSRAM placement is fine for the buffer; only the ISR code needs to be in IRAM.
 
@@ -183,12 +196,12 @@ Required sdkconfig flags: `CONFIG_LCD_CAM_ISR_IRAM_SAFE=y`, `CONFIG_GDMA_ISR_IRA
 Changing a channel's protocol can change:
 
 1. Samples per bit (NRZ vs clocked encoding)
-2. Required PCLK frequency (PCLK is global to LCD_CAM)
+2. Required PCLK frequency (one PCLK clocks the whole 16-bit bus)
 3. Pixel buffer size (RGB vs RGBW)
 
 **Decision**: PCLK is **fixed at boot** to a compromise value (see `docs/PROTOCOLS.md` §3). Samples per bit are derived per channel without changing PCLK. Clocked protocols run at PCLK/N where N is computed to hit the requested CLOCK rate.
 
-Consequence: **changing protocol at runtime never changes PCLK**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffers are sized for the worst case at boot. The one exception is the frame length: a config commit that moves the required sample count to a different bucket tears down and recreates the RGB panel (FB realloc included) — once per commit, between frames, never in steady state.
+Consequence: **changing protocol at runtime never changes PCLK**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffers are sized for the worst case at boot. The one exception is the frame length: a config commit that moves the required sample count to a different bucket tears down and recreates the output unit (FB realloc included) — once per commit, between frames, never in steady state.
 
 **DMX512 output** is a fourth encoder family alongside NRZ and clocked SPI. A
 channel set to `DMX512` re-emits one Art-Net universe as a 250 kbit/s serial
@@ -223,7 +236,7 @@ transceiver is still preferable for long or terminated runs — see
 
 ## 10. Logging and telemetry
 
-Per-module ESP_LOG tags: `ARTNET`, `LCD_CAM`, `UI`, `DMX`, `CFG`, `MAIN`. Default level `INFO`, tunable at build time.
+Per-module ESP_LOG tags: `ARTNET`, `PARLIO_OUT` / `LCD_CAM` (active backend), `UI`, `DMX`, `CFG`, `MAIN`. Default level `INFO`, tunable at build time.
 
 Internal counters exposed by `dmx_manager_get_stats()`:
 

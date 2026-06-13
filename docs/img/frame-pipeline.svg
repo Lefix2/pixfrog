@@ -17,7 +17,8 @@
   <g font-size="12" font-weight="700" fill="#5b6b64" font-family="system-ui, sans-serif">
     <text x="24" y="138">render_task</text>
     <text x="24" y="152" font-weight="400" font-size="11">core 1 · prio 20</text>
-    <text x="24" y="232">GDMA / LCD_CAM</text>
+    <text x="24" y="232">GDMA loop</text>
+    <text x="24" y="246" font-weight="400" font-size="11">PARLIO TX</text>
     <text x="24" y="320">artnet_rx_task</text>
     <text x="24" y="334" font-weight="400" font-size="11">core 0 · prio 10</text>
   </g>
@@ -36,16 +37,16 @@
     <text x="619" y="133" text-anchor="middle" fill="#11201a" font-weight="700">encode → fb_back</text>
     <text x="619" y="150" text-anchor="middle" fill="#167a41" font-size="11">color · brightness · grouping</text>
     <rect x="748" y="108" width="170" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="833" y="133" text-anchor="middle" fill="#11201a">msync + draw</text>
-    <text x="833" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">swap + GDMA kick</text>
+    <text x="833" y="133" text-anchor="middle" fill="#11201a">msync + remount</text>
+    <text x="833" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">stitch fb_back into loop</text>
     <rect x="922" y="108" width="258" height="56" rx="6" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="1051" y="133" text-anchor="middle" fill="#11201a">wait done_sem / period</text>
+    <text x="1051" y="133" text-anchor="middle" fill="#11201a">wait frame / period</text>
     <text x="1051" y="150" text-anchor="middle" fill="#5b6b64" font-size="11">blocks until end-of-period or ArtSync</text>
   </g>
 
   <!-- GDMA lane -->
   <rect x="120" y="204" width="1060" height="48" rx="6" fill="#eef3fb" stroke="#9bb6e0"/>
-  <text x="650" y="233" text-anchor="middle" font-size="13" fill="#274b80" font-family="'DejaVu Sans Mono', monospace">GDMA streams the active frame → LCD_CAM → 16 GPIOs (continuous, at PCLK)</text>
+  <text x="650" y="233" text-anchor="middle" font-size="13" fill="#274b80" font-family="'DejaVu Sans Mono', monospace">GDMA loops the active frame → 16 GPIOs (gapless, at PCLK) — fb_back takes over at the next boundary</text>
   <line x1="833" y1="164" x2="833" y2="204" stroke="#5b6b64" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#fp-ar)"/>
 
   <!-- core 0 lane -->

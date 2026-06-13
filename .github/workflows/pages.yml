@@ -32,8 +32,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p site
-          # Static site assets (flasher + docs viewer + about + shared theme).
+          # Static site assets (landing + flasher + docs viewer + about + theme).
           cp .github/pages/index.html    site/index.html
+          cp .github/pages/flash.html    site/flash.html
           cp .github/pages/docs.html     site/docs.html
           cp .github/pages/about.html    site/about.html
           cp .github/pages/style.css     site/style.css

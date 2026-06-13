@@ -12,8 +12,8 @@ picks are marked ★.
       frame sync. Equal-priority sources now go through the shared 2-source
       merge (see next item). Unicast validated end-to-end on hardware (PR #24).
 - [ ] **sACN multicast test on a real LAN** — IGMP joins are untestable from
-      the WSL2 NAT (only unicast was validated). Drive the board from
-      xLights or a console on the apartment LAN and confirm
+      behind a NAT (only unicast was validated). Drive the board from
+      xLights or a console on the same test LAN and confirm
       `sacn_packets_rx` climbs with multicast-addressed universes
       (239.255.x.y), including after a universe re-config (5 s join
       refresh).

@@ -6,31 +6,26 @@
     <title>pixfrog — ESP32-P4 Art-Net / sACN LED firmware</title>
     <meta
       name="description"
-      content="Flash the pixfrog Art-Net / sACN LED controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
+      content="pixfrog is a high-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, DMX512, FSEQ shows, web UI and OTA."
     />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="pixfrog — ESP32-P4 Art-Net / sACN LED firmware" />
     <meta
       property="og:description"
-      content="Flash the pixfrog Art-Net / sACN LED controller firmware onto your ESP32-P4 straight from the browser — no toolchain required."
+      content="High-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, DMX512, FSEQ shows, web UI and OTA."
     />
     <meta property="og:url" content="https://lefix2.github.io/pixfrog/" />
     <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
     <link rel="stylesheet" href="./style.css" />
-    <!-- esp-web-tools: Web Serial flasher (desktop Chrome / Edge). -->
-    <script
-      type="module"
-      src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
-    ></script>
   </head>
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
         <a class="brand" href="#top"><img class="logo-img" src="./img/logo.svg" alt="" width="30" height="30" /> pixfrog</a>
         <nav class="nav-links">
-          <a href="#flash">Flash</a>
+          <a href="./flash.html">Flash</a>
           <a href="#features">Features</a>
           <a href="./docs.html">Docs</a>
           <a href="./about.html">About</a>
@@ -41,80 +36,36 @@
 
     <main id="top">
       <!-- Hero -->
-      <section class="hero" id="flash">
+      <section class="hero">
         <div class="wrap">
           <span class="badge">
             <span class="dot"></span>
             <span id="version-badge">ESP32-P4 firmware</span>
           </span>
-          <h1>Flash your ESP32-P4<br />right from the browser</h1>
+          <h1>High-density LED control<br />on the ESP32-P4</h1>
           <p class="lead">
-            pixfrog is a high-density Art-Net / sACN LED controller firmware:
-            8 parallel pixel outputs, DMX512, FSEQ shows from microSD. Plug the
-            board in over USB and install the latest build in seconds — no IDE,
-            no toolchain, no command line.
+            pixfrog is an Art-Net 4 / sACN LED controller firmware: 8 parallel
+            pixel outputs, DMX512, FSEQ shows from microSD, a colour on-device
+            dashboard and an embedded web UI — tuned for deterministic,
+            jitter-free pixel timing.
           </p>
           <div class="cta">
-            <esp-web-install-button manifest="./manifest.json">
-              <button slot="activate" class="btn primary" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
-                ⚡ Connect &amp; Install
-              </button>
-              <span slot="unsupported">
-                <span class="btn" style="cursor: not-allowed; opacity: 0.7">
-                  Use desktop Chrome or Edge to flash
-                </span>
-              </span>
-              <span slot="not-allowed">
-                <span class="btn" style="cursor: not-allowed; opacity: 0.7">
-                  Open over HTTPS to flash
-                </span>
-              </span>
-            </esp-web-install-button>
+            <a class="btn primary" href="./flash.html" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
+              ⚡ Flash your board
+            </a>
+            <a class="btn" href="./docs.html">📖 Documentation</a>
             <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
               📦 Releases
             </a>
-            <a class="btn" href="./docs.html">📖 Documentation</a>
           </div>
-          <p class="hint">
-            Works in desktop Chrome &amp; Edge (Web Serial). The chip is erased
-            and reflashed — settings stored in NVS are reset.
-          </p>
           <!-- Optional product/UI shot; hidden until docs/img/board-hero.jpg exists. -->
           <img
             class="shot"
             src="./img/board-hero.jpg"
-            alt="pixfrog running on an ESP32-P4 dev board with its OLED UI"
+            alt="pixfrog running on an ESP32-P4 dev board with its colour UI"
             loading="lazy"
             onerror="this.style.display='none'"
           />
-        </div>
-      </section>
-
-      <!-- Steps -->
-      <section class="block">
-        <div class="wrap">
-          <h2>Three steps to blinking pixels</h2>
-          <p class="sub">
-            From a bare board to running firmware without installing anything.
-          </p>
-          <div class="steps">
-            <div class="step">
-              <h3>Connect</h3>
-              <p>Plug the ESP32-P4 into a USB port and click <em>Connect &amp;
-                Install</em> above. Pick the board's serial port.</p>
-            </div>
-            <div class="step">
-              <h3>Install</h3>
-              <p>The flasher erases the chip and writes the latest firmware
-                image. It takes about a minute.</p>
-            </div>
-            <div class="step">
-              <h3>Configure</h3>
-              <p>Use the on-board display + rotary encoder to set protocol,
-                universe, channels and network — or enable the embedded web UI
-                and do it from a browser. All persisted to NVS.</p>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -216,28 +167,21 @@
         </div>
       </section>
 
-      <!-- CLI / advanced -->
-      <section class="block" id="cli">
-        <div class="wrap">
-          <h2>Prefer the command line?</h2>
+      <!-- Flash CTA -->
+      <section class="block" id="get-started">
+        <div class="wrap" style="text-align: center">
+          <h2>Get it on your board</h2>
           <p class="sub">
-            Every release ships raw binaries you can flash with esptool or
-            <code>idf.py</code>.
+            Flash the latest build straight from desktop Chrome or Edge over
+            USB — no toolchain required.
           </p>
-          <div class="callout">
-            <span style="font-size: 1.4rem">💡</span>
-            <div>
-              Flash <strong>pixfrog-merged.bin</strong> at offset
-              <code>0x0</code>, or write the individual parts at their offsets:
-              bootloader <code>0x2000</code>, partition table
-              <code>0x8000</code>, app <code>0x10000</code>.
-              <div class="downloads">
-                <a class="pill" href="./pixfrog-merged.bin">pixfrog-merged.bin</a>
-                <a class="pill" href="./bootloader.bin">bootloader.bin</a>
-                <a class="pill" href="./partition-table.bin">partition-table.bin</a>
-                <a class="pill" href="./pixfrog.bin">pixfrog.bin</a>
-              </div>
-            </div>
+          <div class="cta">
+            <a class="btn primary" href="./flash.html" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
+              ⚡ Flash your board
+            </a>
+            <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
+              📦 Releases
+            </a>
           </div>
         </div>
       </section>
