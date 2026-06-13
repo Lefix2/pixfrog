@@ -38,7 +38,7 @@ Validated against the Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin hea
 
 ### 2.1 LED 16-bit parallel bus (PARLIO TX / LCD_CAM)
 
-ESP32-P4 routes every peripheral signal through the GPIO matrix, including the 16 data lines of the parallel LED bus. Any free GPIO is a valid bus data line — the choices below pick header pins that are easy to route in pairs. The bus is driven by the default **PARLIO TX** backend or the legacy **LCD_CAM** RGB backend (Kconfig choice); both clock the same 16 GPIOs from PSRAM via GDMA and emit identical sample streams (see §3 and `docs/PROTOCOLS.md` §3).
+ESP32-P4 routes every peripheral signal through the GPIO matrix, including the 16 data lines of the parallel LED bus. Any free GPIO is a valid bus data line — the choices below pick header pins that are easy to route in pairs. The bus is driven by the default **PARLIO TX** backend or the legacy **LCD_CAM** RGB backend (Kconfig choice); both clock the same 16 GPIOs from PSRAM via GDMA and emit identical sample streams (see `docs/PROTOCOLS.md` §3).
 
 | Bus bit | Signal    | GPIO | Notes                       |
 |--------:|-----------|-----:|-----------------------------|
@@ -122,57 +122,7 @@ GPIO 39–48 sit in the **VDD_IO_5** pad domain, powered by the SoC's internal L
 
 ---
 
-## 3. Q1 — Can the parallel bus run free-running with an arbitrary clock?
-
-**Yes — two backends do this**, both selected at build time (Kconfig `PIXFROG_LED_OUTPUT_BACKEND`, default PARLIO). They emit identical sample streams and differ only in the engine moving the bytes:
-
-**Default — PARLIO TX (loop transmission).** The PARLIO TX unit is a plain "N-bit bus + clock, fed by DMA" engine with no LCD line/frame timing registers:
-
-1. `parlio_new_tx_unit` with `data_width = 16`, `clk_src = PARLIO_CLK_SRC_DEFAULT` (PLL_F160M), `output_clk_freq_hz = 16 MHz` (160 MHz / 10, exact), `clk_out_gpio_num = NC`.
-2. Two PSRAM frame buffers (`heap_caps_aligned_calloc`, `MALLOC_CAP_SPIRAM`); the render task encodes into the back buffer while the front one is on the wire.
-3. In **loop transmission** mode the mounted frame is a flat DMA buffer repeated back-to-back with no gap — the encoded reset tail separates repeats, so the strips simply see the last frame re-sent continuously, like a video signal.
-4. A new `parlio_tx_unit_transmit` while looping does not queue a transaction; the driver concatenates the new payload to the tail of the running link list, so the buffer swap happens at the next frame boundary, gapless.
-
-**Legacy — LCD_CAM RGB panel** (`PIXFROG_LED_OUTPUT_LCD_CAM`, not CI-built). ESP32-P4's LCD_CAM peripheral is a superset of the ESP32-S3 one (i80 and RGB/DPI modes):
-
-1. `esp_lcd_new_rgb_panel` with `data_width = 16`, `flags.fb_in_psram = true`, `num_fbs = 2`, `refresh_on_demand = true`, `pclk_hz = 16 MHz`.
-2. The P4 LCD_CAM horizontal timing registers are only 12-bit, so a frame is laid out as `v_res` lines of ≤ 4095 samples — **not** one giant line (that silently truncates in hardware). Hardware inserts one blank PCLK per line (the HSYNC tick); `h_res` is chosen as a multiple of every active NRZ bit period so that tick always lands on an inter-bit LOW and merely stretches it by 62.5 ns.
-3. GDMA streams the PSRAM frame buffer to the 16 chosen GPIOs while a frame is being emitted; `esp_lcd_panel_draw_bitmap` re-arms the next emission.
-4. Between frames, the trailing samples (zeros) keep DATA low long enough to satisfy the 1-wire latch (TRESET).
-
----
-
-## 4. Q2 — Which Ethernet PHY?
-
-**IP101GRI**, already soldered on the Waveshare DEV-KIT (and on the Espressif Function EV Board).
-
-| PHY        | REF_CLK         | Logic | Pros                                            | Cons                          |
-|------------|-----------------|------:|--------------------------------------------------|-------------------------------|
-| **IP101GRI** | 50 MHz int/ext | 3.3 V | Officially supported by Espressif, drivers stable in IDF, already on the DEV-KIT | QFN32 package, sourcing variable |
-| LAN8720A   | 50 MHz ext only | 3.3 V | Very common, breakout boards everywhere         | Needs external 50 MHz oscillator, picky reset |
-| KSZ8081RNB | 25 MHz ext + PLL | 3.3 V | Robust, excellent Microchip docs                | More expensive, MDIO pull-up sometimes needed |
-| RTL8201F   | 50 MHz int/ext | 3.3 V | Cheap, integrates the clock                     | Less battle-tested driver path on P4 |
-
-**Decision**: stick with IP101GRI for v0. The IDF helper `esp_eth_phy_new_ip101()` covers it natively.
-
----
-
-## 5. Q3 — Can the CLOCK line be a bit of the parallel bus?
-
-**Yes — and that's the chosen strategy.**
-
-The 16-bit bus is DMA-driven on both backends: every PCLK tick, all 16 GPIOs are updated simultaneously from the current sample word. So:
-
-1. **Hardware-guaranteed synchronism** between DATA and CLOCK of the same channel — they leave on the same PCLK edge.
-2. CLOCK waveform is **encoded into bits 1/3/5/.../15 of the DMA buffer**, exactly like the DATA bits.
-3. For 1-wire protocols (WS2815, …) the CLOCK bit is held at 0 — the strip ignores its CLOCK pin since it has none.
-4. For clocked protocols (APA102, …) the CLOCK bit alternates at the ratio of PCLK to the requested CLOCK rate.
-
-**Bandwidth-wise**, the DMA throughput is identical regardless of protocol — only the sample encoding differs.
-
----
-
-## 6. Level shifters
+## 3. Level shifters
 
 The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
@@ -188,9 +138,9 @@ The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
 **Part**: **74HCT245** (8 bits per package, two packages cover all 16 GPIOs). The `HCT` (not HC) variant is critical: Vih = 2.0 V (CMOS-to-TTL threshold), guarantees clean switching from 3.3 V CMOS into a 5 V CMOS strip.
 
-![3.3 V → 5 V level shifting with a 74HCT245 buffer](img/level-shifter.svg)
+![3.3 V → 5 V level shifting with a 74HCT245 buffer, series resistor and TVS clamp on each output](img/level-shifter.svg)
 
-> Alternatives: **SN74LVC1T45** per GPIO (overkill but very clean), or **TXS0108E** (avoid — its auto-direction is too slow for fast clocked protocols).
+> Alternative considered: **TXS0108E** (avoid — its auto-direction is too slow for fast clocked protocols).
 
 **Realised as the pixfrog shield** — KiCad project + JLCPCB production files in
 [`hardware/pixfrog_shield/`](../hardware/pixfrog_shield/README.md): 2× 74HCT245,
@@ -202,7 +152,7 @@ devkit's 2×20 header.
 
 ---
 
-## 7. Encoder wiring (Adafruit seesaw 4991)
+## 4. Encoder wiring (Adafruit seesaw 4991)
 
 ![OLED and seesaw encoder on the shared I²C bus](img/peripherals-wiring.svg)
 
@@ -238,26 +188,18 @@ Reference: [Adafruit Learn — I2C QT Rotary Encoder](https://learn.adafruit.com
 
 ---
 
-## 8. OLED wiring (SSD1306)
+## 5. OLED display (SSD1306 — default)
+
+The default display is a **SSD1306 128×64 I²C OLED**. It is supported as a
+display option and shares the I²C bus with the encoder (§2.3) — no dedicated
+wiring beyond that bus. Refresh is **10 Hz** via diff-based flush (only the
+pages whose pixels changed are pushed).
 
 ![SSD1306 home screen mockup](img/oled-ui.svg)
 
-```
-SSD1306 128×64    ESP32-P4
-──────────────    ──────────
-VCC (3-5 V)  ───► 3.3 V
-GND          ───► GND
-SDA          ───► GPIO 7 (shared with encoder)
-SCL          ───► GPIO 8 (shared)
-```
-
-I2C pull-ups (4.7 kΩ) are needed once on the bus — check whether the OLED module already includes them.
-
-OLED refresh: **10 Hz** via diff-based flush (only pages whose pixels changed are pushed). Idle bus traffic is essentially zero.
-
 ---
 
-## 9. TFT display wiring (ST7789V / ILI9341 — optional, replaces OLED)
+## 6. TFT display wiring (ST7789V / ILI9341 — optional, replaces OLED)
 
 When `CONFIG_PIXFROG_DISPLAY_TFT=y` is selected, a **ST7789V (or pin-compatible ILI9341) 320×240 SPI display** is used instead of the OLED. The TFT is driven in landscape orientation (320 wide × 240 tall) via `esp_lcd_new_panel_st7789`.
 
@@ -277,22 +219,19 @@ SPI host: `SPI2_HOST`, 40 MHz. The display is portrait 240×320 at the hardware 
 
 Color format: RGB565 big-endian (ST7789 native). `canvas_tft.cpp` applies `__builtin_bswap16` to every pixel value before writing to the DMA buffer.
 
-The OLED and TFT share the same I2C encoder/interrupt wiring (§8 above). The I2C bus is still initialised regardless of display choice (encoder requires it).
+The OLED and TFT share the same I2C encoder wiring (§4 above). The I2C bus is still initialised regardless of display choice (encoder requires it).
 
 ---
 
-## 10. Power
+## 7. Power
 
-- ESP32-P4 + 3.3 V logic: LDO or DC-DC on the DEV-KIT (already done)
-- LED strips at 5 V: **separate supply**, **common ground with the MCU**
-- 1000 µF decoupling on the strip side, ideally per metre of strip
-- 470 Ω series resistor between level shifter output and the first LED DATA pin (damps reflections)
-
-> Never power more than a handful of LEDs from the ESP32 board's 5 V rail — not enough current, and the noise injected into the SoC will cause weird failures.
+- ESP32-P4 + 3.3 V logic: LDO or DC-DC on the DEV-KIT (already done).
+- Signal ground must be common between the board and the strips — each shield
+  output carries a GND pin alongside its DATA/CLOCK pair.
 
 ---
 
-## 11. Future hardware (v1, custom PCB)
+## 8. Future hardware (v1, custom PCB)
 
 - 2-layer PCB minimum, continuous ground plane
 - Dedicated 1 A LDO for the 3.3 V rail
