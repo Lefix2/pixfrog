@@ -1,0 +1,16 @@
+{
+  "name": "pixfrog",
+  "version": "latest",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "parts": [
+        {
+          "path": "https://github.com/Lefix2/pixfrog/releases/latest/download/pixfrog-merged.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

@@ -98,14 +98,22 @@ targeting `main`:
 
 ## Releases & browser flashing
 
-`.github/workflows/release.yml` runs on every `v*` tag (e.g. `git tag v0.1.0
-&& git push origin v0.1.0`). It builds the firmware, then:
+Firmware and the website ship on independent cadences:
 
-- publishes a GitHub Release with `pixfrog-merged.bin` (flash at `0x0`) and the
-  individual bootloader / partition-table / app parts;
-- deploys a [esp-web-tools](https://esphome.github.io/esp-web-tools/) flasher to
+- `.github/workflows/release.yml` runs on every `v*` tag (e.g. `git tag v0.1.0
+  && git push origin v0.1.0`): it builds the firmware and publishes a GitHub
+  Release with `pixfrog-merged.bin` (flash at `0x0`) plus the individual
+  bootloader / partition-table / app parts.
+- `.github/workflows/pages.yml` runs on every push to `main` that touches the
+  site (`.github/pages/**`, `docs/**`): it deploys the
+  [esp-web-tools](https://esphome.github.io/esp-web-tools/) flasher and docs to
   GitHub Pages so the board can be flashed from desktop Chrome/Edge over USB —
   no toolchain required.
+
+The flasher's `manifest.json` pins the **latest** Release asset
+(`releases/latest/download/pixfrog-merged.bin`), so the site always serves the
+newest firmware without a redeploy — a copy or CSS edit goes live on a plain
+push to `main`, with no firmware version bump.
 
 One-time setup: enable **Settings → Pages → Source: GitHub Actions** (the
 workflow also attempts to enable it automatically).

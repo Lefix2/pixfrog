@@ -256,14 +256,17 @@
     </footer>
 
     <script>
-      // Show the live version from the release manifest.
-      fetch("./manifest.json")
-        .then((r) => r.json())
-        .then((m) => {
-          if (!m.version) return;
+      // Show the live version from the latest GitHub Release. The flasher
+      // manifest pins "latest", so the displayed tag comes from the API
+      // rather than a baked-in version — the site is release-agnostic.
+      fetch("https://api.github.com/repos/Lefix2/pixfrog/releases/latest")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((rel) => {
+          const v = rel && rel.tag_name;
+          if (!v) return;
           document.getElementById("version-badge").textContent =
-            "ESP32-P4 · " + m.version;
-          document.getElementById("version-foot").textContent = m.version;
+            "ESP32-P4 · " + v;
+          document.getElementById("version-foot").textContent = v;
         })
         .catch(() => {});
     </script>

@@ -1,7 +1,9 @@
 name: Release
 
-# Build a flashable firmware image on every version tag, publish it as a
-# GitHub Release, and deploy a browser-based flasher (esp-web-tools) to Pages.
+# Build a flashable firmware image on every version tag and publish it as a
+# GitHub Release. The browser flasher itself lives on Pages (see pages.yml)
+# and points at this release's "latest" assets — so the site never needs a
+# redeploy when a new firmware ships.
 on:
   push:
     tags: ['v*']
@@ -12,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    name: Build firmware + flasher site
+    name: Build firmware
     runs-on: ubuntu-latest
     container:
       image: espressif/idf:v5.5
@@ -37,79 +39,25 @@ jobs:
           idf.py set-target esp32p4
           idf.py build
 
-      - name: Assemble pages site
+      - name: Collect firmware images
         shell: bash
-        env:
-          VERSION: ${{ github.ref_name }}
         run: |
           . $IDF_PATH/export.sh
-          mkdir -p site
+          mkdir -p dist
           # Single image flashable at offset 0x0 — what the browser flasher uses.
           # Absolute -o: idf.py runs esptool from build/, so a relative path
-          # would land in build/site/ instead of the repo-root site/.
-          idf.py merge-bin -f raw -o "$PWD/site/pixfrog-merged.bin"
+          # would land in build/dist/ instead of the repo-root dist/.
+          idf.py merge-bin -f raw -o "$PWD/dist/pixfrog-merged.bin"
           # Individual parts for CLI / advanced flashing.
-          cp build/bootloader/bootloader.bin           site/
-          cp build/partition_table/partition-table.bin site/
-          cp build/pixfrog.bin                         site/
-          # Static site assets (flasher + docs viewer + about + shared theme).
-          cp .github/pages/index.html  site/index.html
-          cp .github/pages/docs.html   site/docs.html
-          cp .github/pages/about.html  site/about.html
-          cp .github/pages/style.css   site/style.css
-          # Technical docs, rendered client-side by docs.html.
-          mkdir -p site/docs
-          cp docs/ARCHITECTURE.md site/docs/architecture.md
-          cp docs/HARDWARE.md     site/docs/hardware.md
-          cp docs/PROTOCOLS.md    site/docs/protocols.md
-          # Diagrams / screenshots (optional; pages hide any that are absent).
-          if [ -d docs/img ]; then mkdir -p site/img && cp -r docs/img/. site/img/; fi
-          # esp-web-tools manifest (single merged part at 0x0).
-          cat > site/manifest.json <<EOF
-          {
-            "name": "pixfrog",
-            "version": "${VERSION}",
-            "new_install_prompt_erase": true,
-            "builds": [
-              {
-                "chipFamily": "ESP32-P4",
-                "parts": [
-                  { "path": "pixfrog-merged.bin", "offset": 0 }
-                ]
-              }
-            ]
-          }
-          EOF
+          cp build/bootloader/bootloader.bin           dist/
+          cp build/partition_table/partition-table.bin dist/
+          cp build/pixfrog.bin                         dist/
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: site
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-  deploy-pages:
-    name: Deploy browser flasher to Pages
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Enable Pages (GitHub Actions source)
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          path: dist
 
   release:
     name: Publish GitHub Release
@@ -122,7 +70,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: firmware
-          path: site
+          path: dist
       - name: Create or update release with firmware assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -131,10 +79,10 @@ jobs:
         # on it. Otherwise create it from scratch.
         run: |
           assets=(
-            site/pixfrog-merged.bin
-            site/bootloader.bin
-            site/partition-table.bin
-            site/pixfrog.bin
+            dist/pixfrog-merged.bin
+            dist/bootloader.bin
+            dist/partition-table.bin
+            dist/pixfrog.bin
           )
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists — uploading assets."
