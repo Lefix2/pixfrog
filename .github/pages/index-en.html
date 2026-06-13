@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="./lang.js"></script>
+    <script>initLang("en", "./index-fr.html");</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pixfrog — ESP32-P4 Art-Net / sACN LED firmware</title>
+    <meta
+      name="description"
+      content="pixfrog is a high-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, DMX512, FSEQ shows, web UI and OTA."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="pixfrog — ESP32-P4 Art-Net / sACN LED firmware" />
+    <meta
+      property="og:description"
+      content="High-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, DMX512, FSEQ shows, web UI and OTA."
+    />
+    <meta property="og:url" content="https://lefix2.github.io/pixfrog/index-en.html" />
+    <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="alternate" hreflang="en" href="./index-en.html" />
+    <link rel="alternate" hreflang="fr" href="./index-fr.html" />
+    <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="#top"><img class="logo-img" src="./img/logo.svg" alt="" width="30" height="30" /> pixfrog</a>
+        <nav class="nav-links">
+          <a href="./flash-en.html">Flash</a>
+          <a href="#features">Features</a>
+          <a href="./docs-en.html">Docs</a>
+          <a href="./about-en.html">About</a>
+          <a class="keep lang" href="#" onclick="switchLang('fr','./index-fr.html');return false;" title="Version française">🇫🇷</a>
+          <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- Hero -->
+      <section class="hero">
+        <div class="wrap">
+          <span class="badge">
+            <span class="dot"></span>
+            <span id="version-badge">ESP32-P4 firmware</span>
+          </span>
+          <h1>High-density LED control<br />on the ESP32-P4</h1>
+          <p class="lead">
+            pixfrog is an Art-Net 4 / sACN LED controller firmware: 8 parallel
+            pixel outputs, DMX512, FSEQ shows from microSD, a colour on-device
+            dashboard and an embedded web UI — tuned for deterministic,
+            jitter-free pixel timing.
+          </p>
+          <div class="cta">
+            <a class="btn primary" href="./flash-en.html" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
+              ⚡ Flash your board
+            </a>
+            <a class="btn" href="./docs-en.html">📖 Documentation</a>
+            <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
+              📦 Releases
+            </a>
+          </div>
+          <!-- Optional product/UI shot; hidden until docs/img/board-hero.jpg exists. -->
+          <img
+            class="shot"
+            src="./img/board-hero.jpg"
+            alt="pixfrog running on an ESP32-P4 dev board with its colour UI"
+            loading="lazy"
+            onerror="this.style.display='none'"
+          />
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section class="block" id="features">
+        <div class="wrap">
+          <h2>What's inside</h2>
+          <p class="sub">
+            Built natively on ESP-IDF for the ESP32-P4, tuned for deterministic
+            pixel timing.
+          </p>
+          <div class="grid">
+            <div class="card">
+              <span class="ic">🎚️</span>
+              <h3>9 protocols + DMX512</h3>
+              <p>WS2815, WS2812B, WS2811, SK6812, WS2814, APA102, SK9822,
+                LPD8806 — or a full DMX512 universe out per channel, with
+                per-channel color order, gamma and brightness.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🌐</span>
+              <h3>Art-Net 4 + sACN</h3>
+              <p>ArtDmx, Sync, Trigger, TimeCode and remote config over
+                Ethernet; opt-in sACN (E1.31) with priorities and 2-source
+                HTP/LTP merge — up to 48 universes.</p>
+            </div>
+            <div class="card">
+              <span class="ic">⚡</span>
+              <h3>Parallel DMA output</h3>
+              <p>The ESP32-P4 PARLIO peripheral clocks all 8 channels in
+                parallel out of PSRAM double buffers via DMA for rock-steady,
+                jitter-free refresh.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🖥️</span>
+              <h3>On-device UI</h3>
+              <p>Colour TFT status dashboard (or classic OLED) driven by a
+                rotary encoder — live FPS, link, per-channel activity and full
+                configuration, no laptop needed.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🛰️</span>
+              <h3>Web UI &amp; OTA</h3>
+              <p>Opt-in embedded web app: full configuration, live status,
+                OTA updates with A/B rollback, JSON backup/restore, coredump
+                download, optional auth.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🎬</span>
+              <h3>FSEQ player</h3>
+              <p>Plays xLights/FPP <code>.fseq</code> shows from microSD
+                (zstd, hot-plug), free-running or slaved to ArtTimeCode and
+                FPP MultiSync.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🎭</span>
+              <h3>Scenes &amp; failsafe</h3>
+              <p>8 standalone scenes (solid / chase / rainbow) playable at
+                boot, from the desk or any UI — plus a per-channel
+                signal-loss failsafe.</p>
+            </div>
+            <div class="card">
+              <span class="ic">💾</span>
+              <h3>Persistent config</h3>
+              <p>Every setting is stored in NVS and survives reboots, with a
+                loud warning on the home screen if flash goes bad.</p>
+            </div>
+            <div class="card">
+              <span class="ic">🧩</span>
+              <h3>Octal PSRAM</h3>
+              <p>200&nbsp;MHz octal PSRAM holds the double-buffered frames while
+                DMA-capable SRAM keeps the output path fast.</p>
+            </div>
+          </div>
+          <p style="text-align: center; margin-top: 2rem">
+            <a class="btn" href="./docs-en.html#architecture">Read the architecture →</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- On-device dashboard -->
+      <section class="block" id="dashboard">
+        <div class="wrap">
+          <h2>A real dashboard, on the device</h2>
+          <p class="sub">
+            The default 320×240 colour TFT shows network, services and
+            per-channel activity at a glance — protocol, universe, pixels,
+            brightness and a live status LED per output.
+          </p>
+          <img
+            class="shot ui-shot"
+            src="./img/ui-home.png"
+            alt="pixfrog TFT status dashboard: IP, link, services and the 8-channel table"
+            width="640"
+            height="480"
+            loading="lazy"
+            onerror="this.style.display='none'"
+          />
+        </div>
+      </section>
+
+      <!-- Flash CTA -->
+      <section class="block" id="get-started">
+        <div class="wrap" style="text-align: center">
+          <h2>Get it on your board</h2>
+          <p class="sub">
+            Flash the latest build straight from desktop Chrome or Edge over
+            USB — no toolchain required.
+          </p>
+          <div class="cta">
+            <a class="btn primary" href="./flash-en.html" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
+              ⚡ Flash your board
+            </a>
+            <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
+              📦 Releases
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap foot-inner">
+        <span>🐸 pixfrog · <span id="version-foot">latest</span> · MIT licensed</span>
+        <span>
+          <a href="https://github.com/Lefix2/pixfrog">Source</a> ·
+          <a href="./docs-en.html">Docs</a> ·
+          <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a> ·
+          built with <a href="https://esphome.github.io/esp-web-tools/">esp-web-tools</a>
+        </span>
+      </div>
+    </footer>
+
+    <script>
+      // Show the live version from the latest GitHub Release. The flasher
+      // manifest pins "latest", so the displayed tag comes from the API
+      // rather than a baked-in version — the site is release-agnostic.
+      fetch("https://api.github.com/repos/Lefix2/pixfrog/releases/latest")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((rel) => {
+          const v = rel && rel.tag_name;
+          if (!v) return;
+          document.getElementById("version-badge").textContent =
+            "ESP32-P4 · " + v;
+          document.getElementById("version-foot").textContent = v;
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>
