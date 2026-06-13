@@ -27,11 +27,11 @@ Conventions (see `pixfrog_uart.py`):
   so a validator never closes/reopens mid-run.
 - Every validator **restores the board defaults** it touched (opt-in flags
   back to off, gamma to linear, …).
-- UDP sends are **repeated/spread** — single datagrams from a WSL2 NAT
+- UDP sends are **repeated/spread** — single datagrams behind a NAT
   routinely vanish on a cold ARP entry; treat one-packet tests as flaky.
-- WSL2: if `/dev/ttyACM0` vanished, re-attach from Windows:
-  `usbipd.exe attach --wsl --busid <BUSID>`.
+- If `/dev/ttyACM0` vanishes after a replug, re-attach it to the test host
+  (USB pass-through to a VM/container may need re-attaching).
 
 Not covered here: wire-level timing/levels (Saleae workflows — see the
-repo skills), sACN **multicast** (untestable through the WSL2 NAT; needs a
-sender on the board's LAN).
+repo skills), sACN **multicast** (needs a sender directly on the board's
+LAN — untestable from behind a NAT).

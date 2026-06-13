@@ -54,14 +54,14 @@
     <text x="684" y="186" font-size="15" font-weight="700" fill="#11201a">render_task — prio 20</text>
     <text x="684" y="208" font-size="13" fill="#167a41">1 · swap universes (front ↔ back)</text>
     <text x="684" y="226" font-size="13" fill="#167a41">2 · encode full frame → fb_back</text>
-    <text x="684" y="244" font-size="13" fill="#167a41">3 · esp_cache_msync + draw_bitmap</text>
-    <text x="684" y="262" font-size="13" fill="#167a41">4 · wait done_sem</text>
+    <text x="684" y="244" font-size="13" fill="#167a41">3 · esp_cache_msync + loop remount</text>
+    <text x="684" y="262" font-size="13" fill="#167a41">4 · wait frame retired (timed)</text>
 
     <rect x="664" y="300" width="528" height="48" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
     <text x="684" y="329" font-size="15" fill="#11201a">frame_buf[2] — PSRAM (double-buffered)</text>
 
     <rect x="664" y="372" width="528" height="48" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="684" y="401" font-size="15" fill="#11201a">LCD_CAM + GDMA — streams at PCLK</text>
+    <text x="684" y="401" font-size="15" fill="#11201a">PARLIO TX + GDMA — gapless loop at PCLK</text>
 
     <rect x="664" y="444" width="528" height="48" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
     <text x="684" y="473" font-size="15" fill="#11201a">16 GPIOs → 8 × (DATA + CLOCK)</text>
