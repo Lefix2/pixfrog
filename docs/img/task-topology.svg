@@ -1,54 +1,90 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
-  <rect width="1000" height="560" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <rect width="1000" height="700" fill="#ffffff"/>
   <text x="32" y="40" font-size="24" font-weight="700" fill="#11201a">FreeRTOS task topology</text>
-  <text x="32" y="62" font-size="14" fill="#5b6b64">Network + UI pinned to core 0; the strict-timing render loop owns core 1. Higher number = higher priority.</text>
+  <text x="32" y="62" font-size="14" fill="#5b6b64">Network, UI and storage pinned to core 0; the strict-timing render loop owns core 1. Higher number = higher priority.</text>
 
   <!-- core columns -->
-  <rect x="32" y="84" width="450" height="452" rx="12" fill="#fbfdfc" stroke="#cfdbd5" stroke-width="1.5"/>
-  <rect x="518" y="84" width="450" height="452" rx="12" fill="#fbfdfc" stroke="#cfdbd5" stroke-width="1.5"/>
-  <text x="56" y="114" font-size="15" font-weight="700" fill="#167a41">CORE 0 — network + UI</text>
-  <text x="542" y="114" font-size="15" font-weight="700" fill="#167a41">CORE 1 — render + DMA</text>
+  <rect x="32" y="84" width="468" height="540" rx="12" fill="#fbfdfc" stroke="#cfdbd5" stroke-width="1.5"/>
+  <rect x="532" y="84" width="436" height="540" rx="12" fill="#fbfdfc" stroke="#cfdbd5" stroke-width="1.5"/>
+  <text x="56" y="114" font-size="15" font-weight="700" fill="#167a41">CORE 0 — network · UI · storage</text>
+  <text x="556" y="114" font-size="15" font-weight="700" fill="#167a41">CORE 1 — render + DMA</text>
 
   <g font-family="'DejaVu Sans Mono', ui-monospace, monospace">
     <!-- Core 0 tasks -->
-    <rect x="56" y="130" width="402" height="58" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="76" y="156" font-size="15" fill="#11201a">eth_rx_task</text>
-    <text x="76" y="176" font-size="12" fill="#5b6b64">RMII → lwIP · stack 2 kB</text>
-    <text x="438" y="164" font-size="20" font-weight="700" fill="#9bb0a6" text-anchor="end">19</text>
+    <rect x="56" y="130" width="420" height="42" rx="7" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="74" y="150" font-size="14" fill="#11201a">eth_rx_task</text>
+    <text x="74" y="166" font-size="11" fill="#5b6b64">RMII → lwIP · 2 kB</text>
+    <text x="458" y="158" font-size="18" font-weight="700" fill="#9bb0a6" text-anchor="end">19</text>
 
-    <rect x="56" y="198" width="402" height="58" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="76" y="224" font-size="15" fill="#11201a">lwip_tcpip_thread</text>
-    <text x="76" y="244" font-size="12" fill="#5b6b64">IDF TCP/IP stack · stack 4 kB</text>
-    <text x="438" y="232" font-size="20" font-weight="700" fill="#9bb0a6" text-anchor="end">18</text>
+    <rect x="56" y="178" width="420" height="42" rx="7" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="74" y="198" font-size="14" fill="#11201a">lwip_tcpip_thread</text>
+    <text x="74" y="214" font-size="11" fill="#5b6b64">IDF TCP/IP stack · 4 kB</text>
+    <text x="458" y="206" font-size="18" font-weight="700" fill="#9bb0a6" text-anchor="end">18</text>
 
-    <rect x="56" y="266" width="402" height="58" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="76" y="292" font-size="15" fill="#11201a">artnet_rx_task</text>
-    <text x="76" y="312" font-size="12" fill="#5b6b64">parse ArtDmx → pool[back] · 4 kB</text>
-    <text x="438" y="300" font-size="20" font-weight="700" fill="#5b6b64" text-anchor="end">10</text>
+    <rect x="56" y="226" width="420" height="42" rx="7" fill="#eef3fb" stroke="#9bb6e0"/>
+    <text x="74" y="246" font-size="14" fill="#11201a">artnet_rx_task</text>
+    <text x="74" y="262" font-size="11" fill="#5b6b64">ArtDmx/Sync/Address → pool[back] · 4 kB</text>
+    <text x="458" y="254" font-size="18" font-weight="700" fill="#5b6b64" text-anchor="end">10</text>
 
-    <rect x="56" y="334" width="402" height="58" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="76" y="360" font-size="15" fill="#11201a">ui_task</text>
-    <text x="76" y="380" font-size="12" fill="#5b6b64">encoder + OLED + NVS · 4 kB</text>
-    <text x="438" y="368" font-size="20" font-weight="700" fill="#9bb0a6" text-anchor="end">4</text>
+    <rect x="56" y="274" width="420" height="42" rx="7" fill="#eef3fb" stroke="#9bb6e0"/>
+    <text x="74" y="294" font-size="14" fill="#11201a">sacn_rx_task <tspan fill="#a07b2a" font-size="11">· opt-in</tspan></text>
+    <text x="74" y="310" font-size="11" fill="#5b6b64">E1.31 + priority gate → pool · 4 kB</text>
+    <text x="458" y="302" font-size="18" font-weight="700" fill="#5b6b64" text-anchor="end">10</text>
 
-    <rect x="56" y="402" width="402" height="46" rx="8" fill="#f6f8f7" stroke="#e4eae7"/>
-    <text x="76" y="430" font-size="14" fill="#9bb0a6">idle_0</text>
-    <text x="438" y="431" font-size="18" font-weight="700" fill="#cfdbd5" text-anchor="end">0</text>
+    <rect x="56" y="322" width="420" height="42" rx="7" fill="#eef3fb" stroke="#9bb6e0"/>
+    <text x="74" y="342" font-size="14" fill="#11201a">fpp_sync <tspan fill="#a07b2a" font-size="11">· opt-in</tspan></text>
+    <text x="74" y="358" font-size="11" fill="#5b6b64">FPP MultiSync → drives fseq_play · 4 kB</text>
+    <text x="458" y="350" font-size="18" font-weight="700" fill="#5b6b64" text-anchor="end">9</text>
+
+    <rect x="56" y="370" width="420" height="42" rx="7" fill="#eef3fb" stroke="#9bb6e0"/>
+    <text x="74" y="390" font-size="14" fill="#11201a">httpd <tspan fill="#a07b2a" font-size="11">· opt-in</tspan></text>
+    <text x="74" y="406" font-size="11" fill="#5b6b64">web SPA · REST · OTA · mDNS · 8 kB</text>
+    <text x="458" y="398" font-size="18" font-weight="700" fill="#9bb0a6" text-anchor="end">5</text>
+
+    <rect x="56" y="418" width="420" height="42" rx="7" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="74" y="438" font-size="14" fill="#11201a">fseq_play</text>
+    <text x="74" y="454" font-size="11" fill="#5b6b64">microSD FSEQ decode → pool · 8 kB</text>
+    <text x="458" y="446" font-size="18" font-weight="700" fill="#9bb0a6" text-anchor="end">5</text>
+
+    <rect x="56" y="466" width="420" height="42" rx="7" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="74" y="486" font-size="14" fill="#11201a">ui_task</text>
+    <text x="74" y="502" font-size="11" fill="#5b6b64">encoder + display + NVS · 4 kB</text>
+    <text x="458" y="494" font-size="18" font-weight="700" fill="#9bb0a6" text-anchor="end">4</text>
+
+    <rect x="56" y="514" width="420" height="42" rx="7" fill="#f1f5f3" stroke="#cfdbd5"/>
+    <text x="74" y="534" font-size="14" fill="#11201a">sd_mon</text>
+    <text x="74" y="550" font-size="11" fill="#5b6b64">microSD hot-plug mount · 4 kB</text>
+    <text x="458" y="542" font-size="18" font-weight="700" fill="#9bb0a6" text-anchor="end">2</text>
+
+    <rect x="56" y="562" width="420" height="40" rx="7" fill="#f6f8f7" stroke="#e4eae7"/>
+    <text x="74" y="587" font-size="13" fill="#9bb0a6">idle_0</text>
+    <text x="458" y="588" font-size="16" font-weight="700" fill="#cfdbd5" text-anchor="end">0</text>
 
     <!-- Core 1 tasks -->
-    <rect x="542" y="130" width="402" height="126" rx="8" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
-    <text x="562" y="158" font-size="16" font-weight="700" fill="#11201a">render_task</text>
-    <text x="562" y="182" font-size="12.5" fill="#167a41">swap universes → encode frame →</text>
-    <text x="562" y="200" font-size="12.5" fill="#167a41">loop remount → wait frame retired</text>
-    <text x="562" y="224" font-size="12" fill="#5b6b64">wake: 60 Hz timer + ArtSync</text>
-    <text x="562" y="242" font-size="12" fill="#5b6b64">stack 8 kB · hot path</text>
-    <text x="924" y="166" font-size="22" font-weight="700" fill="#1f9d55" text-anchor="end">20</text>
+    <rect x="556" y="130" width="388" height="206" rx="8" fill="#e6f6ec" stroke="#1f9d55" stroke-width="1.5"/>
+    <text x="576" y="158" font-size="16" font-weight="700" fill="#11201a">render_task</text>
+    <text x="940" y="160" font-size="22" font-weight="700" fill="#1f9d55" text-anchor="end">20</text>
+    <text x="576" y="186" font-size="12.5" fill="#167a41">1 · swap universes (front ↔ back)</text>
+    <text x="576" y="206" font-size="12.5" fill="#167a41">2 · fill pixels by source priority</text>
+    <text x="588" y="224" font-size="11" fill="#5b6b64">identify › preview › scene › failsafe › net</text>
+    <text x="576" y="246" font-size="12.5" fill="#167a41">3 · encode full frame → fb_back</text>
+    <text x="576" y="266" font-size="12.5" fill="#167a41">4 · msync + loop remount</text>
+    <text x="576" y="286" font-size="12.5" fill="#167a41">5 · wait frame retired / ArtSync</text>
+    <text x="576" y="312" font-size="12" fill="#5b6b64">wake: 30/60 Hz timer + ArtSync</text>
+    <text x="576" y="330" font-size="12" fill="#5b6b64">stack 6 kB · hot path · WDT subscriber</text>
 
-    <rect x="542" y="402" width="402" height="46" rx="8" fill="#f6f8f7" stroke="#e4eae7"/>
-    <text x="562" y="430" font-size="14" fill="#9bb0a6">idle_1</text>
-    <text x="924" y="431" font-size="18" font-weight="700" fill="#cfdbd5" text-anchor="end">0</text>
+    <rect x="556" y="562" width="388" height="40" rx="7" fill="#f6f8f7" stroke="#e4eae7"/>
+    <text x="576" y="587" font-size="13" fill="#9bb0a6">idle_1</text>
+    <text x="940" y="588" font-size="16" font-weight="700" fill="#cfdbd5" text-anchor="end">0</text>
   </g>
 
-  <text x="56" y="494" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">No refill task: the full frame lives in PSRAM and GDMA loops it gaplessly. The</text>
-  <text x="56" y="514" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">PARLIO default marks no EOF, so render_task waits one frame duration before reuse.</text>
+  <text x="556" y="380" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">No refill task: the full frame lives in PSRAM and</text>
+  <text x="556" y="400" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">GDMA loops it gaplessly. The PARLIO default marks</text>
+  <text x="556" y="420" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">no EOF, so render_task waits one frame duration</text>
+  <text x="556" y="440" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">before reusing the retired buffer.</text>
+
+  <text x="556" y="486" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">Blue tasks are network ingest; all four feed the</text>
+  <text x="556" y="506" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">shared universe_pool[back] that render_task swaps</text>
+  <text x="556" y="526" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">in once per frame. Opt-in tasks open no socket</text>
+  <text x="556" y="546" font-size="13" fill="#5b6b64" font-family="system-ui, sans-serif">until their flag is set.</text>
 </svg>
