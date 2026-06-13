@@ -2,6 +2,8 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
+    <script src="./lang.js"></script>
+    <script>initLang("fr", "./about-en.html");</script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>pixfrog — Collecti'Frog</title>
     <meta
@@ -79,7 +81,7 @@
           <a class="keep" href="./flash.html">Flash</a>
           <a class="keep" href="./docs.html">Docs</a>
           <a class="keep active" href="./about.html">About</a>
-          <a class="keep lang" href="./about-en.html" title="English version">🇬🇧</a>
+          <a class="keep lang" href="#" onclick="switchLang('en','./about-en.html');return false;" title="English version">🇬🇧</a>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>
