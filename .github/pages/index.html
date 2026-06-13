@@ -2,6 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <script src="./lang.js"></script>
+    <script>initLang("en", "./index-fr.html");</script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>pixfrog — ESP32-P4 Art-Net / sACN LED firmware</title>
     <meta
@@ -17,6 +19,8 @@
     <meta property="og:url" content="https://lefix2.github.io/pixfrog/" />
     <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="alternate" hreflang="en" href="./index.html" />
+    <link rel="alternate" hreflang="fr" href="./index-fr.html" />
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
     <link rel="stylesheet" href="./style.css" />
   </head>
@@ -28,7 +32,8 @@
           <a href="./flash.html">Flash</a>
           <a href="#features">Features</a>
           <a href="./docs.html">Docs</a>
-          <a href="./about.html">About</a>
+          <a href="./about-en.html">About</a>
+          <a class="keep lang" href="#" onclick="switchLang('fr','./index-fr.html');return false;" title="Version française">🇫🇷</a>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>

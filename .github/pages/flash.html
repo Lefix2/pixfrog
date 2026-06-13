@@ -2,6 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <script src="./lang.js"></script>
+    <script>initLang("en", "./flash-fr.html");</script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>pixfrog — flash your ESP32-P4 from the browser</title>
     <meta
@@ -17,6 +19,8 @@
     <meta property="og:url" content="https://lefix2.github.io/pixfrog/flash.html" />
     <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="alternate" hreflang="en" href="./flash.html" />
+    <link rel="alternate" hreflang="fr" href="./flash-fr.html" />
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
     <link rel="stylesheet" href="./style.css" />
     <!-- esp-web-tools: Web Serial flasher (desktop Chrome / Edge). -->
@@ -33,7 +37,8 @@
           <a class="keep active" href="./flash.html">Flash</a>
           <a href="./index.html#features">Features</a>
           <a href="./docs.html">Docs</a>
-          <a href="./about.html">About</a>
+          <a href="./about-en.html">About</a>
+          <a class="keep lang" href="#" onclick="switchLang('fr','./flash-fr.html');return false;" title="Version française">🇫🇷</a>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>

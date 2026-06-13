@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <script src="./lang.js"></script>
+    <script>initLang("fr", "./flash.html");</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pixfrog — flasher votre ESP32-P4 depuis le navigateur</title>
+    <meta
+      name="description"
+      content="Flashez le firmware pixfrog Art-Net / sACN sur votre ESP32-P4 directement depuis le navigateur — aucune chaîne d'outils requise."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="pixfrog — flasher votre ESP32-P4 depuis le navigateur" />
+    <meta
+      property="og:description"
+      content="Flashez le firmware pixfrog Art-Net / sACN sur votre ESP32-P4 directement depuis le navigateur — aucune chaîne d'outils requise."
+    />
+    <meta property="og:url" content="https://lefix2.github.io/pixfrog/flash-fr.html" />
+    <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="alternate" hreflang="fr" href="./flash-fr.html" />
+    <link rel="alternate" hreflang="en" href="./flash.html" />
+    <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
+    <link rel="stylesheet" href="./style.css" />
+    <script
+      type="module"
+      src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
+    ></script>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="./index-fr.html"><img class="logo-img" src="./img/logo.svg" alt="" width="30" height="30" /> pixfrog</a>
+        <nav class="nav-links">
+          <a class="keep active" href="./flash-fr.html">Flash</a>
+          <a href="./index-fr.html#features">Fonctionnalités</a>
+          <a href="./docs-fr.html">Docs</a>
+          <a href="./about.html">À propos</a>
+          <a class="keep lang" href="#" onclick="switchLang('en','./flash.html');return false;" title="English version">🇬🇧</a>
+          <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- Hero -->
+      <section class="hero" id="flash">
+        <div class="wrap">
+          <span class="badge">
+            <span class="dot"></span>
+            <span id="version-badge">Firmware ESP32-P4</span>
+          </span>
+          <h1>Flashez votre ESP32-P4<br />directement depuis le navigateur</h1>
+          <p class="lead">
+            Branchez la carte en USB et installez le dernier build pixfrog en
+            quelques secondes — sans IDE, sans chaîne d'outils, sans ligne de
+            commande.
+          </p>
+          <div class="cta">
+            <esp-web-install-button manifest="./manifest.json">
+              <button slot="activate" class="btn primary" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
+                ⚡ Connecter &amp; Installer
+              </button>
+              <span slot="unsupported">
+                <span class="btn" style="cursor: not-allowed; opacity: 0.7">
+                  Utilisez Chrome ou Edge desktop pour flasher
+                </span>
+              </span>
+              <span slot="not-allowed">
+                <span class="btn" style="cursor: not-allowed; opacity: 0.7">
+                  Ouvrez la page en HTTPS pour flasher
+                </span>
+              </span>
+            </esp-web-install-button>
+            <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
+              📦 Releases
+            </a>
+            <a class="btn" href="./docs-fr.html">📖 Documentation</a>
+          </div>
+          <p class="hint">
+            Fonctionne dans Chrome &amp; Edge desktop (Web Serial). La puce est
+            effacée et reflashée — les paramètres stockés en NVS sont
+            réinitialisés.
+          </p>
+        </div>
+      </section>
+
+      <!-- Steps -->
+      <section class="block">
+        <div class="wrap">
+          <h2>Trois étapes vers des pixels qui clignotent</h2>
+          <p class="sub">
+            D'une carte vierge à un firmware en fonctionnement sans rien
+            installer.
+          </p>
+          <div class="steps">
+            <div class="step">
+              <h3>Connecter</h3>
+              <p>Branchez l'ESP32-P4 sur un port USB et cliquez sur
+                <em>Connecter &amp; Installer</em> ci-dessus. Sélectionnez le
+                port série de la carte.</p>
+            </div>
+            <div class="step">
+              <h3>Installer</h3>
+              <p>Le flasher efface la puce et écrit la dernière image firmware.
+                Cela prend environ une minute.</p>
+            </div>
+            <div class="step">
+              <h3>Configurer</h3>
+              <p>Utilisez l'afficheur embarqué + encodeur rotatif pour régler le
+                protocole, l'univers, les canaux et le réseau — ou activez
+                l'interface web embarquée et faites-le depuis un navigateur.
+                Tout est persisté en NVS.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CLI / advanced -->
+      <section class="block" id="cli">
+        <div class="wrap">
+          <h2>Vous préférez la ligne de commande ?</h2>
+          <p class="sub">
+            Chaque release inclut des binaires bruts que vous pouvez flasher
+            avec esptool ou <code>idf.py</code>.
+          </p>
+          <div class="callout">
+            <span style="font-size: 1.4rem">💡</span>
+            <div>
+              Flashez <strong>pixfrog-merged.bin</strong> à l'offset
+              <code>0x0</code>, ou écrivez les parties individuelles à leurs
+              offsets : bootloader <code>0x2000</code>, table de partitions
+              <code>0x8000</code>, app <code>0x10000</code>. Récupérez-les
+              depuis la
+              <a href="https://github.com/Lefix2/pixfrog/releases/latest">dernière release</a>.
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap foot-inner">
+        <span>🐸 pixfrog · <span id="version-foot">latest</span> · MIT licensed</span>
+        <span>
+          <a href="https://github.com/Lefix2/pixfrog">Source</a> ·
+          <a href="./docs-fr.html">Docs</a> ·
+          <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a> ·
+          propulsé par <a href="https://esphome.github.io/esp-web-tools/">esp-web-tools</a>
+        </span>
+      </div>
+    </footer>
+
+    <script>
+      fetch("https://api.github.com/repos/Lefix2/pixfrog/releases/latest")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((rel) => {
+          const v = rel && rel.tag_name;
+          if (!v) return;
+          document.getElementById("version-badge").textContent = "ESP32-P4 · " + v;
+          document.getElementById("version-foot").textContent = v;
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>
