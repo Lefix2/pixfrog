@@ -147,12 +147,12 @@
       window.addEventListener("hashchange", () => render(currentKey()));
       render(currentKey());
 
-      // Live version in the footer.
-      fetch("./manifest.json")
-        .then((r) => r.json())
-        .then((m) => {
-          if (m.version)
-            document.getElementById("version-foot").textContent = m.version;
+      // Live version in the footer — from the latest GitHub Release.
+      fetch("https://api.github.com/repos/Lefix2/pixfrog/releases/latest")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((rel) => {
+          if (rel && rel.tag_name)
+            document.getElementById("version-foot").textContent = rel.tag_name;
         })
         .catch(() => {});
     </script>
