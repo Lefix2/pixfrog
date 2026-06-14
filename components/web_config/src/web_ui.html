@@ -205,6 +205,16 @@ button.sec:hover{background:#1a4a8a}
   <div id="fseq-cards"></div>
 </div>
 
+<!-- Auto-patch -->
+<div class="panel" id="panel-autopatch">
+  <div class="card">
+    <div class="row"><label>Auto-patch from</label><input id="ap-base" type="number" min="0" max="32767" value="0">
+      <button onclick="autoPatch()" style="margin-top:0">Patch all channels</button></div>
+    <span class="note">Re-addresses every channel contiguously from this base universe, sized by each channel's pixel count. Overwrites universe &amp; DMX start; disabled channels are skipped.</span>
+    <div class="status" id="st-autopatch"></div>
+  </div>
+</div>
+
 <!-- Channel panels (ch0..ch7) -->
 <script>
 const PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806','DMX512'];
@@ -288,6 +298,12 @@ async function playScene(i){
   try{await api('POST','/api/scene/'+i+'/play',{});status('st-sc'+i,'Playing','');loadConfig();}
   catch(e){status('st-sc'+i,'Error: '+e.message,true);}
 }
+async function autoPatch(){
+  const base=parseInt(document.getElementById('ap-base').value)||0;
+  try{const r=await api('POST','/api/autopatch',{base});status('st-autopatch','Patched — next free universe '+r.next_free,'');loadConfig();}
+  catch(e){status('st-autopatch',e.message,'err');}
+}
+
 async function identifyChan(i){
   try{await api('POST','/api/channel/'+i+'/identify',{});status('st-ch'+i,'Blinking strip for 10 s','');}
   catch(e){status('st-ch'+i,'Error: '+e.message,true);}

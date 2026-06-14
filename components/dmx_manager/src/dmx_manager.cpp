@@ -196,6 +196,25 @@ void handle_pending_remaps() {
     ESP_LOGI(TAG, "remap applied, bits=0x%lx", static_cast<unsigned long>(bits));
 }
 
+bool auto_patch_universes(uint16_t base, uint16_t* next_free) {
+    config::ChannelConfig chans[config::kNumChannels];
+    for (size_t i = 0; i < config::kNumChannels; ++i)
+        chans[i] = config::get_channel(i);
+
+    uint16_t starts[config::kNumChannels];
+    const uint16_t next = logic::compute_auto_patch(base, chans, config::kNumChannels, starts);
+    if (next_free) *next_free = next;
+
+    bool all_persisted = true;
+    for (size_t i = 0; i < config::kNumChannels; ++i) {
+        chans[i].universe_start  = starts[i];
+        chans[i].dmx_start       = 1;  // cascade places every channel universe-aligned
+        all_persisted           &= config::set_channel(i, chans[i]);
+        mark_channel_dirty(i);
+    }
+    return all_persisted;
+}
+
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
     if (channel_index >= config::kNumChannels) return;
     g_pixel_preview.store((static_cast<uint32_t>(channel_index) << 16) | pixel_count,
