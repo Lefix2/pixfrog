@@ -33,6 +33,10 @@ bool is_channel_capacity_ok(size_t ch) {
 
 void mark_channel_dirty(size_t /*channel_index*/) {}
 void mark_global_dirty() {}
+bool auto_patch_universes(uint16_t /*base*/, uint16_t* next_free) {
+    if (next_free) *next_free = 0;
+    return true;
+}
 bool is_channel_failsafe(size_t /*channel_index*/) {
     return false;
 }

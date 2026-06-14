@@ -443,7 +443,7 @@ static void restore_channel(size_t i, cJSON* jc) {
         return false;
     };
     double v;
-    if (num("universe_start", 1, 32767, &v)) c.universe_start = static_cast<uint16_t>(v);
+    if (num("universe_start", 0, 32767, &v)) c.universe_start = static_cast<uint16_t>(v);
     if (num("dmx_start", 1, 512, &v)) c.dmx_start = static_cast<uint16_t>(v);
     if (num("pixel_count", 1, dmx::kMaxPixelsPerChan, &v)) c.pixel_count = static_cast<uint16_t>(v);
     if (num("brightness", 0, 255, &v)) c.brightness = static_cast<uint8_t>(v);
@@ -747,7 +747,7 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
         }
         c.color_order = static_cast<led::ColorOrder>(o);
     }
-    if (get_u32("universe_start", 1, 32767, u)) c.universe_start = static_cast<uint16_t>(u);
+    if (get_u32("universe_start", 0, 32767, u)) c.universe_start = static_cast<uint16_t>(u);
     if (get_u32("dmx_start", 1, 512, u)) c.dmx_start = static_cast<uint16_t>(u);
     if (get_u32("pixel_count", 1, dmx::kMaxPixelsPerChan, u))
         c.pixel_count = static_cast<uint16_t>(u);
@@ -1094,6 +1094,32 @@ static void stop_mdns() {
     g_mdns_up = false;
 }
 
+// ── POST /api/autopatch ─────────────────────────────────────────────────────
+// Re-address every channel contiguously from a base universe (cascade by each
+// channel's pixel span). Body: {"base": <0..32767>}. Replies the next free
+// universe past the last channel.
+static esp_err_t handle_autopatch(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    char buf[64];
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+    cJSON* base_item = cJSON_GetObjectItemCaseSensitive(j, "base");
+    const bool ok    = base_item && cJSON_IsNumber(base_item) && base_item->valuedouble >= 0 &&
+                    base_item->valuedouble <= 32767;
+    const uint16_t base = ok ? static_cast<uint16_t>(base_item->valuedouble) : 0;
+    cJSON_Delete(j);
+    if (!ok) return send_err(req, 400, "base 0..32767");
+
+    uint16_t next = 0;
+    dmx::auto_patch_universes(base, &next);
+
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddNumberToObject(root, "next_free", next);
+    return send_json(req, root);
+}
+
 }  // namespace
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -1102,7 +1128,7 @@ void start() {
     if (g_server) return;
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 22;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -1147,6 +1173,10 @@ void start() {
         { .uri      = "/api/factory-reset",
           .method   = HTTP_POST,
           .handler  = handle_factory_reset,
+          .user_ctx = nullptr },
+        { .uri      = "/api/autopatch",
+          .method   = HTTP_POST,
+          .handler  = handle_autopatch,
           .user_ctx = nullptr },
         { .uri      = "/api/fseq/files",
           .method   = HTTP_GET,

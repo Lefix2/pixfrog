@@ -162,7 +162,12 @@ void render_task(void*) {
     // ship dark/garbled frames silently.
     esp_task_wdt_add(nullptr);
 
-    TickType_t last = xTaskGetTickCount();
+    // Drift-corrected emission deadline (µs). Advancing it by exactly one period
+    // each frame keeps the long-run rate at refresh_rate_hz with no integer-ms
+    // truncation, and makes refresh_rate_hz a hard ceiling: ArtSync may wake the
+    // wait early but we never emit before the deadline, so the observed frame
+    // rate can't climb above the configured setting (which sizes the DMA budget).
+    int64_t next_frame_us = esp_timer_get_time();
 
     // Item 4: rolling 1-second window FPS counter.
     int64_t fps_window_start_us   = esp_timer_get_time();
@@ -172,7 +177,7 @@ void render_task(void*) {
         // Item A5: recompute the period every frame so a UI commit of
         // refresh_rate_hz takes effect on the next frame without a reboot.
         const uint8_t rate_hz   = pixfrog::config::get_global().refresh_rate_hz;
-        const TickType_t period = pdMS_TO_TICKS(rate_hz ? (1000u / rate_hz) : 33u);
+        const int64_t period_us = rate_hz ? (1'000'000LL / rate_hz) : 33'333LL;
         // Item 7: apply any config changes committed by the UI since the
         // last frame. Rebuilds universe→channel LUT, clears dirty bits.
         // No-op when nothing is pending.
@@ -214,16 +219,20 @@ void render_task(void*) {
         // past the WDT timeout (5 s default), we want a clean panic.
         esp_task_wdt_reset();
 
-        // TODO B2: drift-corrected wait that returns early on ArtSync.
-        // `last` is the timestamp at the start of this frame; the deadline
-        // is `last + period`. If render itself ate most of the period, we
-        // wait for the leftover only; if it ate the whole period, we don't
-        // wait at all. wait_for_sync_or_period(0) returns immediately.
-        const TickType_t now     = xTaskGetTickCount();
-        const TickType_t elapsed = now - last;
-        const TickType_t wait    = (elapsed < period) ? (period - elapsed) : 0;
-        pixfrog::dmx::wait_for_sync_or_period(wait);
-        last = xTaskGetTickCount();
+        // Pace to the next deadline. ArtSync wakes the wait early, but the loop
+        // re-checks the deadline and keeps waiting until it passes: a sync aligns
+        // the emit to the controller without ever pushing the rate above
+        // refresh_rate_hz (the hard ceiling that protects the DMA budget).
+        next_frame_us   += period_us;
+        int64_t pace_us  = esp_timer_get_time();
+        // A slow frame that overran a whole period must not spiral into a burst
+        // of catch-up frames — resync the deadline to now instead.
+        if (pace_us - next_frame_us > period_us) next_frame_us = pace_us;
+        while (pace_us < next_frame_us) {
+            const TickType_t wait = pdMS_TO_TICKS((next_frame_us - pace_us + 999) / 1000);
+            pixfrog::dmx::wait_for_sync_or_period(wait ? wait : 1);
+            pace_us = esp_timer_get_time();
+        }
     }
 }
 

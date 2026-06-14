@@ -72,6 +72,32 @@ static void test_universes_off() {
     EXPECT_EQ(channel_universes_used(cc), 0);  // disabled → claims no universe
 }
 
+static void test_auto_patch_cascade() {
+    config::ChannelConfig chans[8]{};
+    chans[0].protocol    = led::Protocol::WS2815;
+    chans[0].pixel_count = 100;  // 1 universe
+    chans[1].protocol    = led::Protocol::WS2815;
+    chans[1].pixel_count = 200;  // 2 universes
+    chans[2].protocol    = led::Protocol::Off;
+    chans[2].pixel_count = 144;  // disabled → 0 universes
+    for (int i = 3; i < 8; ++i) {
+        chans[i].protocol    = led::Protocol::WS2815;
+        chans[i].pixel_count = 50;  // 1 universe each
+    }
+
+    uint16_t out[8]{};
+    const uint16_t next = compute_auto_patch(14, chans, 8, out);
+    EXPECT_EQ(out[0], 14);  // base
+    EXPECT_EQ(out[1], 15);  // +1 (ch0 used 1)
+    EXPECT_EQ(out[2], 17);  // +2 (ch1 used 2) — crosses into subnet 1 (15→16→17)
+    EXPECT_EQ(out[3], 17);  // ch2 disabled used 0 → ch3 reuses the cursor
+    EXPECT_EQ(out[4], 18);
+    EXPECT_EQ(out[5], 19);
+    EXPECT_EQ(out[6], 20);
+    EXPECT_EQ(out[7], 21);
+    EXPECT_EQ(next, 22);  // first free universe past the last channel
+}
+
 // ── t_dma + capacity ────────────────────────────────────────────────────────
 
 static void test_t_dma_ws2815() {
@@ -568,6 +594,7 @@ int main() {
     test_total_bytes_rgbw();
     test_universes_used();
     test_universes_off();
+    test_auto_patch_cascade();
     test_t_dma_ws2815();
     test_emission_budget();
     test_capacity_check();

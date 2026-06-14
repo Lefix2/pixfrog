@@ -388,7 +388,7 @@ int cmd_ch(int argc, char** argv) {
         if (o < 0) return err("order: RGB|RBG|GRB|GBR|BRG|BGR|RGBW|GRBW|RGBWW or 0..8");
         c.color_order = static_cast<led::ColorOrder>(o);
     } else if (strcmp(key, "universe") == 0) {
-        if (!parse_u32_in(val, 1, 32767, u)) return err("universe: 1..32767");
+        if (!parse_u32_in(val, 0, 32767, u)) return err("universe: 0..32767");
         c.universe_start = static_cast<uint16_t>(u);
     } else if (strcmp(key, "dmx_start") == 0) {
         if (!parse_u32_in(val, 1, 512, u)) return err("dmx_start: 1..512");
@@ -424,6 +424,21 @@ int cmd_ch(int argc, char** argv) {
 
     const bool persisted = config::set_channel(ch, c);
     dmx::mark_channel_dirty(ch);
+    if (!persisted) printf("warn=not_persisted\n");
+    return ok();
+}
+
+int cmd_autopatch(int argc, char** argv) {
+    if (argc != 2) return err("usage: autopatch <base_universe>");
+    uint32_t base = 0;
+    if (!parse_u32_in(argv[1], 0, 32767, base)) return err("base_universe: 0..32767");
+
+    uint16_t next        = 0;
+    const bool persisted = dmx::auto_patch_universes(static_cast<uint16_t>(base), &next);
+    for (size_t i = 0; i < config::kNumChannels; ++i)
+        printf("ch%u=universe %u\n", static_cast<unsigned>(i),
+               static_cast<unsigned>(config::get_channel(i).universe_start));
+    printf("next_free=%u\n", static_cast<unsigned>(next));
     if (!persisted) printf("warn=not_persisted\n");
     return ok();
 }
@@ -720,6 +735,8 @@ void start() {
     register_cmd("chstat", "Per-channel activity + capacity flags", cmd_chstat);
     register_cmd("global", "global [<key> <value>] — get/set GlobalConfig", cmd_global);
     register_cmd("ch", "ch <n> [<key> <value>] — get/set ChannelConfig", cmd_ch);
+    register_cmd("autopatch", "autopatch <base> — re-address all channels contiguously from <base>",
+                 cmd_autopatch);
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);

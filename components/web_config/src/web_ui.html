@@ -5,32 +5,54 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>pixfrog config</title>
 <style>
+/* pixfrog config — Collecti'Frog DA: saffron #f8c662 on dark-green ink, spring
+   green #70d18b accent. Mirrors the marketing site + device UI palette. */
 *{box-sizing:border-box;margin:0;padding:0}
-body{font:14px/1.5 monospace;background:#1a1a2e;color:#e0e0e0;padding:12px}
-h1{color:#ffd700;font-size:18px;margin-bottom:12px}
-h2{color:#aaa;font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #333;padding-bottom:4px}
-.card{background:#16213e;border:1px solid #2a2a4a;border-radius:6px;padding:12px;margin-bottom:8px}
-.row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.row label{width:140px;flex-shrink:0;color:#aaa;font-size:13px}
-.row input,.row select{flex:1;background:#0f3460;border:1px solid #4a4a7a;border-radius:4px;color:#e0e0e0;padding:4px 8px;font:13px monospace;min-width:0}
-.row input[type=checkbox]{width:18px;height:18px;flex:none;accent-color:#ffd700}
-.note{font-size:11px;color:#888;margin-left:8px}
-button{background:#e94560;border:none;border-radius:4px;color:#fff;cursor:pointer;font:13px monospace;padding:6px 18px;margin-top:4px}
-button:hover{background:#ff6b6b}
-button.sec{background:#0f3460;border:1px solid #4a4a7a}
-button.sec:hover{background:#1a4a8a}
-.status{font-size:12px;color:#0f0;margin-top:6px;min-height:16px}
-.status.err{color:#f55}
-.tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
-.tab{background:#0f3460;border:1px solid #4a4a7a;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px}
-.tab.active{background:#e94560;border-color:#e94560;color:#fff}
-.tab.act::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#0f0;margin-left:5px;vertical-align:middle}
-.tab.fsafe::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#fa0;margin-left:5px;vertical-align:middle}
+:root{
+  --bg:#faf6ec;--card:#ffffff;--fg:#11201a;--fg-soft:#5b6b64;--border:#ece4d0;
+  --brand:#f8c662;--brand-strong:#c98f23;--brand-ink:#1d3a2c;--green:#70d18b;--red:#d9534f;
+  --radius:14px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1a14;--card:#16221b;--fg:#eaf3ee;--fg-soft:#a5b2a8;--border:#243228;
+  --brand-strong:#f0b53b;
+}}
+body{font:14px/1.5 var(--font);background:var(--bg);color:var(--fg);padding:16px 16px 84px;-webkit-font-smoothing:antialiased}
+h1{color:var(--fg);font-size:18px;font-weight:800;letter-spacing:-.02em}
+h2{color:var(--fg-soft);font-size:12px;margin:14px 0 8px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);padding-bottom:5px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.row label{width:140px;flex-shrink:0;color:var(--fg-soft);font-size:13px}
+.row input,.row select{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:6px 10px;font:13px var(--mono);min-width:0}
+.row input:focus,.row select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 32%,transparent)}
+.row input[type=checkbox]{width:18px;height:18px;flex:none;accent-color:var(--brand-strong)}
+.row input[type=color]{padding:2px;height:30px;cursor:pointer}
+.note{font-size:11px;color:var(--fg-soft);margin-left:8px}
+button{background:var(--brand);border:1px solid var(--brand);border-radius:10px;color:var(--brand-ink);cursor:pointer;font:600 13px var(--font);padding:7px 16px;margin-top:6px;transition:transform .08s ease,border-color .15s ease,opacity .15s ease}
+button:hover{transform:translateY(-1px)}
+button:disabled{opacity:.45;cursor:default;transform:none}
+button.sec{background:var(--card);border:1px solid var(--border);color:var(--fg)}
+button.sec:hover{border-color:var(--brand)}
+.bar-track{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;height:14px;overflow:hidden}
+.bar-fill{background:var(--brand);height:100%;width:0%}
+.status{font-size:12px;color:var(--brand-strong);margin-top:8px;min-height:16px}
+.status.err{color:var(--red)}
+.tabs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.tab{background:var(--card);border:1px solid var(--border);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:12px;color:var(--fg-soft)}
+.tab:hover{border-color:var(--brand)}
+.tab.active{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:600}
+.tab.act::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:5px;vertical-align:middle}
+.tab.fsafe::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--brand-strong);margin-left:5px;vertical-align:middle}
 .panel{display:none}.panel.active{display:block}
 #header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-#link-dot{width:10px;height:10px;border-radius:50%;background:#f55;flex-shrink:0}
-#link-dot.up{background:#0f0}
-#fps-label{color:#888;font-size:12px}
+#link-dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex-shrink:0}
+#link-dot.up{background:var(--green)}
+#fps-label,#heap-label,#live-label{color:var(--fg-soft);font-size:12px}
+#savebar{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:10px 16px;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:saturate(180%) blur(12px);border-top:1px solid var(--border);z-index:20}
+#save-status{font-size:12px;color:var(--fg-soft)}
+#save-btn{margin-top:0;padding:9px 22px}
 </style>
 </head>
 <body>
@@ -38,9 +60,9 @@ button.sec:hover{background:#1a4a8a}
   <h1>&#128438; pixfrog</h1>
   <div id="link-dot" title="Ethernet link"></div>
   <span id="fps-label">--fps</span>
-  <span id="heap-label" style="color:#888;font-size:12px" title="free heap"></span>
-  <span id="live-label" style="color:#888;font-size:12px"></span>
-  <span id="ver-label" style="color:#666;font-size:12px;margin-left:auto"></span>
+  <span id="heap-label" style="font-size:12px" title="free heap"></span>
+  <span id="live-label" style="font-size:12px"></span>
+  <span id="ver-label" style="color:var(--fg-soft);font-size:12px;margin-left:auto"></span>
 </div>
 
 <div class="tabs" id="tabs">
@@ -49,6 +71,7 @@ button.sec:hover{background:#1a4a8a}
   <div class="tab" data-panel="artnet">ArtNet</div>
   <div class="tab" data-panel="scenes">Scenes</div>
   <div class="tab" data-panel="fseq">FSEQ</div>
+  <div class="tab" data-panel="autopatch">Patch</div>
   <div class="tab" data-panel="ch0">Ch1</div>
   <div class="tab" data-panel="ch1">Ch2</div>
   <div class="tab" data-panel="ch2">Ch3</div>
@@ -73,7 +96,6 @@ button.sec:hover{background:#1a4a8a}
       <input id="g-web" type="checkbox">
       <span class="note">requires reboot to disable</span>
     </div>
-    <button onclick="saveGlobal(['refresh_hz','home_timeout_s','web_enabled'])">Save</button>
     <div class="status" id="st-global"></div>
   </div>
   <div class="card">
@@ -98,12 +120,10 @@ button.sec:hover{background:#1a4a8a}
   </div>
   <div class="card">
     <h2>Firmware</h2>
-    <div class="row"><label>Running</label><span id="fw-info" style="color:#888;font-size:12px">--</span></div>
+    <div class="row"><label>Running</label><span id="fw-info" style="color:var(--fg-soft);font-size:12px">--</span></div>
     <div class="row"><label>Update (.bin)</label><input id="ota-file" type="file" accept=".bin"></div>
     <div class="row" id="ota-prog-row" style="display:none"><label>Progress</label>
-      <div style="flex:1;background:#0f3460;border-radius:4px;height:14px;overflow:hidden">
-        <div id="ota-bar" style="background:#e94560;height:100%;width:0%"></div>
-      </div>
+      <div class="bar-track"><div id="ota-bar" class="bar-fill"></div></div>
       <span id="ota-pct" class="note">0%</span>
     </div>
     <button onclick="otaUpload()">Flash firmware</button>
@@ -111,8 +131,8 @@ button.sec:hover{background:#1a4a8a}
   </div>
   <div class="card">
     <h2>Crash dump</h2>
-    <a class="sec" href="/api/coredump" download="pixfrog-coredump.bin"
-       style="display:inline-block;background:#0f3460;border:1px solid #4a4a7a;border-radius:4px;color:#e0e0e0;font:13px monospace;padding:6px 18px;text-decoration:none">Download</a>
+    <a href="/api/coredump" download="pixfrog-coredump.bin"
+       style="display:inline-block;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--fg);font:600 13px var(--font);padding:7px 16px;text-decoration:none">Download</a>
     <button class="sec" onclick="coredumpDelete()" style="margin-left:8px">Delete</button>
     <span class="note">404 = no crash stored</span>
     <div class="status" id="st-coredump"></div>
@@ -131,7 +151,6 @@ button.sec:hover{background:#1a4a8a}
     <div class="row"><label>Static IP</label><input id="n-ip" type="text" placeholder="192.168.1.100"></div>
     <div class="row"><label>Subnet mask</label><input id="n-mask" type="text" placeholder="255.255.255.0"></div>
     <div class="row"><label>Gateway</label><input id="n-gw" type="text" placeholder="192.168.1.1"></div>
-    <button onclick="saveGlobal(['dhcp','ip','mask','gw'])">Save</button>
     <span class="note">network changes apply after reboot</span>
     <div class="status" id="st-network"></div>
   </div>
@@ -163,7 +182,6 @@ button.sec:hover{background:#1a4a8a}
       <select id="a-fsscene"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select>
       <span class="note">used when mode = Scene</span>
     </div>
-    <button onclick="saveGlobal(['net','subnet','short_name','long_name','reply_unicast','sacn_enabled','fpp_remote','failsafe_mode','failsafe_timeout_s','failsafe_color','failsafe_scene'])">Save</button>
     <div class="status" id="st-artnet"></div>
   </div>
 </div>
@@ -176,7 +194,6 @@ button.sec:hover{background:#1a4a8a}
     </div>
     <div class="row"><label>Scene at boot</label>
       <select id="sc-boot"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select>
-      <button class="sec" onclick="saveGlobal(['boot_scene'])" style="margin-top:0">Save</button>
     </div>
     <div class="status" id="st-scenes"></div>
   </div>
@@ -194,15 +211,23 @@ button.sec:hover{background:#1a4a8a}
   <div class="card">
     <div class="row"><label>Upload (.fseq)</label><input id="fseq-file" type="file" accept=".fseq"></div>
     <div class="row" id="fseq-prog-row" style="display:none"><label>Progress</label>
-      <div style="flex:1;background:#0f3460;border-radius:4px;height:14px;overflow:hidden">
-        <div id="fseq-bar" style="background:#e94560;height:100%;width:0%"></div>
-      </div>
+      <div class="bar-track"><div id="fseq-bar" class="bar-fill"></div></div>
       <span id="fseq-pct" class="note">0%</span>
     </div>
     <button onclick="fseqUpload()">Upload to SD card</button>
     <div class="status" id="st-fseq-up"></div>
   </div>
   <div id="fseq-cards"></div>
+</div>
+
+<!-- Auto-patch -->
+<div class="panel" id="panel-autopatch">
+  <div class="card">
+    <div class="row"><label>Auto-patch from</label><input id="ap-base" type="number" min="0" max="32767" value="0">
+      <button onclick="autoPatch()" style="margin-top:0">Patch all channels</button></div>
+    <span class="note">Re-addresses every channel contiguously from this base universe, sized by each channel's pixel count. Overwrites universe &amp; DMX start; disabled channels are skipped.</span>
+    <div class="status" id="st-autopatch"></div>
+  </div>
 </div>
 
 <!-- Channel panels (ch0..ch7) -->
@@ -220,7 +245,7 @@ function makeChanPanel(i) {
   p.innerHTML=`<div class="card">
     <div class="row"><label>Protocol</label><select id="ch${i}-proto" onchange="updateChanVis(${i})">${protoOpts}</select></div>
     <div id="ch${i}-led-fields">
-      <div class="row"><label>Universe start</label><input id="ch${i}-uni" type="number" min="1" max="32767"></div>
+      <div class="row"><label>Universe start</label><input id="ch${i}-uni" type="number" min="0" max="32767"></div>
       <div class="row"><label>DMX start</label><input id="ch${i}-dmx" type="number" min="1" max="512"></div>
       <div id="ch${i}-pixrow" class="row"><label>Pixels</label><input id="ch${i}-pix" type="number" min="1" max="1024"></div>
       <div id="ch${i}-orderrow" class="row"><label>Color order</label><select id="ch${i}-order">${orderOpts}</select></div>
@@ -233,8 +258,7 @@ function makeChanPanel(i) {
       <div id="ch${i}-wbrow" class="row"><label>White balance</label><input id="ch${i}-wb" type="color" value="#ffffff">
         <span class="note">#ffffff = unity</span></div>
     </div>
-    <button onclick="saveChan(${i})">Save</button>
-    <button class="sec" onclick="identifyChan(${i})" style="margin-left:8px">Identify</button>
+    <button class="sec" onclick="identifyChan(${i})">Identify</button>
     <div class="status" id="st-ch${i}"></div>
   </div>`;
   return p;
@@ -252,7 +276,7 @@ function buildSceneCards(){
     d.className='card';
     const fxOpts=FX.map((n,v)=>`<option value="${v}">${n}</option>`).join('');
     let masks='';
-    for(let c=0;c<8;c++) masks+=`<label style="width:auto;color:#aaa;font-size:11px">${c+1}<input id="sc${i}-m${c}" type="checkbox" style="width:14px;height:14px"></label>`;
+    for(let c=0;c<8;c++) masks+=`<label style="width:auto;color:var(--fg-soft);font-size:11px">${c+1}<input id="sc${i}-m${c}" type="checkbox" style="width:14px;height:14px"></label>`;
     d.innerHTML=`
       <div class="row"><label>Scene ${i+1}</label><input id="sc${i}-name" type="text" maxlength="15"></div>
       <div class="row"><label>Effect</label><select id="sc${i}-fx">${fxOpts}</select></div>
@@ -262,8 +286,7 @@ function buildSceneCards(){
       <div class="row"><label>Param</label><input id="sc${i}-par" type="number" min="0" max="255">
         <span class="note">chase: width px · rainbow: repeats</span></div>
       <div class="row"><label>Channels</label><div style="display:flex;gap:8px;flex-wrap:wrap">${masks}</div></div>
-      <button onclick="saveScene(${i})">Save</button>
-      <button class="sec" onclick="playScene(${i})" style="margin-left:8px">Play</button>
+      <button class="sec" onclick="playScene(${i})">Play</button>
       <div class="status" id="st-sc${i}"></div>`;
     host.appendChild(d);
   }
@@ -282,12 +305,18 @@ async function saveScene(i){
     mask:mask,
   };
   try{await api('POST','/api/scene/'+i,body);status('st-sc'+i,'Saved','');}
-  catch(e){status('st-sc'+i,'Error: '+e.message,true);}
+  catch(e){status('st-sc'+i,'Error: '+e.message,true);throw e;}
 }
 async function playScene(i){
   try{await api('POST','/api/scene/'+i+'/play',{});status('st-sc'+i,'Playing','');loadConfig();}
   catch(e){status('st-sc'+i,'Error: '+e.message,true);}
 }
+async function autoPatch(){
+  const base=parseInt(document.getElementById('ap-base').value)||0;
+  try{const r=await api('POST','/api/autopatch',{base});status('st-autopatch','Patched — next free universe '+r.next_free,'');loadConfig();}
+  catch(e){status('st-autopatch',e.message,'err');}
+}
+
 async function identifyChan(i){
   try{await api('POST','/api/channel/'+i+'/identify',{});status('st-ch'+i,'Blinking strip for 10 s','');}
   catch(e){status('st-ch'+i,'Error: '+e.message,true);}
@@ -481,7 +510,7 @@ async function saveGlobal(keys){
   try{
     await api('POST','/api/global',body);
     status(stId,'Saved','');
-  }catch(e){status(stId,'Error: '+e.message,true);}
+  }catch(e){status(stId,'Error: '+e.message,true);throw e;}
 }
 
 async function saveChan(i){
@@ -502,7 +531,7 @@ async function saveChan(i){
   try{
     await api('POST','/api/channel/'+i,body);
     status('st-ch'+i,'Saved','');
-  }catch(e){status('st-ch'+i,'Error: '+e.message,true);}
+  }catch(e){status('st-ch'+i,'Error: '+e.message,true);throw e;}
 }
 
 async function savePassword(){
@@ -606,6 +635,52 @@ async function factoryReset(){
   catch(e){status('st-sys','Error: '+e.message,true);}
 }
 
+// ── Unsaved-changes tracking → one global Save ───────────────────────────────
+// Every config field belongs to a "group" (a save endpoint). Editing any field
+// marks its group dirty and enables the Save bar; Save flushes each dirty group
+// through the existing per-section save calls. Action inputs (password, file
+// pickers, auto-patch base) are excluded — they have their own buttons.
+const dirty=new Set();
+const ARTNET_KEYS=['net','subnet','short_name','long_name','reply_unicast','sacn_enabled','fpp_remote','failsafe_mode','failsafe_timeout_s','failsafe_color','failsafe_scene'];
+function groupOf(id){
+  if(!id||['g-pwd','ap-base','restore-file','ota-file','fseq-file'].includes(id))return null;
+  if(id==='sc-boot')return 'boot';
+  if(id==='g-refresh'||id==='g-home'||id==='g-web')return 'global';
+  if(id.startsWith('n-'))return 'network';
+  if(id.startsWith('a-'))return 'artnet';
+  let m=/^ch(\d)-/.exec(id);if(m)return 'ch'+m[1];
+  m=/^sc(\d)-/.exec(id);if(m)return 'scene'+m[1];
+  return null;
+}
+function updateSaveBar(){
+  const n=dirty.size;
+  document.getElementById('save-btn').disabled=n===0;
+  document.getElementById('save-status').textContent=n?(n+' section'+(n>1?'s':'')+' modified'):'';
+}
+function markDirty(id){const g=groupOf(id);if(g&&!dirty.has(g)){dirty.add(g);updateSaveBar();}}
+document.addEventListener('input',e=>markDirty(e.target.id));
+document.addEventListener('change',e=>markDirty(e.target.id));
+function saveGroup(g){
+  if(g==='global')return saveGlobal(['refresh_hz','home_timeout_s','web_enabled']);
+  if(g==='network')return saveGlobal(['dhcp','ip','mask','gw']);
+  if(g==='artnet')return saveGlobal(ARTNET_KEYS);
+  if(g==='boot')return saveGlobal(['boot_scene']);
+  let m=/^ch(\d)$/.exec(g);if(m)return saveChan(+m[1]);
+  m=/^scene(\d)$/.exec(g);if(m)return saveScene(+m[1]);
+  return Promise.resolve();
+}
+async function saveAll(){
+  document.getElementById('save-btn').disabled=true;
+  document.getElementById('save-status').textContent='Saving…';
+  let failed=0;
+  for(const g of [...dirty]){
+    try{await saveGroup(g);dirty.delete(g);}catch(e){failed++;}
+  }
+  updateSaveBar();
+  document.getElementById('save-status').textContent=
+    failed?(failed+' section'+(failed>1?'s':'')+' failed — see panel'):'All changes saved';
+}
+
 loadConfig();
 
 // Live status poll: cheap endpoint, updates the header + channel-tab dots
@@ -640,5 +715,9 @@ function fmtMs(ms){
 setInterval(pollStatus,3000);
 pollStatus();
 </script>
+<div id="savebar">
+  <span id="save-status"></span>
+  <button id="save-btn" disabled onclick="saveAll()">Save changes</button>
+</div>
 </body>
 </html>

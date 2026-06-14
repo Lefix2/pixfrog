@@ -28,6 +28,26 @@ inline size_t channel_universes_used(const config::ChannelConfig& cc) {
     return (total + kUniverseSize - 1) / kUniverseSize;
 }
 
+// ── Auto-patch (cascade universe assignment) ─────────────────────────────────
+//
+// Lay channels out contiguously from a flat 15-bit base universe: channel i is
+// placed universe-aligned at the running cursor, which then advances by that
+// channel's universe span (channel_universes_used). A channel spanning 0
+// universes (disabled / 0 px) leaves the cursor where it is. The cursor is a
+// flat 15-bit Port-Address, so it rolls through subnet/net boundaries naturally
+// (universe 15 → 16 crosses into the next subnet). out[i] receives channel i's
+// new universe_start; the caller resets dmx_start to 1 and persists. Returns
+// the next free universe after the last channel (wrapped to 15 bits).
+inline uint16_t compute_auto_patch(uint16_t base, const config::ChannelConfig* chans, size_t n,
+                                   uint16_t* out) {
+    uint32_t cursor = base;
+    for (size_t i = 0; i < n; ++i) {
+        out[i]  = static_cast<uint16_t>(cursor & 0x7FFF);
+        cursor += channel_universes_used(chans[i]);
+    }
+    return static_cast<uint16_t>(cursor & 0x7FFF);
+}
+
 // ── Capacity check ──────────────────────────────────────────────────────────
 
 inline uint64_t channel_t_dma_us(const config::ChannelConfig& cc, uint32_t pclk_hz) {
