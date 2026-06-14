@@ -33,16 +33,17 @@ void handle_dmx(const uint8_t* buf, size_t len, const sockaddr_in& from) {
         return;
     }
 
-    // Item 4: filter by configured net/subnet.
-    const auto& g = config::get_global();
-    if (!parser::universe_matches(f.universe, g.artnet_net, g.artnet_subnet)) {
-        return;  // legitimate Art-Net for another node — silently drop
-    }
+    // universe_start is the absolute 15-bit Art-Net Port-Address; routing is an
+    // exact LUT match (channel_for_universe / write_universe_from_source return
+    // for an unmapped universe), so the LUT itself drops Art-Net meant for other
+    // nodes. No node-wide net/subnet gate: that would cap us at the 16 universes
+    // of a single subnet despite kNumUniverses=48 channels spanning subnets.
+    // (artnet_net/artnet_subnet remain for what ArtPollReply advertises.)
 
     // 2-source merge keyed by sender IP; a third concurrent sender is dropped.
     if (!dmx::write_universe_from_source(f.universe, f.data, f.data_len, from.sin_addr.s_addr,
                                          dmx::kArtnetMergeTimeoutUs)) {
-        return;
+        return;  // universe not mapped to any channel — silently drop
     }
     dmx::note_packet_rx();
 
