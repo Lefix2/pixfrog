@@ -1582,7 +1582,7 @@ void dispatch_channel_menu(Event e) {
                    static_cast<int32_t>(kProtocolCount) - 1, 1, "Proto", ret, ch);
         break;
     case ChItem::Uni:
-        enter_edit(Field::ChUniverse, ValueKind::Int, cc.universe_start, 1, 32767, 1, "Uni", ret,
+        enter_edit(Field::ChUniverse, ValueKind::Int, cc.universe_start, 0, 32767, 1, "Uni", ret,
                    ch);
         break;
     case ChItem::Dmx:

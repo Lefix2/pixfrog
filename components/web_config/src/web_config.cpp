@@ -443,7 +443,7 @@ static void restore_channel(size_t i, cJSON* jc) {
         return false;
     };
     double v;
-    if (num("universe_start", 1, 32767, &v)) c.universe_start = static_cast<uint16_t>(v);
+    if (num("universe_start", 0, 32767, &v)) c.universe_start = static_cast<uint16_t>(v);
     if (num("dmx_start", 1, 512, &v)) c.dmx_start = static_cast<uint16_t>(v);
     if (num("pixel_count", 1, dmx::kMaxPixelsPerChan, &v)) c.pixel_count = static_cast<uint16_t>(v);
     if (num("brightness", 0, 255, &v)) c.brightness = static_cast<uint8_t>(v);
@@ -747,7 +747,7 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
         }
         c.color_order = static_cast<led::ColorOrder>(o);
     }
-    if (get_u32("universe_start", 1, 32767, u)) c.universe_start = static_cast<uint16_t>(u);
+    if (get_u32("universe_start", 0, 32767, u)) c.universe_start = static_cast<uint16_t>(u);
     if (get_u32("dmx_start", 1, 512, u)) c.dmx_start = static_cast<uint16_t>(u);
     if (get_u32("pixel_count", 1, dmx::kMaxPixelsPerChan, u))
         c.pixel_count = static_cast<uint16_t>(u);

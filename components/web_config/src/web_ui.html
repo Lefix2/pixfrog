@@ -220,7 +220,7 @@ function makeChanPanel(i) {
   p.innerHTML=`<div class="card">
     <div class="row"><label>Protocol</label><select id="ch${i}-proto" onchange="updateChanVis(${i})">${protoOpts}</select></div>
     <div id="ch${i}-led-fields">
-      <div class="row"><label>Universe start</label><input id="ch${i}-uni" type="number" min="1" max="32767"></div>
+      <div class="row"><label>Universe start</label><input id="ch${i}-uni" type="number" min="0" max="32767"></div>
       <div class="row"><label>DMX start</label><input id="ch${i}-dmx" type="number" min="1" max="512"></div>
       <div id="ch${i}-pixrow" class="row"><label>Pixels</label><input id="ch${i}-pix" type="number" min="1" max="1024"></div>
       <div id="ch${i}-orderrow" class="row"><label>Color order</label><select id="ch${i}-order">${orderOpts}</select></div>

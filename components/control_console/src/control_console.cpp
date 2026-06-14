@@ -388,7 +388,7 @@ int cmd_ch(int argc, char** argv) {
         if (o < 0) return err("order: RGB|RBG|GRB|GBR|BRG|BGR|RGBW|GRBW|RGBWW or 0..8");
         c.color_order = static_cast<led::ColorOrder>(o);
     } else if (strcmp(key, "universe") == 0) {
-        if (!parse_u32_in(val, 1, 32767, u)) return err("universe: 1..32767");
+        if (!parse_u32_in(val, 0, 32767, u)) return err("universe: 0..32767");
         c.universe_start = static_cast<uint16_t>(u);
     } else if (strcmp(key, "dmx_start") == 0) {
         if (!parse_u32_in(val, 1, 512, u)) return err("dmx_start: 1..512");
