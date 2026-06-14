@@ -146,6 +146,7 @@ enum class Field : uint8_t {
     ChGrouping,
     ChInvert,
     ChClock,
+    AutoPatch,
 };
 
 enum class StringField : uint8_t {
@@ -1009,6 +1010,11 @@ void commit_edit() {
             fpp::stop();
         break;
     }
+    case Field::AutoPatch:
+        // Re-address every channel contiguously from the chosen base universe.
+        // auto_patch_universes persists each channel and marks it dirty itself.
+        dmx::auto_patch_universes(static_cast<uint16_t>(v));
+        break;
     case Field::GlobalRefresh: {
         auto g            = config::get_global();
         g.refresh_rate_hz = static_cast<uint8_t>(v);
@@ -1357,16 +1363,16 @@ void render_artnet_menu() {
     truncate(vshort, sizeof(vshort), g.short_name);
     truncate(vlong, sizeof(vlong), g.long_name);
 
-    ListItem items[11] = {
-        { "Net", vnet },         { "Sub", vsub },         { "Short", vshort }, { "Long", vlong },
-        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },   { "FPP", vfpp },
-        { "FSafe", vfsm },       { "FSafeS", vfst },      { "[Back]", "" },
+    ListItem items[12] = {
+        { "Net", vnet },         { "Sub", vsub },         { "Short", vshort },  { "Long", vlong },
+        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },    { "FPP", vfpp },
+        { "FSafe", vfsm },       { "FSafeS", vfst },      { "Auto-patch", "" }, { "[Back]", "" },
     };
-    render_list("ARTNET", items, 11, s.cursor);
+    render_list("ARTNET", items, 12, s.cursor);
 }
 
 void dispatch_artnet_menu(Event e) {
-    constexpr uint8_t kCount = 11;
+    constexpr uint8_t kCount = 12;
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < kCount - 1) s.cursor++;
     if (e != Event::Click) return;
@@ -1414,6 +1420,12 @@ void dispatch_artnet_menu(Event e) {
                    "FSafeS", Screen::ArtnetMenu);
         break;
     case 10:
+        // Auto-patch: cascade all channels from a base universe. Seed the edit
+        // with channel 0's current universe so re-patching in place is one click.
+        enter_edit(Field::AutoPatch, ValueKind::Int, config::get_channel(0).universe_start, 0,
+                   32767, 1, "Patch", Screen::ArtnetMenu);
+        break;
+    case 11:
         s.screen = Screen::MainMenu;
         s.cursor = 0;
         break;
