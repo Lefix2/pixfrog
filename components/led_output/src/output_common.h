@@ -55,11 +55,12 @@ inline led::ChannelDesc desc_for_channel(size_t ch) {
     d.clock_hz         = cc.clock_hz;
     d.lut              = channel_lut(ch, cc);
 
-    // Pixel-count preview: emit exactly the previewed number of physical
-    // LEDs with the pattern's own levels — neutralize per-channel transforms
-    // so LED N on the wire is LED N on the screen.
+    // Pixel-count preview: emit the physical LED count decode published — the
+    // lit count, or larger on the one frame a shrink blanks the dropped tail.
+    // Neutralize per-channel transforms (color_order stays so the ruler's
+    // colours land right) so LED N on the wire is LED N on the screen.
     if (dmx::pixel_preview_channel() == static_cast<int>(ch)) {
-        d.pixel_count      = dmx::pixel_preview_count();
+        d.pixel_count      = dmx::preview_emit_count();
         d.brightness       = 255;
         d.grouping         = 1;
         d.invert_direction = false;

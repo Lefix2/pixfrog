@@ -72,26 +72,48 @@ inline bool channel_fits_budget(const config::ChannelConfig& cc, uint32_t pclk_h
 
 // ── Pixel-count preview pattern ─────────────────────────────────────────────
 //
-// Strip visualization while the user edits a channel's pixel count:
-//   LED i in [1..N):  white 10%   (orientation / extent)
-//   LED i % 10 == 0:  white 50%   (decade ruler marks)
-//   LED N:            white 100%  (the count being edited)
-// Levels are baked into the buffer; the caller bypasses per-channel
-// brightness so the pattern reads the same on every strip.
+// Live "ruler" while the user edits a channel's pixel count. Colour encodes
+// the scale so the strip is readable at a glance:
+//   LED i in [1..N):   green  10%   (extent / orientation)
+//   LED i % 10  == 0:  yellow 30%   (decade marks)
+//   LED i % 100 == 0:  pink   30%   (centade marks, override decade)
+//   LED N:             white 100%   (the count being edited)
+// Colours are logical R,G,B (the encoder applies color_order); any W byte
+// stays dark. The caller bypasses per-channel brightness so the pattern reads
+// the same on every strip.
+//
+// `emit_count` (>= `lit_count`) is the number of physical LEDs to write: the
+// pixels in (lit_count, emit_count] are blacked out. A shrinking count uses
+// this to erase the pixels it just dropped — LEDs latch their last value, so
+// one explicit black frame is what turns them off.
 
-constexpr uint8_t kPreviewLevelLow  = 26;   // 10 %
-constexpr uint8_t kPreviewLevelMid  = 128;  // 50 %
-constexpr uint8_t kPreviewLevelFull = 255;  // 100 %
+struct PreviewRGB {
+    uint8_t r, g, b;
+};
+constexpr PreviewRGB kPreviewGreen{ 0, 26, 0 };       // 10 % green  — base / extent
+constexpr PreviewRGB kPreviewYellow{ 77, 77, 0 };     // 30 % yellow — decade marks
+constexpr PreviewRGB kPreviewPink{ 77, 0, 38 };       // 30 % pink   — centade marks
+constexpr PreviewRGB kPreviewWhite{ 255, 255, 255 };  // 100 % white — the count
 
-inline void fill_preview_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
-                                 uint8_t bytes_per_pixel) {
-    const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
+inline void fill_preview_pattern(uint8_t* dst, size_t dst_capacity, uint16_t lit_count,
+                                 uint16_t emit_count, uint8_t bytes_per_pixel) {
+    if (emit_count < lit_count) emit_count = lit_count;
+    const size_t total = static_cast<size_t>(emit_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0) return;
-    for (uint16_t i = 1; i <= pixel_count; ++i) {
-        uint8_t level = kPreviewLevelLow;
-        if (i % 10 == 0) level = kPreviewLevelMid;
-        if (i == pixel_count) level = kPreviewLevelFull;
-        std::memset(dst + static_cast<size_t>(i - 1) * bytes_per_pixel, level, bytes_per_pixel);
+    for (uint16_t i = 1; i <= emit_count; ++i) {
+        PreviewRGB c{ 0, 0, 0 };  // erase tail (i > lit_count) stays black
+        if (i <= lit_count) {
+            c = kPreviewGreen;
+            if (i % 10 == 0) c = kPreviewYellow;
+            if (i % 100 == 0) c = kPreviewPink;     // centade wins over decade
+            if (i == lit_count) c = kPreviewWhite;  // the count wins over all
+        }
+        uint8_t* p = dst + static_cast<size_t>(i - 1) * bytes_per_pixel;
+        p[0]       = c.r;
+        if (bytes_per_pixel > 1) p[1] = c.g;
+        if (bytes_per_pixel > 2) p[2] = c.b;
+        for (uint8_t k = 3; k < bytes_per_pixel; ++k)
+            p[k] = 0;  // W die stays dark
     }
 }
 
