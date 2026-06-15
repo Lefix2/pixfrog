@@ -270,52 +270,94 @@ static void test_decode_dmx_start_in_second_universe() {
 
 // ── Pixel-count preview pattern ─────────────────────────────────────────────
 
-static void test_preview_pattern_levels() {
+static void test_preview_pattern_colors() {
     uint8_t buf[64 * 3] = {};
-    fill_preview_pattern(buf, sizeof(buf), 25, 3);
+    fill_preview_pattern(buf, sizeof(buf), 25, 25, 3);  // lit == emit: no erase tail
 
-    // LED 1 (index 0): low
-    EXPECT_EQ(buf[0], kPreviewLevelLow);
-    EXPECT_EQ(buf[1], kPreviewLevelLow);
-    EXPECT_EQ(buf[2], kPreviewLevelLow);
-    // LED 10 and 20: decade marks at mid level
-    EXPECT_EQ(buf[9 * 3], kPreviewLevelMid);
-    EXPECT_EQ(buf[19 * 3], kPreviewLevelMid);
-    // LED 25 (the count): full
-    EXPECT_EQ(buf[24 * 3], kPreviewLevelFull);
-    EXPECT_EQ(buf[24 * 3 + 2], kPreviewLevelFull);
-    // LED 24: plain low
-    EXPECT_EQ(buf[23 * 3], kPreviewLevelLow);
+    // LED 1: green base (R=0, G=26, B=0)
+    EXPECT_EQ(buf[0], kPreviewGreen.r);
+    EXPECT_EQ(buf[1], kPreviewGreen.g);
+    EXPECT_EQ(buf[2], kPreviewGreen.b);
+    // LED 10 and 20: yellow decade marks (R=G=77, B=0)
+    EXPECT_EQ(buf[9 * 3 + 0], kPreviewYellow.r);
+    EXPECT_EQ(buf[9 * 3 + 1], kPreviewYellow.g);
+    EXPECT_EQ(buf[9 * 3 + 2], kPreviewYellow.b);
+    EXPECT_EQ(buf[19 * 3 + 0], kPreviewYellow.r);
+    // LED 25 (the count): white
+    EXPECT_EQ(buf[24 * 3 + 0], kPreviewWhite.r);
+    EXPECT_EQ(buf[24 * 3 + 1], kPreviewWhite.g);
+    EXPECT_EQ(buf[24 * 3 + 2], kPreviewWhite.b);
+    // LED 24: plain green base
+    EXPECT_EQ(buf[23 * 3 + 1], kPreviewGreen.g);
+    EXPECT_EQ(buf[23 * 3 + 0], 0);
     // Nothing written past LED 25
     EXPECT_EQ(buf[25 * 3], 0);
 }
 
-static void test_preview_pattern_last_led_wins_over_decade() {
-    // N = 30: LED 30 is both a decade mark and the count — full wins.
-    uint8_t buf[32 * 3] = {};
-    fill_preview_pattern(buf, sizeof(buf), 30, 3);
-    EXPECT_EQ(buf[29 * 3], kPreviewLevelFull);
-    EXPECT_EQ(buf[19 * 3], kPreviewLevelMid);
+static void test_preview_pattern_centade_pink_over_decade() {
+    // N = 120: LED 100 is a centade (pink, overrides the decade yellow),
+    // LED 110 stays a decade, LED 120 is the count (white).
+    uint8_t buf[120 * 3] = {};
+    fill_preview_pattern(buf, sizeof(buf), 120, 120, 3);
+    EXPECT_EQ(buf[99 * 3 + 0], kPreviewPink.r);
+    EXPECT_EQ(buf[99 * 3 + 1], kPreviewPink.g);
+    EXPECT_EQ(buf[99 * 3 + 2], kPreviewPink.b);
+    EXPECT_EQ(buf[109 * 3 + 0], kPreviewYellow.r);
+    EXPECT_EQ(buf[109 * 3 + 1], kPreviewYellow.g);
+    EXPECT_EQ(buf[119 * 3 + 0], kPreviewWhite.r);
+    EXPECT_EQ(buf[119 * 3 + 2], kPreviewWhite.b);
 }
 
-static void test_preview_pattern_rgbw() {
+static void test_preview_pattern_last_led_wins_over_marks() {
+    // N = 30: LED 30 is both a decade mark and the count — white wins.
+    uint8_t buf[32 * 3] = {};
+    fill_preview_pattern(buf, sizeof(buf), 30, 30, 3);
+    EXPECT_EQ(buf[29 * 3 + 0], kPreviewWhite.r);
+    EXPECT_EQ(buf[29 * 3 + 1], kPreviewWhite.g);
+    EXPECT_EQ(buf[29 * 3 + 2], kPreviewWhite.b);
+    EXPECT_EQ(buf[19 * 3 + 0], kPreviewYellow.r);  // LED 20 still a decade
+}
+
+static void test_preview_pattern_erase_tail() {
+    // lit = 5, emit = 8: LEDs 6,7,8 are the dropped tail → blacked out even
+    // though the buffer held stale data.
+    uint8_t buf[8 * 3];
+    for (auto& b : buf)
+        b = 0xAB;
+    fill_preview_pattern(buf, sizeof(buf), 5, 8, 3);
+    EXPECT_EQ(buf[4 * 3 + 0], kPreviewWhite.r);  // LED 5: the count
+    for (int led = 5; led < 8; ++led) {          // LEDs 6..8: erased
+        EXPECT_EQ(buf[led * 3 + 0], 0);
+        EXPECT_EQ(buf[led * 3 + 1], 0);
+        EXPECT_EQ(buf[led * 3 + 2], 0);
+    }
+}
+
+static void test_preview_pattern_rgbw_white_off() {
     uint8_t buf[10 * 4] = {};
-    fill_preview_pattern(buf, sizeof(buf), 10, 4);
-    EXPECT_EQ(buf[0], kPreviewLevelLow);
-    EXPECT_EQ(buf[3], kPreviewLevelLow);  // W byte of LED 1
-    EXPECT_EQ(buf[9 * 4], kPreviewLevelFull);
+    fill_preview_pattern(buf, sizeof(buf), 10, 10, 4);
+    EXPECT_EQ(buf[1], kPreviewGreen.g);  // LED 1 green
+    EXPECT_EQ(buf[3], 0);                // W byte stays dark
+    EXPECT_EQ(buf[9 * 4 + 0], kPreviewWhite.r);
+    EXPECT_EQ(buf[9 * 4 + 3], 0);  // LED 10 white but W still dark
 }
 
 static void test_preview_pattern_single_pixel() {
     uint8_t buf[3] = {};
-    fill_preview_pattern(buf, sizeof(buf), 1, 3);
-    EXPECT_EQ(buf[0], kPreviewLevelFull);
+    fill_preview_pattern(buf, sizeof(buf), 1, 1, 3);
+    EXPECT_EQ(buf[0], kPreviewWhite.r);  // sole LED is the count → white
+    EXPECT_EQ(buf[1], kPreviewWhite.g);
+    EXPECT_EQ(buf[2], kPreviewWhite.b);
 }
 
 static void test_preview_pattern_overflow_is_noop() {
     uint8_t buf[3 * 3] = {};
-    fill_preview_pattern(buf, sizeof(buf), 4, 3);  // 12 bytes > 9-byte buffer
+    fill_preview_pattern(buf, sizeof(buf), 4, 4, 3);  // 12 bytes > 9-byte buffer
     EXPECT_EQ(buf[0], 0);
+    // The emit count (not the lit count) drives the capacity guard.
+    uint8_t buf2[5 * 3] = {};
+    fill_preview_pattern(buf2, sizeof(buf2), 3, 6, 3);  // emit 6 → 18 > 15 bytes
+    EXPECT_EQ(buf2[0], 0);
 }
 
 // ── Signal-loss failsafe ────────────────────────────────────────────────────
@@ -604,9 +646,11 @@ int main() {
     test_decode_missing_universe();
     test_decode_dst_too_small();
     test_decode_dmx_start_in_second_universe();
-    test_preview_pattern_levels();
-    test_preview_pattern_last_led_wins_over_decade();
-    test_preview_pattern_rgbw();
+    test_preview_pattern_colors();
+    test_preview_pattern_centade_pink_over_decade();
+    test_preview_pattern_last_led_wins_over_marks();
+    test_preview_pattern_erase_tail();
+    test_preview_pattern_rgbw_white_off();
     test_preview_pattern_single_pixel();
     test_preview_pattern_overflow_is_noop();
     test_failsafe_due_logic();

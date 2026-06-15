@@ -43,6 +43,15 @@ std::atomic<bool> g_sync_pending{ false };
 constexpr uint32_t kPreviewOff = 0xFFFF0000u;
 std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
 
+// Pixel-count shrink erase: when the previewed count drops, the LEDs it just
+// dropped hold their last value until overwritten. `g_preview_erase` is the
+// extent the UI owes a black tail down to; the render task consumes it on the
+// next decode so exactly one frame carries the erase. `g_preview_emit` is the
+// physical LED count that frame emits (= max(count, erase)), published by
+// decode for the output stage to read back.
+std::atomic<uint16_t> g_preview_erase{ 0 };
+std::atomic<uint16_t> g_preview_emit{ 0 };
+
 // Active standalone scene (-1 = none).
 std::atomic<int8_t> g_active_scene{ -1 };
 
@@ -217,12 +226,23 @@ bool auto_patch_universes(uint16_t base, uint16_t* next_free) {
 
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
     if (channel_index >= config::kNumChannels) return;
+    const uint32_t prev = g_pixel_preview.load(std::memory_order_relaxed);
+    // A shrink on the same channel owes a one-frame black tail down from the
+    // previously shown count. Accumulate the largest extent so several fast
+    // detents collapse into a single erase before the next decode flushes it.
+    if ((prev >> 16) == channel_index) {
+        const uint16_t prev_count = static_cast<uint16_t>(prev & 0xFFFFu);
+        if (pixel_count < prev_count &&
+            prev_count > g_preview_erase.load(std::memory_order_relaxed))
+            g_preview_erase.store(prev_count, std::memory_order_relaxed);
+    }
     g_pixel_preview.store((static_cast<uint32_t>(channel_index) << 16) | pixel_count,
                           std::memory_order_relaxed);
 }
 
 void clear_pixel_preview() {
     g_pixel_preview.store(kPreviewOff, std::memory_order_relaxed);
+    g_preview_erase.store(0, std::memory_order_relaxed);
 }
 
 int pixel_preview_channel() {
@@ -233,6 +253,12 @@ int pixel_preview_channel() {
 
 uint16_t pixel_preview_count() {
     return static_cast<uint16_t>(g_pixel_preview.load(std::memory_order_relaxed) & 0xFFFFu);
+}
+
+// Physical LED count for the frame currently being built (decode publishes it;
+// the output stage reads it back to size the emission incl. any erase tail).
+uint16_t preview_emit_count() {
+    return g_preview_emit.load(std::memory_order_relaxed);
 }
 
 void identify_start(size_t channel_index, uint16_t seconds) {
@@ -296,8 +322,15 @@ bool decode_pixels_for_channel(size_t ch) {
 
     const uint32_t preview = g_pixel_preview.load(std::memory_order_relaxed);
     if ((preview >> 16) == ch) {
-        const auto& cc = config::get_channel(ch);
-        logic::fill_preview_pattern(dst, kMaxBytesPerChan, static_cast<uint16_t>(preview & 0xFFFFu),
+        const auto& cc       = config::get_channel(ch);
+        const uint16_t count = static_cast<uint16_t>(preview & 0xFFFFu);
+        // Consume any owed shrink-erase here so exactly this frame carries the
+        // black tail; the emit count is published for the output stage to size
+        // the emission so the dropped LEDs are actually clocked out once.
+        const uint16_t erase = g_preview_erase.exchange(0, std::memory_order_relaxed);
+        const uint16_t emit  = erase > count ? erase : count;
+        g_preview_emit.store(emit, std::memory_order_relaxed);
+        logic::fill_preview_pattern(dst, kMaxBytesPerChan, count, emit,
                                     led::bytes_per_pixel(cc.protocol));
         return true;
     }

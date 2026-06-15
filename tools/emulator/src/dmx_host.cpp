@@ -85,6 +85,9 @@ int pixel_preview_channel() {
 uint16_t pixel_preview_count() {
     return g_preview_count;
 }
+uint16_t preview_emit_count() {
+    return g_preview_count;
+}
 
 // FSEQ playback active flag.
 namespace {

@@ -141,15 +141,20 @@ bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* dat
 
 // ── Pixel-count preview (UI: ChPixels edit screen) ─────────────────────────
 // While active, decode_pixels_for_channel(ch) fills the channel's pixel
-// buffer with a ruler pattern (1..N-1 dim white, decades half white, N full
-// white) instead of decoding universes, and the output backend overrides
+// buffer with a coloured ruler (1..N-1 green, decades yellow, centades pink,
+// N white) instead of decoding universes, and the output backend overrides
 // the channel's pixel_count/brightness/grouping so the pattern maps 1:1 to
 // physical LEDs. Set from ui_task, read from render_task (single atomic).
+// A shrink emits one extra black-tail frame so dropped LEDs (which latch their
+// last value) are turned off.
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count);
 void clear_pixel_preview();
 // Returns the previewed channel (-1 if inactive) and its count.
 int pixel_preview_channel();
 uint16_t pixel_preview_count();
+// Physical LED count the output stage must emit for the current preview frame
+// (the lit count, or larger when a shrink owes a one-frame black tail).
+uint16_t preview_emit_count();
 
 // ── Channel identify (commissioning) ───────────────────────────────────────
 // Blinks the channel full white at 2 Hz for `seconds` so the physical strip
