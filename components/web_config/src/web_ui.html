@@ -1,723 +1,1061 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>pixfrog config</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pixfrog · console</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4ODEgODgxIj48cmVjdCB3aWR0aD0iODgxIiBoZWlnaHQ9Ijg4MSIgcng9IjE3MCIgZmlsbD0iI2Y4YzY2MiIvPjxwYXRoIGQ9Im0gMzk4LjcwODAyLDU3Ni44MzI3NSBjIC02LjE3MzQ2LC0wLjk2Mjg1IC0xMi4yMTczOCwtMS45MTE2NSAtMTguMTM2NDcsLTIuODQ0ODQgLTU0LjE3NTM0LC04LjUwOTU3IC0xMDguMDUxMDQsLTE1Ljc3MzgzIC0xNjAuODQ5OTksLTI1LjM0NDU2IC00MC40MzE3NiwtOC4zNDU3MSAtODUuNzU4ODgsLTE0LjQ5MjYzIC0xMTUuMDM3NTMsLTM4LjY4MjQgLTYuNzkxNDI1LC02LjY3OTA2IC03LjAyMDgyNCwtMTcuODU3MTMgLTIuMjAwMzUsLTI4LjI3Njc4IDIuMzU0ODQsLTUuNDEwMzYgNS42MDU0MywtMTAuNjI1NjUgOS4xNDMxNCwtMTUuNjI3MTUgLTQuNjgwMDIsMy45NTU5NCAtOS4xNjk2Nyw4LjI5NTc4IC0xMi45NzczNTksMTMuNDAzMzkgLTcuNDY1NTcyLDkuMTIyODYgLTExLjc2MTcwOCwyNS4yODA1OCAtMy4zOTU3MTIsMzcuNDcxNDMgMzEuOTYyNzUxLDM3LjUxMzU2IDc3Ljk3NDk3MSw0NS41NTgwOSAxMjAuMDczMzYxLDU0LjczNzEyIDU0LjY2ODQ2LDkuOTAzMTIgMTEwLjE1Nzc2LDEwLjg3Njg5IDE2NS4wNDAwMSw2Ljc2MzM0IDUuOTk3MTIsLTAuNDY5NzMgMTIuMTA5NywtMS4wMDE4NyAxOC4zNDA5LC0xLjU5OTU1IHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDQ0OS40MzkyNiw2MTYuMDkwOTggYyAwLDAgMCwwIDAsMCA2LjczNTI1LDAuNzkxMiAxMy4zNTM0NSwxLjUxMjE2IDE5Ljg1Nzc0LDIuMTY3NTggNTkuNTYyMjgsNS44NDczMSAxMTkuNzMwMDQsNi4zMzI2MiAxNzkuNCwtMC42Njk0NiA0MS4zNDYyMiwtNS4xNzAwNCA4Mi40ODY0NSwtMTIuNTc2MzEgMTIyLjM2NDIyLC0yOS4yNzI0MSBsIC0wLjUxMDI5LDAuMTgxMDIgYyA5Ljc1OTU1LC00LjI0Nzc3IDE4LjQ1NjM3LC0xMC4wMzEwOSAyMy44MDI3NCwtMTkuOTgyNTggNS41OTYwNywtMTAuMjgyMzMgMS40ODI1MSwtMjIuMzQ5OSAtNC40MjcyMiwtMjkuNDAxOTMgLTQuMzQ2MDcsLTUuNTI0MjcgLTkuNDU5OTIsLTkuODA2MzcgLTE0Ljg4NTg5LC0xMy43MjQ4NiA0LjM3MTA0LDUuMDU2MTIgOC4zMDIwMiwxMC4zMzM4MyAxMS4xMjAzNCwxNi4wOTY4NyA5Ljg0MjI1LDE2LjkzMDE4IC00LjY2NTk5LDI5Ljk1NzQ3IC0xOS44Nzk1OSwzMy4zOTM3NiBsIC0wLjUxMDI5LDAuMTgyNTggYyAtMzguMDgwMDMsOS42NTY1NiAtNzkuNTQ2NDEsMTQuMzE2MjkgLTExOS43OTA5MSwxOS4yODAzNCAtNTguNDM0MDEsNi44NTY5NiAtMTE3LjMyOTk1LDEyLjY3Nzc0IC0xNzYuNzA5NjQsMTkuNDY5MTYgLTYuNDgyNDQsMC43NDkwNiAtMTMuMDkyODQsMS41MTA1OSAtMTkuODMxMjEsMi4yNzk5MyB6IiBmaWxsPSIjZjhjNjYyIiBzdHlsZT0ic3Ryb2tlLXdpZHRoOjEuNTYwNTM7ZmlsbDojNDE2NDRhO2ZpbGwtb3BhY2l0eToxIi8+PHBhdGggZD0ibSAyNDAuNTM5MDIsNjM4LjM4NjI3IGMgMCwwIDAsMCAwLDAgLTQuMDg1NDYsLTEuMzIwMjEgLTguMDQ0NTMsLTIuNjEwNzcgLTExLjk4MzMsLTMuODg0MTYgLTM1LjkxNzE1LC0xMS42MDA5NyAtNzEuMjc4NzQsLTIxLjY2MzI3IC0xMDUuMzE3LC0zMy4yOTIzMyAtMjIuNjEzNjMsLTguMTE3ODggLTQ2LjkwMTcwNiwtMTYuMzkzMzcgLTYyLjE5ODAxMywtMzEuMTQzNDggLTYuNzUwODUsLTYuNzgyMDYgLTguODQxOTU5LC0xNy41ODg3MyAtNS43NjE0NzQsLTI5LjA3MjY2IDAuOTgzMTMzLC0zLjkzNzIxIDIuNDA0Nzc1LC03Ljg4MDY4IDQuMDg1NDY1LC0xMS43NjYzOSAwLDAgMCwwIDAsMCAtMi45NzEyNDgsMy4wMjQzIC01Ljc0NTg2OCw2LjMxODU4IC04LjE0NTk2Miw5Ljk5NTE5IC03LjE1NjU4OCwxMC4wOTE5NCAtOS45OTUxOSwyNi41MDQwMiAtMi4yNDg3MjMsMzkuMjg0NzYgMTYuNTM4NDg5LDI1LjI0IDQyLjEzNTg0OSwzNS44MjE5NCA2Ni40MzMyODcsNDQuODQwMjUgMzYuNDY5NTcsMTIuNDQyMSA3NC40OTY1NSwxNi40MzcwNSAxMTIuNDgxMzgsMTUuNTU4NDcgNC4xNjk3NCwtMC4xMTU0OCA4LjM1MTk2LC0wLjI5MzM3IDEyLjY1NDM0LC0wLjUxOTY1IHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDI3MC42OTc4MSw2ODIuNTI4OTYgYyAxMC4wMjMyNywxLjQ4NzE4IDIwLjA3MTUzLDIuODU4ODkgMzAuMTM1MzgsNC4xMjYwNCAyOS4zNTUxMSwzLjY5Mzc3IDU4LjgxMzIyLDYuNDkwMjMgODguMzQxNTYsOC41MzYwOSA2MS44MjE5Miw0LjI1NzEzIDEyMy42MDk1Miw1LjExNTQxIDE4NS40NjU3NywxLjQxODUyIDc3Ljg5MDcsLTUuMzIxNCAxNTYuNzA5OTEsLTE0LjYwMzQ0IDIzMC43NDYwOSwtNDQuMzUzMzYgbCAtMC4zNTQyMywwLjEzMjY0IGMgMTMuMDE0ODEsLTUuNzM0OTUgMjYuMTcwMDcsLTE1LjYzOTYyIDI4LjA4MzI4LC0zMC44MDc5NiAxLjEzOTE5LC0xMS4zMDI5MiAtNC44OTIyNiwtMjAuODM0NjMgLTExLjUwNzM1LC0yOC4zMzQ1NCA1LjQ3NDM1LDguNDI1MyA5LjQ2NjE4LDE4LjUyMzQ5IDcuMTIzODMsMjcuNTk2NDEgLTMuMDQzMDQsMTEuODk1OTEgLTE1LjQ5NzYyLDE5LjA0NDcgLTI2LjY3MjU3LDIyLjQ1MTMzIGwgLTAuMzUyNjgsMC4xMzI2NCBjIC03My4zOTAxMywxOS43ODU5NiAtMTUxLjY2Nzg0LDI0LjYyOTgzIC0yMjguMzc4NzcsMjkuODE1NDggLTYxLjAzMzg2LDMuNjQ2OTYgLTEyMi4xMTI5OCw1LjY4MTg5IC0xODMuNzY2MzYsNy4yMDY1MiAtMjkuNDU4MTEsMC43MjU2NCAtNTguOTIwOTEsMS4zNjU0NiAtODguNDYxNzIsMS43NjQ5NiAtMTAuMTI5NCwwLjEzNzMzIC0yMC4yNjM0OCwwLjI0NTAxIC0zMC40MDIyMywwLjMxNTIzIHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDczNC40NTU4OCwzNjguOTc0OTQgYyAtMC4xNjg1NCwtMy4xMTMyNSAtMS41NjY3NywtNi4wMDAyMyAtMy45Njg0MywtOC4wMTY0NCAtMi4zOTY5NywtMi4wMTc3NyAtNS42MDIyOSwtMi45OTkzMyAtOC44Mjc5MSwtMi43Mzg3MyAtMy4yMjQwNSwwLjI2MjE3IC02LjE4MTI2LDEuNzQzMTEgLTguMTM1MDQsNC4xMTM1NiAtMS45NTg0NiwyLjM3MDQ0IC0yLjc1NDMzLDUuNDMzNzYgLTIuMjk3MSw4LjUyNTE2IDAsMCAwLDAgMCwwIDAuMzkwMTMsMi42NTEzNSAwLjc5Mjc2LDUuMjg3MDggMS4xOTUzNyw3LjkwODc3IDkuMDU3MzEsNDYuMjE2NjQgNS4xNjg0OCw5Mi4wNjQ5OCAtMTYuODMzNDMsMTMzLjQyMjEzIC0xLjE2MTAzLDIuMjkzOTcgLTIuMzMxNDMsNC41MzAyMiAtMy41ODQ1Myw2LjgzMzU2IC0wLjUyNzQ3LDAuOTcwNjQgLTAuNjQxMzgsMi4xNDU3MiAtMC4zNDMzMiwzLjI1MjE0IDAuMjk5NjIsMS4xMDc5OCAwLjk4NzgxLDIuMDU1MjIgMS45MzgxOCwyLjY0OTc4IDAuOTQ4OCwwLjU5NDU2IDIuMDkxMTEsMC43OTI3NSAzLjE5OTA4LDAuNTY4MDMgMS4xMDc5OCwtMC4yMjYyNyAyLjA4OTU1LC0wLjg1ODI5IDIuNzA1OTYsLTEuNzcyNzYgMCwwIDAsMCAwLDAgMS41MDU5MSwtMi4yNDQwNCAyLjkyOTExLC00LjQyNTY2IDQuMzQ3NjQsLTYuNjc1OTQgMjYuNzYxNTEsLTM5LjYwNDY3IDM2LjMxMTk1LC05Mi40NzM4NSAzMS4wNTc2NSwtMTQwLjIyNjA1IC0wLjE1OTE4LC0yLjY0MTk2IC0wLjMxNTIzLC01LjI1ODk4IC0wLjQ1NDEyLC03Ljg0MzIxIHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDE3MC45Nzg0Myw0NTAuMjUzNTUgYyAwLjI1MTI0LDEuMDQ3MTEgMC45NDEsMS45NzU2MyAxLjg2Nzk2LDIuNTg4OTEgMC45MzAwNywwLjYxMTczIDIuMDIyNDQsMC44NTk4NSAzLjA4NTE2LDAuNjc4ODMgMS4wNjI3MiwtMC4xODEwMiAyLjAyNCwtMC43Nzg3IDIuNzIsLTEuNjY2NjQgMC42OTI4NywtMC44ODk1IDEuMDY1ODQsLTEuOTk3NDggMC45ODYyNiwtMy4wNzQyNSAwLDAgMCwwIDAsMCAtMC4xMTIzNiwtMS41MTUyNyAtMC4yMTUzNiwtMy4wMzUyMyAtMC4zMDc0MywtNC41NTIwNiAtMS43MzY4NiwtMjcuMjY3MTMgMC40ODY4OSwtNTQuNDcxODMgOC45NzQ2MSwtNzkuMTYwOTcgMC40NjY1OSwtMS4zNzYzOSAwLjk0ODgsLTIuNzMwOTIgMS40NTEyOSwtNC4wOTMyNyAxLjA3MzY1LC0yLjk0MTU5IDAuODk3MywtNi4wODQ1IC0wLjYyNzMzLC04Ljc3MzI5IC0xLjUxNjg0LC0yLjY4NTY3IC00LjI1ODY5LC00LjY5ODc1IC03LjQ4NDMsLTUuNTU3MDUgLTMuMjI1NjEsLTAuODU4MjggLTYuNjI5MTMsLTAuNDgyMTkgLTkuMzI0MTcsMS4wODMwMSAtMi43MDQzOSwxLjU2MjA5IC00LjQ3ODcxLDQuMTg1MzQgLTUuMDcxNzIsNy4yNTQ5MSAwLDAgMCwwIDAsMCAtMC4zMjQ1OSwxLjYyNjA2IC0wLjYyMjY0LDMuMjM4MDkgLTAuOTAxOTgsNC44NjU3MyAtNS4xMDQ0OSwyOS4yOTQyNSAtMi41NzAxOSw1OC41Mzg1NyAzLjU4NDU0LDg1Ljg1MjUxIDAuMzM4NjMsMS41MjE1MiAwLjY4OTc1LDMuMDQzMDMgMS4wNDcxMSw0LjU1MzYzIHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDE2NS44MzAyNCwyMjYuNDY3NDEgYyAtMC41OTkyNCwwLjkyNjk1IC0wLjkwOTc4LDIuMDM2NSAtMC43OTU4NywzLjE0NzU5IDAuMTEzOTIsMS4xMTExIDAuNjMzNTgsMi4xMjIzMiAxLjQ2Mzc4LDIuODI3NjggMC44Mjg2NSwwLjcwMzggMS45MTE2NSwxLjA1NDkxIDMuMDI3NDIsMC45ODc4MSAxLjExNDIzLC0wLjA2NzEgMi4xNTk3OCwtMC41NTM5OCAyLjk3NzQ5LC0xLjI5MzY4IDAsMCAwLDAgMCwwIDEuNzEzNDYsLTEuNTE1MjcgMy41NTMzMywtMi45Njk2OCA1LjQ0NjI1LC00LjMyMjY2IDI2Ljk4MzExLC0xOC41NzAzIDYxLjc3MDQzLC0yMi43NDkzOSA4OC40OTYwNiwtOS45NzY0NyA3Ljc0NjQ2LDMuNjE0MTkgMTUuNTkxMjQsNy4xNjQzOSAyNC40OTU2MywxMS4yNzQ4MyAyLjIzMTU1LDEuMDM5MzEgNC40NTY4NiwyLjA0MjczIDYuODMxOTksMy4xNzU2NyAwLjkyODUxLDAuNDQxNjMgMS45NDkxLDAuNzQ1OTQgMi45NzkwNSwwLjcxMzE3IDEuMDMxNTEsLTAuMDMxMiAxLjk4MDMxLC0wLjM5MzI2IDIuNjkzNDcsLTEuMDUxOCAwLjcxMzE2LC0wLjY1Njk4IDEuMTQ4NTUsLTEuNTc2MTMgMS4yNjQwMywtMi42MDI5NiAwLjExNTQ4LC0xLjAyNTI3IC0wLjEwNjEyLC0yLjA2NzcxIC0wLjQ3Mjg0LC0zLjAyODk5IC0xLjA2ODk2LC0yLjYwMTQgLTIuMjIwNjQsLTUuMDI4MDIgLTMuNjE1NzUsLTcuNDI4MTIgLTUuNTE0OTEsLTkuNTUzNTYgLTEzLjkxMjExLC0xNy41MTA3IC0yNC4yMjU2NSwtMjIuMjkzNzIgLTM2LjYxOTM4LC0xNy40NjM4OCAtODEuMzM0NzksLTQuNzI4NDEgLTEwNS42OTkzMiwyMy40MzYwMyAtMS43NTA5MiwyLjA0ODk3IC0zLjQwMTk2LDQuMjExODYgLTQuODY1NzQsNi40MzU2MiB6IiBmaWxsPSIjZjhjNjYyIiBzdHlsZT0ic3Ryb2tlLXdpZHRoOjEuNTYwNTM7ZmlsbDojNDE2NDRhO2ZpbGwtb3BhY2l0eToxIi8+PHBhdGggZD0ibSA1MzQuMTU3MjcsMjc3LjUwNDUyIGMgLTAuNDc3NTIsMS4wMTkwMiAtMC41OTQ1NiwyLjE4OTQzIC0wLjI3NjIxLDMuMjc4NjcgMC4zMTgzNSwxLjA5MDgxIDEuMDM5MzEsMi4wMDY4NCAyLjAxNDY1LDIuNTUzMDMgMC45NzUzMiwwLjU0Nzc1IDIuMTM0OCwwLjY4NjYzIDMuMjMzNDEsMC4zOTE2OSAxLjEwMDE3LC0wLjI5MzM4IDIuMDQxMTcsLTEuMDAxODYgMi42NjY5NSwtMS45MzgxNyAwLDAgMCwwIDAsMCAyLjQwNjMzLC0zLjYwNzk1IDQuODAwMTksLTcuMDExNDYgNy4zNTE2NSwtMTAuNDg5ODkgMzIuOTk4OTUsLTQ3LjE0ODI2IDkzLjIzMDcsLTg3LjI3NzI3IDEzOC44NzQ2MiwtNTQuNDkwNTUgMTIuNTY2OTMsOC4yNzcwNSAyNC4zMzgwMSwxOS4wNzkwMiAzNi4wOTk3MiwzMS4yMTM3IDIuOTg1MjksMy4xMTAxNCA1LjgxMjk2LDYuMDUwMTcgOC44Mjk0Nyw5LjM3MDk4IDAuNzE5NCwwLjc4NDk1IDEuNjQ5NDgsMS4zOTk4IDIuNzA0NCwxLjY0MDExIDEuMDU2NDcsMC4yNDAzMiAyLjEzOTQ5LDAuMDk1MiAzLjA0NzcxLC0wLjQyNDQ2IDAuOTA2NjcsLTAuNTE5NjUgMS41ODIzOCwtMS4zODI2MyAxLjkxMTY1LC0yLjQxNzI1IDAuMzMwODMsLTEuMDM2MiAwLjI3NDY1LC0yLjE1MDQxIC0wLjAzMjgsLTMuMTcxIDAsMCAwLDAgMCwwIC0xLjQxMjI4LC00LjQ1MjIgLTIuODYzNTcsLTguNTIyMDUgLTQuNzI5OTYsLTEyLjc3OTE4IC03LjIzNzc0LC0xNi42MzIxMiAtMTguNjgxMSwtMzIuMzEyMzEgLTM0LjkwNDM2LC00My4wMTU5OCAtMjguMjAxODgsLTIwLjA5MTgyIC02OS40MjQ4MywtMTguNTM1OTcgLTk3LjI1Mzc0LC0xLjE1OTQ3IC0yOC42MTY5OSwxNi43MTYzOCAtNDguNzgzNzEsNDIuNDI5MjIgLTYzLjU1MjU1LDY5LjU2OTk1IC0yLjEzNzkzLDMuOTU3NSAtNC4wNzI5OCw3LjgxNjY5IC01Ljk4NDY0LDExLjg2NzgyIHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDMxMi44MzgzNCwyNjMuNDcwNjggYyAtMC40MDczLDEuMDQ4NjggLTAuNDQ3ODcsMi4yMjA2NCAtMC4wNTkzLDMuMjg2NDcgMC4zODcwMSwxLjA2NDI4IDEuMTY0MTYsMS45MzE5NCAyLjE3MDcsMi40MTQxNCAxLjAwNjUzLDAuNDgyMjEgMi4xNzA2OSwwLjU0NjE5IDMuMjQ3NDYsMC4xODQxNCAxLjA3ODMyLC0wLjM2MzU5IDEuOTcwOTQsLTEuMTI2NjkgMi41Mzg5OCwtMi4wOTczNSAwLDAgMCwwIDAsMCAxLjk1Mzc4LC0zLjMwMjA4IDQuMTg2OSwtNi40NDgxMSA2LjY0OTQxLC05LjQ1MjEyIDM2LjMyMTMyLC00MC42MjY4MiA5Ni44ODcwMiwtNTQuNDM1OTQgMTQ4LjIwOTcsLTQ1LjQwNTE2IDE0Ljc5Njk1LDIuODE5ODggMjkuMzExNDMsNi40NDQ5OSA0NC4xMDY4LDExLjgxMDA5IDMuNzIwMywxLjM1NzY1IDcuMzk4NDcsMi43OTAyMiAxMS4xNjI0Niw0LjQwMDY5IDAuOTczNzgsMC40MjEzNCAyLjA2OTI3LDAuNjExNzMgMy4xMzE5OSwwLjQxMzU0IDEuMDYxMTYsLTAuMTk2NjMgMS45OTc0NywtMC43NTY4NiAyLjYyMzI1LC0xLjU4NzA2IDAuNjI1NzcsLTAuODI4NjQgMC45MDY2NywtMS44ODIgMC44MDUyMywtMi45NTU2NCAtMC4xMDE0NCwtMS4wNzUyMSAtMC41ODY3NSwtMi4wNzU1MSAtMS4yNTkzNSwtMi44OTQ3OSAwLDAgMCwwIDAsMCAtMi44MTM2MywtMy4zNDI2NCAtNS44MTI5NywtNi40NDgxIC05LjEwMTAxLC05LjM3NTY2IC0xMy4wNDEzMywtMTEuNjgyMTIgLTI5LjY5MDYyLC0xOS41Njc0NyAtNDcuMDAwMDEsLTIyLjgxODA1IC02MC4xOTU4NSwtMTAuNTM4MjUgLTEyNy4yMzQ2MywxMC42NjQ2NiAtMTYxLjQxMzM0LDYyLjMzODQ2IC0yLjI2NDMzLDMuNzc4MDQgLTQuMjI0MzYsNy42OTgwOSAtNS44MTI5NywxMS43MzgzIHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDY4MS43MDIxOSwyMTguNzg2NDggYyAzNi44OTg3MiwtMi4zNzk4IDcyLjc3MDYsMzQuNjU0NjggNzUuMzEyNyw4MC42MjYzMSAyLjU0MDU0LDQ1Ljk3MDA3IC0yOS4yMTE1NCw4My40NzI3IC02Ni4xMDg3LDg1Ljg1MDk2IC0zNi44OTg3MSwyLjM3OTggLTYyLjQ3MjY3LC0zMS4wMzQyNSAtNjUuMDE0NzcsLTc3LjAwNDMyIC0yLjU0MDU0LC00NS45NzE2MyAxOC45MTIwNiwtODcuMDk0NjkgNTUuODEwNzcsLTg5LjQ3Mjk1IHogbSA1OS4zMDYzNSw4MS4wNDQ1MyBjIC0yLjA2OTI1LC0zNy40NDE3OCAtMjkuNDI1MzMsLTY3LjcyMjI5IC01Ny40Mzk5NSwtNjUuOTE2NzUgLTI4LjAxMzA2LDEuODA3MDggLTQ0LjE3ODU5LDM1LjIxMzM0IC00Mi4xMDkzMyw3Mi42NTUxMiAyLjA2OTI3LDM3LjQ0MTc4IDIxLjU5MTQ5LDY0LjczODU2IDQ5LjYwNjExLDYyLjkzMzAyIDI4LjAxNDYyLC0xLjgwNzEgNTIuMDEyNDQsLTMyLjIyOTYxIDQ5Ljk0MzE3LC02OS42NzEzOSB6IiBmaWxsPSIjZjhjNjYyIiBzdHlsZT0ic3Ryb2tlLXdpZHRoOjEuNTYwNTM7ZmlsbDojNDE2NDRhO2ZpbGwtb3BhY2l0eToxIi8+PHBhdGggZD0ibSAxNDAuNjYwNDcsMjcyLjk5MzAzIGMgNC42Njc1NCwtNDMuNjI5MjggMzMuNjQ5NjksLTcxLjA4MDU0IDU5LjI1OTUzLC02OC4wNDg0NCAyNS42MDgyOSwzLjAzMzY3IDQwLjEyMjc3LDQyLjYzODM0IDM1LjQ1NTIzLDg2LjI2NzYxIC00LjY2NzU0LDQzLjYyNzcyIC0yNi43NTA2LDc0Ljc1ODcyIC01Mi4zNTg4OCw3MS43MjY2MSAtMjUuNjA5ODQsLTMuMDMzNjYgLTQ3LjAyMzQyLC00Ni4zMTgwNyAtNDIuMzU1ODgsLTg5Ljk0NTc4IHogbSA1Ni4zOTI4NCwtNTIuMzEwNSBjIC0xNy4zMTA5NCwtMi4wNDg5NyAtMzcuMzAxMzMsMjAuMjYwMzUgLTQxLjAzMDk5LDU1LjEyMTAxIC0zLjcyOTY3LDM0Ljg1OTEgMTAuMjE1MjIsNjkuMDcwNTggMjcuNTI0NjIsNzEuMTE5NTYgMTcuMzEwOTQsMi4wNDg5OCAzMi42NzU5MSwtMjMuMDk0MjcgMzYuNDA1NTgsLTU3Ljk1NDkzIDMuNzI4MSwtMzQuODU5MSAtNS41ODk4MiwtNjYuMjM1MTEgLTIyLjg5OTIxLC02OC4yODU2NCB6IiBmaWxsPSIjZjhjNjYyIiBzdHlsZT0ic3Ryb2tlLXdpZHRoOjEuNTYwNTM7ZmlsbDojNDE2NDRhO2ZpbGwtb3BhY2l0eToxIi8+PHBhdGggZD0iTTY0MCAzNTMuNjI3QzY0MC42MjUgMzY3LjEzMSA2MTkuODI2IDM3Ny45OTMgNTk5LjMyIDM3Ny44ODhDNTc4LjgxMyAzNzcuNzgyIDU2My4xMjUgMzY3LjEzMSA1NjIuNSAzNTMuNjI3QzU2MS44NzUgMzQwLjEyMyA1NzYuNTQ5IDMyOC44NzkgNTk3LjA1NiAzMjguOTg1QzYxNy41NjIgMzI5LjA5IDYzOS4zNzUgMzQwLjEyMyA2NDAgMzUzLjYyN1oiLz48cGF0aCBkPSJtIDc1Mi43NzgwNiwzMDQuNzgxIGMgMC45NzUzMiwyMS4wNzM0IC0zMS40ODIxMiwzOC4wMjM4NyAtNjMuNDgyMzMsMzcuODYwMDEgLTMyLjAwMTc4LC0wLjE2NTQyIC01Ni40ODMzNSwtMTYuNzg2NjEgLTU3LjQ1ODY5LC0zNy44NjAwMSAtMC45NzUzMywtMjEuMDczMzggMjEuOTIzODcsLTM4LjYxOTk3IDUzLjkyNTY1LC0zOC40NTQ1NSAzMi4wMDAyMSwwLjE2Mzg1IDY2LjA0MDA0LDE3LjM4MTE3IDY3LjAxNTM3LDM4LjQ1NDU1IHoiIGZpbGw9IiNmOGM2NjIiIHN0eWxlPSJzdHJva2Utd2lkdGg6MS41NjA1MztmaWxsOiM0MTY0NGE7ZmlsbC1vcGFjaXR5OjEiLz48cGF0aCBkPSJtIDY0My43NSwzNTMuNjQ2IGMgLTIuNSwtMC4wMTMgLTUsLTAuMDI1IC03LjUsLTAuMDM4IC0wLjczNSwyLjM2MSAtMi4yNzEsNC4wNjYgLTQuMTg1LDUuNTczIC04LjA0MSw1Ljg3OSAtMjAuMjczLDguMTg0IC0zMS4yMjIsOC42ODcgLTAuNjYzLDAuMDIzIC0xLjMyNiwwLjAzNCAtMS45ODYsMC4wMzIgLTEyLjk4OSwwLjQwNSAtMjYuOTQ5LC02Ljg0NCAtMjcuMDQ2LC0xNC4yMjUgLTEuNTE1LC03Ljg3MyAxMS45MjMsLTE3LjExOSAyNS41ODUsLTE3LjM0NiAxMi4xNTEsLTAuNjAyIDI2LjY2MywyLjU3MiAzNS4yNTcsMTAuNzk1IDEuODk5LDEuOTQzIDMuMjE0LDQuMTE5IDMuNTk3LDYuNDg0IDIuNSwwLjAxMyA1LDAuMDI1IDcuNSwwLjAzOCAwLjEwNCwtNC4zNjggLTEuNzA2LC04LjY3NSAtNC4xMTksLTEyLjAxOCAtMTEuMDM0LC0xMy43ODQgLTI3LjExLC0xOC43NjQgLTQyLjkxNSwtMTkuOTg4IC0xNi44NDUsLTAuODE2IC00Mi4xMzksNS4yOTcgLTQzLjUyNywzMS45MzkgMi45MjcsMjcuMTE0IDI5LjU2LDM0LjExMyA0Ni41OTMsMzQuMjk2IDAuOTM3LDAuMDA2IDEuODc0LC0wLjAwOCAyLjgwNSwtMC4wNDEgMTUuMzM4LC0wLjg1MyAzMC45MDksLTYuNTA4IDM5LjM1LC0yMS4zMjYgMS45MDQsLTMuNzQxIDIuODkyLC04LjQ4OSAxLjgxMywtMTIuODYyIHogbSAtNy41LC0wLjAzOCA3LjUsMC4wMzggeiIgZmlsbD0iI2Y4YzY2MiIgc3R5bGU9ImZpbGw6IzQxNjQ0YTtmaWxsLW9wYWNpdHk6MSIvPjxwYXRoIGQ9Ik0zMDUuOTI2IDM0NC4xNDFDMzA2LjQ5NSAzNTYuMjI3IDI5Mi4yNTcgMzY0LjE4MyAyNzguNjY4IDM2NC4xMTJDMjY1LjA3OCAzNjQuMDQxIDI1My42IDM1NC4xODYgMjUzLjAzMSAzNDIuMUMyNTIuNDYyIDMzMC4wMTQgMjYzLjAxNiAzMjAuMjc0IDI3Ni42MDUgMzIwLjM0NUMyOTAuMTk1IDMyMC40MTYgMzA1LjM1NiAzMzIuMDU2IDMwNS45MjYgMzQ0LjE0MVoiLz48cGF0aCBkPSJtIDIzMS40NDU4MiwyODkuOTc3ODMgYyAwLjg4Nzk0LDE4Ljg2MDU2IC0yMS4zMzA4OCwzMS4yNzYxMiAtNDIuNTM2OTEsMzEuMTY1MzMgLTIxLjIwNzYsLTAuMTEwOCAtMzkuMTE5MzQsLTE1LjQ4OTgyIC00MC4wMDcyOCwtMzQuMzUwMzcgLTAuODg3OTUsLTE4Ljg2MDU2IDE1LjU4MTg4LC0zNC4wNjAxMSAzNi43ODc5LC0zMy45NDkzMSAyMS4yMDc2LDAuMTEwNzkgNDQuODY2NzksMTguMjc1MzUgNDUuNzU2MjksMzcuMTM0MzUgeiIgZmlsbD0iI2Y4YzY2MiIgc3R5bGU9InN0cm9rZS13aWR0aDoxLjU2MDUzO2ZpbGw6IzQxNjQ0YTtmaWxsLW9wYWNpdHk6MSIvPjxwYXRoIGQ9Im0gMzA5LjY3NiwzNDQuMTYxIGMgLTIuNSwtMC4wMTMgLTUsLTAuMDI2IC03LjUsLTAuMDM5IC0wLjc0OCwxLjg5OSAtMS44OTQsMy4yNTUgLTMuMTk4LDQuMzMxIC01LjI1Myw0LjEwNiAtMTMuNDI0LDUuNTc2IC0yMC41ODQsNS42NzEgLTAuMDY2LDAgLTAuMTMxLDAgLTAuMTk3LC0wLjAwMSAtNy45MSwwLjExNyAtMTUuMzA3LC01LjY1MyAtMTUuODIzLC0xMS45NzQgLTEuMDY1LC02LjMyMiA1LjQ5NCwtMTMuNzg5IDE0LjU3OSwtMTQuNDIgNy41NTEsLTAuNzU5IDE3LjgzLDMuNzYzIDIyLjg3MiwxMS4wMSAxLjE1LDEuNjc1IDEuOTg1LDMuNDkgMi4zNTEsNS4zODMgMi41LDAuMDEzIDUsMC4wMjYgNy41LDAuMDM5IDAuMTM0LC0zLjE1OCAtMC41NzYsLTYuMzU3IC0xLjc4NiwtOS4yNDYgLTUuNjU0LC0xMi4zMTkgLTE3LjQzOCwtMjAuNjk3IC0zMS42MzIsLTIxLjk1MyAtMTUuMTYzLC0xLjQwMyAtMzMuMDEzLDEwLjA2NSAtMzIuNTcsMjkuMDg5IDAuMzY0LDE5LjAyMiAxOS4xNzQsMzIuNDUxIDM1LjQ1LDMyLjA1IDAuMTIsMTBlLTQgMC4yMzksMTBlLTQgMC4zNTgsMTBlLTQgMTIuNjY5LC0wLjIwNCAyNS44NCwtNi4yNTEgMzAuMjYzLC0xOS44MDYgMC45NCwtMy4zMjMgMC45MTgsLTYuOTc1IC0wLjA4MywtMTAuMTM1IHogbSAtNy41LC0wLjAzOSA3LjUsMC4wMzkgeiIgZmlsbD0iI2Y4YzY2MiIgc3R5bGU9ImZpbGw6IzQxNjQ0YTtmaWxsLW9wYWNpdHk6MSIvPjwvc3ZnPg==">
 <style>
-/* pixfrog config — Collecti'Frog DA: saffron #f8c662 on dark-green ink, spring
-   green #70d18b accent. Mirrors the marketing site + device UI palette. */
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#faf6ec;--card:#ffffff;--fg:#11201a;--fg-soft:#5b6b64;--border:#ece4d0;
-  --brand:#f8c662;--brand-strong:#c98f23;--brand-ink:#1d3a2c;--green:#70d18b;--red:#d9534f;
-  --radius:14px;
-  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-}
-@media (prefers-color-scheme:dark){:root{
-  --bg:#0f1a14;--card:#16221b;--fg:#eaf3ee;--fg-soft:#a5b2a8;--border:#243228;
-  --brand-strong:#f0b53b;
-}}
-body{font:14px/1.5 var(--font);background:var(--bg);color:var(--fg);padding:16px 16px 84px;-webkit-font-smoothing:antialiased}
-h1{color:var(--fg);font-size:18px;font-weight:800;letter-spacing:-.02em}
-h2{color:var(--fg-soft);font-size:12px;margin:14px 0 8px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);padding-bottom:5px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
-.row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.row label{width:140px;flex-shrink:0;color:var(--fg-soft);font-size:13px}
-.row input,.row select{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--fg);padding:6px 10px;font:13px var(--mono);min-width:0}
-.row input:focus,.row select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 32%,transparent)}
-.row input[type=checkbox]{width:18px;height:18px;flex:none;accent-color:var(--brand-strong)}
-.row input[type=color]{padding:2px;height:30px;cursor:pointer}
-.note{font-size:11px;color:var(--fg-soft);margin-left:8px}
-button{background:var(--brand);border:1px solid var(--brand);border-radius:10px;color:var(--brand-ink);cursor:pointer;font:600 13px var(--font);padding:7px 16px;margin-top:6px;transition:transform .08s ease,border-color .15s ease,opacity .15s ease}
-button:hover{transform:translateY(-1px)}
-button:disabled{opacity:.45;cursor:default;transform:none}
-button.sec{background:var(--card);border:1px solid var(--border);color:var(--fg)}
-button.sec:hover{border-color:var(--brand)}
-.bar-track{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;height:14px;overflow:hidden}
-.bar-fill{background:var(--brand);height:100%;width:0%}
-.status{font-size:12px;color:var(--brand-strong);margin-top:8px;min-height:16px}
-.status.err{color:var(--red)}
-.tabs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
-.tab{background:var(--card);border:1px solid var(--border);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:12px;color:var(--fg-soft)}
-.tab:hover{border-color:var(--brand)}
-.tab.active{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:600}
-.tab.act::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:5px;vertical-align:middle}
-.tab.fsafe::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--brand-strong);margin-left:5px;vertical-align:middle}
-.panel{display:none}.panel.active{display:block}
-#header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-#link-dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex-shrink:0}
-#link-dot.up{background:var(--green)}
-#fps-label,#heap-label,#live-label{color:var(--fg-soft);font-size:12px}
-#savebar{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:10px 16px;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:saturate(180%) blur(12px);border-top:1px solid var(--border);z-index:20}
-#save-status{font-size:12px;color:var(--fg-soft)}
-#save-btn{margin-top:0;padding:9px 22px}
+  /* ─── system fonts aliased onto the IBM Plex names: no webfont, no CDN ─── */
+  @font-face{font-family:'IBM Plex Sans';src:local('Segoe UI'),local('Roboto'),local('Helvetica Neue'),local('Helvetica'),local('Arial'),local('DejaVu Sans'),local('Liberation Sans');}
+  @font-face{font-family:'IBM Plex Mono';src:local('SFMono-Regular'),local('SF Mono'),local('Menlo'),local('Consolas'),local('Roboto Mono'),local('DejaVu Sans Mono'),local('Liberation Mono'),local('Courier New');}
+  html,body{margin:0;padding:0}
+  body{background:#0a0f0c;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  *{box-sizing:border-box}
+  .lucide{width:18px;height:18px;stroke-width:1.75px;flex:none}
+  .ic14{width:14px!important;height:14px!important}
+  .ic16{width:16px!important;height:16px!important}
+  .ic20{width:20px!important;height:20px!important}
+  .ic22{width:22px!important;height:22px!important}
+  @keyframes pf-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  @keyframes pf-spin{to{transform:rotate(360deg)}}
+  ::selection{background:#f8c66244}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#243228;border-radius:5px;border:2px solid #0f1a14}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,select,button{font-family:inherit}
+  select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c8a80' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;padding-right:30px!important}
+  .sw{position:relative;width:42px;height:24px;flex:none;display:inline-block}
+  .sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:2}
+  .sw span{position:absolute;inset:0;border-radius:999px;background:#2d3d31;transition:background .15s}
+  .sw span::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#7c8a80;transition:.15s}
+  .sw input:checked + span{background:#f8c662}
+  .sw input:checked + span::after{transform:translateX(18px);background:#1d3a2c}
+  .sc-color:hover{border-color:#3a4f42!important;background:#11201a!important}
+  .pf-row:hover{filter:brightness(1.06)}
 </style>
 </head>
 <body>
-<div id="header">
-  <h1>&#128438; pixfrog</h1>
-  <div id="link-dot" title="Ethernet link"></div>
-  <span id="fps-label">--fps</span>
-  <span id="heap-label" style="font-size:12px" title="free heap"></span>
-  <span id="live-label" style="font-size:12px"></span>
-  <span id="ver-label" style="color:var(--fg-soft);font-size:12px;margin-left:auto"></span>
+<div id="pf-app" style="display:flex;height:100vh;overflow:hidden;font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;color:#eaf3ee;background:#0f1a14">
+
+  <!-- ───────────── SIDEBAR ───────────── -->
+  <aside style="width:236px;flex:none;background:#0c1510;border-right:1px solid #1c2922;display:flex;flex-direction:column;padding:18px 14px">
+    <div style="display:flex;align-items:center;gap:11px;padding:4px 6px 20px">
+      <div style="width:36px;height:36px;border-radius:10px;background:#f8c662;display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden"><svg viewBox="0 0 881 881" style="width:30px;height:30px;display:block" xmlns="http://www.w3.org/2000/svg" fill="none"><path d="m 398.70802,576.83275 c -6.17346,-0.96285 -12.21738,-1.91165 -18.13647,-2.84484 -54.17534,-8.50957 -108.05104,-15.77383 -160.84999,-25.34456 -40.43176,-8.34571 -85.75888,-14.49263 -115.03753,-38.6824 -6.791425,-6.67906 -7.020824,-17.85713 -2.20035,-28.27678 2.35484,-5.41036 5.60543,-10.62565 9.14314,-15.62715 -4.68002,3.95594 -9.16967,8.29578 -12.977359,13.40339 -7.465572,9.12286 -11.761708,25.28058 -3.395712,37.47143 31.962751,37.51356 77.974971,45.55809 120.073361,54.73712 54.66846,9.90312 110.15776,10.87689 165.04001,6.76334 5.99712,-0.46973 12.1097,-1.00187 18.3409,-1.59955 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 449.43926,616.09098 c 0,0 0,0 0,0 6.73525,0.7912 13.35345,1.51216 19.85774,2.16758 59.56228,5.84731 119.73004,6.33262 179.4,-0.66946 41.34622,-5.17004 82.48645,-12.57631 122.36422,-29.27241 l -0.51029,0.18102 c 9.75955,-4.24777 18.45637,-10.03109 23.80274,-19.98258 5.59607,-10.28233 1.48251,-22.3499 -4.42722,-29.40193 -4.34607,-5.52427 -9.45992,-9.80637 -14.88589,-13.72486 4.37104,5.05612 8.30202,10.33383 11.12034,16.09687 9.84225,16.93018 -4.66599,29.95747 -19.87959,33.39376 l -0.51029,0.18258 c -38.08003,9.65656 -79.54641,14.31629 -119.79091,19.28034 -58.43401,6.85696 -117.32995,12.67774 -176.70964,19.46916 -6.48244,0.74906 -13.09284,1.51059 -19.83121,2.27993 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 240.53902,638.38627 c 0,0 0,0 0,0 -4.08546,-1.32021 -8.04453,-2.61077 -11.9833,-3.88416 -35.91715,-11.60097 -71.27874,-21.66327 -105.317,-33.29233 -22.61363,-8.11788 -46.901706,-16.39337 -62.198013,-31.14348 -6.75085,-6.78206 -8.841959,-17.58873 -5.761474,-29.07266 0.983133,-3.93721 2.404775,-7.88068 4.085465,-11.76639 0,0 0,0 0,0 -2.971248,3.0243 -5.745868,6.31858 -8.145962,9.99519 -7.156588,10.09194 -9.99519,26.50402 -2.248723,39.28476 16.538489,25.24 42.135849,35.82194 66.433287,44.84025 36.46957,12.4421 74.49655,16.43705 112.48138,15.55847 4.16974,-0.11548 8.35196,-0.29337 12.65434,-0.51965 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 270.69781,682.52896 c 10.02327,1.48718 20.07153,2.85889 30.13538,4.12604 29.35511,3.69377 58.81322,6.49023 88.34156,8.53609 61.82192,4.25713 123.60952,5.11541 185.46577,1.41852 77.8907,-5.3214 156.70991,-14.60344 230.74609,-44.35336 l -0.35423,0.13264 c 13.01481,-5.73495 26.17007,-15.63962 28.08328,-30.80796 1.13919,-11.30292 -4.89226,-20.83463 -11.50735,-28.33454 5.47435,8.4253 9.46618,18.52349 7.12383,27.59641 -3.04304,11.89591 -15.49762,19.0447 -26.67257,22.45133 l -0.35268,0.13264 c -73.39013,19.78596 -151.66784,24.62983 -228.37877,29.81548 -61.03386,3.64696 -122.11298,5.68189 -183.76636,7.20652 -29.45811,0.72564 -58.92091,1.36546 -88.46172,1.76496 -10.1294,0.13733 -20.26348,0.24501 -30.40223,0.31523 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 734.45588,368.97494 c -0.16854,-3.11325 -1.56677,-6.00023 -3.96843,-8.01644 -2.39697,-2.01777 -5.60229,-2.99933 -8.82791,-2.73873 -3.22405,0.26217 -6.18126,1.74311 -8.13504,4.11356 -1.95846,2.37044 -2.75433,5.43376 -2.2971,8.52516 0,0 0,0 0,0 0.39013,2.65135 0.79276,5.28708 1.19537,7.90877 9.05731,46.21664 5.16848,92.06498 -16.83343,133.42213 -1.16103,2.29397 -2.33143,4.53022 -3.58453,6.83356 -0.52747,0.97064 -0.64138,2.14572 -0.34332,3.25214 0.29962,1.10798 0.98781,2.05522 1.93818,2.64978 0.9488,0.59456 2.09111,0.79275 3.19908,0.56803 1.10798,-0.22627 2.08955,-0.85829 2.70596,-1.77276 0,0 0,0 0,0 1.50591,-2.24404 2.92911,-4.42566 4.34764,-6.67594 26.76151,-39.60467 36.31195,-92.47385 31.05765,-140.22605 -0.15918,-2.64196 -0.31523,-5.25898 -0.45412,-7.84321 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 170.97843,450.25355 c 0.25124,1.04711 0.941,1.97563 1.86796,2.58891 0.93007,0.61173 2.02244,0.85985 3.08516,0.67883 1.06272,-0.18102 2.024,-0.7787 2.72,-1.66664 0.69287,-0.8895 1.06584,-1.99748 0.98626,-3.07425 0,0 0,0 0,0 -0.11236,-1.51527 -0.21536,-3.03523 -0.30743,-4.55206 -1.73686,-27.26713 0.48689,-54.47183 8.97461,-79.16097 0.46659,-1.37639 0.9488,-2.73092 1.45129,-4.09327 1.07365,-2.94159 0.8973,-6.0845 -0.62733,-8.77329 -1.51684,-2.68567 -4.25869,-4.69875 -7.4843,-5.55705 -3.22561,-0.85828 -6.62913,-0.48219 -9.32417,1.08301 -2.70439,1.56209 -4.47871,4.18534 -5.07172,7.25491 0,0 0,0 0,0 -0.32459,1.62606 -0.62264,3.23809 -0.90198,4.86573 -5.10449,29.29425 -2.57019,58.53857 3.58454,85.85251 0.33863,1.52152 0.68975,3.04303 1.04711,4.55363 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 165.83024,226.46741 c -0.59924,0.92695 -0.90978,2.0365 -0.79587,3.14759 0.11392,1.1111 0.63358,2.12232 1.46378,2.82768 0.82865,0.7038 1.91165,1.05491 3.02742,0.98781 1.11423,-0.0671 2.15978,-0.55398 2.97749,-1.29368 0,0 0,0 0,0 1.71346,-1.51527 3.55333,-2.96968 5.44625,-4.32266 26.98311,-18.5703 61.77043,-22.74939 88.49606,-9.97647 7.74646,3.61419 15.59124,7.16439 24.49563,11.27483 2.23155,1.03931 4.45686,2.04273 6.83199,3.17567 0.92851,0.44163 1.9491,0.74594 2.97905,0.71317 1.03151,-0.0312 1.98031,-0.39326 2.69347,-1.0518 0.71316,-0.65698 1.14855,-1.57613 1.26403,-2.60296 0.11548,-1.02527 -0.10612,-2.06771 -0.47284,-3.02899 -1.06896,-2.6014 -2.22064,-5.02802 -3.61575,-7.42812 -5.51491,-9.55356 -13.91211,-17.5107 -24.22565,-22.29372 -36.61938,-17.46388 -81.33479,-4.72841 -105.69932,23.43603 -1.75092,2.04897 -3.40196,4.21186 -4.86574,6.43562 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 534.15727,277.50452 c -0.47752,1.01902 -0.59456,2.18943 -0.27621,3.27867 0.31835,1.09081 1.03931,2.00684 2.01465,2.55303 0.97532,0.54775 2.1348,0.68663 3.23341,0.39169 1.10017,-0.29338 2.04117,-1.00186 2.66695,-1.93817 0,0 0,0 0,0 2.40633,-3.60795 4.80019,-7.01146 7.35165,-10.48989 32.99895,-47.14826 93.2307,-87.27727 138.87462,-54.49055 12.56693,8.27705 24.33801,19.07902 36.09972,31.2137 2.98529,3.11014 5.81296,6.05017 8.82947,9.37098 0.7194,0.78495 1.64948,1.3998 2.7044,1.64011 1.05647,0.24032 2.13949,0.0952 3.04771,-0.42446 0.90667,-0.51965 1.58238,-1.38263 1.91165,-2.41725 0.33083,-1.0362 0.27465,-2.15041 -0.0328,-3.171 0,0 0,0 0,0 -1.41228,-4.4522 -2.86357,-8.52205 -4.72996,-12.77918 -7.23774,-16.63212 -18.6811,-32.31231 -34.90436,-43.01598 -28.20188,-20.09182 -69.42483,-18.53597 -97.25374,-1.15947 -28.61699,16.71638 -48.78371,42.42922 -63.55255,69.56995 -2.13793,3.9575 -4.07298,7.81669 -5.98464,11.86782 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 312.83834,263.47068 c -0.4073,1.04868 -0.44787,2.22064 -0.0593,3.28647 0.38701,1.06428 1.16416,1.93194 2.1707,2.41414 1.00653,0.48221 2.17069,0.54619 3.24746,0.18414 1.07832,-0.36359 1.97094,-1.12669 2.53898,-2.09735 0,0 0,0 0,0 1.95378,-3.30208 4.1869,-6.44811 6.64941,-9.45212 36.32132,-40.62682 96.88702,-54.43594 148.2097,-45.40516 14.79695,2.81988 29.31143,6.44499 44.1068,11.81009 3.7203,1.35765 7.39847,2.79022 11.16246,4.40069 0.97378,0.42134 2.06927,0.61173 3.13199,0.41354 1.06116,-0.19663 1.99747,-0.75686 2.62325,-1.58706 0.62577,-0.82864 0.90667,-1.882 0.80523,-2.95564 -0.10144,-1.07521 -0.58675,-2.07551 -1.25935,-2.89479 0,0 0,0 0,0 -2.81363,-3.34264 -5.81297,-6.4481 -9.10101,-9.37566 -13.04133,-11.68212 -29.69062,-19.56747 -47.00001,-22.81805 -60.19585,-10.53825 -127.23463,10.66466 -161.41334,62.33846 -2.26433,3.77804 -4.22436,7.69809 -5.81297,11.7383 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 681.70219,218.78648 c 36.89872,-2.3798 72.7706,34.65468 75.3127,80.62631 2.54054,45.97007 -29.21154,83.4727 -66.1087,85.85096 -36.89871,2.3798 -62.47267,-31.03425 -65.01477,-77.00432 -2.54054,-45.97163 18.91206,-87.09469 55.81077,-89.47295 z m 59.30635,81.04453 c -2.06925,-37.44178 -29.42533,-67.72229 -57.43995,-65.91675 -28.01306,1.80708 -44.17859,35.21334 -42.10933,72.65512 2.06927,37.44178 21.59149,64.73856 49.60611,62.93302 28.01462,-1.8071 52.01244,-32.22961 49.94317,-69.67139 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 140.66047,272.99303 c 4.66754,-43.62928 33.64969,-71.08054 59.25953,-68.04844 25.60829,3.03367 40.12277,42.63834 35.45523,86.26761 -4.66754,43.62772 -26.7506,74.75872 -52.35888,71.72661 -25.60984,-3.03366 -47.02342,-46.31807 -42.35588,-89.94578 z m 56.39284,-52.3105 c -17.31094,-2.04897 -37.30133,20.26035 -41.03099,55.12101 -3.72967,34.8591 10.21522,69.07058 27.52462,71.11956 17.31094,2.04898 32.67591,-23.09427 36.40558,-57.95493 3.7281,-34.8591 -5.58982,-66.23511 -22.89921,-68.28564 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="M640 353.627C640.625 367.131 619.826 377.993 599.32 377.888C578.813 377.782 563.125 367.131 562.5 353.627C561.875 340.123 576.549 328.879 597.056 328.985C617.562 329.09 639.375 340.123 640 353.627Z"/><path d="m 752.77806,304.781 c 0.97532,21.0734 -31.48212,38.02387 -63.48233,37.86001 -32.00178,-0.16542 -56.48335,-16.78661 -57.45869,-37.86001 -0.97533,-21.07338 21.92387,-38.61997 53.92565,-38.45455 32.00021,0.16385 66.04004,17.38117 67.01537,38.45455 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 643.75,353.646 c -2.5,-0.013 -5,-0.025 -7.5,-0.038 -0.735,2.361 -2.271,4.066 -4.185,5.573 -8.041,5.879 -20.273,8.184 -31.222,8.687 -0.663,0.023 -1.326,0.034 -1.986,0.032 -12.989,0.405 -26.949,-6.844 -27.046,-14.225 -1.515,-7.873 11.923,-17.119 25.585,-17.346 12.151,-0.602 26.663,2.572 35.257,10.795 1.899,1.943 3.214,4.119 3.597,6.484 2.5,0.013 5,0.025 7.5,0.038 0.104,-4.368 -1.706,-8.675 -4.119,-12.018 -11.034,-13.784 -27.11,-18.764 -42.915,-19.988 -16.845,-0.816 -42.139,5.297 -43.527,31.939 2.927,27.114 29.56,34.113 46.593,34.296 0.937,0.006 1.874,-0.008 2.805,-0.041 15.338,-0.853 30.909,-6.508 39.35,-21.326 1.904,-3.741 2.892,-8.489 1.813,-12.862 z m -7.5,-0.038 7.5,0.038 z" fill="#f8c662" style="fill:#41644a;fill-opacity:1"/><path d="M305.926 344.141C306.495 356.227 292.257 364.183 278.668 364.112C265.078 364.041 253.6 354.186 253.031 342.1C252.462 330.014 263.016 320.274 276.605 320.345C290.195 320.416 305.356 332.056 305.926 344.141Z"/><path d="m 231.44582,289.97783 c 0.88794,18.86056 -21.33088,31.27612 -42.53691,31.16533 -21.2076,-0.1108 -39.11934,-15.48982 -40.00728,-34.35037 -0.88795,-18.86056 15.58188,-34.06011 36.7879,-33.94931 21.2076,0.11079 44.86679,18.27535 45.75629,37.13435 z" fill="#f8c662" style="stroke-width:1.56053;fill:#41644a;fill-opacity:1"/><path d="m 309.676,344.161 c -2.5,-0.013 -5,-0.026 -7.5,-0.039 -0.748,1.899 -1.894,3.255 -3.198,4.331 -5.253,4.106 -13.424,5.576 -20.584,5.671 -0.066,0 -0.131,0 -0.197,-0.001 -7.91,0.117 -15.307,-5.653 -15.823,-11.974 -1.065,-6.322 5.494,-13.789 14.579,-14.42 7.551,-0.759 17.83,3.763 22.872,11.01 1.15,1.675 1.985,3.49 2.351,5.383 2.5,0.013 5,0.026 7.5,0.039 0.134,-3.158 -0.576,-6.357 -1.786,-9.246 -5.654,-12.319 -17.438,-20.697 -31.632,-21.953 -15.163,-1.403 -33.013,10.065 -32.57,29.089 0.364,19.022 19.174,32.451 35.45,32.05 0.12,10e-4 0.239,10e-4 0.358,10e-4 12.669,-0.204 25.84,-6.251 30.263,-19.806 0.94,-3.323 0.918,-6.975 -0.083,-10.135 z m -7.5,-0.039 7.5,0.039 z" fill="#f8c662" style="fill:#41644a;fill-opacity:1"/></svg></div>
+      <div style="line-height:1.15">
+        <div style="font-weight:700;font-size:15px;letter-spacing:-.01em">pixfrog</div>
+        <div style="font:500 10.5px 'IBM Plex Mono';color:#6b7a70;letter-spacing:.04em">STAGE-LEFT</div>
+      </div>
+    </div>
+
+    <div style="font:600 10px 'IBM Plex Mono';letter-spacing:.16em;color:#4f5e55;padding:6px 8px">PILOTAGE</div>
+    <div data-nav="dashboard" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#f8c662;background:rgba(248,198,98,.12);font-size:13.5px;font-weight:600;border-left:2px solid #f8c662;margin-top:2px"><i data-lucide="layout-dashboard"></i>Tableau de bord</div>
+    <div data-nav="scenes" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="palette"></i>Scènes</div>
+    <div data-nav="fseq" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="film"></i>Séquences FSEQ</div>
+
+    <div style="font:600 10px 'IBM Plex Mono';letter-spacing:.16em;color:#4f5e55;padding:18px 8px 6px">CONFIGURATION</div>
+    <div data-nav="channels" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i>Canaux</div>
+    <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i>Réseau</div>
+    <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i>ArtNet / sACN</div>
+    <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i>Auto-patch</div>
+    <div data-nav="system" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="settings"></i>Système</div>
+
+    <div style="margin-top:auto;background:#101a14;border:1px solid #1f2c24;border-radius:10px;padding:11px 12px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600"><span data-live="side-dot" style="width:8px;height:8px;border-radius:50%;background:#70d18b;box-shadow:0 0 8px #70d18b;animation:pf-pulse 2.4s infinite"></span><span data-live="side-link">Lien réseau</span></div>
+      <div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:5px" data-live="side-ver">esp32-p4</div>
+    </div>
+  </aside>
+
+  <!-- ───────────── MAIN ───────────── -->
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="flex:none;height:68px;border-bottom:1px solid #1c2922;background:#0c1510;display:flex;align-items:center;justify-content:space-between;padding:0 28px">
+      <div>
+        <h2 data-screen-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em">Tableau de bord</h2>
+        <div data-screen-sub style="font:500 12px 'IBM Plex Mono';color:#6b7a70;margin-top:2px">Mise à jour live · toutes les 1 s</div>
+      </div>
+      <div style="display:flex;gap:9px;align-items:center">
+        <span data-live="hdr-link" style="display:inline-flex;align-items:center;gap:7px;background:#16221b;border:1px solid #243228;border-radius:9px;padding:8px 12px;font:600 12px 'IBM Plex Mono';color:#8fdca3"><span style="width:7px;height:7px;border-radius:50%;background:#70d18b;box-shadow:0 0 8px #70d18b;animation:pf-pulse 2.4s infinite"></span>lien</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#16221b;border:1px solid #243228;border-radius:9px;padding:8px 12px;font:600 12px 'IBM Plex Mono';color:#f8c662"><span data-live="fps">0</span> fps</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#16221b;border:1px solid #243228;border-radius:9px;padding:8px 12px;font:600 12px 'IBM Plex Mono';color:#a5b2a8" data-live="uptime">0:00</span>
+      </div>
+    </header>
+
+    <div id="pf-scroll" style="flex:1;overflow-y:auto;padding:24px 28px">
+
+      <!-- ===== DASHBOARD ===== -->
+      <div data-screen="dashboard">
+        <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:13px">
+          <div style="grid-column:span 3;background:#16221b;border:1px solid #243228;border-radius:14px;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 10px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">LIEN RÉSEAU</span><span style="color:#5b6b64;display:flex"><i data-lucide="network" class="ic16"></i></span></div>
+            <div style="display:flex;align-items:flex-end;gap:8px"><span style="font:600 27px 'IBM Plex Mono';line-height:1" data-live="link-big">—</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8fdca3;margin-bottom:4px"><span style="width:7px;height:7px;border-radius:50%;background:#70d18b;box-shadow:0 0 8px #70d18b;animation:pf-pulse 2.4s infinite"></span>full-duplex</span></div>
+            <span style="font:500 11.5px 'IBM Plex Mono';color:#7c8a80" data-live="ip-line">—</span>
+          </div>
+          <div style="grid-column:span 3;background:#16221b;border:1px solid #243228;border-radius:14px;padding:15px 16px 10px;display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 10px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">IMAGES / S</span><span style="color:#5b6b64;display:flex"><i data-lucide="activity" class="ic16"></i></span></div>
+            <div style="display:flex;align-items:flex-end;gap:7px"><span style="font:600 27px 'IBM Plex Mono';line-height:1;color:#f8c662" data-live="fps">0</span><span style="font-size:11px;color:#7c8a80;margin-bottom:4px" data-live="fps-max">/ 60 Hz</span></div>
+            <canvas data-spark="fps" data-color="#f0b53b" style="width:100%;height:30px;display:block"></canvas>
+          </div>
+          <div style="grid-column:span 3;background:#16221b;border:1px solid #243228;border-radius:14px;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 10px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">HEAP LIBRE</span><span style="color:#5b6b64;display:flex"><i data-lucide="cpu" class="ic16"></i></span></div>
+            <div style="display:flex;align-items:flex-end;gap:7px"><span style="font:600 27px 'IBM Plex Mono';line-height:1" data-live="heap">—</span><span style="font-size:12px;color:#7c8a80;margin-bottom:4px" data-live="heap-unit"></span></div>
+            <div style="height:6px;background:#0e1812;border:1px solid #1f2c24;border-radius:4px;overflow:hidden;margin-top:auto"><div data-live="heap-bar" style="height:100%;width:0;background:linear-gradient(90deg,#c98f23,#f8c662);border-radius:4px"></div></div>
+            <span style="font:500 11px 'IBM Plex Mono';color:#7c8a80" data-live="heap-min">—</span>
+          </div>
+          <div style="grid-column:span 3;background:#16221b;border:1px solid #243228;border-radius:14px;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 10px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">UPTIME</span><span style="color:#5b6b64;display:flex"><i data-lucide="clock" class="ic16"></i></span></div>
+            <div style="display:flex;align-items:flex-end;gap:7px"><span style="font:600 27px 'IBM Plex Mono';line-height:1" data-live="uptime-big">—</span></div>
+            <span style="font:500 11.5px 'IBM Plex Mono';color:#7c8a80" data-live="part-line">—</span>
+          </div>
+
+          <div style="grid-column:span 8;background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:15px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="display:inline-flex;align-items:center;gap:8px;font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70"><i data-lucide="film" class="ic16" style="color:#f0b53b"></i>LECTURE EN COURS</span>
+              <span data-live="now-badge" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#6b7a70;background:rgba(255,255,255,.04);border:1px solid #243228;padding:4px 9px;border-radius:999px">à l'arrêt</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:46px;height:46px;border-radius:11px;background:rgba(248,198,98,.12);border:1px solid rgba(248,198,98,.28);display:flex;align-items:center;justify-content:center;color:#f8c662;flex:none"><i data-lucide="play" class="ic22"></i></div>
+              <div style="min-width:0"><div style="font-size:17px;font-weight:700;letter-spacing:-.01em" data-live="now-name">Aucune lecture</div><div style="font:500 12px 'IBM Plex Mono';color:#7c8a80;margin-top:3px" data-live="now-sub">Aucune scène ni séquence active</div></div>
+            </div>
+            <div>
+              <div style="position:relative;height:8px;background:#0e1812;border:1px solid #1f2c24;border-radius:5px"><div data-live="fseq-fill" style="position:absolute;left:0;top:0;bottom:0;width:44%;background:linear-gradient(90deg,#c98f23,#f8c662);border-radius:5px"></div><div data-live="fseq-handle" style="position:absolute;left:44%;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#f8c662;border:2px solid #16221b;box-shadow:0 0 0 3px rgba(248,198,98,.22)"></div></div>
+              <div style="display:flex;justify-content:space-between;margin-top:8px;font:600 12px 'IBM Plex Mono';color:#9fb0a5"><span data-live="fseq-pos">1:24</span><span style="color:#6b7a70">3:12</span></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px"><button data-action="stop-all" style="display:inline-flex;align-items:center;gap:7px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:8px 14px;font:600 12.5px 'IBM Plex Sans';cursor:pointer"><i data-lucide="square" class="ic14"></i>Arrêter</button><span style="font:500 12px 'IBM Plex Mono';color:#6b7a70;margin-left:2px">Scène active&nbsp;: <span style="color:#9fb0a5" data-live="active-scene">—</span></span></div>
+          </div>
+
+          <div style="grid-column:span 4;background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:11px">
+            <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">ACTIONS RAPIDES</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+              <button data-action="identify" style="display:flex;align-items:center;gap:8px;background:#f8c662;border:1px solid #f8c662;color:#1d3a2c;border-radius:10px;padding:11px 12px;font:600 13px 'IBM Plex Sans';cursor:pointer"><i data-lucide="zap" class="ic16"></i>Identifier</button>
+              <button data-action="stop-all" style="display:flex;align-items:center;gap:8px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:10px;padding:11px 12px;font:600 13px 'IBM Plex Sans';cursor:pointer"><i data-lucide="square" class="ic16"></i>Tout stopper</button>
+              <button data-nav="patch" style="display:flex;align-items:center;gap:8px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:10px;padding:11px 12px;font:600 13px 'IBM Plex Sans';cursor:pointer"><i data-lucide="git-fork" class="ic16"></i>Auto-patch</button>
+              <button data-action="export" style="display:flex;align-items:center;gap:8px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:10px;padding:11px 12px;font:600 13px 'IBM Plex Sans';cursor:pointer"><i data-lucide="download" class="ic16"></i>Sauvegarde</button>
+            </div>
+            <button data-reboot style="display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid #3a2826;color:#ec8480;border-radius:10px;padding:10px 12px;font:600 13px 'IBM Plex Sans';cursor:pointer;margin-top:auto"><i data-lucide="rotate-cw" class="ic16"></i>Redémarrer le boîtier</button>
+          </div>
+
+          <div style="grid-column:span 5;background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">TRAFIC RÉSEAU</span><span style="font:500 11px 'IBM Plex Mono';color:#6b7a70">paquets / s</span></div>
+            <div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px"><span style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600"><span style="width:8px;height:8px;border-radius:2px;background:#f0b53b"></span>ArtNet</span><span style="font:600 13px 'IBM Plex Mono';color:#f8c662"><span data-live="artnet-rate">2 940</span> /s</span></div>
+              <canvas data-spark="artnet" data-color="#f0b53b" style="width:100%;height:34px;display:block"></canvas>
+              <div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:3px">total <span data-live="artnet-total">1 284 553</span></div>
+            </div>
+            <div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px"><span style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600"><span style="width:8px;height:8px;border-radius:2px;background:#70d18b"></span>sACN E1.31</span><span style="font:600 13px 'IBM Plex Mono';color:#8fdca3"><span data-live="sacn-rate">1 180</span> /s</span></div>
+              <canvas data-spark="sacn" data-color="#70d18b" style="width:100%;height:34px;display:block"></canvas>
+              <div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:3px">total <span data-live="sacn-total">512 904</span> · invalides <span style="color:#ec8480">3</span></div>
+            </div>
+          </div>
+
+          <div style="grid-column:span 7;background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:13px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">CANAUX</span><span style="font:600 11px 'IBM Plex Mono';color:#8fdca3" data-live="chan-count">— actifs</span></div>
+            <div id="dash-chan-mount" style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SCENES ===== -->
+      <div data-screen="scenes" style="display:none">
+        <div id="scenes-mount" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px"></div>
+      </div>
+
+      <!-- ===== FSEQ ===== -->
+      <div data-screen="fseq" style="display:none">
+        <div style="display:grid;grid-template-columns:1.7fr 1fr;gap:16px;align-items:start">
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid #1f2c24">
+              <span style="display:inline-flex;align-items:center;gap:9px;font:600 13px 'IBM Plex Sans'"><i data-lucide="hard-drive" class="ic16" style="color:#f0b53b"></i><span data-live="sd-state">microSD</span></span>
+              <button data-action="fseq-upload" style="display:inline-flex;align-items:center;gap:7px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:8px;padding:7px 12px;font:600 12px 'IBM Plex Sans';cursor:pointer"><i data-lucide="upload" class="ic14"></i>Téléverser</button>
+              <input id="fseq-file" type="file" accept=".fseq" style="display:none"/>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;font:600 10px 'IBM Plex Mono';letter-spacing:.1em;color:#6b7a70;padding:10px 18px;border-bottom:1px solid #1f2c24"><span>FICHIER</span><span style="padding:0 18px">TAILLE</span><span style="padding:0 18px">DURÉE</span><span></span></div>
+            <div id="fseq-mount"></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:15px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">LECTEUR</span><span data-live="fseq-badge" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#6b7a70">à l'arrêt</span></div>
+              <div style="font-size:16px;font-weight:700;letter-spacing:-.01em" data-live="fseq-name">—</div>
+              <div>
+                <div style="position:relative;height:8px;background:#0e1812;border:1px solid #1f2c24;border-radius:5px"><div data-live="fseq-fill" style="position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,#c98f23,#f8c662);border-radius:5px"></div></div>
+                <div style="display:flex;justify-content:space-between;margin-top:8px;font:600 12px 'IBM Plex Mono';color:#9fb0a5"><span data-live="fseq-pos">0:00</span><span style="color:#6b7a70" data-live="fseq-dur">0:00</span></div>
+              </div>
+              <div style="display:flex;gap:8px"><button data-action="fseq-stop" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px;font:600 12.5px 'IBM Plex Sans';cursor:pointer"><i data-lucide="square" class="ic16"></i>Stop</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== CHANNELS ===== -->
+      <div data-screen="channels" style="display:none">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
+          <div id="chan-list-mount" style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px"></div>
+
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid #1f2c24">
+              <div style="display:flex;align-items:center;gap:12px"><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em">Canal 1</h3><span data-chan-state style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.04em;color:#8fdca3;background:rgba(112,209,139,.12);border-radius:999px;padding:4px 10px">Actif</span></div>
+              <button data-action="identify-chan" style="display:inline-flex;align-items:center;gap:7px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:8px 14px;font:600 12.5px 'IBM Plex Sans';cursor:pointer"><i data-lucide="zap" class="ic14" style="color:#f8c662"></i>Identifier</button>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 22px">
+              <div style="grid-column:span 2">
+                <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">PROTOCOLE LED / DMX</label>
+                <select id="cd-proto" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'">
+                  <option value="WS2812B">WS2812B</option><option value="WS2815">WS2815</option><option value="SK6812">SK6812 (RGBW)</option><option value="APA102">APA102 (DATA+CLK)</option><option value="SK9822">SK9822 (DATA+CLK)</option><option value="LPD8806">LPD8806 (DATA+CLK)</option><option value="DMX512">DMX512</option><option value="Off">Désactivé</option>
+                </select>
+              </div>
+
+              <div id="cd-fields" style="grid-column:span 2;display:grid;grid-template-columns:1fr 1fr;gap:16px 22px">
+                <div>
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px"><span id="cd-pixlabel">Pixels</span></label>
+                  <input id="cd-pix" type="number" value="300" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
+                </div>
+                <div id="cd-row-order">
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Ordre des couleurs</label>
+                  <select id="cd-order" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'"><option>RGB</option><option>GRB</option><option>BGR</option><option>RGBW</option><option>GRBW</option></select>
+                </div>
+                <div>
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Adresse Art-Net <span style="color:#6b7a70">net · sub · uni</span></label>
+                  <div style="display:inline-flex;align-items:center;gap:5px;background:#0f1812;border:1px solid #2d3d31;border-radius:9px;padding:7px 9px">
+                    <input id="cd-net" type="number" min="0" max="127" value="0" style="width:46px;background:transparent;border:none;color:#eaf3ee;text-align:center;font:500 13px 'IBM Plex Mono';outline:none"/>
+                    <span style="color:#4f5e55;font:600 13px 'IBM Plex Mono'">.</span>
+                    <input id="cd-sub" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:#eaf3ee;text-align:center;font:500 13px 'IBM Plex Mono';outline:none"/>
+                    <span style="color:#4f5e55;font:600 13px 'IBM Plex Mono'">.</span>
+                    <input id="cd-uni" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:#eaf3ee;text-align:center;font:500 13px 'IBM Plex Mono';outline:none"/>
+                  </div>
+                  <div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:5px">= univers absolu <span id="cd-uni-flat" style="color:#f8c662">0</span></div>
+                </div>
+                <div>
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Adresse DMX de départ</label>
+                  <input id="cd-dmx" type="number" value="1" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
+                </div>
+                <div id="cd-row-bri">
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Luminosité max <span style="color:#6b7a70">(0–255)</span></label>
+                  <input id="cd-bri" type="number" value="255" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
+                </div>
+                <div id="cd-row-grp">
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Groupement de pixels</label>
+                  <input id="cd-grp" type="number" value="1" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
+                </div>
+                <div id="cd-row-gam">
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Gamma ×10</label>
+                  <input id="cd-gam" type="number" value="22" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
+                </div>
+                <div id="cd-row-clk" style="display:none">
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Fréquence horloge (Hz)</label>
+                  <input id="cd-clk" type="number" value="4000000" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
+                </div>
+                <div id="cd-row-wb">
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px">Balance des blancs</label>
+                  <div style="display:flex;align-items:center;gap:8px;background:#0f1812;border:1px solid #2d3d31;border-radius:9px;padding:7px 10px"><span style="width:20px;height:20px;border-radius:5px;background:#ffffff;flex:none;border:1px solid #2d3d31"></span><input id="cd-wb" value="#ffffff" style="flex:1;background:transparent;border:none;color:#a5b2a8;font:500 12px 'IBM Plex Mono';outline:none"/></div>
+                </div>
+                <label id="cd-row-inv" style="display:flex;align-items:center;justify-content:space-between;background:#0f1812;border:1px solid #1f2c24;border-radius:9px;padding:10px 13px;cursor:pointer;align-self:end"><span style="font-size:13px;font-weight:500">Inverser le sens</span><span class="sw"><input id="cd-inv" type="checkbox"/><span></span></span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== NETWORK ===== -->
+      <div data-screen="network" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:980px">
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:18px">
+            <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">ADRESSAGE IP</span>
+            <div style="display:flex;gap:5px;background:#0f1812;border:1px solid #1f2c24;border-radius:9px;padding:4px">
+              <div data-dhcp="1" style="flex:1;text-align:center;padding:7px 0;border-radius:7px;font:600 12px 'IBM Plex Sans';background:#f8c662;color:#1d3a2c;cursor:pointer">DHCP automatique</div>
+              <div data-dhcp="0" style="flex:1;text-align:center;padding:7px 0;border-radius:7px;font:600 12px 'IBM Plex Sans';color:#9fb0a5;cursor:pointer">IP statique</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Adresse IP</label><input id="n-ip" value="192.168.1.42" style="width:100%;background:#0e1812;border:1px solid #243228;color:#7c8a80;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'" disabled/></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Masque</label><input id="n-mask" value="255.255.255.0" style="width:100%;background:#0e1812;border:1px solid #243228;color:#7c8a80;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'" disabled/></div>
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Passerelle</label><input id="n-gw" value="192.168.1.1" style="width:100%;background:#0e1812;border:1px solid #243228;color:#7c8a80;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'" disabled/></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;background:rgba(248,198,98,.08);border:1px solid rgba(248,198,98,.2);border-radius:9px;padding:11px 13px;font:500 12px 'IBM Plex Sans';color:#f0b53b"><i data-lucide="info" class="ic16"></i>Le changement de mode IP nécessite un redémarrage.</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">IDENTITÉ</span>
+              <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Nom (ArtNet / mDNS)</label><div style="display:flex;align-items:center;background:#0f1812;border:1px solid #2d3d31;border-radius:9px;padding:0 12px"><input id="n-host" value="" style="flex:1;background:transparent;border:none;color:#eaf3ee;padding:10px 0;font:500 13px 'IBM Plex Mono';outline:none"/><span style="font:500 13px 'IBM Plex Mono';color:#6b7a70">pixfrog.local</span></div></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Nom long</label><input id="n-long" value="" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 12px 'IBM Plex Mono'"/></div>
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Cadence</label><input value="" data-live="refresh" style="width:100%;background:#0e1812;border:1px solid #243228;color:#7c8a80;border-radius:9px;padding:10px 12px;font:500 12px 'IBM Plex Mono'" disabled/></div>
+              </div>
+            </div>
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:11px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">LIEN PHYSIQUE</span>
+              <div style="display:flex;align-items:center;gap:11px"><span style="width:38px;height:38px;border-radius:10px;background:rgba(112,209,139,.12);display:flex;align-items:center;justify-content:center;color:#70d18b;flex:none"><i data-lucide="cable" class="ic20"></i></span><div><div style="font-size:14px;font-weight:600" data-live="link-text">Lien réseau</div><div style="font:500 11.5px 'IBM Plex Mono';color:#6b7a70;margin-top:2px">Ethernet RJ45 · 100 Mb/s full-duplex</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== ARTNET ===== -->
+      <div data-screen="artnet" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1040px">
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;align-items:center;gap:9px"><i data-lucide="radio-tower" class="ic20" style="color:#f0b53b"></i><span style="font-size:14px;font-weight:700">Protocoles de réception</span></div>
+            <label style="display:flex;align-items:center;justify-content:space-between;background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:13px 15px"><div><div style="font-size:13.5px;font-weight:600">ArtNet 4</div><div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:2px">UDP 6454 · toujours actif</div></div><span class="sw"><input type="checkbox" checked disabled/><span></span></span></label>
+            <label style="display:flex;align-items:center;justify-content:space-between;background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:13px 15px;cursor:pointer"><div><div style="font-size:13.5px;font-weight:600">sACN E1.31</div><div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:2px">Multicast 239.255.x.x · UDP 5568</div></div><span class="sw"><input id="a-sacn" type="checkbox"/><span></span></span></label>
+            <label style="display:flex;align-items:center;justify-content:space-between;background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:13px 15px;cursor:pointer"><div><div style="font-size:13.5px;font-weight:600">FPP / FSEQ distant</div><div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:2px">Synchro multi-boîtiers FPP</div></div><span class="sw"><input id="a-fpp" type="checkbox"/><span></span></span></label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
+              <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Net ArtNet</label><input id="a-net" type="number" min="0" max="127" value="0" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/></div>
+              <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Sub-net</label><input id="a-subnet" type="number" min="0" max="15" value="0" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/></div>
+            </div>
+            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer"><div><span style="font-size:13.5px;font-weight:600">Fusion HTP multi-sources</span><div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:2px">Highest-Takes-Precedence</div></div><span class="sw"><input id="a-merge" type="checkbox"/><span></span></span></label>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;gap:9px"><i data-lucide="shield" class="ic20" style="color:#f0b53b"></i><span style="font-size:14px;font-weight:700">Failsafe (perte de signal)</span></div>
+              <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Délai avant déclenchement</label><div style="display:flex;align-items:center;gap:9px"><input id="a-fsdelay" type="range" min="0" max="30" value="5" style="flex:1;accent-color:#f8c662"/><span id="a-fsdelay-val" style="font:600 13px 'IBM Plex Mono';color:#f8c662;width:74px;text-align:right">5 s</span></div></div>
+              <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Comportement</label><select id="a-fsmode" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'"><option value="1">Extinction totale</option><option value="0">Maintenir la dernière image</option><option value="2">Couleur fixe</option><option value="3">Lancer une scène</option></select></div>
+            </div>
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:13px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">STATISTIQUES TEMPS RÉEL</span>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+                <div style="background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:12px 13px"><div style="font:600 19px 'IBM Plex Mono';color:#f8c662;line-height:1"><span data-live="artnet-rate">2 940</span></div><div style="font:500 10px 'IBM Plex Mono';color:#6b7a70;margin-top:5px">ArtNet paquets/s</div></div>
+                <div style="background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:12px 13px"><div style="font:600 19px 'IBM Plex Mono';color:#8fdca3;line-height:1"><span data-live="sacn-rate">1 180</span></div><div style="font:500 10px 'IBM Plex Mono';color:#6b7a70;margin-top:5px">sACN paquets/s</div></div>
+                <div style="background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:12px 13px"><div style="font:600 19px 'IBM Plex Mono';line-height:1" data-live="universes">0</div><div style="font:500 10px 'IBM Plex Mono';color:#6b7a70;margin-top:5px">univers actifs</div></div>
+                <div style="background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:12px 13px"><div style="font:600 19px 'IBM Plex Mono';color:#ec8480;line-height:1" data-live="bad">0</div><div style="font:500 10px 'IBM Plex Mono';color:#6b7a70;margin-top:5px">paquets invalides</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== PATCH ===== -->
+      <div data-screen="patch" style="display:none">
+        <div style="max-width:920px;display:flex;flex-direction:column;gap:16px">
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:18px">
+            <div style="display:flex;align-items:center;gap:13px"><span style="width:42px;height:42px;border-radius:11px;background:rgba(248,198,98,.12);border:1px solid rgba(248,198,98,.28);display:flex;align-items:center;justify-content:center;color:#f8c662;flex:none"><i data-lucide="git-fork" class="ic22"></i></span><div><div style="font-size:15px;font-weight:700;letter-spacing:-.01em">Auto-patch contigu</div><div style="font:500 12px 'IBM Plex Mono';color:#7c8a80;margin-top:3px;max-width:520px">Réattribue à chaque canal actif des univers consécutifs, sans trou ni chevauchement, à partir de l'univers&nbsp;0.</div></div></div>
+            <button data-action="autopatch" style="display:inline-flex;align-items:center;gap:8px;background:#f8c662;border:1px solid #f8c662;color:#1d3a2c;border-radius:10px;padding:11px 18px;font:600 13px 'IBM Plex Sans';cursor:pointer;flex:none"><i data-lucide="wand-2" class="ic16"></i>Lancer l'auto-patch</button>
+          </div>
+
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;overflow:hidden">
+            <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;font:600 10px 'IBM Plex Mono';letter-spacing:.1em;color:#6b7a70;padding:12px 18px;border-bottom:1px solid #1f2c24"><span>CH</span><span>PROTOCOLE</span><span>UNIVERS ASSIGNÉS</span><span>DMX</span></div>
+            <div id="patch-mount"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:#0f1812"><span style="font:500 12px 'IBM Plex Mono';color:#7c8a80">Univers consommés&nbsp;: <span style="color:#a5b2a8">U0 – U<span id="patch-nextfree">12</span></span></span><span style="font:500 12px 'IBM Plex Mono';color:#8fdca3">aucun chevauchement détecté</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SYSTEM ===== -->
+      <div data-screen="system" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1040px">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">GÉNÉRAL</span>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Cadence (Hz)</label><select id="s-refresh" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'"><option value="30">30 Hz</option><option value="60">60 Hz</option></select></div>
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Retour accueil (s)</label><input id="s-home" type="number" min="0" max="65535" value="0" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/></div>
+              </div>
+              <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Scène au démarrage</label><select id="s-boot" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'"><option value="0">Aucune</option><option value="1">Scène 1</option><option value="2">Scène 2</option><option value="3">Scène 3</option><option value="4">Scène 4</option><option value="5">Scène 5</option><option value="6">Scène 6</option><option value="7">Scène 7</option><option value="8">Scène 8</option></select></div>
+            </div>
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">SÉCURITÉ DE L'INTERFACE</span>
+              <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer"><div><span style="font-size:13.5px;font-weight:600">Protéger par mot de passe</span><div style="font:500 11px 'IBM Plex Mono';color:#6b7a70;margin-top:2px">Authentification HTTP Basic sur les écritures</div></div><span class="sw"><input id="s-auth" type="checkbox"/><span></span></span></label>
+              <div id="s-pwd-row" style="display:grid;grid-template-columns:1fr 1fr;gap:13px;opacity:.5"><div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Utilisateur</label><input value="admin" style="width:100%;background:#0e1812;border:1px solid #243228;color:#7c8a80;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'" disabled/></div><div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px">Nouveau mot de passe</label><input id="s-pwd" type="password" placeholder="••••••" style="width:100%;background:#0e1812;border:1px solid #243228;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'" disabled/></div></div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">FIRMWARE</span>
+              <div style="display:flex;align-items:center;gap:13px"><span style="width:42px;height:42px;border-radius:11px;background:#0f1812;border:1px solid #2d3d31;display:flex;align-items:center;justify-content:center;color:#f0b53b;flex:none"><i data-lucide="cpu" class="ic22"></i></span><div style="flex:1"><div style="font-size:14px;font-weight:700" data-live="fw-name">pixfrog</div><div style="font:500 11.5px 'IBM Plex Mono';color:#6b7a70;margin-top:2px" data-live="fw-sub">esp32-p4</div></div></div>
+              <button data-action="ota" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:10px;padding:11px;font:600 13px 'IBM Plex Sans';cursor:pointer"><i data-lucide="upload-cloud" class="ic16"></i>Téléverser un firmware (.bin)</button>
+              <input id="ota-file" type="file" accept=".bin" style="display:none"/>
+              <div id="ota-prog" style="display:none;height:6px;background:#0e1812;border:1px solid #1f2c24;border-radius:4px;overflow:hidden"><div id="ota-bar" style="height:100%;width:0;background:linear-gradient(90deg,#c98f23,#f8c662)"></div></div>
+            </div>
+            <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70">CONFIGURATION</span>
+              <div style="display:flex;gap:11px"><button data-action="export" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:10px;padding:11px;font:600 12.5px 'IBM Plex Sans';cursor:pointer"><i data-lucide="download" class="ic16"></i>Exporter JSON</button><button data-action="import" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:10px;padding:11px;font:600 12.5px 'IBM Plex Sans';cursor:pointer"><i data-lucide="upload" class="ic16"></i>Importer JSON</button></div>
+              <input id="restore-file" type="file" accept=".json,application/json" style="display:none"/>
+            </div>
+            <div style="background:#16221b;border:1px solid #3a2826;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+              <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#ec8480">ZONE SENSIBLE</span>
+              <div style="display:flex;gap:11px"><button data-reboot style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid #3a2826;color:#ec8480;border-radius:10px;padding:11px;font:600 12.5px 'IBM Plex Sans';cursor:pointer"><i data-lucide="rotate-cw" class="ic16"></i>Redémarrer</button><button data-reset style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid #3a2826;color:#ec8480;border-radius:10px;padding:11px;font:600 12.5px 'IBM Plex Sans';cursor:pointer"><i data-lucide="trash-2" class="ic16"></i>Réinitialiser (usine)</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <footer style="flex:none;height:58px;border-top:1px solid #1c2922;background:#0c1510;display:flex;align-items:center;justify-content:space-between;padding:0 28px">
+      <span style="display:inline-flex;align-items:center;gap:8px;font:500 12px 'IBM Plex Mono';color:#6b7a70"><i data-lucide="hard-drive" class="ic14" style="color:#4f5e55"></i>Réglages persistés en NVS · les changements réseau s'appliquent au redémarrage</span>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span data-live="save-state" style="font:500 12px 'IBM Plex Mono';color:#8fdca3">✓ enregistré</span>
+        <button data-action="cancel" style="display:inline-flex;align-items:center;gap:7px;background:#101a14;border:1px solid #2d3d31;color:#a5b2a8;border-radius:9px;padding:9px 16px;font:600 12.5px 'IBM Plex Sans';cursor:pointer">Annuler</button>
+        <button data-action="save" data-savebtn style="display:inline-flex;align-items:center;gap:7px;background:#f8c662;border:1px solid #f8c662;color:#1d3a2c;border-radius:9px;padding:9px 18px;font:600 12.5px 'IBM Plex Sans';cursor:pointer">Enregistrer</button>
+      </div>
+    </footer>
+  </main>
 </div>
 
-<div class="tabs" id="tabs">
-  <div class="tab active" data-panel="global">Global</div>
-  <div class="tab" data-panel="network">Network</div>
-  <div class="tab" data-panel="artnet">ArtNet</div>
-  <div class="tab" data-panel="scenes">Scenes</div>
-  <div class="tab" data-panel="fseq">FSEQ</div>
-  <div class="tab" data-panel="autopatch">Patch</div>
-  <div class="tab" data-panel="ch0">Ch1</div>
-  <div class="tab" data-panel="ch1">Ch2</div>
-  <div class="tab" data-panel="ch2">Ch3</div>
-  <div class="tab" data-panel="ch3">Ch4</div>
-  <div class="tab" data-panel="ch4">Ch5</div>
-  <div class="tab" data-panel="ch5">Ch6</div>
-  <div class="tab" data-panel="ch6">Ch7</div>
-  <div class="tab" data-panel="ch7">Ch8</div>
-</div>
-
-<!-- Global panel -->
-<div class="panel active" id="panel-global">
-  <div class="card">
-    <div class="row"><label>Refresh rate</label>
-      <select id="g-refresh"><option value="30">30 Hz</option><option value="60">60 Hz</option></select>
+<!-- ───────────── COLOR PICKER POPOVER ───────────── -->
+<div data-cp-backdrop style="position:fixed;inset:0;z-index:70;display:none;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#eaf3ee">
+  <div data-cp-panel style="position:absolute;width:244px;background:#13201a;border:1px solid #2d3d31;border-radius:14px;padding:14px;box-shadow:0 24px 60px -16px rgba(0,0,0,.78)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px">
+      <span style="font:600 10px 'IBM Plex Mono';letter-spacing:.14em;color:#6b7a70">SCÈNE <span data-cp-n>1</span> · COULEUR</span>
+      <button data-cp-close style="width:24px;height:24px;border-radius:7px;background:#0f1812;border:1px solid #2d3d31;color:#9fb0a5;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0"><i data-lucide="x" class="ic14"></i></button>
     </div>
-    <div class="row"><label>Home timeout</label>
-      <input id="g-home" type="number" min="0" max="65535">
-      <span class="note">seconds (0=never)</span>
+    <div data-cp-sv style="position:relative;width:100%;height:132px;border-radius:9px;cursor:crosshair;border:1px solid #2d3d31;touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,transparent),#f00">
+      <div data-cp-svdot style="position:absolute;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45),0 1px 3px rgba(0,0,0,.5);transform:translate(-50%,-50%);pointer-events:none"></div>
     </div>
-    <div class="row"><label>Web UI</label>
-      <input id="g-web" type="checkbox">
-      <span class="note">requires reboot to disable</span>
+    <div data-cp-hue style="position:relative;width:100%;height:14px;border-radius:7px;margin-top:12px;cursor:pointer;touch-action:none;background:linear-gradient(90deg,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%)">
+      <div data-cp-huedot style="position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.5);transform:translate(-50%,-50%);pointer-events:none"></div>
     </div>
-    <div class="status" id="st-global"></div>
-  </div>
-  <div class="card">
-    <h2>Admin password</h2>
-    <div class="row"><label>Status</label><span id="auth-state" class="note">--</span></div>
-    <div class="row"><label>New password</label>
-      <input id="g-pwd" type="password" autocomplete="new-password" placeholder="empty = disable auth">
+    <div style="display:flex;align-items:center;gap:9px;margin-top:13px">
+      <span data-cp-prev style="width:32px;height:32px;border-radius:8px;flex:none;border:1px solid rgba(255,255,255,.14);background:#f00"></span>
+      <div style="display:flex;align-items:center;gap:5px;background:#0f1812;border:1px solid #2d3d31;border-radius:8px;padding:7px 10px;flex:1"><span style="font:600 13px 'IBM Plex Mono';color:#6b7a70">#</span><input data-cp-hex maxlength="6" style="flex:1;width:100%;background:transparent;border:none;color:#eaf3ee;font:600 13px 'IBM Plex Mono';outline:none;text-transform:uppercase;letter-spacing:.04em"/></div>
     </div>
-    <button onclick="savePassword()">Set password</button>
-    <span class="note">protects all changes (config, OTA, reboot); reading stays open</span>
-    <div class="status" id="st-pwd"></div>
-  </div>
-  <div class="card">
-    <h2>Backup</h2>
-    <div class="row"><label>Export</label>
-      <button class="sec" style="margin-top:0" onclick="location.href='/api/backup'">Download config JSON</button>
-    </div>
-    <div class="row"><label>Import</label><input id="restore-file" type="file" accept=".json"></div>
-    <button onclick="restoreConfig()">Restore</button>
-    <span class="note">applies everything except the admin password; reboot for network changes</span>
-    <div class="status" id="st-backup"></div>
-  </div>
-  <div class="card">
-    <h2>Firmware</h2>
-    <div class="row"><label>Running</label><span id="fw-info" style="color:var(--fg-soft);font-size:12px">--</span></div>
-    <div class="row"><label>Update (.bin)</label><input id="ota-file" type="file" accept=".bin"></div>
-    <div class="row" id="ota-prog-row" style="display:none"><label>Progress</label>
-      <div class="bar-track"><div id="ota-bar" class="bar-fill"></div></div>
-      <span id="ota-pct" class="note">0%</span>
-    </div>
-    <button onclick="otaUpload()">Flash firmware</button>
-    <div class="status" id="st-ota"></div>
-  </div>
-  <div class="card">
-    <h2>Crash dump</h2>
-    <a href="/api/coredump" download="pixfrog-coredump.bin"
-       style="display:inline-block;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--fg);font:600 13px var(--font);padding:7px 16px;text-decoration:none">Download</a>
-    <button class="sec" onclick="coredumpDelete()" style="margin-left:8px">Delete</button>
-    <span class="note">404 = no crash stored</span>
-    <div class="status" id="st-coredump"></div>
-  </div>
-  <div class="card">
-    <button class="sec" onclick="factoryReset()">Factory reset</button>
-    <button class="sec" onclick="reboot()" style="margin-left:8px">Reboot</button>
-    <div class="status" id="st-sys"></div>
+    <div data-cp-presets style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:12px"></div>
   </div>
 </div>
 
-<!-- Network panel -->
-<div class="panel" id="panel-network">
-  <div class="card">
-    <div class="row"><label>DHCP</label><input id="n-dhcp" type="checkbox"></div>
-    <div class="row"><label>Static IP</label><input id="n-ip" type="text" placeholder="192.168.1.100"></div>
-    <div class="row"><label>Subnet mask</label><input id="n-mask" type="text" placeholder="255.255.255.0"></div>
-    <div class="row"><label>Gateway</label><input id="n-gw" type="text" placeholder="192.168.1.1"></div>
-    <span class="note">network changes apply after reboot</span>
-    <div class="status" id="st-network"></div>
+<!-- ───────────── CONFIRM MODAL ───────────── -->
+<div data-modal-backdrop style="position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:rgba(6,10,8,.64);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);padding:20px;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#eaf3ee">
+  <div data-modal-panel style="width:432px;max-width:100%;background:#15211b;border:1px solid #2d3d31;border-radius:16px;padding:24px;box-shadow:0 34px 80px -22px rgba(0,0,0,.82)">
+    <div data-modal-body>
+      <div style="display:flex;align-items:flex-start;gap:15px">
+        <span data-modal-icon style="width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none"></span>
+        <div style="flex:1;min-width:0;padding-top:1px">
+          <h3 data-modal-title style="margin:0;font-size:17.5px;font-weight:700;letter-spacing:-.01em;color:#eaf3ee">Titre</h3>
+          <p data-modal-desc style="margin:8px 0 0;font-size:13px;line-height:1.55;color:#9fb0a5">Description</p>
+        </div>
+      </div>
+      <label data-modal-ack style="display:none;align-items:flex-start;gap:11px;margin-top:17px;background:#0f1812;border:1px solid #1f2c24;border-radius:10px;padding:12px 14px;cursor:pointer">
+        <span class="sw" style="margin-top:1px"><input type="checkbox" data-modal-ackbox/><span></span></span>
+        <span data-modal-acktext style="font-size:12.5px;line-height:1.5;color:#cdd8d0">Acquittement</span>
+      </label>
+      <div style="display:flex;gap:10px;margin-top:21px">
+        <button data-modal-cancel style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:#101a14;border:1px solid #2d3d31;color:#cdd8d0;border-radius:10px;padding:11px;font:600 13px 'IBM Plex Sans';cursor:pointer">Annuler</button>
+        <button data-modal-confirm style="flex:1.3;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:11px;font:600 13px 'IBM Plex Sans';cursor:pointer">Confirmer</button>
+      </div>
+    </div>
+    <div data-modal-progress style="display:none;flex-direction:column;align-items:center;gap:15px;padding:18px 0 10px">
+      <span data-modal-spin style="width:46px;height:46px;display:flex;align-items:center;justify-content:center;color:#f0b53b;animation:pf-spin 1s linear infinite"><i data-lucide="loader" class="ic22"></i></span>
+      <div data-modal-progtext style="font:600 14px 'IBM Plex Sans';color:#eaf3ee">Redémarrage…</div>
+      <div data-modal-progsub style="font:500 11.5px 'IBM Plex Mono';color:#6b7a70">le lien réseau va se réinitialiser</div>
+    </div>
   </div>
 </div>
 
-<!-- ArtNet panel -->
-<div class="panel" id="panel-artnet">
-  <div class="card">
-    <div class="row"><label>Net (0–127)</label><input id="a-net" type="number" min="0" max="127"></div>
-    <div class="row"><label>Subnet (0–15)</label><input id="a-subnet" type="number" min="0" max="15"></div>
-    <div class="row"><label>Short name</label><input id="a-short" type="text" maxlength="17"></div>
-    <div class="row"><label>Long name</label><input id="a-long" type="text" maxlength="63"></div>
-    <div class="row"><label>Reply unicast</label><input id="a-unicast" type="checkbox"></div>
-    <div class="row"><label>sACN (E1.31)</label><input id="a-sacn" type="checkbox">
-      <span class="note">also listen on UDP 5568</span>
-    </div>
-    <div class="row"><label>FPP MultiSync</label><input id="a-fpp" type="checkbox">
-      <span class="note">follow an FPP/xSchedule master (UDP 32320) for FSEQ playback</span>
-    </div>
-    <div class="row"><label>Failsafe</label>
-      <select id="a-fsmode"><option value="0">Hold last look</option><option value="1">Blackout</option><option value="2">Solid colour</option><option value="3">Scene</option></select>
-    </div>
-    <div class="row"><label>Failsafe after</label>
-      <input id="a-fstimeout" type="number" min="0" max="3600">
-      <span class="note">seconds without signal (0 = off)</span>
-    </div>
-    <div class="row"><label>Failsafe colour</label><input id="a-fscolor" type="color" value="#000000"></div>
-    <div class="row"><label>Failsafe scene</label>
-      <select id="a-fsscene"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select>
-      <span class="note">used when mode = Scene</span>
-    </div>
-    <div class="status" id="st-artnet"></div>
-  </div>
-</div>
-
-<!-- Scenes panel -->
-<div class="panel" id="panel-scenes">
-  <div class="card">
-    <div class="row"><label>Now playing</label><span id="sc-active" class="note">none</span>
-      <button class="sec" onclick="sceneStop()" style="margin-top:0">Stop</button>
-    </div>
-    <div class="row"><label>Scene at boot</label>
-      <select id="sc-boot"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select>
-    </div>
-    <div class="status" id="st-scenes"></div>
-  </div>
-  <div id="scene-cards"></div>
-</div>
-
-<!-- FSEQ panel -->
-<div class="panel" id="panel-fseq">
-  <div class="card">
-    <div class="row"><label>Now playing</label><span id="fseq-active" class="note">none</span>
-      <button class="sec" onclick="fseqStop()" style="margin-top:0">Stop</button>
-    </div>
-    <div class="status" id="st-fseq"></div>
-  </div>
-  <div class="card">
-    <div class="row"><label>Upload (.fseq)</label><input id="fseq-file" type="file" accept=".fseq"></div>
-    <div class="row" id="fseq-prog-row" style="display:none"><label>Progress</label>
-      <div class="bar-track"><div id="fseq-bar" class="bar-fill"></div></div>
-      <span id="fseq-pct" class="note">0%</span>
-    </div>
-    <button onclick="fseqUpload()">Upload to SD card</button>
-    <div class="status" id="st-fseq-up"></div>
-  </div>
-  <div id="fseq-cards"></div>
-</div>
-
-<!-- Auto-patch -->
-<div class="panel" id="panel-autopatch">
-  <div class="card">
-    <div class="row"><label>Auto-patch from</label><input id="ap-base" type="number" min="0" max="32767" value="0">
-      <button onclick="autoPatch()" style="margin-top:0">Patch all channels</button></div>
-    <span class="note">Re-addresses every channel contiguously from this base universe, sized by each channel's pixel count. Overwrites universe &amp; DMX start; disabled channels are skipped.</span>
-    <div class="status" id="st-autopatch"></div>
-  </div>
-</div>
-
-<!-- Channel panels (ch0..ch7) -->
 <script>
-const PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806','DMX512'];
-const ORDERS=['RGB','RBG','GRB','GBR','BRG','BGR','RGBW','GRBW','RGBWW'];
-const CLOCKED=['APA102','SK9822','LPD8806'];
-const DMX_P=['DMX512'];
+(function(){
+"use strict";
 
-function makeChanPanel(i) {
-  const p = document.createElement('div');
-  p.className='panel'; p.id='panel-ch'+i;
-  const protoOpts=PROTOCOLS.map(n=>`<option value="${n}">${n}</option>`).join('');
-  const orderOpts=ORDERS.map(n=>`<option value="${n}">${n}</option>`).join('');
-  p.innerHTML=`<div class="card">
-    <div class="row"><label>Protocol</label><select id="ch${i}-proto" onchange="updateChanVis(${i})">${protoOpts}</select></div>
-    <div id="ch${i}-led-fields">
-      <div class="row"><label>Universe start</label><input id="ch${i}-uni" type="number" min="0" max="32767"></div>
-      <div class="row"><label>DMX start</label><input id="ch${i}-dmx" type="number" min="1" max="512"></div>
-      <div id="ch${i}-pixrow" class="row"><label>Pixels</label><input id="ch${i}-pix" type="number" min="1" max="1024"></div>
-      <div id="ch${i}-orderrow" class="row"><label>Color order</label><select id="ch${i}-order">${orderOpts}</select></div>
-      <div id="ch${i}-brirow" class="row"><label>Brightness</label><input id="ch${i}-bri" type="number" min="0" max="255"></div>
-      <div id="ch${i}-grprow" class="row"><label>Grouping</label><input id="ch${i}-grp" type="number" min="1" max="8"></div>
-      <div id="ch${i}-invrow" class="row"><label>Invert</label><input id="ch${i}-inv" type="checkbox"></div>
-      <div id="ch${i}-clkrow" class="row"><label>Clock Hz</label><input id="ch${i}-clk" type="number" min="100000" max="8000000" step="250000"></div>
-      <div id="ch${i}-gamrow" class="row"><label>Gamma ×10</label><input id="ch${i}-gam" type="number" min="10" max="40">
-        <span class="note">10 = linear, 22 = 2.2</span></div>
-      <div id="ch${i}-wbrow" class="row"><label>White balance</label><input id="ch${i}-wb" type="color" value="#ffffff">
-        <span class="note">#ffffff = unity</span></div>
-    </div>
-    <button class="sec" onclick="identifyChan(${i})">Identify</button>
-    <div class="status" id="st-ch${i}"></div>
-  </div>`;
-  return p;
-}
-
-const container=document.body;
-for(let i=0;i<8;i++) container.appendChild(makeChanPanel(i));
-
-const FX=['Solid','Chase','Rainbow'];
-function buildSceneCards(){
-  const host=document.getElementById('scene-cards');
-  host.innerHTML='';
-  for(let i=0;i<8;i++){
-    const d=document.createElement('div');
-    d.className='card';
-    const fxOpts=FX.map((n,v)=>`<option value="${v}">${n}</option>`).join('');
-    let masks='';
-    for(let c=0;c<8;c++) masks+=`<label style="width:auto;color:var(--fg-soft);font-size:11px">${c+1}<input id="sc${i}-m${c}" type="checkbox" style="width:14px;height:14px"></label>`;
-    d.innerHTML=`
-      <div class="row"><label>Scene ${i+1}</label><input id="sc${i}-name" type="text" maxlength="15"></div>
-      <div class="row"><label>Effect</label><select id="sc${i}-fx">${fxOpts}</select></div>
-      <div class="row"><label>Colour</label><input id="sc${i}-col" type="color"></div>
-      <div class="row"><label>Speed</label><input id="sc${i}-spd" type="number" min="0" max="255">
-        <span class="note">chase: px/s · rainbow: rotation</span></div>
-      <div class="row"><label>Param</label><input id="sc${i}-par" type="number" min="0" max="255">
-        <span class="note">chase: width px · rainbow: repeats</span></div>
-      <div class="row"><label>Channels</label><div style="display:flex;gap:8px;flex-wrap:wrap">${masks}</div></div>
-      <button class="sec" onclick="playScene(${i})">Play</button>
-      <div class="status" id="st-sc${i}"></div>`;
-    host.appendChild(d);
-  }
-}
-buildSceneCards();
-
-async function saveScene(i){
-  let mask=0;
-  for(let c=0;c<8;c++) if(document.getElementById('sc'+i+'-m'+c).checked) mask|=1<<c;
-  const body={
-    name:document.getElementById('sc'+i+'-name').value,
-    effect:parseInt(document.getElementById('sc'+i+'-fx').value),
-    color:document.getElementById('sc'+i+'-col').value,
-    speed:parseInt(document.getElementById('sc'+i+'-spd').value),
-    param:parseInt(document.getElementById('sc'+i+'-par').value),
-    mask:mask,
-  };
-  try{await api('POST','/api/scene/'+i,body);status('st-sc'+i,'Saved','');}
-  catch(e){status('st-sc'+i,'Error: '+e.message,true);throw e;}
-}
-async function playScene(i){
-  try{await api('POST','/api/scene/'+i+'/play',{});status('st-sc'+i,'Playing','');loadConfig();}
-  catch(e){status('st-sc'+i,'Error: '+e.message,true);}
-}
-async function autoPatch(){
-  const base=parseInt(document.getElementById('ap-base').value)||0;
-  try{const r=await api('POST','/api/autopatch',{base});status('st-autopatch','Patched — next free universe '+r.next_free,'');loadConfig();}
-  catch(e){status('st-autopatch',e.message,'err');}
-}
-
-async function identifyChan(i){
-  try{await api('POST','/api/channel/'+i+'/identify',{});status('st-ch'+i,'Blinking strip for 10 s','');}
-  catch(e){status('st-ch'+i,'Error: '+e.message,true);}
-}
-
-async function sceneStop(){
-  try{await api('POST','/api/scenes/stop',{});status('st-scenes','Stopped','');loadConfig();}
-  catch(e){status('st-scenes','Error: '+e.message,true);}
-}
-
-async function fseqStop(){
-  try{await api('POST','/api/fseq/stop',{});status('st-fseq','Stopped','');loadFseqFiles();}
-  catch(e){status('st-fseq','Error: '+e.message,true);}
-}
-
-async function fseqPlay(filename){
-  try{await api('POST','/api/fseq/play',{filename});status('st-fseq','Playing: '+filename,'');loadFseqFiles();}
-  catch(e){status('st-fseq','Error: '+e.message,true);}
-}
-
-async function loadFseqFiles(){
-  try{
-    const d=await (await fetch('/api/fseq/files')).json();
-    document.getElementById('fseq-active').textContent=d.active||'none';
-    const host=document.getElementById('fseq-cards');
-    host.innerHTML='';
-    if(!d.files||d.files.length===0){
-      const p=document.createElement('div');p.className='card';
-      p.innerHTML='<span class="note">No .fseq files found on SD card</span>';
-      host.appendChild(p);return;
-    }
-    d.files.forEach(f=>{
-      const card=document.createElement('div');card.className='card';
-      const playing=f===d.active;
-      card.innerHTML=`<div class="row"><label style="max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${f}">${f}${playing?' ★':''}</label>
-        <button class="sec" onclick="fseqPlay('${f.replace(/'/g,"\\'")}')">Play</button></div>`;
-      host.appendChild(card);
-    });
-  }catch(e){document.getElementById('fseq-cards').innerHTML='<div class="card"><span class="note">SD card unavailable</span></div>';}
-}
-
-function updateChanVis(i) {
-  const proto=document.getElementById('ch'+i+'-proto').value;
-  const isDmx=DMX_P.includes(proto);
-  const isOff=proto==='Off';
-  const isClk=CLOCKED.includes(proto);
-  const fields=document.getElementById('ch'+i+'-led-fields');
-  fields.style.display=isOff?'none':'';
-  if(!isOff){
-    const show=(id,v)=>{const el=document.getElementById('ch'+i+'-'+id+'row');if(el)el.style.display=v?'':'none';};
-    show('pix',true);
-    show('order',!isDmx);
-    show('bri',!isDmx);
-    show('grp',!isDmx);
-    show('inv',!isDmx);
-    show('clk',isClk);
-    show('gam',!isDmx);
-    show('wb',!isDmx);
-    const lbl=document.getElementById('ch'+i+'-pixrow').querySelector('label');
-    if(lbl)lbl.textContent=isDmx?'Slots':'Pixels';
-  }
-}
-
-// ── Tabs ──────────────────────────────────────────────────────────────────────
-document.getElementById('tabs').addEventListener('click',e=>{
-  const tab=e.target.closest('.tab');
-  if(!tab)return;
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  tab.classList.add('active');
-  const panel=document.getElementById('panel-'+tab.dataset.panel);
-  if(panel)panel.classList.add('active');
-  if(tab.dataset.panel==='fseq')loadFseqFiles();
-});
-
-// ── API helpers ──────────────────────────────────────────────────────────────
-async function api(method,path,body){
-  const opts={method,headers:{'Content-Type':'application/json'}};
-  if(body)opts.body=JSON.stringify(body);
-  const r=await fetch(path,opts);
-  if(!r.ok)throw new Error(await r.text());
-  return r.json();
-}
-
-function status(id,msg,err){
-  const el=document.getElementById(id);
-  el.textContent=msg;el.className='status'+(err?' err':'');
-}
-
-// ── Load config on boot ───────────────────────────────────────────────────────
-async function loadConfig(){
-  try{
-    const d=await api('GET','/api/config');
-    const g=d.global;
-    // Global
-    setVal('g-refresh',g.refresh_hz);
-    setVal('g-home',g.home_timeout_s);
-    setChk('g-web',g.web_enabled);
-    // Network
-    setChk('n-dhcp',g.dhcp);
-    setVal('n-ip',g.ip);
-    setVal('n-mask',g.mask);
-    setVal('n-gw',g.gw);
-    // ArtNet
-    setVal('a-net',g.net);
-    setVal('a-subnet',g.subnet);
-    setVal('a-short',g.short_name);
-    setVal('a-long',g.long_name);
-    setChk('a-unicast',g.reply_unicast);
-    setChk('a-sacn',g.sacn_enabled);
-    setChk('a-fpp',g.fpp_remote);
-    setVal('a-fsmode',g.failsafe_mode??0);
-    setVal('a-fstimeout',g.failsafe_timeout_s??0);
-    setVal('a-fscolor',g.failsafe_color||'#000000');
-    setVal('a-fsscene',g.failsafe_scene??0);
-    setVal('sc-boot',g.boot_scene??0);
-    document.getElementById('sc-active').textContent=
-      (d.active_scene??-1)>=0?('#'+(d.active_scene+1)+' '+(d.scenes?.[d.active_scene]?.name||'')):'none';
-    document.getElementById('fseq-active').textContent=d.active_fseq||'none';
-    if(d.scenes)for(let i=0;i<8;i++){
-      const sc=d.scenes[i];if(!sc)continue;
-      setVal('sc'+i+'-name',sc.name);
-      setVal('sc'+i+'-fx',sc.effect);
-      setVal('sc'+i+'-col',sc.color);
-      setVal('sc'+i+'-spd',sc.speed);
-      setVal('sc'+i+'-par',sc.param);
-      for(let c=0;c<8;c++)setChk('sc'+i+'-m'+c,(sc.mask>>c)&1);
-    }
-    // Channels
-    for(let i=0;i<8;i++){
-      const c=d.channels[i];
-      setVal('ch'+i+'-proto',c.protocol);
-      setVal('ch'+i+'-uni',c.universe_start);
-      setVal('ch'+i+'-dmx',c.dmx_start);
-      setVal('ch'+i+'-pix',c.pixel_count);
-      setVal('ch'+i+'-order',c.color_order);
-      setVal('ch'+i+'-bri',c.brightness);
-      setVal('ch'+i+'-grp',c.grouping);
-      setChk('ch'+i+'-inv',c.invert);
-      setVal('ch'+i+'-clk',c.clock_hz);
-      setVal('ch'+i+'-gam',c.gamma_x10??10);
-      setVal('ch'+i+'-wb',c.wb||'#ffffff');
-      updateChanVis(i);
-    }
-    // Status bar
-    const link=document.getElementById('link-dot');
-    link.className=d.link?'up':'';
-    document.getElementById('fps-label').textContent=d.fps+'fps';
-    if(d.version)document.getElementById('ver-label').textContent=d.version;
-    document.getElementById('fw-info').textContent=(d.version||'?')+' on '+(d.ota_partition||'?');
-    document.getElementById('auth-state').textContent=g.auth_enabled?'enabled':'disabled (no password set)';
-  }catch(e){console.error(e);}
-}
-
-function setVal(id,v){const el=document.getElementById(id);if(el)el.value=v;}
-function setChk(id,v){const el=document.getElementById(id);if(el)el.checked=!!v;}
-
-// ── Save helpers ─────────────────────────────────────────────────────────────
-const FIELD_MAP={
-  'dhcp':()=>document.getElementById('n-dhcp').checked?1:0,
-  'ip':()=>document.getElementById('n-ip').value,
-  'mask':()=>document.getElementById('n-mask').value,
-  'gw':()=>document.getElementById('n-gw').value,
-  'net':()=>parseInt(document.getElementById('a-net').value),
-  'subnet':()=>parseInt(document.getElementById('a-subnet').value),
-  'short_name':()=>document.getElementById('a-short').value,
-  'long_name':()=>document.getElementById('a-long').value,
-  'reply_unicast':()=>document.getElementById('a-unicast').checked?1:0,
-  'sacn_enabled':()=>document.getElementById('a-sacn').checked?1:0,
-  'fpp_remote':()=>document.getElementById('a-fpp').checked?1:0,
-  'failsafe_mode':()=>parseInt(document.getElementById('a-fsmode').value),
-  'failsafe_timeout_s':()=>parseInt(document.getElementById('a-fstimeout').value),
-  'failsafe_color':()=>document.getElementById('a-fscolor').value,
-  'failsafe_scene':()=>parseInt(document.getElementById('a-fsscene').value),
-  'boot_scene':()=>parseInt(document.getElementById('sc-boot').value),
-  'refresh_hz':()=>parseInt(document.getElementById('g-refresh').value),
-  'home_timeout_s':()=>parseInt(document.getElementById('g-home').value),
-  'web_enabled':()=>document.getElementById('g-web').checked?1:0,
+/* ─────────── inline icon set (Lucide paths, ISC) ─────────── */
+var PF_ICONS = {
+  'layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  'palette':'<circle cx="13.5" cy="6.5" r=".7" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r=".7" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r=".7" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r=".7" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.6-.7 1.6-1.6 0-.4-.1-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6h1.9c3 0 5.5-2.5 5.5-5.6C22 6 17.5 2 12 2z"/>',
+  'film':'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
+  'sliders-horizontal':'<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  'network':'<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
+  'radio-tower':'<path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9"/><path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5"/><circle cx="12" cy="9" r="2"/><path d="M16.2 4.8c2 2 2.26 5.11.8 7.47"/><path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1"/><path d="M9.5 18h5"/><path d="m8 22 4-11 4 11"/>',
+  'git-fork':'<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/>',
+  'settings':'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  'activity':'<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  'cpu':'<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
+  'clock':'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  'play':'<polygon points="6 3 20 12 6 21 6 3"/>',
+  'square':'<rect width="18" height="18" x="3" y="3" rx="2"/>',
+  'zap':'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  'download':'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  'rotate-cw':'<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  'hard-drive':'<line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/>',
+  'upload':'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+  'file-video':'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><polyline points="14 2 14 8 20 8"/><path d="m10 11 5 3-5 3z"/>',
+  'trash-2':'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+  'pause':'<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  'info':'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  'cable':'<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>',
+  'shield':'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  'wand-2':'<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+  'upload-cloud':'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/>',
+  'x':'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  'check':'<path d="M20 6 9 17l-5-5"/>',
+  'droplet':'<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
+  'triangle-alert':'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  'loader':'<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>'
 };
+function createIcons(root){
+  (root||document).querySelectorAll('i[data-lucide]').forEach(function(el){
+    var name=el.getAttribute('data-lucide'), inner=PF_ICONS[name];
+    if(!inner) return;
+    var cls=el.getAttribute('class')||'';
+    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('class',('lucide '+cls).trim());
+    svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('fill','none');
+    svg.setAttribute('stroke','currentColor'); svg.setAttribute('stroke-width','2');
+    svg.setAttribute('stroke-linecap','round'); svg.setAttribute('stroke-linejoin','round');
+    svg.innerHTML=inner; el.replaceWith(svg);
+  });
+}
 
-const STATUS_MAP={
-  'dhcp':'st-network','ip':'st-network','mask':'st-network','gw':'st-network',
-  'net':'st-artnet','subnet':'st-artnet','short_name':'st-artnet','long_name':'st-artnet','reply_unicast':'st-artnet','sacn_enabled':'st-artnet','fpp_remote':'st-artnet','failsafe_mode':'st-artnet','failsafe_timeout_s':'st-artnet','failsafe_color':'st-artnet','failsafe_scene':'st-artnet','boot_scene':'st-scenes',
-  'refresh_hz':'st-global','home_timeout_s':'st-global','web_enabled':'st-global',
+/* ─────────── constants & state ─────────── */
+var PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806','DMX512'];
+var ORDERS=['RGB','RBG','GRB','GBR','BRG','BGR','RGBW','GRBW','RGBWW'];
+var CLOCKED=['APA102','SK9822','LPD8806'];
+var ST={
+  active:  {dot:'#70d18b',txt:'#8fdca3',label:'Actif',    chip:'rgba(112,209,139,.12)',bd:'rgba(112,209,139,.22)'},
+  failsafe:{dot:'#d9534f',txt:'#ec8480',label:'Failsafe',  chip:'rgba(217,83,79,.14)',  bd:'rgba(217,83,79,.4)'},
+  off:     {dot:'#3a4a40',txt:'#6b7a70',label:'Désactivé', chip:'rgba(255,255,255,.03)',bd:'#243228'}
 };
+var CHANS=[], SCENES=[], sceneColors={}, curChan=0, chanLive=[], netDhcp=true, prevStatus=null, heapMax=0;
+var dirty=new Set();
+function el(id){ return document.getElementById(id); }
+function setLive(s,v){ document.querySelectorAll('[data-live="'+s+'"]').forEach(function(e){ if(e.tagName==='INPUT') e.value=v; else e.textContent=v; }); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function nf(n){ try{ return Number(n).toLocaleString('fr-FR'); }catch(_){ return ''+n; } }
+function fmtFr(n,d){ return n.toFixed(d).replace('.',','); }
+function fmtMs(ms){ var s=Math.floor((ms||0)/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function fmtUptime(sec){ var d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60); return (d>0?d+'j ':'')+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
+function fsLabel(v){ v=parseInt(v,10)||0; return v>0?(v+' s'):'désactivé'; }
 
-async function saveGlobal(keys){
-  const body={};
-  keys.forEach(k=>{if(FIELD_MAP[k])body[k]=FIELD_MAP[k]();});
-  const stId=STATUS_MAP[keys[0]]||'st-global';
-  try{
-    await api('POST','/api/global',body);
-    status(stId,'Saved','');
-  }catch(e){status(stId,'Error: '+e.message,true);throw e;}
-}
-
-async function saveChan(i){
-  const proto=document.getElementById('ch'+i+'-proto').value;
-  const body={
-    protocol:proto,
-    universe_start:parseInt(document.getElementById('ch'+i+'-uni').value),
-    dmx_start:parseInt(document.getElementById('ch'+i+'-dmx').value),
-    pixel_count:parseInt(document.getElementById('ch'+i+'-pix').value),
-    color_order:document.getElementById('ch'+i+'-order').value,
-    brightness:parseInt(document.getElementById('ch'+i+'-bri').value),
-    grouping:parseInt(document.getElementById('ch'+i+'-grp').value),
-    invert:document.getElementById('ch'+i+'-inv').checked?1:0,
-    clock_hz:parseInt(document.getElementById('ch'+i+'-clk').value),
-    gamma_x10:parseInt(document.getElementById('ch'+i+'-gam').value),
-    wb:document.getElementById('ch'+i+'-wb').value,
-  };
-  try{
-    await api('POST','/api/channel/'+i,body);
-    status('st-ch'+i,'Saved','');
-  }catch(e){status('st-ch'+i,'Error: '+e.message,true);throw e;}
-}
-
-async function savePassword(){
-  const p=document.getElementById('g-pwd').value;
-  if(p===''&&!confirm('Empty password disables authentication. Continue?'))return;
-  try{
-    await api('POST','/api/global',{web_password:p});
-    status('st-pwd',p?'Password set — auth enabled':'Password cleared — auth disabled','');
-    document.getElementById('g-pwd').value='';
-    loadConfig();
-  }catch(e){status('st-pwd','Error: '+e.message,true);}
-}
-
-async function restoreConfig(){
-  const f=document.getElementById('restore-file').files[0];
-  if(!f){status('st-backup','Select a JSON first',true);return;}
-  if(!confirm('Restore configuration from '+f.name+'? Current settings are overwritten.'))return;
-  try{
-    const txt=await f.text();
-    JSON.parse(txt); // fail fast on garbage
-    const r=await fetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:txt});
-    if(!r.ok)throw new Error(await r.text());
-    status('st-backup','Restored — reboot for network changes','');
-    loadConfig();
-  }catch(e){status('st-backup','Error: '+e.message,true);}
-}
-
-function otaUpload(){
-  const f=document.getElementById('ota-file').files[0];
-  if(!f){status('st-ota','Select a .bin first',true);return;}
-  if(!confirm('Flash '+f.name+' ('+Math.round(f.size/1024)+' kB)? The device reboots on success.'))return;
-  const row=document.getElementById('ota-prog-row');
-  const bar=document.getElementById('ota-bar');
-  const pct=document.getElementById('ota-pct');
-  row.style.display='';
-  status('st-ota','Uploading...','');
-  const xhr=new XMLHttpRequest();
-  xhr.open('POST','/api/ota');
-  xhr.upload.onprogress=e=>{
-    if(!e.lengthComputable)return;
-    const p=Math.round(100*e.loaded/e.total);
-    bar.style.width=p+'%';pct.textContent=p+'%';
-  };
-  xhr.onload=()=>{
-    if(xhr.status===200){
-      status('st-ota','Flashed — rebooting, reload in ~10 s','');
-      setTimeout(()=>location.reload(),12000);
-    }else{
-      status('st-ota','Error: '+xhr.responseText,true);
+/* ─────────── api ─────────── */
+var authHdr=null;
+function api(method,path,body,retry){
+  var opts={method:method,headers:{}};
+  if(authHdr) opts.headers['Authorization']=authHdr;
+  if(body!==undefined){ opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
+  return fetch(path,opts).then(function(r){
+    if(r.status===401 && !retry){
+      var p=prompt('Mot de passe administrateur :');
+      if(p===null) throw new Error('authentification annulée');
+      authHdr='Basic '+btoa('admin:'+p);
+      return api(method,path,body,true);
     }
-  };
-  xhr.onerror=()=>status('st-ota','Upload failed (connection)',true);
-  xhr.send(f);
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t||('HTTP '+r.status)); });
+    var ct=r.headers.get('content-type')||'';
+    return ct.indexOf('json')>=0 ? r.json() : r.text();
+  });
 }
+function toast(msg,err){ var e=document.querySelector('[data-live="save-state"]'); if(!e) return; e.textContent=msg; e.style.color=err?'#ec8480':'#8fdca3'; }
 
-function fseqUpload(){
-  const f=document.getElementById('fseq-file').files[0];
-  if(!f){status('st-fseq-up','Select a .fseq first',true);return;}
-  if(!f.name.toLowerCase().endsWith('.fseq')){status('st-fseq-up','File must end in .fseq',true);return;}
-  const row=document.getElementById('fseq-prog-row');
-  const bar=document.getElementById('fseq-bar');
-  const pct=document.getElementById('fseq-pct');
-  row.style.display='';
-  status('st-fseq-up','Uploading...','');
-  const xhr=new XMLHttpRequest();
-  xhr.open('POST','/api/fseq/upload?name='+encodeURIComponent(f.name));
-  xhr.upload.onprogress=e=>{
-    if(!e.lengthComputable)return;
-    const p=Math.round(100*e.loaded/e.total);
-    bar.style.width=p+'%';pct.textContent=p+'%';
-  };
-  xhr.onload=()=>{
-    if(xhr.status===200){
-      status('st-fseq-up','Uploaded: '+f.name,'');
-      loadFseqFiles();
-    }else{
-      status('st-fseq-up','Error: '+xhr.responseText,true);
-    }
-  };
-  xhr.onerror=()=>status('st-fseq-up','Upload failed (connection)',true);
-  xhr.send(f);
-}
-
-async function reboot(){
-  if(!confirm('Reboot device?'))return;
-  try{await api('POST','/api/reboot',{});status('st-sys','Rebooting...','');}
-  catch(e){status('st-sys','Sent (connection will drop)','');}
-}
-
-async function coredumpDelete(){
-  try{
-    const r=await fetch('/api/coredump',{method:'DELETE'});
-    if(!r.ok)throw new Error(await r.text());
-    status('st-coredump','Erased','');
-  }catch(e){status('st-coredump','Error: '+e.message,true);}
-}
-
-async function factoryReset(){
-  if(!confirm('Factory reset? All config will be lost.'))return;
-  try{await api('POST','/api/factory-reset',{});status('st-sys','Done — reboot recommended','');}
-  catch(e){status('st-sys','Error: '+e.message,true);}
-}
-
-// ── Unsaved-changes tracking → one global Save ───────────────────────────────
-// Every config field belongs to a "group" (a save endpoint). Editing any field
-// marks its group dirty and enables the Save bar; Save flushes each dirty group
-// through the existing per-section save calls. Action inputs (password, file
-// pickers, auto-patch base) are excluded — they have their own buttons.
-const dirty=new Set();
-const ARTNET_KEYS=['net','subnet','short_name','long_name','reply_unicast','sacn_enabled','fpp_remote','failsafe_mode','failsafe_timeout_s','failsafe_color','failsafe_scene'];
-function groupOf(id){
-  if(!id||['g-pwd','ap-base','restore-file','ota-file','fseq-file'].includes(id))return null;
-  if(id==='sc-boot')return 'boot';
-  if(id==='g-refresh'||id==='g-home'||id==='g-web')return 'global';
-  if(id.startsWith('n-'))return 'network';
-  if(id.startsWith('a-'))return 'artnet';
-  let m=/^ch(\d)-/.exec(id);if(m)return 'ch'+m[1];
-  m=/^sc(\d)-/.exec(id);if(m)return 'scene'+m[1];
-  return null;
-}
+/* ─────────── dirty / save bar ─────────── */
+function markDirty(g){ dirty.add(g); updateSaveBar(); }
 function updateSaveBar(){
-  const n=dirty.size;
-  document.getElementById('save-btn').disabled=n===0;
-  document.getElementById('save-status').textContent=n?(n+' section'+(n>1?'s':'')+' modified'):'';
+  var st=document.querySelector('[data-live="save-state"]'), btn=document.querySelector('[data-savebtn]');
+  if(!st||!btn) return;
+  if(dirty.size===0){ st.textContent='✓ enregistré'; st.style.color='#8fdca3'; btn.style.opacity='.5'; }
+  else { st.textContent=dirty.size+' modif. en attente'; st.style.color='#f8c662'; btn.style.opacity='1'; }
 }
-function markDirty(id){const g=groupOf(id);if(g&&!dirty.has(g)){dirty.add(g);updateSaveBar();}}
-document.addEventListener('input',e=>markDirty(e.target.id));
-document.addEventListener('change',e=>markDirty(e.target.id));
-function saveGroup(g){
-  if(g==='global')return saveGlobal(['refresh_hz','home_timeout_s','web_enabled']);
-  if(g==='network')return saveGlobal(['dhcp','ip','mask','gw']);
-  if(g==='artnet')return saveGlobal(ARTNET_KEYS);
-  if(g==='boot')return saveGlobal(['boot_scene']);
-  let m=/^ch(\d)$/.exec(g);if(m)return saveChan(+m[1]);
-  m=/^scene(\d)$/.exec(g);if(m)return saveScene(+m[1]);
-  return Promise.resolve();
+
+/* ─────────── list rendering ─────────── */
+function dashTile(c){
+  return '<div data-nav-chan="'+c.idx+'" class="pf-row" style="background:#0f1812;border:1px solid '+c.bd+';border-radius:11px;padding:10px 11px;display:flex;flex-direction:column;gap:6px;cursor:pointer">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;background:#16221b;border:1px solid #2d3d31;font:600 11px \'IBM Plex Mono\';color:#9fb0a5">'+c.n+'</span><span style="width:8px;height:8px;border-radius:50%;background:'+c.dot+'"></span></div>'
+    +'<div style="font:600 13px \'IBM Plex Mono\';color:#eaf3ee">'+c.proto+'</div>'
+    +'<div style="font:500 11px \'IBM Plex Mono\';color:#7c8a80">'+c.px+' · '+c.uni+'</div>'
+    +'<div style="font:600 10.5px \'IBM Plex Mono\';letter-spacing:.04em;color:'+c.txt+'">'+c.label+'</div></div>';
 }
-async function saveAll(){
-  document.getElementById('save-btn').disabled=true;
-  document.getElementById('save-status').textContent='Saving…';
-  let failed=0;
-  for(const g of [...dirty]){
-    try{await saveGroup(g);dirty.delete(g);}catch(e){failed++;}
+function chanRow(c){
+  return '<div data-chan="'+c.idx+'" style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:10px;cursor:pointer;background:#0f1812;border:1px solid #1f2c24">'
+    +'<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:#16221b;border:1px solid #2d3d31;font:600 12px \'IBM Plex Mono\';color:#9fb0a5;flex:none">'+c.n+'</span>'
+    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'IBM Plex Mono\';color:#eaf3ee">'+c.proto+'</div><div style="font:500 11px \'IBM Plex Mono\';color:#7c8a80">'+c.px+' · '+c.uni+'</div></div>'
+    +'<span style="width:8px;height:8px;border-radius:50%;background:'+c.dot+';flex:none"></span></div>';
+}
+function seg(a){ return 'flex:1;text-align:center;padding:6px 0;border-radius:7px;font:600 11.5px \'IBM Plex Sans\';cursor:pointer;'+(a?'background:#f8c662;color:#1d3a2c':'color:#9fb0a5'); }
+function chip(on){ return 'width:27px;height:25px;display:flex;align-items:center;justify-content:center;border-radius:6px;font:600 11px \'IBM Plex Mono\';cursor:pointer;'+(on?'background:rgba(248,198,98,.16);color:#f8c662;border:1px solid rgba(248,198,98,.4)':'background:#0f1812;color:#566;border:1px solid #1f2c24'); }
+function sceneCardHTML(sc){
+  var labels=['Fixe','Chase','Arc-en-ciel'];
+  var fxHtml=labels.map(function(l,i){ return '<div data-sc-fx="'+i+'" data-scn="'+sc.n+'" style="'+seg(sc.effectIdx===i)+'">'+l+'</div>'; }).join('');
+  var chansHtml=''; for(var c=0;c<8;c++){ chansHtml+='<span data-sc-ch="'+c+'" data-scn="'+sc.n+'" style="'+chip(!!(sc.mask&(1<<c)))+'">'+(c+1)+'</span>'; }
+  return '<div data-scene-card="'+sc.n+'" style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:17px 18px;display:flex;flex-direction:column;gap:14px">'
+    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<span data-role="bigsw" style="width:38px;height:38px;border-radius:10px;background:'+sc.color+';flex:none;border:1px solid rgba(255,255,255,.12);box-shadow:0 4px 14px -4px '+sc.color+'"></span>'
+    +'<div style="flex:1;min-width:0"><div style="font:600 10px \'IBM Plex Mono\';letter-spacing:.13em;color:#6b7a70">EMPLACEMENT '+sc.n+'</div>'
+    +'<input data-sc-name="'+sc.n+'" value="'+esc(sc.name)+'" placeholder="Scène vide — cliquer pour nommer" maxlength="15" style="width:100%;background:transparent;border:none;color:#eaf3ee;font:700 16px \'IBM Plex Sans\';padding:2px 0;outline:none"/></div>'
+    +'<button data-sc-play="'+sc.n+'" style="width:32px;height:32px;border-radius:8px;background:#101a14;border:1px solid #2d3d31;color:#9fb0a5;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none"><i data-lucide="play" class="ic16"></i></button></div>'
+    +'<div style="display:flex;gap:5px;background:#0f1812;border:1px solid #1f2c24;border-radius:9px;padding:4px">'+fxHtml+'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'
+    +'<div><div style="font:600 10px \'IBM Plex Mono\';letter-spacing:.1em;color:#6b7a70;margin-bottom:6px">COULEUR</div>'
+    +'<div data-scene-color="'+sc.n+'" class="sc-color" style="display:flex;align-items:center;gap:8px;background:#0f1812;border:1px solid #1f2c24;border-radius:8px;padding:6px 9px;cursor:pointer;transition:border-color .12s,background .12s"><span data-role="sw" style="width:18px;height:18px;border-radius:5px;background:'+sc.color+';flex:none;border:1px solid rgba(255,255,255,.1)"></span><span data-role="hex" style="font:500 12px \'IBM Plex Mono\';color:#a5b2a8;flex:1">'+sc.color+'</span><i data-lucide="droplet" class="ic14" style="color:#5b6b64"></i></div></div>'
+    +'<div><div style="font:600 10px \'IBM Plex Mono\';letter-spacing:.1em;color:#6b7a70;margin-bottom:6px">VITESSE</div>'
+    +'<div style="display:flex;align-items:center;gap:9px"><input type="range" min="0" max="255" value="'+sc.speed+'" data-sc-speed="'+sc.n+'" style="flex:1;accent-color:#f8c662;cursor:pointer"/><span data-sc-speedval="'+sc.n+'" style="font:500 12px \'IBM Plex Mono\';color:#a5b2a8;width:34px;text-align:right">'+sc.speed+'</span></div></div></div>'
+    +'<div><div style="font:600 10px \'IBM Plex Mono\';letter-spacing:.1em;color:#6b7a70;margin-bottom:7px">CANAUX CIBLÉS</div><div style="display:flex;gap:5px">'+chansHtml+'</div></div></div>';
+}
+function renderScene(n){
+  var card=document.querySelector('[data-scene-card="'+n+'"]'); if(!card) return;
+  card.outerHTML=sceneCardHTML(SCENES[n-1]);
+  createIcons(document.querySelector('[data-scene-card="'+n+'"]'));
+}
+function fseqRow(name,active){
+  var on=active&&active.toLowerCase()===name.toLowerCase();
+  return '<div style="display:grid;grid-template-columns:1fr auto auto auto;align-items:center;padding:13px 18px;border-bottom:1px solid #14201a;background:'+(on?'rgba(248,198,98,.06)':'transparent')+'">'
+    +'<span style="display:inline-flex;align-items:center;gap:10px;font:500 13px \'IBM Plex Mono\';color:#eaf3ee;min-width:0"><i data-lucide="file-video" class="ic16" style="color:'+(on?'#f8c662':'#5b6b64')+'"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</span></span>'
+    +'<span style="padding:0 18px;font:500 12px \'IBM Plex Mono\';color:#7c8a80">—</span>'
+    +'<span style="padding:0 18px;font:500 12px \'IBM Plex Mono\';color:#7c8a80">—</span>'
+    +'<span style="display:flex;gap:6px"><button data-fseq-play="'+esc(name)+'" style="width:30px;height:30px;border-radius:7px;background:#f8c662;border:1px solid #f8c662;color:#1d3a2c;display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="play" class="ic14"></i></button></span></div>';
+}
+function chanSlots(c){ return c.protoRaw==='DMX512'? c.pixels : c.pixels*3; }
+function chanSpan(c){ return Math.max(1,Math.ceil(chanSlots(c)/512)); }
+function totalUniverses(){ var n=0; CHANS.forEach(function(c){ if(c.protoRaw!=='Off') n+=chanSpan(c); }); return n; }
+function patchRow(n,proto,range,dmx){
+  return '<div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;align-items:center;padding:13px 18px;border-bottom:1px solid #14201a">'
+    +'<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:7px;background:#0f1812;border:1px solid #2d3d31;font:600 11px \'IBM Plex Mono\';color:#9fb0a5">'+n+'</span>'
+    +'<span style="font:600 13px \'IBM Plex Mono\';color:#eaf3ee">'+proto+'</span>'
+    +'<span style="font:500 13px \'IBM Plex Mono\';color:#f8c662">'+range+'</span>'
+    +'<span style="font:500 13px \'IBM Plex Mono\';color:#7c8a80">'+dmx+'</span></div>';
+}
+function buildPatch(){
+  var rows='', maxEnd=-1;
+  CHANS.forEach(function(c){
+    if(c.protoRaw==='Off'){ rows+=patchRow(c.n,'—','—','—'); return; }
+    var span=chanSpan(c), u=c.universe, end=u+span-1;
+    if(end>maxEnd) maxEnd=end;
+    rows+=patchRow(c.n,c.proto,span>1?('U'+u+'–U'+end):('U'+u),c.protoRaw==='DMX512'?c.dmx:'1');
+  });
+  var nf2=el('patch-nextfree'); if(nf2) nf2.textContent=(maxEnd+1);
+  return rows;
+}
+
+/* ─────────── navigation ─────────── */
+var TITLES={dashboard:'Tableau de bord',scenes:'Scènes',fseq:'Séquences FSEQ',channels:'Canaux',network:'Réseau',artnet:'ArtNet / sACN',patch:'Auto-patch',system:'Système'};
+var SUBS={dashboard:'Mise à jour live · toutes les 1 s',scenes:'8 emplacements paramétriques · fixe / chase / arc-en-ciel',fseq:'Lecture de séquences .fseq depuis la carte microSD',channels:'8 lignes · 2 sorties (DATA + CLOCK) par canal',network:'Adressage IP — appliqué après redémarrage',artnet:'Réception ArtNet 4 + sACN E1.31 · merge & failsafe',patch:'Ré-adressage contigu de tous les canaux',system:'Général · sécurité · firmware · maintenance'};
+function go(name){
+  document.querySelectorAll('[data-screen]').forEach(function(s){ s.style.display = s.getAttribute('data-screen')===name?'':'none'; });
+  document.querySelectorAll('[data-nav]').forEach(function(n){ navStyle(n, n.getAttribute('data-nav')===name); });
+  var t=document.querySelector('[data-screen-title]'); if(t) t.textContent=TITLES[name]||'';
+  var sb=document.querySelector('[data-screen-sub]'); if(sb) sb.textContent=SUBS[name]||'';
+  var sc=document.getElementById('pf-scroll'); if(sc) sc.scrollTop=0;
+  if(name==='fseq') loadFseq();
+}
+function navStyle(el,active){
+  if(el.tagName!=='DIV'||!el.hasAttribute('data-nav')) return;
+  el.style.color=active?'#f8c662':'#a5b2a8';
+  el.style.background=active?'rgba(248,198,98,.12)':'transparent';
+  el.style.fontWeight=active?'600':'500';
+  el.style.borderLeftColor=active?'#f8c662':'transparent';
+}
+
+/* ─────────── channel detail editor ─────────── */
+function selectChan(i){
+  var c=CHANS[i]; if(!c) return; curChan=i;
+  function v(id,val){ var e=el(id); if(e) e.value=val; }
+  function k(id,val){ var e=el(id); if(e) e.checked=!!val; }
+  v('cd-proto',c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
+  v('cd-order',c.order); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
+  v('cd-clk',c.clk); v('cd-gam',c.gam); v('cd-wb',c.wb);
+  var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
+  var t=document.querySelector('[data-chan-title]'); if(t) t.textContent='Canal '+c.n;
+  var stt=document.querySelector('[data-chan-state]'); if(stt){ stt.textContent=c.label; stt.style.color=c.txt; stt.style.background=c.chip; }
+  document.querySelectorAll('[data-chan]').forEach(function(r){
+    var on=+r.getAttribute('data-chan')===i;
+    r.style.borderColor=on?'rgba(248,198,98,.45)':'#1f2c24';
+    r.style.background=on?'rgba(248,198,98,.07)':'#0f1812';
+  });
+  updateChanVis();
+}
+function clampN(id,lo,hi){ var e=el(id); if(!e) return lo; var v=parseInt(e.value,10); if(isNaN(v)) v=lo; v=Math.max(lo,Math.min(hi,v)); return v; }
+function readUni(){ return (clampN('cd-net',0,127)<<8)|(clampN('cd-sub',0,15)<<4)|clampN('cd-uni',0,15); }
+function setUniFields(u){ u=u||0; var e; if((e=el('cd-net'))) e.value=(u>>8)&0x7F; if((e=el('cd-sub'))) e.value=(u>>4)&0x0F; if((e=el('cd-uni'))) e.value=u&0x0F; updateUniFlat(u); }
+function updateUniFlat(u){ if(u==null) u=readUni(); var f=el('cd-uni-flat'); if(f) f.textContent=u; }
+function updateChanVis(){
+  var sel=el('cd-proto'); if(!sel) return;
+  var p=sel.value, off=p==='Off', dmx=p==='DMX512', clk=CLOCKED.indexOf(p)>=0;
+  var f=el('cd-fields'); if(f) f.style.display=off?'none':'';
+  if(off) return;
+  function show(id,vis){ var e=el(id); if(e) e.style.display=vis?'flex':'none'; }
+  show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
+  show('cd-row-inv',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
+  var lbl=el('cd-pixlabel'); if(lbl) lbl.textContent=dmx?'Slots DMX':'Pixels';
+}
+function readChanEditor(){
+  var c=CHANS[curChan]; if(!c) return;
+  function nv(id){ var e=el(id); return e?parseInt(e.value,10)||0:0; }
+  c.protoRaw=el('cd-proto').value; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
+  c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx'); c.pixels=nv('cd-pix');
+  c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
+  c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
+  var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
+  c.px=c.protoRaw==='Off'?'Off':(c.protoRaw==='DMX512'?c.pixels+' sl':c.pixels+' px');
+  c.uni=c.protoRaw==='Off'?'—':'U'+c.universe;
+}
+
+/* ─────────── telemetry sparklines ─────────── */
+var cv=[], raf;
+function initSparks(){
+  cv=[].slice.call(document.querySelectorAll('canvas[data-spark]'));
+  cv.forEach(function(c){ c._buf=[]; for(var i=0;i<64;i++) c._buf.push(0); });
+}
+function pushReal(name,val){ cv.forEach(function(c){ if(c.getAttribute('data-spark')===name){ c._buf.push(val); if(c._buf.length>64) c._buf.shift(); } }); }
+function drawSpark(c){
+  var dpr=Math.min(2,window.devicePixelRatio||1), w=c.clientWidth||220, h=c.clientHeight||40;
+  if(!w||!h) return;
+  if(c.width!==Math.round(w*dpr)){ c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); }
+  var ctx=c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  var buf=c._buf,min=Math.min.apply(null,buf),max=Math.max.apply(null,buf),rng=(max-min)||1,col=c.getAttribute('data-color')||'#f0b53b';
+  function X(i){ return i/(buf.length-1)*w; } function Y(v){ return h-3-((v-min)/rng)*(h-7); }
+  ctx.beginPath(); ctx.moveTo(0,h); buf.forEach(function(v,i){ ctx.lineTo(X(i),Y(v)); }); ctx.lineTo(w,h); ctx.closePath();
+  var g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,col+'4d'); g.addColorStop(1,col+'00'); ctx.fillStyle=g; ctx.fill();
+  ctx.beginPath(); buf.forEach(function(v,i){ i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(i),Y(v)); }); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(X(buf.length-1),Y(buf[buf.length-1]),2.3,0,7); ctx.fillStyle=col; ctx.fill();
+}
+function loop(){ cv.forEach(drawSpark); raf=requestAnimationFrame(loop); }
+
+/* ─────────── live status poll ─────────── */
+function pollStatus(){
+  api('GET','/api/status').then(function(s){
+    var link=!!s.link;
+    setLive('fps',s.fps);
+    setLive('hdr-link',link?'lien':'hors-ligne');
+    setLive('link-big',link?'100M':'down');
+    setLive('side-link',link?'Lien réseau actif':'Lien réseau absent');
+    var sd=document.querySelector('[data-live="side-dot"]'); if(sd) sd.style.background=link?'#70d18b':'#d9534f';
+    setLive('link-text',link?'Connecté · 100 Mb/s full-duplex':'Déconnecté');
+    var up=fmtUptime(s.uptime_s); setLive('uptime',up); setLive('uptime-big',up);
+    var free=s.heap_free||0; heapMax=Math.max(heapMax,free);
+    if(free>=1048576){ setLive('heap',fmtFr(free/1048576,1)); setLive('heap-unit','Mo'); }
+    else { setLive('heap',Math.round(free/1024)); setLive('heap-unit','Ko'); }
+    setLive('heap-min', (s.heap_min>=1048576?('min '+fmtFr(s.heap_min/1048576,1)+' Mo'):('min '+Math.round((s.heap_min||0)/1024)+' Ko')));
+    var hb=document.querySelector('[data-live="heap-bar"]'); if(hb) hb.style.width=(heapMax?Math.round(free/heapMax*100):0)+'%';
+    var artRate=0,sacnRate=0;
+    if(prevStatus){ var dt=(s.uptime_s-prevStatus.uptime_s)||1; artRate=Math.max(0,Math.round((s.artnet_rx-prevStatus.artnet_rx)/dt)); sacnRate=Math.max(0,Math.round((s.sacn_rx-prevStatus.sacn_rx)/dt)); }
+    setLive('artnet-rate',nf(artRate)); setLive('sacn-rate',nf(sacnRate));
+    setLive('artnet-total',nf(s.artnet_rx)); setLive('sacn-total',nf(s.sacn_rx)); setLive('bad',nf(s.bad_rx));
+    setLive('universes',totalUniverses());
+    pushReal('fps',s.fps); pushReal('artnet',artRate); pushReal('sacn',sacnRate);
+    var f=s.fseq||{};
+    setLive('sd-state',f.sd?'microSD montée':'pas de carte SD');
+    var playing=f.active&&f.active.length;
+    var scn=(s.active_scene!=null && s.active_scene>=0)?s.active_scene:-1;
+    if(playing){
+      setLive('now-name',f.active); setLive('fseq-name',f.active);
+      setLive('now-sub','Séquence FSEQ'+(f.duration_ms?(' · '+fmtMs(f.duration_ms)):''));
+      setBadge(true,'en lecture');
+      var pct=f.duration_ms?Math.min(100,f.position_ms/f.duration_ms*100):0;
+      document.querySelectorAll('[data-live="fseq-fill"]').forEach(function(e){ e.style.width=pct+'%'; });
+      document.querySelectorAll('[data-live="fseq-handle"]').forEach(function(e){ e.style.left=pct+'%'; });
+      setLive('fseq-pos',fmtMs(f.position_ms)); setLive('fseq-dur',fmtMs(f.duration_ms));
+    } else if(scn>=0){
+      var nm=(SCENES[scn]&&SCENES[scn].name)?SCENES[scn].name:'';
+      setLive('now-name','Scène '+(scn+1)+(nm?(' · '+nm):'')); setLive('now-sub','Scène intégrée active');
+      setLive('fseq-name','—'); setBadge(true,'scène active');
+      document.querySelectorAll('[data-live="fseq-fill"]').forEach(function(e){ e.style.width='0'; });
+      setLive('fseq-pos','0:00'); setLive('fseq-dur','0:00');
+    } else {
+      setLive('now-name','Aucune lecture'); setLive('now-sub','Aucune scène ni séquence active');
+      setLive('fseq-name','—'); setBadge(false,'à l’arrêt');
+      document.querySelectorAll('[data-live="fseq-fill"]').forEach(function(e){ e.style.width='0'; });
+      setLive('fseq-pos','0:00'); setLive('fseq-dur','0:00');
+    }
+    setLive('active-scene', scn>=0?('Scène '+(scn+1)):'—');
+    chanLive=s.channels||[]; applyChanStates();
+    prevStatus=s;
+  }).catch(function(){ setLive('hdr-link','hors-ligne'); setLive('link-big','down'); });
+}
+function setBadge(on,txt){
+  document.querySelectorAll('[data-live="now-badge"],[data-live="fseq-badge"]').forEach(function(e){
+    e.textContent=txt; e.style.color=on?'#8fdca3':'#6b7a70';
+    if(e.getAttribute('data-live')==='now-badge'){ e.style.background=on?'rgba(112,209,139,.1)':'rgba(255,255,255,.04)'; e.style.border='1px solid '+(on?'rgba(112,209,139,.25)':'#243228'); }
+  });
+}
+function chanStateOf(i){
+  var c=CHANS[i]; if(!c||c.protoRaw==='Off') return 'off';
+  if(chanLive[i]&&chanLive[i].failsafe) return 'failsafe';
+  return 'active';
+}
+function applyChanStates(){
+  var changed=false;
+  for(var i=0;i<CHANS.length;i++){
+    var ns=chanStateOf(i);
+    if(CHANS[i].state!==ns){ CHANS[i].state=ns; var s=ST[ns]; CHANS[i].dot=s.dot; CHANS[i].txt=s.txt; CHANS[i].label=s.label; CHANS[i].chip=s.chip; CHANS[i].bd=s.bd; changed=true; }
   }
+  var act=CHANS.filter(function(c){ return c.state==='active'; }).length, tot=CHANS.filter(function(c){ return c.protoRaw!=='Off'; }).length;
+  setLive('chan-count',act+' / '+tot+' actifs');
+  if(changed) renderLists();
+}
+function renderLists(){
+  var d=el('dash-chan-mount'); if(d){ d.innerHTML=CHANS.map(dashTile).join(''); createIcons(d); }
+  var l=el('chan-list-mount'); if(l){ l.innerHTML=CHANS.map(chanRow).join(''); createIcons(l); }
+  var cur=CHANS[curChan]; if(cur){ document.querySelectorAll('[data-chan]').forEach(function(r){ var on=+r.getAttribute('data-chan')===curChan; r.style.borderColor=on?'rgba(248,198,98,.45)':'#1f2c24'; r.style.background=on?'rgba(248,198,98,.07)':'#0f1812'; }); }
+}
+
+/* ─────────── config load ─────────── */
+function buildChan(c,i){
+  var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
+  return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
+    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',
+    state:'off',px:off?'Off':(dmx?c.pixel_count+' sl':c.pixel_count+' px'),uni:off?'—':'U'+c.universe_start,
+    dot:ST.off.dot,txt:ST.off.txt,label:ST.off.label,chip:ST.off.chip,bd:ST.off.bd};
+}
+function setDhcpUI(){
+  document.querySelectorAll('[data-dhcp]').forEach(function(d){ var on=(+d.getAttribute('data-dhcp'))===(netDhcp?1:0); d.style.background=on?'#f8c662':'transparent'; d.style.color=on?'#1d3a2c':'#9fb0a5'; });
+  ['n-ip','n-mask','n-gw'].forEach(function(id){ var e=el(id); if(!e) return; e.disabled=netDhcp; e.style.color=netDhcp?'#7c8a80':'#eaf3ee'; e.style.background=netDhcp?'#0e1812':'#0f1812'; });
+}
+function setAuthUI(){
+  var on=el('s-auth').checked; var p=el('s-pwd'); if(p){ p.disabled=!on; } var row=el('s-pwd-row'); if(row) row.style.opacity=on?'1':'.5';
+}
+function reloadConfig(){
+  return api('GET','/api/config').then(function(d){
+    var g=d.global;
+    netDhcp=!!g.dhcp; setDhcpUI();
+    if(el('n-ip')) el('n-ip').value=g.ip; if(el('n-mask')) el('n-mask').value=g.mask; if(el('n-gw')) el('n-gw').value=g.gw;
+    if(el('n-host')) el('n-host').value=g.short_name||''; if(el('n-long')) el('n-long').value=g.long_name||'';
+    setLive('refresh',(g.refresh_hz||0)+' Hz');
+    if(el('a-net')) el('a-net').value=g.net; if(el('a-subnet')) el('a-subnet').value=g.subnet;
+    if(el('a-sacn')) el('a-sacn').checked=!!g.sacn_enabled; if(el('a-fpp')) el('a-fpp').checked=!!g.fpp_remote;
+    if(el('a-merge')) el('a-merge').checked=(g.merge_mode===1);
+    if(el('a-fsmode')) el('a-fsmode').value=String(g.failsafe_mode!=null?g.failsafe_mode:0);
+    if(el('a-fsdelay')){ el('a-fsdelay').value=g.failsafe_timeout_s||0; var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(g.failsafe_timeout_s||0); }
+    if(el('s-refresh')) el('s-refresh').value=String(g.refresh_hz||60);
+    if(el('s-home')) el('s-home').value=g.home_timeout_s||0;
+    if(el('s-boot')) el('s-boot').value=String(g.boot_scene||0);
+    if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
+    setLive('fw-name','pixfrog '+(d.version||'')); setLive('fw-sub','esp32-p4 · partition '+(d.ota_partition||'?'));
+    setLive('side-ver',(d.version||'?')+' · esp32-p4 · '+(d.ota_partition||'?'));
+    CHANS=(d.channels||[]).map(buildChan);
+    SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',effectIdx:sc.effect||0,color:sc.color||'#000000',speed:sc.speed||0,param:sc.param||0,mask:sc.mask||0}; });
+    sceneColors={}; SCENES.forEach(function(s){ sceneColors[s.n]=s.color; });
+    var sm=el('scenes-mount'); if(sm){ sm.innerHTML=SCENES.map(sceneCardHTML).join(''); createIcons(sm); }
+    var pm=el('patch-mount'); if(pm){ pm.innerHTML=buildPatch(); createIcons(pm); }
+    applyChanStates(); renderLists();
+    if(curChan>=CHANS.length) curChan=0;
+    selectChan(curChan);
+  });
+}
+
+/* ─────────── fseq list ─────────── */
+function loadFseq(){
+  api('GET','/api/fseq/files').then(function(d){
+    var m=el('fseq-mount'); if(!m) return;
+    var files=d.files||[];
+    if(!files.length){ m.innerHTML='<div style="padding:18px;font:500 12px \'IBM Plex Mono\';color:#6b7a70">Aucun fichier .fseq sur la carte microSD.</div>'; return; }
+    m.innerHTML=files.map(function(n){ return fseqRow(n,d.active); }).join(''); createIcons(m);
+  }).catch(function(){});
+}
+
+/* ─────────── save ─────────── */
+function buildGlobalBody(){
+  var b={};
+  if(dirty.has('network')){ b.dhcp=netDhcp; if(!netDhcp){ b.ip=el('n-ip').value; b.mask=el('n-mask').value; b.gw=el('n-gw').value; } b.short_name=el('n-host').value; b.long_name=el('n-long').value; }
+  if(dirty.has('artnet')){ b.net=parseInt(el('a-net').value,10)||0; b.subnet=parseInt(el('a-subnet').value,10)||0; b.sacn_enabled=el('a-sacn').checked; b.fpp_remote=el('a-fpp').checked; b.merge_mode=el('a-merge').checked?1:0; b.failsafe_mode=parseInt(el('a-fsmode').value,10)||0; b.failsafe_timeout_s=parseInt(el('a-fsdelay').value,10)||0; }
+  if(dirty.has('sysgen')){ b.refresh_hz=parseInt(el('s-refresh').value,10)||60; b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; }
+  if(dirty.has('sysauth')){ if(!el('s-auth').checked) b.web_password=''; else if(el('s-pwd').value) b.web_password=el('s-pwd').value; }
+  return b;
+}
+function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:c.pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb}; }
+function sceneBody(s){ return {name:s.name,effect:s.effectIdx,color:s.color,speed:s.speed,mask:s.mask}; }
+function saveAll(){
+  if(dirty.size===0) return;
+  if(curChan>=0 && dirty.has('ch'+curChan)) readChanEditor();
+  var ops=[];
+  if(['network','artnet','sysgen','sysauth'].some(function(g){ return dirty.has(g); })) ops.push(api('POST','/api/global',buildGlobalBody()));
+  CHANS.forEach(function(c,i){ if(dirty.has('ch'+i)) ops.push(api('POST','/api/channel/'+i,chanBody(c))); });
+  SCENES.forEach(function(s,i){ if(dirty.has('scene'+i)) ops.push(api('POST','/api/scene/'+i,sceneBody(s))); });
+  toast('Enregistrement…');
+  Promise.all(ops).then(function(){ dirty.clear(); updateSaveBar(); toast('✓ enregistré'); return reloadConfig(); }).catch(function(e){ toast('Erreur: '+e.message,true); });
+}
+
+/* ─────────── colour maths ─────────── */
+function h2r(h){ h=(h||'').replace('#',''); if(h.length===3) h=h.split('').map(function(c){return c+c;}).join(''); var n=parseInt(h||'0',16)||0; return [(n>>16)&255,(n>>8)&255,n&255]; }
+function r2h(r,g,b){ return '#'+[r,g,b].map(function(x){ return Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0'); }).join(''); }
+function r2hsv(r,g,b){ r/=255;g/=255;b/=255; var mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0; if(d){ if(mx===r)h=((g-b)/d+6)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; } return {h:h,s:mx?d/mx:0,v:mx}; }
+function hsv2r(h,s,v){ var c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c,r,g,b; if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}else if(h<240){r=0;g=x;b=c;}else if(h<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;} return [(r+m)*255,(g+m)*255,(b+m)*255]; }
+
+/* ─────────── colour picker ─────────── */
+var PRESETS=['#2fae5e','#70d18b','#f8c662','#f0b53b','#ffd9a0','#d9534f','#1e3a6e','#9b59b6'];
+var cp={}; var cpN=1, cpH=0, cpS=1, cpV=1;
+function initPicker(){
+  cp.bd=document.querySelector('[data-cp-backdrop]'); cp.panel=document.querySelector('[data-cp-panel]');
+  cp.sv=document.querySelector('[data-cp-sv]'); cp.svDot=document.querySelector('[data-cp-svdot]');
+  cp.hue=document.querySelector('[data-cp-hue]'); cp.hueDot=document.querySelector('[data-cp-huedot]');
+  cp.prev=document.querySelector('[data-cp-prev]'); cp.hex=document.querySelector('[data-cp-hex]');
+  var pr=document.querySelector('[data-cp-presets]'); pr.innerHTML='';
+  PRESETS.forEach(function(c){ var b=document.createElement('button'); b.style.cssText='width:100%;aspect-ratio:1/1;border-radius:6px;border:1px solid rgba(255,255,255,.14);cursor:pointer;padding:0;background:'+c; b.addEventListener('click',function(){ var rgb=h2r(c),hsv=r2hsv(rgb[0],rgb[1],rgb[2]); cpH=hsv.h;cpS=hsv.s;cpV=hsv.v; cpRender(); }); pr.appendChild(b); });
+  drag(cp.sv,svPoint); drag(cp.hue,huePoint);
+  cp.hex.addEventListener('input',function(){ var v=cp.hex.value.replace(/[^0-9a-fA-F]/g,'').slice(0,6); if(v.length===6){ var rgb=h2r(v),hsv=r2hsv(rgb[0],rgb[1],rgb[2]); cpH=hsv.h;cpS=hsv.s;cpV=hsv.v; cpRender(); } });
+  document.querySelector('[data-cp-close]').addEventListener('click',closePicker);
+  cp.bd.addEventListener('mousedown',function(e){ if(e.target===cp.bd) closePicker(); });
+}
+function drag(el,fn){
+  if(!el) return;
+  el.addEventListener('pointerdown',function(ev){ ev.preventDefault(); el.setPointerCapture(ev.pointerId); fn(ev);
+    function mv(e){ fn(e); }
+    function up(){ try{el.releasePointerCapture(ev.pointerId);}catch(_){} el.removeEventListener('pointermove',mv); el.removeEventListener('pointerup',up); }
+    el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up);
+  });
+}
+function openPicker(n,anchor){
+  cpN=n; var hex=sceneColors[n]||'#2fae5e', rgb=h2r(hex), hsv=r2hsv(rgb[0],rgb[1],rgb[2]);
+  cpH=hsv.h; cpS=hsv.s; cpV=Math.max(hsv.v,0.001);
+  document.querySelector('[data-cp-n]').textContent=n;
+  cp.bd.style.display='block';
+  var r=anchor.getBoundingClientRect(), pw=cp.panel.offsetWidth, ph=cp.panel.offsetHeight;
+  var left=r.left, top=r.bottom+8;
+  if(left+pw>window.innerWidth-8) left=Math.max(8,window.innerWidth-pw-8);
+  if(top+ph>window.innerHeight-8) top=Math.max(8,r.top-ph-8);
+  cp.panel.style.left=left+'px'; cp.panel.style.top=top+'px';
+  cpRender();
+}
+function closePicker(){ if(cp.bd) cp.bd.style.display='none'; }
+function svPoint(e){ var r=cp.sv.getBoundingClientRect(); cpS=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)); cpV=1-Math.max(0,Math.min(1,(e.clientY-r.top)/r.height)); cpRender(); }
+function huePoint(e){ var r=cp.hue.getBoundingClientRect(); cpH=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*360; cpRender(); }
+function cpRender(){
+  var hb=hsv2r(cpH,1,1);
+  cp.sv.style.background='linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,transparent),'+r2h(hb[0],hb[1],hb[2]);
+  cp.svDot.style.left=(cpS*100)+'%'; cp.svDot.style.top=((1-cpV)*100)+'%'; cp.hueDot.style.left=(cpH/360*100)+'%';
+  var rgb=hsv2r(cpH,cpS,cpV), hex=r2h(rgb[0],rgb[1],rgb[2]);
+  cp.prev.style.background=hex; cp.svDot.style.background=hex; cp.hueDot.style.background=r2h(hb[0],hb[1],hb[2]);
+  if(document.activeElement!==cp.hex) cp.hex.value=hex.replace('#','').toUpperCase();
+  applyScene(cpN,hex);
+}
+function applyScene(n,hex){
+  sceneColors[n]=hex;
+  if(SCENES[n-1]){ SCENES[n-1].color=hex; markDirty('scene'+(n-1)); }
+  var card=document.querySelector('[data-scene-card="'+n+'"]'); if(!card) return;
+  card.querySelectorAll('[data-role="sw"]').forEach(function(e){ e.style.background=hex; });
+  var big=card.querySelector('[data-role="bigsw"]'); if(big){ big.style.background=hex; big.style.boxShadow='0 4px 14px -4px '+hex; }
+  var hx=card.querySelector('[data-role="hex"]'); if(hx) hx.textContent=hex;
+}
+
+/* ─────────── confirm modal ─────────── */
+var md={}, modalT, confirmOn=true, modalCfg={};
+function initModal(){
+  md.bd=document.querySelector('[data-modal-backdrop]');
+  document.querySelector('[data-modal-cancel]').addEventListener('click',closeModal);
+  document.querySelector('[data-modal-confirm]').addEventListener('click',modalConfirm);
+  document.querySelector('[data-modal-ackbox]').addEventListener('change',function(e){ setConfirmEnabled(e.target.checked); });
+  md.bd.addEventListener('mousedown',function(e){ if(e.target===md.bd) closeModal(); });
+}
+function openModal(kind){
+  var reset=kind==='reset';
+  var cfg=reset?{
+    kind:kind,icon:'triangle-alert',accent:'#ec8480',bg:'rgba(217,83,79,.14)',bd:'rgba(217,83,79,.4)',
+    title:'Réinitialisation usine',
+    desc:'Tous les canaux, scènes, réglages réseau et identifiants seront effacés, puis le boîtier redémarrera avec sa configuration d’usine. Les séquences FSEQ stockées sur la carte microSD sont conservées.',
+    confirm:'Réinitialiser',confirmIcon:'trash-2',confBg:'#d9534f',confText:'#fff',
+    ack:'Je comprends que cette action est irréversible.',
+    prog:'Réinitialisation…',progSub:'restauration de la configuration d’usine'
+  }:{
+    kind:kind,icon:'rotate-cw',accent:'#f0b53b',bg:'rgba(248,198,98,.14)',bd:'rgba(248,198,98,.32)',
+    title:'Redémarrer le boîtier',
+    desc:'La sortie LED / DMX sera interrompue pendant le redémarrage. Tous les réglages enregistrés sont conservés.',
+    confirm:'Redémarrer',confirmIcon:'rotate-cw',confBg:'#f8c662',confText:'#1d3a2c',
+    ack:null,prog:'Redémarrage…',progSub:'le lien réseau va se réinitialiser'
+  };
+  function q(s){ return document.querySelector(s); }
+  var icon=q('[data-modal-icon]'); icon.style.background=cfg.bg; icon.style.color=cfg.accent; icon.style.border='1px solid '+cfg.bd; icon.innerHTML='<i data-lucide="'+cfg.icon+'" class="ic22"></i>'; createIcons(icon);
+  q('[data-modal-title]').textContent=cfg.title;
+  q('[data-modal-desc]').textContent=cfg.desc;
+  var ack=q('[data-modal-ack]'); q('[data-modal-ackbox]').checked=false;
+  if(cfg.ack){ ack.style.display='flex'; q('[data-modal-acktext]').textContent=cfg.ack; } else { ack.style.display='none'; }
+  var conf=q('[data-modal-confirm]'); conf.innerHTML='<i data-lucide="'+cfg.confirmIcon+'" class="ic16"></i>'+cfg.confirm; conf.style.background=cfg.confBg; conf.style.border='1px solid '+cfg.confBg; conf.style.color=cfg.confText; createIcons(conf);
+  modalCfg=cfg; setConfirmEnabled(!cfg.ack);
+  q('[data-modal-body]').style.display=''; q('[data-modal-progress]').style.display='none';
+  md.bd.style.display='flex';
+}
+function setConfirmEnabled(on){ var c=document.querySelector('[data-modal-confirm]'); if(!c)return; confirmOn=on; c.style.opacity=on?'1':'.42'; c.style.cursor=on?'pointer':'not-allowed'; }
+function modalConfirm(){
+  if(!confirmOn) return;
+  document.querySelector('[data-modal-body]').style.display='none';
+  var prog=document.querySelector('[data-modal-progress]'); prog.style.display='flex';
+  document.querySelector('[data-modal-progtext]').textContent=modalCfg.prog;
+  document.querySelector('[data-modal-progsub]').textContent=modalCfg.progSub;
+  var spin=document.querySelector('[data-modal-spin]'); if(spin) spin.style.color=modalCfg.accent;
+  var path=modalCfg.kind==='reset'?'/api/factory-reset':'/api/reboot';
+  api('POST',path,{}).catch(function(){});
+  clearTimeout(modalT); modalT=setTimeout(function(){ closeModal(); location.reload(); },9000);
+}
+function closeModal(){ if(md.bd) md.bd.style.display='none'; clearTimeout(modalT); }
+
+/* ─────────── actions ─────────── */
+function doAction(a){
+  if(a==='save'){ saveAll(); }
+  else if(a==='cancel'){ dirty.clear(); updateSaveBar(); reloadConfig(); toast('✓ enregistré'); }
+  else if(a==='identify'){ api('POST','/api/channel/0/identify',{}).then(function(){ toast('Identification canal 1'); }).catch(function(e){ toast('Erreur: '+e.message,true); }); }
+  else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast('Identification canal '+(curChan+1)); }).catch(function(e){ toast('Erreur: '+e.message,true); }); }
+  else if(a==='stop-all'){ Promise.all([api('POST','/api/scenes/stop',{}),api('POST','/api/fseq/stop',{})]).then(function(){ toast('Sorties arrêtées'); pollStatus(); }).catch(function(e){ toast('Erreur: '+e.message,true); }); }
+  else if(a==='autopatch'){ api('POST','/api/autopatch',{base:0}).then(function(r){ toast('Patch — prochain univers libre U'+r.next_free); reloadConfig(); }).catch(function(e){ toast('Erreur: '+e.message,true); }); }
+  else if(a==='export'){ location.href='/api/backup'; }
+  else if(a==='import'){ el('restore-file').click(); }
+  else if(a==='ota'){ el('ota-file').click(); }
+  else if(a==='fseq-upload'){ el('fseq-file').click(); }
+  else if(a==='fseq-stop'){ api('POST','/api/fseq/stop',{}).then(function(){ toast('Séquence arrêtée'); pollStatus(); }).catch(function(e){ toast('Erreur: '+e.message,true); }); }
+}
+function uploadXhr(path,file,bar,prog,onok){
+  if(prog) prog.style.display='';
+  var xhr=new XMLHttpRequest(); xhr.open('POST',path); if(authHdr) xhr.setRequestHeader('Authorization',authHdr);
+  xhr.upload.onprogress=function(e){ if(e.lengthComputable&&bar) bar.style.width=Math.round(100*e.loaded/e.total)+'%'; };
+  xhr.onload=function(){ if(xhr.status>=200&&xhr.status<300){ onok(); } else { toast('Erreur: '+(xhr.responseText||xhr.status),true); if(prog) prog.style.display='none'; } };
+  xhr.onerror=function(){ toast('Échec du transfert',true); if(prog) prog.style.display='none'; };
+  xhr.send(file);
+}
+function otaUpload(){
+  var f=el('ota-file').files[0]; if(!f) return;
+  if(!confirm('Flasher '+f.name+' ('+Math.round(f.size/1024)+' Ko) ? Le boîtier redémarre en cas de succès.')){ el('ota-file').value=''; return; }
+  toast('Téléversement firmware…');
+  uploadXhr('/api/ota',f,el('ota-bar'),el('ota-prog'),function(){ toast('Flashé — redémarrage, rechargez dans ~10 s'); setTimeout(function(){ location.reload(); },12000); });
+}
+function restoreUpload(){
+  var f=el('restore-file').files[0]; if(!f) return;
+  f.text().then(function(txt){ try{ JSON.parse(txt); }catch(e){ toast('JSON invalide',true); return; }
+    if(!confirm('Restaurer la configuration depuis '+f.name+' ?')){ el('restore-file').value=''; return; }
+    fetch('/api/restore',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHdr?{Authorization:authHdr}:{}),body:txt})
+      .then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error(t); }); toast('Restauré — redémarrez pour le réseau'); reloadConfig(); })
+      .catch(function(e){ toast('Erreur: '+e.message,true); });
+  });
+}
+function fseqUpload(){
+  var f=el('fseq-file').files[0]; if(!f) return;
+  if(!f.name.toLowerCase().endsWith('.fseq')){ toast('Le fichier doit finir par .fseq',true); el('fseq-file').value=''; return; }
+  toast('Téléversement '+f.name+'…');
+  uploadXhr('/api/fseq/upload?name='+encodeURIComponent(f.name),f,null,null,function(){ toast('Téléversé : '+f.name); loadFseq(); });
+}
+
+/* ─────────── click & input delegation ─────────── */
+function onClick(e){
+  var act=e.target.closest('[data-action]'); if(act){ doAction(act.getAttribute('data-action')); return; }
+  var scol=e.target.closest('[data-scene-color]'); if(scol){ openPicker(+scol.getAttribute('data-scene-color'), scol); return; }
+  var dh=e.target.closest('[data-dhcp]'); if(dh){ netDhcp=(+dh.getAttribute('data-dhcp'))===1; setDhcpUI(); markDirty('network'); return; }
+  var sfx=e.target.closest('[data-sc-fx]'); if(sfx){ var n1=+sfx.getAttribute('data-scn'); SCENES[n1-1].effectIdx=+sfx.getAttribute('data-sc-fx'); markDirty('scene'+(n1-1)); renderScene(n1); return; }
+  var sch=e.target.closest('[data-sc-ch]'); if(sch){ var n2=+sch.getAttribute('data-scn'),b=+sch.getAttribute('data-sc-ch'); SCENES[n2-1].mask^=(1<<b); markDirty('scene'+(n2-1)); renderScene(n2); return; }
+  var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1; api('POST','/api/scene/'+n3+'/play',{}).then(function(){ toast('Lecture scène '+(n3+1)); pollStatus(); }).catch(function(err){ toast('Erreur: '+err.message,true); }); return; }
+  var fpl=e.target.closest('[data-fseq-play]'); if(fpl){ var fn=fpl.getAttribute('data-fseq-play'); api('POST','/api/fseq/play',{filename:fn}).then(function(){ toast('Lecture : '+fn); loadFseq(); pollStatus(); }).catch(function(err){ toast('Erreur: '+err.message,true); }); return; }
+  var reboot=e.target.closest('[data-reboot]'); if(reboot){ openModal('reboot'); return; }
+  var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
+  var nav=e.target.closest('[data-nav]'); if(nav){ go(nav.getAttribute('data-nav')); return; }
+  var tile=e.target.closest('[data-nav-chan]'); if(tile){ go('channels'); selectChan(+tile.getAttribute('data-nav-chan')); return; }
+  var row=e.target.closest('[data-chan]'); if(row){ selectChan(+row.getAttribute('data-chan')); return; }
+}
+function onInput(e){
+  var t=e.target;
+  if(t.hasAttribute&&t.hasAttribute('data-sc-name')){ var n=+t.getAttribute('data-sc-name'); SCENES[n-1].name=t.value; markDirty('scene'+(n-1)); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-sc-speed')){ var sn=+t.getAttribute('data-sc-speed'); SCENES[sn-1].speed=parseInt(t.value,10)||0; var sv=document.querySelector('[data-sc-speedval="'+sn+'"]'); if(sv) sv.textContent=t.value; markDirty('scene'+(sn-1)); return; }
+  if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); return; }
+  if(['n-ip','n-mask','n-gw','n-host','n-long'].indexOf(t.id)>=0){ markDirty('network'); return; }
+  if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode'].indexOf(t.id)>=0){ markDirty('artnet'); return; }
+  if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }
+  if(['s-refresh','s-home','s-boot'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
+  if(t.id==='s-auth'){ setAuthUI(); markDirty('sysauth'); return; }
+  if(t.id==='s-pwd'){ markDirty('sysauth'); return; }
+}
+
+/* ─────────── boot ─────────── */
+function init(){
+  createIcons(document);
+  initPicker(); initModal();
+  initSparks(); raf=requestAnimationFrame(loop);
+  var app=document.getElementById('pf-app');
+  app.addEventListener('click',onClick);
+  app.addEventListener('input',onInput);
+  app.addEventListener('change',onInput);
+  el('ota-file').addEventListener('change',otaUpload);
+  el('restore-file').addEventListener('change',restoreUpload);
+  el('fseq-file').addEventListener('change',fseqUpload);
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closePicker(); closeModal(); } });
+  reloadConfig().then(function(){ pollStatus(); }).catch(function(e){ toast('Connexion impossible: '+e.message,true); });
+  setInterval(pollStatus,1000);
   updateSaveBar();
-  document.getElementById('save-status').textContent=
-    failed?(failed+' section'+(failed>1?'s':'')+' failed — see panel'):'All changes saved';
 }
-
-loadConfig();
-
-// Live status poll: cheap endpoint, updates the header + channel-tab dots
-// without touching the form fields the user may be editing.
-async function pollStatus(){
-  try{
-    const d=await (await fetch('/api/status')).json();
-    document.getElementById('link-dot').className=d.link?'up':'';
-    document.getElementById('fps-label').textContent=d.fps+'fps';
-    document.getElementById('heap-label').textContent=Math.round(d.heap_free/1024)+'k';
-    let live='';
-    if(d.fseq&&d.fseq.active)
-      live='&#9654; '+d.fseq.active+' '+fmtMs(d.fseq.position_ms)+'/'+fmtMs(d.fseq.duration_ms);
-    else if((d.active_scene??-1)>=0)live='&#9654; scene '+(d.active_scene+1);
-    document.getElementById('live-label').innerHTML=live;
-    const fa=document.getElementById('fseq-active');
-    if(fa)fa.textContent=d.fseq&&d.fseq.active?
-      d.fseq.active+' ('+fmtMs(d.fseq.position_ms)+'/'+fmtMs(d.fseq.duration_ms)+')':'none';
-    document.querySelectorAll('.tab').forEach(t=>{
-      const m=/^ch(\d)$/.exec(t.dataset.panel);
-      if(!m)return;
-      const ch=d.channels?.[+m[1]];
-      t.classList.toggle('fsafe',!!ch?.failsafe);
-      t.classList.toggle('act',!!ch?.active&&!ch?.failsafe);
-    });
-  }catch(e){/* board unreachable: keep last state */}
-}
-function fmtMs(ms){
-  const s=Math.floor(ms/1000);
-  return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
-}
-setInterval(pollStatus,3000);
-pollStatus();
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
 </script>
-<div id="savebar">
-  <span id="save-status"></span>
-  <button id="save-btn" disabled onclick="saveAll()">Save changes</button>
-</div>
 </body>
 </html>

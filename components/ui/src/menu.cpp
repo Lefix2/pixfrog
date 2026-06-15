@@ -121,6 +121,7 @@ enum class Screen : uint8_t {
     EditValue,
     EditString,
     EditIp,
+    EditUni,
 };
 
 // ── Editable fields ─────────────────────────────────────────────────────────
@@ -198,6 +199,16 @@ struct EditIpCtx {
     const char* label    = "";
 };
 
+// Art-Net Port-Address edited as net.sub.uni (like an IP). The packed 15-bit
+// value is net(7):sub(4):uni(4) — what config::ChannelConfig::universe_start
+// stores; segment maxima double as the field bitmasks (127, 15, 15).
+struct EditUniCtx {
+    uint16_t value       = 0;  // packed 15-bit port-address
+    uint8_t cursor       = 0;  // 0..3; 3 = DONE position
+    uint8_t channel      = 0;
+    Screen return_screen = Screen::ChannelMenu;
+};
+
 struct State {
     Screen screen         = Screen::Home;
     uint8_t cursor        = 0;
@@ -205,6 +216,7 @@ struct State {
     EditCtx edit;
     EditStringCtx str_edit;
     EditIpCtx ip_edit;
+    EditUniCtx uni_edit;
 };
 
 State s;
@@ -1254,6 +1266,17 @@ void dispatch_edit_string(Event e) {
     }
 }
 
+// ── Art-Net Port-Address segments (net.sub.uni) ─────────────────────────────
+// Per-segment right-shift, and maximum which equals the field bitmask.
+constexpr uint8_t kUniShift[3]  = { 8, 4, 0 };
+constexpr uint16_t kUniMax[3]   = { 127, 15, 15 };
+constexpr uint16_t kUniFMask[3] = { 0x7F00, 0x00F0, 0x000F };
+
+void format_uni(char* buf, size_t cap, uint16_t v) {
+    std::snprintf(buf, cap, "%u.%u.%u", static_cast<unsigned>((v >> 8) & 0x7F),
+                  static_cast<unsigned>((v >> 4) & 0x0F), static_cast<unsigned>(v & 0x0F));
+}
+
 // ── EDIT IP — 4 octets ──────────────────────────────────────────────────────
 
 void enter_edit_ip(IpField field, uint32_t current, const char* label, Screen return_screen) {
@@ -1342,6 +1365,94 @@ void dispatch_edit_ip(Event e) {
         } else if (e == Event::Click) {
             commit_edit_ip();
             s.screen = s.ip_edit.return_screen;
+        }
+    }
+}
+
+// ── EDIT UNI — net.sub.uni (3 segments) ─────────────────────────────────────
+
+void enter_edit_uni(uint8_t channel, uint16_t current, Screen return_screen) {
+    s.uni_edit.value         = current & 0x7FFF;
+    s.uni_edit.cursor        = 0;
+    s.uni_edit.channel       = channel;
+    s.uni_edit.return_screen = return_screen;
+    s.screen                 = Screen::EditUni;
+    accel_reset();
+}
+
+void render_edit_uni() {
+    char title[24];
+    std::snprintf(title, sizeof(title), "EDIT UNI C%u", s.uni_edit.channel + 1);
+
+    // Render as "0.[2].1 = U513" with brackets around the current segment.
+    const uint16_t v      = s.uni_edit.value;
+    const uint16_t seg[3] = {
+        static_cast<uint16_t>((v >> 8) & 0x7F),
+        static_cast<uint16_t>((v >> 4) & 0x0F),
+        static_cast<uint16_t>(v & 0x0F),
+    };
+    char line[40];
+    int pos = 0;
+    for (int i = 0; i < 3; ++i) {
+        if (i == s.uni_edit.cursor)
+            pos += std::snprintf(line + pos, sizeof(line) - pos, "[%u]", seg[i]);
+        else
+            pos += std::snprintf(line + pos, sizeof(line) - pos, "%u", seg[i]);
+        if (i < 2) pos += std::snprintf(line + pos, sizeof(line) - pos, ".");
+    }
+    std::snprintf(line + pos, sizeof(line) - pos, " = U%u", static_cast<unsigned>(v));
+
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    canvas_clear(color::Black);
+    draw_tft_header(title);
+    canvas_draw_text(kIndent, kHdrH + 30, line, color::Cyan, color::Black, kTxtSc);
+    canvas_draw_text(kIndent, kHdrH + 30 + kTxtH + 6, "net . sub . uni", color::DarkGray,
+                     color::Black, 1);
+    if (s.uni_edit.cursor >= 3) {
+        canvas_draw_text(kIndent, kHdrH + 30 + kTxtH + 22, "[ready to commit]", color::Orange,
+                         color::Black, kTxtSc);
+    }
+#else
+    canvas_clear();
+    draw_row(0, 0, title);
+    draw_row(3, 0, line);
+    draw_row(4, 0, "net . sub . uni");
+    if (s.uni_edit.cursor >= 3) {
+        draw_row(6, 0, "[ready to commit]");
+    }
+#endif
+}
+
+void commit_edit_uni() {
+    auto c           = config::get_channel(s.uni_edit.channel);
+    c.universe_start = s.uni_edit.value;
+    config::set_channel(s.uni_edit.channel, c);
+    dmx::mark_channel_dirty(s.uni_edit.channel);
+}
+
+void dispatch_edit_uni(Event e) {
+    if (s.uni_edit.cursor < 3) {
+        if (e == Event::RotateLeft || e == Event::RotateRight) {
+            const int32_t step   = accel_note_rotation();
+            const uint8_t shift  = kUniShift[s.uni_edit.cursor];
+            const int32_t max    = kUniMax[s.uni_edit.cursor];
+            int32_t seg          = (s.uni_edit.value >> shift) & max;
+            seg                 += (e == Event::RotateRight) ? step : -step;
+            if (seg < 0) seg = 0;
+            if (seg > max) seg = max;
+            const uint16_t fmask = kUniFMask[s.uni_edit.cursor];
+            s.uni_edit.value     = static_cast<uint16_t>(
+                (s.uni_edit.value & ~fmask) | ((static_cast<uint16_t>(seg) << shift) & fmask));
+        } else if (e == Event::Click) {
+            s.uni_edit.cursor++;
+            accel_reset();
+        }
+    } else {
+        if (e == Event::RotateLeft) {
+            if (s.uni_edit.cursor > 0) s.uni_edit.cursor--;
+        } else if (e == Event::Click) {
+            commit_edit_uni();
+            s.screen = s.uni_edit.return_screen;
         }
     }
 }
@@ -1540,10 +1651,10 @@ void render_channel_menu() {
     char title[kOledCols + 1];
     std::snprintf(title, sizeof(title), "CHANNEL %u", s.channel_index + 1);
 
-    char vproto[8], vuni[8], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12],
+    char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12],
         vgam[8];
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
-    std::snprintf(vuni, sizeof(vuni), "%u", cc.universe_start);
+    format_uni(vuni, sizeof(vuni), cc.universe_start);
     std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
     std::snprintf(vpix, sizeof(vpix), "%u", cc.pixel_count);
     std::snprintf(vorder, sizeof(vorder), "%s", color_order_name(cc.color_order));
@@ -1593,10 +1704,7 @@ void dispatch_channel_menu(Event e) {
         enter_edit(Field::ChProtocol, ValueKind::Protocol, static_cast<int32_t>(cc.protocol), 0,
                    static_cast<int32_t>(kProtocolCount) - 1, 1, "Proto", ret, ch);
         break;
-    case ChItem::Uni:
-        enter_edit(Field::ChUniverse, ValueKind::Int, cc.universe_start, 0, 32767, 1, "Uni", ret,
-                   ch);
-        break;
+    case ChItem::Uni: enter_edit_uni(ch, cc.universe_start, ret); break;
     case ChItem::Dmx:
         enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", ret, ch);
         break;
@@ -1694,6 +1802,10 @@ void dispatch_long_press() {
         commit_edit_ip();
         s.screen = s.ip_edit.return_screen;
         break;
+    case Screen::EditUni:
+        commit_edit_uni();
+        s.screen = s.uni_edit.return_screen;
+        break;
     }
 }
 
@@ -1719,6 +1831,7 @@ void menu_render() {
     case Screen::EditValue: render_edit_value(); break;
     case Screen::EditString: render_edit_string(); break;
     case Screen::EditIp: render_edit_ip(); break;
+    case Screen::EditUni: render_edit_uni(); break;
     }
 }
 
@@ -1745,6 +1858,7 @@ void menu_dispatch(Event e) {
     case Screen::EditValue: dispatch_edit_value(e); break;
     case Screen::EditString: dispatch_edit_string(e); break;
     case Screen::EditIp: dispatch_edit_ip(e); break;
+    case Screen::EditUni: dispatch_edit_uni(e); break;
     }
 }
 
@@ -1763,6 +1877,7 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     static const char* const kNames[] = {
         "Home",       "MainMenu", "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
         "ScenesMenu", "FSeqMenu", "About",      "EditValue",   "EditString",  "EditIp",
+        "EditUni",
     };
     if (screen_name) *screen_name = kNames[static_cast<uint8_t>(s.screen)];
     if (cursor) *cursor = s.cursor;
