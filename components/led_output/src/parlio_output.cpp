@@ -63,15 +63,33 @@ constexpr size_t kFbAlignBytes        = 128;
 // Same scope-friendly calibration frame length as the LCD_CAM backend.
 constexpr size_t kCalFrameSamples = 262144;
 
+// Triple buffering. Loop mode keeps exactly two buffers in the DMA chain (the
+// one scanning + the one concatenated as "next"); a third lets render_frame
+// encode the upcoming frame into an already-drained buffer WHILE those two are
+// busy, so the PSRAM encode+cache-flush (≈ one frame's worth of bus time)
+// overlaps the wire emission instead of serializing after it. With only two
+// buffers the buffer we must reuse is exactly the one freed one frame ago — no
+// slack — forcing a full-frame wait before every encode and capping the rate
+// at 1/(frame + encode). Three buffers give a full frame of drain slack.
+constexpr size_t kNumFb = 3;
+
 InitConfig g_cfg{};
 parlio_tx_unit_handle_t g_unit = nullptr;
-uint16_t* g_fb[2]              = { nullptr, nullptr };
-size_t g_fb_samples            = 0;         // capacity of each FB, quantum-rounded
-uint8_t g_back_idx             = 0;         // FB the next encode writes into
-size_t g_written[2]            = { 0, 0 };  // samples encoded into each FB since creation
-bool g_loop_running            = false;
-int64_t g_last_submit_us       = 0;  // when the running loop frame was (re)submitted
-volatile uint32_t g_submits    = 0;
+uint16_t* g_fb[kNumFb]         = {};
+size_t g_fb_samples            = 0;   // capacity of each FB, quantum-rounded
+uint8_t g_back_idx             = 0;   // FB the next encode writes into
+size_t g_written[kNumFb]       = {};  // samples encoded into each FB since creation
+// Wall-clock µs after which each FB is safe to encode into again. A transmit
+// retires the *previously* submitted buffer: the hardware keeps scanning it
+// until the current pass ends, at most one frame later.
+int64_t g_free_at[kNumFb]   = {};
+int8_t g_prev_submit_idx    = -1;  // buffer handed to the previous submit, or -1
+volatile uint32_t g_submits = 0;
+
+// Per-phase timing of the most recent render_frame, for the control console.
+volatile uint32_t g_wait_us   = 0;
+volatile uint32_t g_encode_us = 0;
+volatile uint32_t g_submit_us = 0;
 
 volatile int8_t g_cal_mode = -1;
 
@@ -81,7 +99,7 @@ int64_t frame_duration_us() {
 
 void destroy_unit() {
     if (g_unit) {
-        if (g_loop_running) parlio_tx_unit_disable(g_unit);
+        if (g_prev_submit_idx >= 0) parlio_tx_unit_disable(g_unit);
         parlio_del_tx_unit(g_unit);
         g_unit = nullptr;
     }
@@ -89,9 +107,10 @@ void destroy_unit() {
         if (fb) heap_caps_free(fb);
         fb = nullptr;
     }
-    g_fb_samples     = 0;
-    g_loop_running   = false;
-    g_last_submit_us = 0;
+    for (auto& f : g_free_at)
+        f = 0;
+    g_fb_samples      = 0;
+    g_prev_submit_idx = -1;
 }
 
 bool create_unit(size_t samples) {
@@ -133,17 +152,19 @@ bool create_unit(size_t samples) {
         return false;
     }
 
-    g_fb_samples   = samples;
-    g_back_idx     = 0;
-    g_written[0]   = 0;
-    g_written[1]   = 0;
-    g_loop_running = false;
+    g_fb_samples      = samples;
+    g_back_idx        = 0;
+    g_prev_submit_idx = -1;
+    for (size_t i = 0; i < kNumFb; ++i) {
+        g_written[i] = 0;
+        g_free_at[i] = 0;
+    }
 
     ESP_LOGI(TAG,
-             "tx unit up: fb_a=%p fb_b=%p, %zu bytes each, %zu samples @ %lu Hz "
+             "tx unit up: %zu buffers, %zu bytes each, %zu samples @ %lu Hz "
              "(%lld µs/frame, loop)",
-             static_cast<void*>(g_fb[0]), static_cast<void*>(g_fb[1]), bytes, samples,
-             static_cast<unsigned long>(g_cfg.pclk_hz), frame_duration_us());
+             kNumFb, bytes, samples, static_cast<unsigned long>(g_cfg.pclk_hz),
+             frame_duration_us());
     return true;
 }
 
@@ -159,36 +180,41 @@ bool ensure_frame_capacity(size_t needed_samples) {
     return create_unit(samples);
 }
 
-// The buffer that is about to be encoded may still be scanned out by the
-// running loop until one frame duration after the swap that retired it was
-// submitted. Block (cheaply) until that point.
-void wait_back_buffer_free() {
-    if (!g_loop_running) return;
-    const int64_t free_at = g_last_submit_us + frame_duration_us();
-    int64_t now           = esp_timer_get_time();
-    while (now < free_at) {
-        const int64_t remaining_us = free_at - now;
+// Buffer `idx` may still be scanned out by the running loop until the
+// timestamp recorded when the transmit that retired it ran. Block (cheaply)
+// until then — with triple buffering this is normally already in the past
+// (a full frame of drain slack), so render_frame's encode overlaps emission.
+void wait_back_buffer_free(uint8_t idx) {
+    int64_t now = esp_timer_get_time();
+    while (now < g_free_at[idx]) {
+        const int64_t remaining_us = g_free_at[idx] - now;
         vTaskDelay(pdMS_TO_TICKS(remaining_us / 1000 + 1));
         now = esp_timer_get_time();
     }
 }
 
-// Submit `fb` as the (new) looping frame. First call starts the loop; later
-// calls swap the mounted buffer at the next frame boundary, gapless. The
+// Submit g_fb[idx] as the (new) looping frame. First call starts the loop;
+// later calls swap the mounted buffer at the next frame boundary, gapless. The
 // driver write-backs the payload cache itself.
-bool submit_loop_frame(uint16_t* fb) {
+bool submit_loop_frame(uint8_t idx) {
     parlio_transmit_config_t tx{};
     tx.idle_value              = 0;
     tx.flags.loop_transmission = 1;
     const size_t payload_bits  = g_fb_samples * 16;
-    const esp_err_t err        = parlio_tx_unit_transmit(g_unit, fb, payload_bits, &tx);
+    const esp_err_t err        = parlio_tx_unit_transmit(g_unit, g_fb[idx], payload_bits, &tx);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "transmit: %s", esp_err_to_name(err));
         return false;
     }
-    g_last_submit_us = esp_timer_get_time();
-    g_loop_running   = true;
-    g_submits        = g_submits + 1;
+    // This transmit concatenates idx after the previously submitted buffer,
+    // which the hardware keeps scanning until its current pass ends — at most
+    // one frame from now. Mark it safe to reuse only after that.
+    const int64_t now = esp_timer_get_time();
+    if (g_prev_submit_idx >= 0) {
+        g_free_at[g_prev_submit_idx] = now + frame_duration_us();
+    }
+    g_prev_submit_idx = static_cast<int8_t>(idx);
+    g_submits         = g_submits + 1;
     return true;
 }
 
@@ -225,9 +251,12 @@ bool render_frame(uint32_t timeout_ms) {
     }
     if (!ensure_frame_capacity(needed)) return false;
 
-    wait_back_buffer_free();
-    uint16_t* samples = g_fb[g_back_idx];
+    const uint8_t idx = g_back_idx;
+    const int64_t t0  = esp_timer_get_time();
+    wait_back_buffer_free(idx);
+    uint16_t* samples = g_fb[idx];
 
+    const int64_t t1 = esp_timer_get_time();
     led::ChannelDesc descs[config::kNumChannels];
     const uint8_t* pixels[config::kNumChannels];
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
@@ -245,14 +274,20 @@ bool render_frame(uint32_t timeout_ms) {
     // The loop always scans the full quantum-rounded buffer; everything past
     // `written` must be LOW (reset-tail). calloc zeroed it at creation, but a
     // shrinking frame within the same capacity leaves stale samples behind.
-    if (g_written[g_back_idx] > written) {
-        std::memset(samples + written, 0, (g_written[g_back_idx] - written) * sizeof(uint16_t));
+    if (g_written[idx] > written) {
+        std::memset(samples + written, 0, (g_written[idx] - written) * sizeof(uint16_t));
     }
-    g_written[g_back_idx] = written;
+    g_written[idx] = written;
 
-    if (!submit_loop_frame(samples)) return false;
+    const int64_t t2 = esp_timer_get_time();
+    if (!submit_loop_frame(idx)) return false;
+    const int64_t t3 = esp_timer_get_time();
 
-    g_back_idx ^= 1;
+    g_wait_us   = static_cast<uint32_t>(t1 - t0);
+    g_encode_us = static_cast<uint32_t>(t2 - t1);
+    g_submit_us = static_cast<uint32_t>(t3 - t2);
+
+    g_back_idx = static_cast<uint8_t>((g_back_idx + 1) % kNumFb);
     dmx::note_frame_emitted();
     return true;
 }
@@ -265,19 +300,22 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
 
     if (!ensure_frame_capacity(kCalFrameSamples)) return false;
 
-    wait_back_buffer_free();
-    uint16_t* samples = g_fb[g_back_idx];
+    const uint8_t idx = g_back_idx;
+    wait_back_buffer_free(idx);
+    uint16_t* samples = g_fb[idx];
     common::fill_calibration_pattern(samples, g_fb_samples, pattern_id, g_cfg.pclk_hz);
-    g_written[g_back_idx] = g_fb_samples;
+    g_written[idx] = g_fb_samples;
 
-    if (!submit_loop_frame(samples)) return false;
-    g_back_idx ^= 1;
+    if (!submit_loop_frame(idx)) return false;
+    g_back_idx = static_cast<uint8_t>((g_back_idx + 1) % kNumFb);
     return true;
 }
 
 void dump_stats() {
-    ESP_LOGI(TAG, "stats: submits=%lu, frame=%lld µs, loop=%d",
-             static_cast<unsigned long>(g_submits), frame_duration_us(), g_loop_running ? 1 : 0);
+    ESP_LOGI(TAG, "stats: submits=%lu, frame=%lld µs, wait=%lu enc=%lu sub=%lu µs",
+             static_cast<unsigned long>(g_submits), frame_duration_us(),
+             static_cast<unsigned long>(g_wait_us), static_cast<unsigned long>(g_encode_us),
+             static_cast<unsigned long>(g_submit_us));
 }
 
 DebugCounters get_debug_counters() {
@@ -287,13 +325,16 @@ DebugCounters get_debug_counters() {
     c.trans_done = g_submits;
     c.vsync      = g_submits;
     c.msync_err  = 0;
+    c.wait_us    = g_wait_us;
+    c.encode_us  = g_encode_us;
+    c.submit_us  = g_submit_us;
     return c;
 }
 
 void wait_idle() {
     // A loop transmission never idles by design; the closest equivalent is
     // "the most recently submitted frame is now the one on the wire".
-    wait_back_buffer_free();
+    if (g_prev_submit_idx >= 0) wait_back_buffer_free(static_cast<uint8_t>(g_prev_submit_idx));
 }
 
 size_t fb_bytes() {
