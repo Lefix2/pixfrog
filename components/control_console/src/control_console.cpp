@@ -182,6 +182,9 @@ int cmd_stats(int, char**) {
     printf("lcd_trans_done=%lu\n", static_cast<unsigned long>(d.trans_done));
     printf("lcd_vsync=%lu\n", static_cast<unsigned long>(d.vsync));
     printf("lcd_msync_err=%lu\n", static_cast<unsigned long>(d.msync_err));
+    printf("render_wait_us=%lu\n", static_cast<unsigned long>(d.wait_us));
+    printf("render_encode_us=%lu\n", static_cast<unsigned long>(d.encode_us));
+    printf("render_submit_us=%lu\n", static_cast<unsigned long>(d.submit_us));
     return ok();
 }
 

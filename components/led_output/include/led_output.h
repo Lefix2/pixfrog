@@ -64,6 +64,13 @@ struct DebugCounters {
     uint32_t trans_done;
     uint32_t vsync;
     uint32_t msync_err;
+    // Per-phase timing of the most recent render_frame (µs). On the PARLIO
+    // backend these expose whether encode/flush overlaps the wire emission:
+    // a near-zero wait_us means the buffer was already drained (triple-buffer
+    // pipeline keeping up). Zero on the LCD_CAM backend.
+    uint32_t wait_us;
+    uint32_t encode_us;
+    uint32_t submit_us;
 };
 DebugCounters get_debug_counters();
 
