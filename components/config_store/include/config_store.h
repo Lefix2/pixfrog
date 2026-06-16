@@ -76,7 +76,13 @@ struct GlobalConfig {
     // master (UDP 32320): start/stop/seek of local FSEQ files. Zero-fill
     // migration = false (no socket opened).
     bool fpp_remote;
+
+    // Web UI display language. Zero-fill migration = 0 = English (the default).
+    uint8_t language;  // 0 = English, 1 = French
 };
+
+constexpr uint8_t kLangEnglish = 0;
+constexpr uint8_t kLangFrench  = 1;
 
 constexpr uint8_t kFailsafeHold     = 0;
 constexpr uint8_t kFailsafeBlackout = 1;
