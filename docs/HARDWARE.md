@@ -140,13 +140,7 @@ The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
 ![3.3 V → 5 V level shifting with a 74HCT245 buffer, series resistor and TVS clamp on each output](img/level-shifter.svg)
 
-**Realised as the pixfrog shield** — KiCad project + JLCPCB production files in
-[`hardware/pixfrog_shield/`](../hardware/pixfrog_shield/README.md): 2× 74HCT245,
-DIP-selectable series termination per line (DATA 249 Ω ↔ ≈34 Ω, CLOCK 33 Ω ↔ ≈18 Ω),
-one 5 V TVS clamp per output, 8× JST-XH (DATA/CLOCK/GND), plugs onto the
-devkit's 2×20 header.
-
-![pixfrog shield](img/pixfrog-shield.png)
+Realised as the **pixfrog shield** — see [§8 Hardware boards](#8-hardware-boards).
 
 ---
 
@@ -239,7 +233,43 @@ The alternative display is a **SSD1306 128×64 I²C OLED** (`CONFIG_PIXFROG_DISP
 
 ---
 
-## 8. Future hardware (v1, custom PCB)
+## 8. Hardware boards
+
+Two KiCad 10 projects under [`hardware/`](../hardware/) take the LED bus from the
+3.3 V SoC out to the strips. They are independent and complementary — the shield
+conditions the bus at the controller; add a satellite at the far end of a long
+run to keep the signal and the strip voltage clean over distance:
+
+```
+controller / devkit ──2×20 header──► pixfrog shield ──long cable──► pixfrog satellite ──► LED strip
+      3.3 V GPIOs                     level-shift + protect          repeat + power inject
+```
+
+### pixfrog shield — bus conditioning at the controller
+
+[`hardware/pixfrog_shield/`](../hardware/pixfrog_shield/README.md) — plugs onto
+the devkit's 2×20 header and re-drives all 16 bus lines at 5 V through 2× 74HCT245
+(the level shifter of §3 realised), with DIP-selectable series termination, a 5 V
+TVS clamp per output and 8× JST-XH (DATA/CLOCK/GND). It also breaks out the TFT
+display and the spare GPIOs on its J13 header (§5).
+
+![pixfrog shield](img/pixfrog-shield.png)
+
+### pixfrog satellite — remote repeater + power injection
+
+[`hardware/pixfrog_satellite/`](../hardware/pixfrog_satellite/README.md) — sits at
+the **far end of a long run**. A 74LVC2G17 Schmitt buffer re-squares one channel's
+two lines and a local LD1117 (12 V or 24 V build) injects strip power, so the LEDs
+see fresh edges and full voltage regardless of cable length. The 249 Ω / 39 Ω
+series-impedance select (header J4) mirrors the shield's SW1.
+
+![pixfrog satellite](img/pixfrog-sat.png)
+
+---
+
+## 9. Future hardware (v1, custom PCB)
+
+An all-in-one board folding the shield's conditioning onto the SoC carrier:
 
 - 2-layer PCB minimum, continuous ground plane
 - Dedicated 1 A LDO for the 3.3 V rail
