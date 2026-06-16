@@ -189,6 +189,7 @@ static cJSON* build_global_json() {
     cJSON_AddNumberToObject(jg, "failsafe_scene", g.failsafe_scene);
     cJSON_AddNumberToObject(jg, "boot_scene", g.boot_scene);
     cJSON_AddNumberToObject(jg, "merge_mode", g.merge_mode);
+    cJSON_AddNumberToObject(jg, "lang", g.language);
     char fscol[8];
     snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     cJSON_AddStringToObject(jg, "failsafe_color", fscol);
@@ -264,6 +265,12 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
     cJSON* root   = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "link", ui::is_link_up());
     cJSON_AddNumberToObject(root, "fps", static_cast<double>(st.current_fps));
+    {
+        const uint32_t cur_ip = ui::get_ip();
+        char ipbuf[16]        = "";
+        if (cur_ip) fmt_ip(ipbuf, sizeof(ipbuf), cur_ip);
+        cJSON_AddStringToObject(root, "ip", ipbuf);
+    }
     cJSON_AddNumberToObject(root, "uptime_s", static_cast<double>(esp_timer_get_time() / 1000000));
     cJSON_AddNumberToObject(root, "heap_free", static_cast<double>(esp_get_free_heap_size()));
     cJSON_AddNumberToObject(root, "heap_min",
@@ -623,6 +630,7 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     if (get_u32("boot_scene", 0, config::kNumScenes, u)) g.boot_scene = static_cast<uint8_t>(u);
     if (get_u32("failsafe_timeout_s", 0, 3600, u)) g.failsafe_timeout_s = static_cast<uint16_t>(u);
     if (get_u32("merge_mode", 0, 1, u)) g.merge_mode = static_cast<uint8_t>(u);
+    if (get_u32("lang", 0, 1, u)) g.language = static_cast<uint8_t>(u);
     if ((s = get_str("failsafe_color"))) {
         unsigned fr, fg, fb;
         if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &fr, &fg, &fb) == 3) {
