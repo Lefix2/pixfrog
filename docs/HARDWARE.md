@@ -195,14 +195,27 @@ ST7789V module    ESP32-P4
 ──────────────    ─────────
 VCC (3.3 V)  ───► 3.3 V
 GND          ───► GND
-CLK (SCLK)   ───► GPIO 13
-MOSI (SDA)   ───► GPIO 11
-CS           ───► GPIO 12
-DC (RS)      ───► GPIO 10
-RST          ───► GPIO 9
+CLK (SCLK)   ───► GPIO 0
+MOSI (SDA)   ───► GPIO 6
+CS           ───► GPIO 20
+DC (RS)      ───► GPIO 21
+RST          ───► GPIO 27
 ```
 
-SPI host: `SPI2_HOST`, 40 MHz. The display is portrait 240×320 at the hardware level; firmware issues `esp_lcd_panel_swap_xy(true)` after init to address it as landscape 320×240.
+These five signals are broken out on the shield's **J13** header. They replace
+the original GPIO 9-13 mapping, which reused the on-board ES8311 codec's I2S
+pins — those are **not** exposed on the connector/shield. All five chosen GPIOs
+are free, 3.3 V-direct and non-strapping; every signal routes through the GPIO
+matrix, so the assignment is arbitrary among the free pins. J13 also exposes
+GPIO 36 (a boot strapping pin — must read HIGH at reset) and GPIO 45 (VDD_IO_5 /
+LDO-VO4 domain), both left as spares. There is no MISO (write-only panel) and no
+backlight control pin.
+
+SPI host: `SPI2_HOST`, **20 MHz** (`kDisplaySpiFreqHz`). 40 MHz is rejected by
+the P4 SPI driver (`invalid sclk speed` — the default clock source can't derive
+it); 20 MHz is a clean divisor and ample for the 320×240 panel. The display is portrait 240×320 at
+the hardware level; firmware issues `esp_lcd_panel_swap_xy(true)` after init to
+address it as landscape 320×240.
 
 Color format: RGB565 big-endian (ST7789 native). `canvas_tft.cpp` applies `__builtin_bswap16` to every pixel value before writing to the DMA buffer.
 

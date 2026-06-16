@@ -46,6 +46,10 @@ constexpr Color CursorBg{ 0x1A45 };     // dark spring-green cursor highlight (#
 constexpr Color BadgeGreen{ 0x7691 };   // channel badge — NRZ strips (#70d18b)
 constexpr Color BadgePurple{ 0xACDC };  // channel badge — clocked SPI (#a89be0)
 constexpr Color AltRowBg{ 0x18C3 };     // slightly lighter dark for alternating rows
+// Sentinel for a see-through text/mask background: glyph ink is composited over
+// whatever is already in the framebuffer (shares White's value — White is only
+// ever used as a foreground, never as a text background).
+constexpr Color Transparent{ 0xFFFF };
 }  // namespace color
 
 // ── Display layout ────────────────────────────────────────────────────────────
@@ -80,6 +84,10 @@ void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
 // OLED impl: ignores color/scale, maps (x,y) -> (row=y/8, col=x/6).
 void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg = color::Black,
                       uint8_t scale = 1);
+// Crisp 18×24 wordmark text (boot splash only). 1:1 native cell, no scaling.
+// bg == color::Transparent composites over the framebuffer. TFT only.
+void canvas_draw_text_xl(int x, int y, const char* str, Color fg, Color bg = color::Black);
+int canvas_text_xl_width(const char* str);
 void canvas_flush();
 
 // ── OLED low-level (used only by oled_ssd1306.cpp + canvas_oled.cpp) ─────────
@@ -95,11 +103,19 @@ struct TftConfig {
     int clk_gpio, mosi_gpio, cs_gpio, dc_gpio, rst_gpio;
     uint32_t freq_hz;
     int width, height;
+    int backlight_gpio;  // -1 = no backlight control
 };
 bool tft_init(const TftConfig& cfg);
+// Turn the panel backlight on/off (no-op when no backlight GPIO is configured).
+// Raised on only after the first frame is flushed, so boot shows no white.
+void tft_backlight(bool on);
 void tft_draw_bitmap(int x1, int y1, int x2, int y2, const uint16_t* data);
 int tft_width();
 int tft_height();
+// Platform allocator for the off-screen framebuffer (canvas_tft keeps no IDF
+// deps): PSRAM on the device, malloc on the host emulator. Returns nullptr on
+// failure. Never freed (lives for the process).
+void* tft_fb_alloc(unsigned long bytes);
 
 // ── Encoder driver ────────────────────────────────────────────────────────────
 

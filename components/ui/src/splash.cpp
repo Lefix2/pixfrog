@@ -36,13 +36,13 @@ bool splash_render(uint32_t t_ms, bool clicked) {
     // Backdrop + wordmark, then the current frog frame. Repainted whole each
     // call, like render_home() — the UI has no back buffer.
     canvas_clear(color::FrogBg);
-    constexpr int kScale = 3;  // scale 4 would exceed canvas_draw_text's 24px block
-    const int wx         = kFrogX + fw + 12;
-    canvas_draw_text(wx, kH / 2 - kFontHeight * kScale / 2 - 6, "pixfrog", color::Cream,
-                     color::FrogBg, kScale);
-    canvas_draw_text(wx, kH / 2 + kFontHeight * kScale / 2 + 2, "ARTNET . LED DRIVER",
-                     color::SplashSub, color::FrogBg, 1);
-    canvas_draw_text(wx, kH / 2 + kFontHeight * kScale / 2 + 14, fw_version(), color::SplashSub,
+    // Wordmark in the crisp native 18×24 XL cell; subtitle/version in the 6×8.
+    const int wx       = kFrogX + fw + 12;
+    const int titleTop = kH / 2 - kFontXLHeight / 2 - 6;
+    canvas_draw_text_xl(wx, titleTop, "pixfrog", color::Cream, color::FrogBg);
+    canvas_draw_text(wx, titleTop + kFontXLHeight + 4, "ARTNET . LED DRIVER", color::SplashSub,
+                     color::FrogBg, 1);
+    canvas_draw_text(wx, titleTop + kFontXLHeight + 16, fw_version(), color::SplashSub,
                      color::FrogBg, 1);
 
     const int idx = static_cast<int>(t_ms / frame_ms);

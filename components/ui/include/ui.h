@@ -34,6 +34,7 @@ struct InitConfig {
     uint32_t spi_freq_hz;
     int tft_width;
     int tft_height;
+    int tft_backlight_gpio;  // -1 = no backlight control (BL hard-wired on)
 };
 
 // Initialize I2C, display, seesaw. Spawns ui_task on core 0 prio 4.

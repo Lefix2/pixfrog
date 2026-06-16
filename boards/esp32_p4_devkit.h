@@ -15,21 +15,21 @@
 //    4   GPIO8  (I2C SCL)  │   3   GND
 //    6   GPIO23 (LED CH3 CLK) │ 5  GPIO37  (UART0 TXD)
 //    8   GND               │   7   GPIO38  (UART0 RXD)
-//   10   GPIO21 (enc. IRQ) │   9   GPIO22  (LED CH3 DATA)
+//   10   GPIO21 (TFT DC)   │   9   GPIO22  (LED CH3 DATA)
 //   12   —                 │  11   GND
-//   14   GPIO6             │  13   GPIO5   (LED CH2 CLK)
+//   14   GPIO6  (TFT MOSI) │  13   GPIO5   (LED CH2 CLK)
 //   16   —                 │  15   GPIO4   (LED CH2 DATA)
 //   18   —                 │  17   GND
 //   20   GPIO3  (LED CH1 CLK) │ 19  GPIO1  (status LED)
 //   22   GPIO2  (LED CH1 DATA) │ 21  GPIO36 (strapping — keep HIGH)
-//   24   GPIO0             │  23   GPIO32  (LED CH6 DATA)
+//   24   GPIO0  (TFT CLK)  │  23   GPIO32  (LED CH6 DATA)
 //   26   GND               │  25   GPIO25  (LED CH4 CLK)
 //   28   GPIO24 (LED CH4 DATA) │ 27  GND
 //   30   GPIO33 (LED CH6 CLK) │ 29  GPIO54  (LED CH8 CLK)
 //   32   GPIO26 (LED CH5 DATA) │ 31  GND
 //   34   GPIO48 (LED CH7 CLK) │ 33  GPIO46  (LED CH5 CLK)
-//   36   GPIO53 (LED CH8 DATA) │ 35  GPIO27
-//   38   GPIO47 (LED CH7 DATA) │ 37  GPIO45
+//   36   GPIO53 (LED CH8 DATA) │ 35  GPIO27  (TFT RST)
+//   38   GPIO47 (LED CH7 DATA) │ 37  GPIO45  (TFT backlight)
 //   40   GND               │  39   —
 //
 // ════════════════════════════════════════════════════════════════════════════
@@ -49,12 +49,11 @@
 //  I2C shared bus (OLED SSD1306 + seesaw encoder)
 //    SDA : GPIO7    SCL : GPIO8
 //
-//  SPI display (ST7789V / ILI9341, reuses I2S pins of on-board ES8311 codec)
-//    CLK  : GPIO13   MOSI : GPIO11
-//    CS   : GPIO12   DC   : GPIO10
-//    RST  : GPIO9
+//  SPI display (ST7789V / ILI9341) — on the shield's J13 break-out header
+//    CLK  : GPIO0    MOSI : GPIO6
+//    CS   : GPIO20   DC   : GPIO21
+//    RST  : GPIO27
 //
-//  Seesaw encoder IRQ : GPIO21 (active-LOW)
 //  Status LED         : GPIO1
 //  UART0 console      : TX=GPIO37  RX=GPIO38
 //
@@ -62,7 +61,7 @@
 //    TXD0=34  TXD1=35  TX_EN=49  RXD0=29  RXD1=30  CRS_DV=28  REF_CLK=50
 //    MDC=31   MDIO=52  PHY_RESET=51
 //
-//  ES8311 audio codec (I2S — unused by pixfrog, GPIOs repurposed for SPI)
+//  ES8311 audio codec (I2S — unused by pixfrog; GPIO9-13 left free, not on J13)
 //    MCLK=GPIO13  SCLK=GPIO12  LRCK=GPIO10  DOUT=GPIO11  DIN=GPIO9
 //    Config via I2C shared bus above.
 //
@@ -156,17 +155,32 @@ constexpr uint8_t kEncoderI2cAddr = 0x36;  // Adafruit seesaw 4991 default
 // SPI display — ST7789V or ILI9341
 // ────────────────────────────────────────────────────────────────────────────
 //
-// These GPIOs are shared with the on-board ES8311 audio codec I2S bus (U8).
-// The codec is unused by pixfrog so the pins are free. SPI2 (HSPI) is used;
-// all signals are routed through the GPIO matrix so no fixed-pin constraint.
+// Routed to the shield's J13 break-out header. The ES8311 codec I2S pins
+// (GPIO9-13) the display used to share are NOT exposed on J13, so the SPI
+// display moved to the free, 3.3 V-direct, non-strapping GPIOs available
+// there: 0/6/20/21/27. (J13 also exposes GPIO36 — a boot strapping pin, must
+// read HIGH at reset — and GPIO45 — VDD_IO_5/LDO-VO4 domain; both left as
+// spares.) SPI2 (HSPI) is used; every signal is routed through the GPIO
+// matrix so any free GPIO is valid.
 
-constexpr int kDisplaySpiHost        = 1;  // SPI2 / HSPI
-constexpr int kDisplayClkGpio        = 13;
-constexpr int kDisplayMosiGpio       = 11;
-constexpr int kDisplayCsGpio         = 12;
-constexpr int kDisplayDcGpio         = 10;
-constexpr int kDisplayRstGpio        = 9;
-constexpr uint32_t kDisplaySpiFreqHz = 40'000'000;
+constexpr int kDisplaySpiHost  = 1;  // SPI2 / HSPI
+constexpr int kDisplayClkGpio  = 0;
+constexpr int kDisplayMosiGpio = 6;
+constexpr int kDisplayCsGpio   = 20;
+constexpr int kDisplayDcGpio   = 21;
+constexpr int kDisplayRstGpio  = 27;
+// 20 MHz: the P4's default SPI clock source can't derive 40 MHz cleanly
+// (spi_bus_add_device → "invalid sclk speed"); 20 MHz is a clean divisor and
+// well within the GPIO-matrix routing limit. Plenty for the 320×240 panel.
+constexpr uint32_t kDisplaySpiFreqHz = 20'000'000;
+
+// Backlight enable, on J13's last spare. Driven LOW (off) from boot and raised
+// HIGH (on) only once the first UI frame has been pushed, so the panel never
+// shows its white power-on state. 3.3 V logic drives the module's BL/LED pin
+// directly (VDD_IO_5 domain, brought to 3.3 V at boot by power_vdd_io5_pads).
+// -1 disables backlight control (BL hard-wired on). GPIO36 (the other spare) is
+// a boot strapping pin, so it is left unused.
+constexpr int kDisplayBacklightGpio = 45;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Miscellaneous

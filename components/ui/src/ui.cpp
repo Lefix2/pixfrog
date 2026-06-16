@@ -50,12 +50,23 @@ void task_main(void*) {
     {
         const TickType_t t0 = xTaskGetTickCount();
         bool done           = false;
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+        bool bl_on = false;
+#endif
         while (!done) {
             const uint32_t t_ms    = static_cast<uint32_t>((xTaskGetTickCount() - t0) *
                                                            portTICK_PERIOD_MS);
             const detail::Event ev = detail::encoder_poll();
             detail::encoder_led_tick();  // breathe during the splash
             done = detail::splash_render(t_ms, ev == detail::Event::Click);
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+            // First frame is now on the panel — safe to light the backlight
+            // (kept off through boot so the white power-on state never shows).
+            if (!bl_on) {
+                detail::tft_backlight(true);
+                bl_on = true;
+            }
+#endif
             vTaskDelay(pdMS_TO_TICKS(33));  // ~30 fps
         }
     }
@@ -127,15 +138,16 @@ bool start(const InitConfig& cfg) {
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     {
         detail::TftConfig tft_cfg{};
-        tft_cfg.spi_host  = cfg.spi_host;
-        tft_cfg.clk_gpio  = cfg.spi_clk_gpio;
-        tft_cfg.mosi_gpio = cfg.spi_mosi_gpio;
-        tft_cfg.cs_gpio   = cfg.spi_cs_gpio;
-        tft_cfg.dc_gpio   = cfg.tft_dc_gpio;
-        tft_cfg.rst_gpio  = cfg.tft_rst_gpio;
-        tft_cfg.freq_hz   = cfg.spi_freq_hz;
-        tft_cfg.width     = cfg.tft_width;
-        tft_cfg.height    = cfg.tft_height;
+        tft_cfg.spi_host       = cfg.spi_host;
+        tft_cfg.clk_gpio       = cfg.spi_clk_gpio;
+        tft_cfg.mosi_gpio      = cfg.spi_mosi_gpio;
+        tft_cfg.cs_gpio        = cfg.spi_cs_gpio;
+        tft_cfg.dc_gpio        = cfg.tft_dc_gpio;
+        tft_cfg.rst_gpio       = cfg.tft_rst_gpio;
+        tft_cfg.freq_hz        = cfg.spi_freq_hz;
+        tft_cfg.width          = cfg.tft_width;
+        tft_cfg.height         = cfg.tft_height;
+        tft_cfg.backlight_gpio = cfg.tft_backlight_gpio;
         if (!detail::tft_init(tft_cfg)) {
             ESP_LOGE(TAG, "tft init failed");
             return false;

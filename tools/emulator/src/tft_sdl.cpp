@@ -13,6 +13,7 @@
 #include "ui_internal.h"
 
 #include <cstdint>
+#include <cstdlib>
 
 namespace pixfrog::ui::detail {
 
@@ -52,6 +53,12 @@ int tft_width() {
 }
 int tft_height() {
     return kH;
+}
+
+void tft_backlight(bool /*on*/) {}  // no backlight on the host
+
+void* tft_fb_alloc(unsigned long bytes) {
+    return std::malloc(bytes);
 }
 
 }  // namespace pixfrog::ui::detail
