@@ -43,18 +43,21 @@ static void draw_row(uint8_t row, uint8_t col, const char* str) {
 
 // ── TFT layout ────────────────────────────────────────────────────────────────
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
-constexpr int kTW     = 320;                      // TFT width  (landscape)
-constexpr int kTH     = 240;                      // TFT height (landscape)
-constexpr int kHdrH   = 28;                       // header bar height
-constexpr int kItemH  = 24;                       // list item height
-constexpr int kTxtSc  = 2;                        // standard text scale (12x16 per char)
-constexpr int kTxtH   = 8 * kTxtSc;               // 16px
-constexpr int kPad    = (kItemH - kTxtH) / 2;     // vertical padding in item
-constexpr int kIndent = 6;                        // left margin
-constexpr int kMaxVis = (kTH - kHdrH) / kItemH;   // 8 visible items
-constexpr int kBadge  = kItemH - 6;               // square channel-badge side (18px)
-constexpr int kGutter = 5 + kBadge + 6;           // label x: clears the badge column
-constexpr int kChevW  = kFontCellWidth * kTxtSc;  // chevron glyph width (12px)
+constexpr int kTW    = 320;         // TFT width  (landscape)
+constexpr int kTH    = 240;         // TFT height (landscape)
+constexpr int kHdrH  = 28;          // header bar height
+constexpr int kItemH = 24;          // list item height
+constexpr int kTxtSc = 2;           // standard text scale (12x16 per char)
+constexpr int kTxtH  = 8 * kTxtSc;  // 16px
+// +2: glyph ink sits in the upper ~12 of the 16px cell (descender space below),
+// so centring the full cell reads high — nudge text down to centre the ink.
+constexpr int kTxtYBias = 2;
+constexpr int kPad      = (kItemH - kTxtH) / 2 + kTxtYBias;  // vertical text offset in item
+constexpr int kIndent   = 6;                                 // left margin
+constexpr int kMaxVis   = (kTH - kHdrH) / kItemH;            // 8 visible items
+constexpr int kBadge    = kItemH - 6;                        // square channel-badge side (18px)
+constexpr int kGutter   = 5 + kBadge + 6;                    // label x: clears the badge column
+constexpr int kChevW    = kFontCellWidth * kTxtSc;           // chevron glyph width (12px)
 
 // Shared screen header: dark bar + signature-green accent line + title.
 void draw_tft_header(const char* title, Color title_col = color::Cream) {
@@ -78,14 +81,18 @@ int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
     return x + w + 6;
 }
 
-// Channel-number badge: AA rounded square with the digit's ink optically
-// centred (large-cell digits ink: cols 1..8 → centre ≈4.75, rows 0..12 →
-// centre 6 of the 12×16 cell).
+// Channel-number badge: AA rounded square with the digit drawn on a transparent
+// background so its ink composites over the badge and never squares off the
+// rounded corners. Digit ink sits in the upper ~13 rows of the 12×16 cell, so
+// bias the cell down a touch to centre the visible glyph in the square.
 void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col, Color behind) {
     canvas_fill_round_rect_aa(x, y, side, side, 4, badge_col, behind);
     char num[8];
     std::snprintf(num, sizeof(num), "%d", number);
-    canvas_draw_text(x + side / 2 - 5, y + side / 2 - 6, num, num_col, badge_col, kTxtSc);
+    const int cw = kFontCellWidth * kTxtSc;  // one digit = 12 px wide
+    const int tx = x + (side - cw) / 2;
+    const int ty = y + (side - kTxtH) / 2 + 2;  // +2: glyph ink is top-weighted
+    canvas_draw_text(tx, ty, num, num_col, color::Transparent, kTxtSc);
 }
 
 // Right-aligned standard-scale text; returns the x where the text starts.
@@ -560,7 +567,7 @@ void render_home() {
 
         const auto& cc = config::get_channel(i);
         const bool off = led::is_off(cc.protocol);
-        const int ty   = cy + (kChH - kTxtH) / 2;
+        const int ty   = cy + (kChH - kTxtH) / 2 + kTxtYBias;
 
         // Numbered badge, colour-coded by wiring family (grey when disabled).
         draw_badge(kColBadge, cy + 1, kChH - 3, i + 1, badge_color(cc.protocol),

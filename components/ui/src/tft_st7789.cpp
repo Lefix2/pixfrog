@@ -1,6 +1,8 @@
 #include "ui_internal.h"
 
+#include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
@@ -13,11 +15,22 @@ constexpr const char* TAG      = "TFT";
 esp_lcd_panel_handle_t g_panel = nullptr;
 int g_w                        = 0;
 int g_h                        = 0;
+int g_bl_gpio                  = -1;
 }  // namespace
 
 bool tft_init(const TftConfig& cfg) {
     g_w = cfg.width;
     g_h = cfg.height;
+
+    // Backlight: configure off now, raised on after the first frame (ui.cpp).
+    g_bl_gpio = cfg.backlight_gpio;
+    if (g_bl_gpio >= 0) {
+        gpio_config_t bl{};
+        bl.pin_bit_mask = 1ULL << g_bl_gpio;
+        bl.mode         = GPIO_MODE_OUTPUT;
+        gpio_config(&bl);
+        gpio_set_level(static_cast<gpio_num_t>(g_bl_gpio), 0);
+    }
 
     spi_bus_config_t bus{};
     bus.mosi_io_num     = cfg.mosi_gpio;
@@ -62,9 +75,20 @@ bool tft_init(const TftConfig& cfg) {
 
     esp_lcd_panel_reset(g_panel);
     esp_lcd_panel_init(g_panel);
-    esp_lcd_panel_invert_color(g_panel, true);
+    esp_lcd_panel_invert_color(g_panel, false);
     esp_lcd_panel_swap_xy(g_panel, true);  // portrait → landscape (320×240)
     esp_lcd_panel_mirror(g_panel, true, false);
+
+    // Paint GRAM black before enabling the display, else the panel's random
+    // power-on contents flash (white) until the first UI frame is pushed.
+    {
+        static uint16_t zeros[320 * 16] = { 0 };  // 0x0000 = black, byte-order agnostic
+        const int w = cfg.width, h = cfg.height;
+        for (int y = 0; y < h; y += 16) {
+            const int band = (y + 16 <= h) ? 16 : (h - y);
+            esp_lcd_panel_draw_bitmap(g_panel, 0, y, w, y + band, zeros);
+        }
+    }
     esp_lcd_panel_disp_on_off(g_panel, true);
 
     ESP_LOGI(TAG, "ST7789 %dx%d ready", cfg.width, cfg.height);
@@ -80,6 +104,17 @@ int tft_width() {
 }
 int tft_height() {
     return g_h;
+}
+
+void tft_backlight(bool on) {
+    if (g_bl_gpio >= 0) gpio_set_level(static_cast<gpio_num_t>(g_bl_gpio), on ? 1 : 0);
+}
+
+void* tft_fb_alloc(unsigned long bytes) {
+    // Frame-buffer-sized → PSRAM (SRAM is reserved; see AGENT.md). The flush
+    // path stages each band through an internal buffer, so the panel DMA never
+    // sources from PSRAM directly.
+    return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 }  // namespace pixfrog::ui::detail

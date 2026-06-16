@@ -9,15 +9,64 @@ namespace pixfrog::ui::detail {
 
 namespace {
 
-// Scan-line buffer: one row x max width (landscape = 320px)
-static uint16_t s_row_buf[320];
+// Off-screen framebuffer (double-buffered). Every canvas primitive renders
+// into s_back; canvas_flush() pushes only the scan-lines that actually changed
+// since the last flush (true partial refresh) — so a static screen costs no
+// SPI traffic and there is never an all-black intermediate on the panel (the
+// cause of the visible "wipe" of the old direct-write path). Both buffers are
+// frame-buffer-sized → allocated in PSRAM via tft_fb_alloc (AGENT.md: no
+// frame-buffer-sized SRAM). Pixels are stored big-endian (ST7789 wire order),
+// the same value tft_draw_bitmap expects.
+uint16_t* s_back   = nullptr;  // current frame being composed
+uint16_t* s_shadow = nullptr;  // last frame pushed to the panel
+int s_W            = 0;
+int s_H            = 0;
+bool s_force_full  = true;  // first flush pushes everything
 
-// Text block buffer: max 320px wide x 32px tall (large font at scale 4)
-static uint16_t s_text_buf[320 * 32];
+// Per-band staging buffer (internal RAM, DMA-safe): the flush copies each
+// changed band here before tft_draw_bitmap, so the panel DMA never sources
+// from PSRAM. 320 px × up to 32 rows.
+constexpr int kBandRows = 32;
+static uint16_t s_band_buf[320 * kBandRows];
 
 // ST7789 expects big-endian RGB565; swap bytes since ESP32 is little-endian.
 inline uint16_t to_hw(Color c) {
     return __builtin_bswap16(c.v);
+}
+
+bool ensure_fb() {
+    if (s_back) return true;
+    s_W = tft_width();
+    s_H = tft_height();
+    if (s_W <= 0 || s_H <= 0 || s_W > 320) return false;
+    const unsigned long n = static_cast<unsigned long>(s_W) * s_H;
+    s_back                = static_cast<uint16_t*>(tft_fb_alloc(n * sizeof(uint16_t)));
+    s_shadow              = static_cast<uint16_t*>(tft_fb_alloc(n * sizeof(uint16_t)));
+    if (!s_back || !s_shadow) {
+        s_back = s_shadow = nullptr;
+        return false;
+    }
+    std::memset(s_back, 0, n * sizeof(uint16_t));
+    std::memset(s_shadow, 0, n * sizeof(uint16_t));
+    s_force_full = true;
+    return true;
+}
+
+inline void fb_hspan(int x, int y, int w, uint16_t hw) {
+    if (y < 0 || y >= s_H || w <= 0) return;
+    int x0 = x < 0 ? 0 : x;
+    int x1 = x + w;
+    if (x1 > s_W) x1 = s_W;
+    if (x1 <= x0) return;
+    uint16_t* p = &s_back[static_cast<long>(y) * s_W + x0];
+    for (int i = 0; i < x1 - x0; ++i)
+        p[i] = hw;
+}
+
+inline void fb_px(int x, int y, uint16_t hw) {
+    if (static_cast<unsigned>(x) < static_cast<unsigned>(s_W) &&
+        static_cast<unsigned>(y) < static_cast<unsigned>(s_H))
+        s_back[static_cast<long>(y) * s_W + x] = hw;
 }
 
 }  // namespace
@@ -30,23 +79,18 @@ int canvas_height() {
 }
 
 void canvas_clear(Color bg) {
+    if (!ensure_fb()) return;
     const uint16_t hw = to_hw(bg);
-    const int w       = tft_width();
-    for (int i = 0; i < w; i++)
-        s_row_buf[i] = hw;
-    for (int y = 0; y < tft_height(); y++)
-        tft_draw_bitmap(0, y, w, y + 1, s_row_buf);
+    const long n      = static_cast<long>(s_W) * s_H;
+    for (long i = 0; i < n; ++i)
+        s_back[i] = hw;
 }
 
 void canvas_fill_rect(int x, int y, int w, int h, Color c) {
-    if (w <= 0 || h <= 0) return;
-    const int max_w     = tft_width();
-    const int clamped_w = (w > max_w) ? max_w : w;
-    const uint16_t hw   = to_hw(c);
-    for (int i = 0; i < clamped_w; i++)
-        s_row_buf[i] = hw;
-    for (int row = y; row < y + h; row++)
-        tft_draw_bitmap(x, row, x + clamped_w, row + 1, s_row_buf);
+    if (!ensure_fb() || w <= 0 || h <= 0) return;
+    const uint16_t hw = to_hw(c);
+    for (int row = y; row < y + h; ++row)
+        fb_hspan(x, row, w, hw);
 }
 
 void canvas_hline(int x, int y, int w, Color c) {
@@ -54,11 +98,10 @@ void canvas_hline(int x, int y, int w, Color c) {
 }
 
 void canvas_vline(int x, int y, int h, Color c) {
-    if (h <= 0) return;
+    if (!ensure_fb() || h <= 0) return;
     const uint16_t hw = to_hw(c);
-    s_row_buf[0]      = hw;
-    for (int row = y; row < y + h; row++)
-        tft_draw_bitmap(x, row, x + 1, row + 1, s_row_buf);
+    for (int row = y; row < y + h; ++row)
+        fb_px(x, row, hw);
 }
 
 // Corner inset for a corner row: r minus the half-width of the circle at the
@@ -73,7 +116,7 @@ static int round_rect_inset(int r, int dy) {
 }
 
 void canvas_fill_round_rect(int x, int y, int w, int h, int r, Color c) {
-    if (w <= 0 || h <= 0) return;
+    if (!ensure_fb() || w <= 0 || h <= 0) return;
     if (r > w / 2) r = w / 2;
     if (r > h / 2) r = h / 2;
     if (r <= 0) {
@@ -90,47 +133,28 @@ void canvas_fill_round_rect(int x, int y, int w, int h, int r, Color c) {
         }
         const int row_w = w - 2 * x_off;
         if (row_w <= 0) continue;
-        for (int i = 0; i < row_w && i < 320; ++i)
-            s_row_buf[i] = hw;
-        tft_draw_bitmap(x + x_off, y + row, x + x_off + row_w, y + row + 1, s_row_buf);
+        fb_hspan(x + x_off, y + row, row_w, hw);
     }
 }
 
 // mask: 1bpp, row-major, MSB-first, stride = (w+7)/8 bytes.
 // Pixels where bit=1 → fg, bit=0 → bg.  bg.v==0xFFFF means transparent (skip).
 void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg, Color bg) {
-    if (!mask || w <= 0 || h <= 0) return;
+    if (!ensure_fb() || !mask || w <= 0 || h <= 0) return;
     const uint16_t hw_fg   = to_hw(fg);
     const uint16_t hw_bg   = to_hw(bg);
     const bool transparent = (bg.v == 0xFFFFu);
     const int stride       = (w + 7) / 8;
-    const int disp_w       = tft_width();
-    const int disp_h       = tft_height();
     for (int row = 0; row < h; ++row) {
         const int py = y + row;
-        if (py < 0 || py >= disp_h) continue;
-        int col_start = 0, col_end = w;
-        if (x < 0) col_start = -x;
-        if (x + w > disp_w) col_end = disp_w - x;
-        if (col_start >= col_end) continue;
-        if (transparent) {
-            // Write each fg pixel individually to avoid a full-row redraw.
-            for (int col = col_start; col < col_end; ++col) {
-                const int byte_idx = col / 8;
-                const int bit_idx  = 7 - (col % 8);
-                if ((mask[row * stride + byte_idx] >> bit_idx) & 1u) {
-                    s_row_buf[0] = hw_fg;
-                    tft_draw_bitmap(x + col, py, x + col + 1, py + 1, s_row_buf);
-                }
-            }
-        } else {
-            for (int col = col_start; col < col_end; ++col) {
-                const int byte_idx         = col / 8;
-                const int bit_idx          = 7 - (col % 8);
-                const bool set             = (mask[row * stride + byte_idx] >> bit_idx) & 1u;
-                s_row_buf[col - col_start] = set ? hw_fg : hw_bg;
-            }
-            tft_draw_bitmap(x + col_start, py, x + col_end, py + 1, s_row_buf);
+        for (int col = 0; col < w; ++col) {
+            const int byte_idx = col / 8;
+            const int bit_idx  = 7 - (col % 8);
+            const bool set     = (mask[row * stride + byte_idx] >> bit_idx) & 1u;
+            if (set)
+                fb_px(x + col, py, hw_fg);
+            else if (!transparent)
+                fb_px(x + col, py, hw_bg);
         }
     }
 }
@@ -138,22 +162,23 @@ void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
 // Forward declaration (defined below, shared with the AA shape fill).
 inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a);
 
-// Anti-aliased rounded rectangle (w == h == 2r gives a circle). Edge pixels
-// are blended toward `bg` — the colour already behind the shape — because the
-// panel cannot be read back. Renders the whole block through s_text_buf, so
-// it must be issued before any text that lands on top of it.
+// Anti-aliased rounded rectangle (w == h == 2r gives a circle). Edge pixels are
+// blended against whatever is already in the framebuffer behind the shape, so
+// the contour stays clean over any background (no flat-colour corner fringe —
+// the cause of the "irregular" look). `bg` is unused (kept for API symmetry).
 void canvas_fill_round_rect_aa(int x, int y, int w, int h, int r, Color fg, Color bg) {
-    if (w <= 0 || h <= 0) return;
+    (void)bg;
+    if (!ensure_fb() || w <= 0 || h <= 0) return;
     if (r > w / 2) r = w / 2;
     if (r > h / 2) r = h / 2;
-    if (w * h > static_cast<int>(sizeof(s_text_buf) / sizeof(s_text_buf[0]))) {
-        canvas_fill_round_rect(x, y, w, h, r, fg);
-        return;
-    }
     const float half_w = w * 0.5f, half_h = h * 0.5f, rr = static_cast<float>(r);
     for (int py = 0; py < h; ++py) {
+        const int dy = y + py;
+        if (static_cast<unsigned>(dy) >= static_cast<unsigned>(s_H)) continue;
         const float qy = std::fabs(py + 0.5f - half_h) - (half_h - rr);
         for (int px = 0; px < w; ++px) {
+            const int dx = x + px;
+            if (static_cast<unsigned>(dx) >= static_cast<unsigned>(s_W)) continue;
             // Signed distance to the rounded box, sampled at the pixel centre;
             // coverage ramps over the one-pixel band around the contour.
             const float qx    = std::fabs(px + 0.5f - half_w) - (half_w - rr);
@@ -164,11 +189,12 @@ void canvas_fill_round_rect_aa(int x, int y, int w, int h, int r, Color fg, Colo
             float cov         = 0.5f - dist;
             if (cov < 0.0f) cov = 0.0f;
             if (cov > 1.0f) cov = 1.0f;
-            const uint8_t a         = static_cast<uint8_t>(cov * 255.0f + 0.5f);
-            s_text_buf[py * w + px] = __builtin_bswap16(blend565(fg.v, bg.v, a));
+            const uint8_t a = static_cast<uint8_t>(cov * 255.0f + 0.5f);
+            if (a == 0) continue;  // fully outside → leave the background pixel
+            uint16_t& dst = s_back[static_cast<long>(dy) * s_W + dx];
+            dst = __builtin_bswap16(a == 255 ? fg.v : blend565(fg.v, __builtin_bswap16(dst), a));
         }
     }
-    tft_draw_bitmap(x, y, x + w, y + h, s_text_buf);
 }
 
 // Blend fg over bg by 8-bit coverage in RGB565 channel space.
@@ -184,7 +210,7 @@ inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a) {
 }
 
 void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t scale) {
-    if (!str || !*str) return;
+    if (!ensure_fb() || !str || !*str) return;
     int s = (scale < 1) ? 1 : scale;
     // Even scales swap in the natively rasterised 12×16 cell at half the scale:
     // identical advance/line metrics in small-cell units, but crisp glyphs
@@ -200,14 +226,27 @@ void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t
         ++len;
     const int tw = len * cw;
     const int th = ch;
+    if (tw <= 0) return;
 
-    if (tw <= 0 || tw > 320 || th > 32) return;
+    const bool transparent = (bg.v == 0xFFFFu);
+    const uint16_t nat_bg  = bg.v;
+    if (!transparent) {
+        // Opaque background: fill the whole block first.
+        const uint16_t hw_bg = to_hw(bg);
+        for (int row = 0; row < th; ++row)
+            fb_hspan(x, y + row, tw, hw_bg);
+    }
 
-    // Blend in native RGB565, byte-swap once on store (to_hw handles the swap).
-    const uint16_t nat_bg = bg.v;
-    const uint16_t hw_bg  = to_hw(bg);
-    for (int i = 0; i < tw * th; i++)
-        s_text_buf[i] = hw_bg;
+    // Composite one ink pixel: over the flat bg (opaque) or over whatever is
+    // already in the framebuffer (transparent) so glyphs sit on any shape.
+    auto put = [&](int X, int Y, uint8_t a) {
+        if (static_cast<unsigned>(X) >= static_cast<unsigned>(s_W) ||
+            static_cast<unsigned>(Y) >= static_cast<unsigned>(s_H))
+            return;
+        uint16_t& d         = s_back[static_cast<long>(Y) * s_W + X];
+        const uint16_t bgnt = transparent ? __builtin_bswap16(d) : nat_bg;
+        d                   = __builtin_bswap16(a == 255 ? fg.v : blend565(fg.v, bgnt, a));
+    };
 
     for (int ci = 0; ci < len; ci++) {
         const uint8_t* glyph = large ? font_large_alpha_for(str[ci]) : font_alpha_for(str[ci]);
@@ -215,22 +254,86 @@ void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg, uint8_t
         for (int col = 0; col < cell_w; col++) {
             for (int row = 0; row < cell_h; row++) {
                 const uint8_t a = glyph[row * cell_w + col];
-                if (a == 0) continue;  // bg already written
-                const uint16_t pix = __builtin_bswap16(blend565(fg.v, nat_bg, a));
-                for (int sy = 0; sy < s; sy++) {
-                    for (int sx = 0; sx < s; sx++) {
-                        const int px             = cx + col * s + sx;
-                        const int py             = row * s + sy;
-                        s_text_buf[py * tw + px] = pix;
-                    }
-                }
+                if (a == 0) continue;  // bg already written (opaque) / left as-is (transparent)
+                for (int sy = 0; sy < s; sy++)
+                    for (int sx = 0; sx < s; sx++)
+                        put(x + cx + col * s + sx, y + row * s + sy, a);
             }
         }
     }
-
-    tft_draw_bitmap(x, y, x + tw, y + th, s_text_buf);
 }
 
-void canvas_flush() {}  // direct-write: nothing to flush
+int canvas_text_xl_width(const char* str) {
+    int n = 0;
+    if (str)
+        while (str[n])
+            ++n;
+    return n * kFontXLCellWidth;
+}
+
+// Crisp 18×24 wordmark, rendered 1:1 from the native XL cell (no upscaling).
+void canvas_draw_text_xl(int x, int y, const char* str, Color fg, Color bg) {
+    if (!ensure_fb() || !str || !*str) return;
+    const bool transparent = (bg.v == 0xFFFFu);
+    const uint16_t nat_bg  = bg.v;
+    const int cw = kFontXLCellWidth, ch = kFontXLHeight;
+    int len = 0;
+    while (str[len])
+        ++len;
+    if (!transparent) {
+        const uint16_t hw_bg = to_hw(bg);
+        for (int row = 0; row < ch; ++row)
+            fb_hspan(x, y + row, len * cw, hw_bg);
+    }
+    auto put = [&](int X, int Y, uint8_t a) {
+        if (static_cast<unsigned>(X) >= static_cast<unsigned>(s_W) ||
+            static_cast<unsigned>(Y) >= static_cast<unsigned>(s_H))
+            return;
+        uint16_t& d         = s_back[static_cast<long>(Y) * s_W + X];
+        const uint16_t bgnt = transparent ? __builtin_bswap16(d) : nat_bg;
+        d                   = __builtin_bswap16(a == 255 ? fg.v : blend565(fg.v, bgnt, a));
+    };
+    for (int ci = 0; ci < len; ++ci) {
+        const uint8_t* glyph = font_xl_alpha_for(str[ci]);
+        const int cx         = ci * cw;
+        for (int col = 0; col < cw; ++col)
+            for (int row = 0; row < ch; ++row) {
+                const uint8_t a = glyph[row * cw + col];
+                if (a != 0) put(x + cx + col, y + row, a);
+            }
+    }
+}
+
+// Push every scan-line that differs from the last flush; identical lines (the
+// common idle case) cost nothing. Changed lines are coalesced into bands of up
+// to kBandRows and staged through the internal s_band_buf before the panel DMA.
+void canvas_flush() {
+    if (!ensure_fb()) return;
+    const int rowbytes = s_W * static_cast<int>(sizeof(uint16_t));
+    int y              = 0;
+    while (y < s_H) {
+        const uint16_t* fb_row = &s_back[static_cast<long>(y) * s_W];
+        const uint16_t* sh_row = &s_shadow[static_cast<long>(y) * s_W];
+        if (!s_force_full && std::memcmp(fb_row, sh_row, rowbytes) == 0) {
+            ++y;
+            continue;
+        }
+        const int y0 = y;
+        int rows     = 0;
+        while (y < s_H && rows < kBandRows) {
+            const uint16_t* fr = &s_back[static_cast<long>(y) * s_W];
+            const uint16_t* sr = &s_shadow[static_cast<long>(y) * s_W];
+            if (!s_force_full && std::memcmp(fr, sr, rowbytes) == 0) break;
+            ++y;
+            ++rows;
+        }
+        const long span = static_cast<long>(rows) * s_W;
+        std::memcpy(s_band_buf, &s_back[static_cast<long>(y0) * s_W], span * sizeof(uint16_t));
+        tft_draw_bitmap(0, y0, s_W, y0 + rows, s_band_buf);
+        std::memcpy(&s_shadow[static_cast<long>(y0) * s_W], &s_back[static_cast<long>(y0) * s_W],
+                    span * sizeof(uint16_t));
+    }
+    s_force_full = false;
+}
 
 }  // namespace pixfrog::ui::detail
