@@ -83,6 +83,37 @@ bool chan_next_bit(NrzChan& c) {
     return bit;
 }
 
+// Fill / OR a run of `n` identical samples into the 16-bit DMA buffer. Plain
+// sequential 16-bit stores: the buffer is cache-backed PSRAM whose write-back
+// already coalesces sequential writes into full cache-line evictions, so wider
+// stores don't cut the (eviction-bound) memory traffic — they only add
+// alignment-handling overhead, which measured *slower* on the P4.
+inline void fill_run(uint16_t* d, uint16_t v, uint16_t n) {
+    for (uint16_t k = 0; k < n; ++k)
+        d[k] = v;
+}
+
+inline void or_run(uint16_t* d, uint16_t v, uint16_t n) {
+    if (v == 0) return;
+    for (uint16_t k = 0; k < n; ++k)
+        d[k] = static_cast<uint16_t>(d[k] | v);
+}
+
+// Returns the current transformed byte (MSB is emitted first) and advances the
+// cursor a whole byte. The homogeneous sweep gathers all 8 bits of a byte in
+// one go, so the pixel-transform / cursor bookkeeping runs once per byte rather
+// than once per bit (8× fewer cursor advances on the hot path).
+uint8_t chan_next_byte(NrzChan& c) {
+    const uint8_t b = c.bytes[c.byte_idx];
+    if (++c.byte_idx == c.bytes_per_px) {
+        c.byte_idx = 0;
+        if (++c.out_pi < c.d->pixel_count) {
+            detail::transformed_pixel_bytes(*c.d, c.pixels, c.out_pi, c.bytes);
+        }
+    }
+    return b;
+}
+
 // A sample offset within the bit cell where some channels may go low.
 // clear0: channels whose T0H ends here (cleared when their bit is 0).
 // clear1: channels whose T1H ends here (cleared when their bit is 1).
@@ -91,6 +122,71 @@ struct Edge {
     uint16_t clear0;
     uint16_t clear1;
 };
+
+// Fast path for a group whose channels all share the same T0H and T1H (any
+// single-protocol group — the common 8×WS2815 case). The bus word inside each
+// bit is then exactly three constant runs: all active channels high until T0H,
+// only the bit-1 channels high until T1H, all low after. This skips the generic
+// edge table and its per-bit word masking entirely.
+template <bool kStore>
+uint32_t sweep_group_homogeneous(NrzChan* ch, size_t n, uint16_t samples_bit, uint16_t* out,
+                                 uint32_t max_bits) {
+    const uint16_t t0h  = ch[0].t0h;
+    const uint16_t t1h  = ch[0].t1h;
+    const uint16_t run1 = static_cast<uint16_t>(t1h - t0h);
+    const uint16_t run2 = static_cast<uint16_t>(samples_bit - t1h);
+    // total_bits is always a whole number of bytes (pixel_count × bpp × 8).
+    const uint32_t max_bytes = max_bits >> 3;
+
+    uint32_t next_rebuild_byte = 0;  // byte index at which some channel drops out
+    uint16_t all_mask          = 0;
+    size_t active_n            = 0;
+    uint32_t out_pos           = 0;
+
+    size_t active[kMaxChannels];   // indices of channels still emitting
+    uint16_t amask[kMaxChannels];  // their bus masks (cached for the inner loop)
+    uint8_t cur[kMaxChannels];     // their current transformed byte
+
+    for (uint32_t byte_pos = 0; byte_pos < max_bytes; ++byte_pos) {
+        // all_mask / the active set only change when a (shorter) channel ends.
+        if (byte_pos == next_rebuild_byte) {
+            all_mask          = 0;
+            active_n          = 0;
+            next_rebuild_byte = max_bytes;
+            for (size_t i = 0; i < n; ++i) {
+                const uint32_t end_byte = ch[i].total_bits >> 3;
+                if (end_byte <= byte_pos) continue;
+                active[active_n] = i;
+                amask[active_n]  = ch[i].mask;
+                ++active_n;
+                all_mask = static_cast<uint16_t>(all_mask | ch[i].mask);
+                if (end_byte < next_rebuild_byte) next_rebuild_byte = end_byte;
+            }
+        }
+
+        for (size_t a = 0; a < active_n; ++a)
+            cur[a] = chan_next_byte(ch[active[a]]);
+
+        for (int bit = 7; bit >= 0; --bit) {
+            uint16_t ones = 0;
+            for (size_t a = 0; a < active_n; ++a) {
+                if ((cur[a] >> bit) & 1u) ones = static_cast<uint16_t>(ones | amask[a]);
+            }
+            uint16_t* p = out + out_pos;
+            if (kStore) {
+                fill_run(p, all_mask, t0h);
+                fill_run(p + t0h, ones, run1);
+                fill_run(p + t1h, 0, run2);
+            } else {
+                or_run(p, all_mask, t0h);
+                or_run(p + t0h, ones, run1);
+                // [t1h, samples_bit) is low — nothing to OR in.
+            }
+            out_pos += samples_bit;
+        }
+    }
+    return out_pos;
+}
 
 // Sweep one group of channels sharing `samples_bit`. kStore writes every
 // sample (fully initializing the region); otherwise only non-zero words are
@@ -102,6 +198,16 @@ uint32_t sweep_group(NrzChan* ch, size_t n, uint16_t samples_bit, uint16_t* out)
     for (size_t i = 0; i < n; ++i) {
         if (ch[i].total_bits > max_bits) max_bits = ch[i].total_bits;
     }
+
+    // Single-protocol group → the three-run fast path.
+    bool homogeneous = true;
+    for (size_t i = 1; i < n; ++i) {
+        if (ch[i].t0h != ch[0].t0h || ch[i].t1h != ch[0].t1h) {
+            homogeneous = false;
+            break;
+        }
+    }
+    if (homogeneous) return sweep_group_homogeneous<kStore>(ch, n, samples_bit, out, max_bits);
 
     Edge edges[2 * kMaxChannels + 1];
     size_t nedges     = 0;
@@ -156,12 +262,9 @@ uint32_t sweep_group(NrzChan* ch, size_t n, uint16_t samples_bit, uint16_t* out)
         for (size_t e = 0; e < nedges; ++e) {
             const uint16_t b = edges[e].pos;
             if (kStore) {
-                for (uint16_t k = pos; k < b; ++k)
-                    out[out_pos + k] = word;
-            } else if (word) {
-                for (uint16_t k = pos; k < b; ++k) {
-                    out[out_pos + k] = static_cast<uint16_t>(out[out_pos + k] | word);
-                }
+                fill_run(out + out_pos + pos, word, static_cast<uint16_t>(b - pos));
+            } else {
+                or_run(out + out_pos + pos, word, static_cast<uint16_t>(b - pos));
             }
             word = static_cast<uint16_t>(word &
                                          ~((edges[e].clear0 & ~ones) | (edges[e].clear1 & ones)));
@@ -243,12 +346,9 @@ template <bool kStore> uint32_t sweep_dmx(DmxChan* ch, size_t n, uint16_t* out) 
             if (ch[i].total_cells > ct) word = static_cast<uint16_t>(word | dmx_next_mask(ch[i]));
         }
         if (kStore) {
-            for (uint16_t k = 0; k < detail::kDmxSamplesPerBit; ++k)
-                out[out_pos + k] = word;
-        } else if (word) {
-            for (uint16_t k = 0; k < detail::kDmxSamplesPerBit; ++k) {
-                out[out_pos + k] = static_cast<uint16_t>(out[out_pos + k] | word);
-            }
+            fill_run(out + out_pos, word, detail::kDmxSamplesPerBit);
+        } else {
+            or_run(out + out_pos, word, detail::kDmxSamplesPerBit);
         }
         out_pos += detail::kDmxSamplesPerBit;
     }
