@@ -394,22 +394,33 @@ bool is_channel_capacity_ok(size_t ch) {
 void validate_capacity() {
     const uint8_t refresh = config::get_global().refresh_rate_hz;
     if (refresh == 0) return;
-    const uint64_t allowance = logic::emission_budget_us(refresh);
 
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& cc            = config::get_channel(ch);
-        const bool ok             = logic::channel_fits_budget(cc, led::kPclkHz, allowance);
+        const bool ok             = logic::channel_fits_refresh(cc, led::kPclkHz, refresh);
         g_channel_capacity_ok[ch] = ok;
         if (!ok) {
             const uint64_t t_us = logic::channel_t_dma_us(cc, led::kPclkHz);
+            // DMX is judged at its own ~44 Hz ceiling; everything else at the
+            // configured refresh's emission budget.
+            const uint64_t budget = logic::channel_budget_us(cc, refresh);
             ESP_LOGW(TAG,
                      "ch %zu over capacity: t_dma=%llu µs > budget=%llu µs "
                      "(refresh=%u Hz, %u px, proto=%d) — reduce pixel_count or refresh",
                      ch, static_cast<unsigned long long>(t_us),
-                     static_cast<unsigned long long>(allowance), static_cast<unsigned>(refresh),
+                     static_cast<unsigned long long>(budget), static_cast<unsigned>(refresh),
                      static_cast<unsigned>(cc.pixel_count), static_cast<int>(cc.protocol));
         }
     }
+}
+
+uint64_t frame_emit_us() {
+    uint64_t longest = 0;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        const uint64_t t = logic::channel_t_dma_us(config::get_channel(ch), led::kPclkHz);
+        if (t > longest) longest = t;
+    }
+    return longest;
 }
 
 int channel_for_universe(uint16_t universe_number) {

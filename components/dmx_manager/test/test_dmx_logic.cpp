@@ -132,6 +132,33 @@ static void test_capacity_check() {
     EXPECT_TRUE(channel_fits_budget(cc, led::kPclkHz, emission_budget_us(30)));
 }
 
+// A DMX channel is judged at min(refresh, 44 Hz), not the LED refresh: a full
+// 512-slot universe (~22.68 ms) is OK at any refresh, never flagged at 60 Hz.
+static void test_capacity_dmx_ignores_led_refresh() {
+    config::ChannelConfig cc{};
+    cc.protocol = led::Protocol::DMX512;
+
+    // 512 slots: 1536 + 192 + 513 × 704 = 362 880 samples / 16 MHz = 22 680 µs.
+    cc.pixel_count = 512;
+    EXPECT_EQ(channel_t_dma_us(cc, led::kPclkHz), 22680);
+    // 22 680 ≤ 1e6/44 (22 727) → OK at 60 Hz (would FAIL the 15 666 LED budget).
+    EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 60));
+    EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 30));
+    // The old LED-budget check is what used to (wrongly) reject it at 60 Hz.
+    EXPECT_TRUE(!channel_fits_budget(cc, led::kPclkHz, emission_budget_us(60)));
+
+    // An oversized DMX frame (600 slots ≈ 26 552 µs) genuinely can't hold 44 Hz.
+    cc.pixel_count = 600;
+    EXPECT_TRUE(!channel_fits_refresh(cc, led::kPclkHz, 60));
+
+    // A normal LED channel still goes through the emission-budget path.
+    cc.protocol    = led::Protocol::WS2815;
+    cc.pixel_count = 555;  // ~16 930 µs > 15 666 → FAIL at 60 Hz
+    EXPECT_TRUE(!channel_fits_refresh(cc, led::kPclkHz, 60));
+    cc.pixel_count = 300;  // OK at 60 Hz
+    EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 60));
+}
+
 // ── Decoder: single universe ────────────────────────────────────────────────
 
 static void test_decode_single_universe() {
@@ -640,6 +667,7 @@ int main() {
     test_t_dma_ws2815();
     test_emission_budget();
     test_capacity_check();
+    test_capacity_dmx_ignores_led_refresh();
     test_decode_single_universe();
     test_decode_dmx_start_offset();
     test_decode_multi_universe();

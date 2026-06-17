@@ -223,11 +223,18 @@ void render_task(void*) {
         // re-checks the deadline and keeps waiting until it passes: a sync aligns
         // the emit to the controller without ever pushing the rate above
         // refresh_rate_hz (the hard ceiling that protects the DMA budget).
-        next_frame_us   += period_us;
-        int64_t pace_us  = esp_timer_get_time();
-        // A slow frame that overran a whole period must not spiral into a burst
+        //
+        // Never pace faster than the frame physically emits, either: a channel
+        // whose wire time exceeds the period (a DMX universe at 60 Hz sits at
+        // its ~44 Hz, ~22.7 ms ceiling) must emit intact at its own rate rather
+        // than be over-submitted. The interval is max(period, longest channel).
+        const int64_t emit_us      = static_cast<int64_t>(pixfrog::dmx::frame_emit_us());
+        const int64_t interval_us  = period_us > emit_us ? period_us : emit_us;
+        next_frame_us             += interval_us;
+        int64_t pace_us            = esp_timer_get_time();
+        // A slow frame that overran a whole interval must not spiral into a burst
         // of catch-up frames — resync the deadline to now instead.
-        if (pace_us - next_frame_us > period_us) next_frame_us = pace_us;
+        if (pace_us - next_frame_us > interval_us) next_frame_us = pace_us;
         while (pace_us < next_frame_us) {
             const TickType_t wait = pdMS_TO_TICKS((next_frame_us - pace_us + 999) / 1000);
             pixfrog::dmx::wait_for_sync_or_period(wait ? wait : 1);
