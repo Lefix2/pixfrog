@@ -8,18 +8,22 @@ CONFIG_IDF_TARGET="esp32p4"
 
 #
 # PSRAM — P4 is hex-mode only (SPIRAM_MODE_HEX, the Kconfig default).
-# Speed MUST be raised from the 20 MHz default: GDMA streams the LCD frame
-# buffers from PSRAM at 32 MB/s while the encoder writes the other FB, and
-# at 20 MHz the LCD FIFO starves a few thousand samples into every frame
-# (measured on a Saleae 2026-06). 80 MHz is the fastest non-experimental
-# option on IDF v5.5 (200 MHz needs IDF_EXPERIMENTAL_FEATURES).
+# Speed MUST be raised from the 20 MHz default: GDMA streams the frame
+# buffers from PSRAM while the encoder writes the other FB. 200 MHz is the
+# fastest option (needs IDF_EXPERIMENTAL_FEATURES on IDF v5.5) and the
+# encoder is PSRAM-write-bound at full pixel counts: at 80 MHz an 8-channel
+# frame's CPU encode (eviction-bound) exceeds the 60 Hz period; at 200 MHz
+# it does not. Validated on the Waveshare module (gen-4 hex PSRAM, "SPI SRAM
+# memory test OK", dma_underruns=0 sustained): 8×512 px WS2815 holds 60 Hz,
+# 8×1024 px holds 30 Hz.
 # NOTE: invalid symbols are dropped silently — the previous OCT/200M lines
 # (S3 names) were ignored and the build ran at 20 MHz. After changing
 # PSRAM options, `rm -f sdkconfig` so the defaults re-apply, and check the
-# boot log line `esp_psram: Speed: 80MHz`.
+# boot log line `esp_psram: Speed: 200MHz`.
 #
 CONFIG_SPIRAM=y
-CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_SPEED_200M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=n
 # Large allocations go to PSRAM by default; DMA buffers stay in SRAM via MALLOC_CAP_DMA.
