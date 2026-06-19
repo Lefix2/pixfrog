@@ -172,6 +172,9 @@ bool init() {
 
     for (size_t i = 0; i < config::kNumChannels; ++i)
         g_channel_capacity_ok[i] = true;
+    // Correct any stored pixel_count that exceeds the current refresh budget
+    // (e.g. a config saved at a lower refresh, or from before this cap existed).
+    clamp_pixel_counts();
     validate_capacity();
 
     ESP_LOGI(TAG, "init OK, universe LUT built");
@@ -412,6 +415,34 @@ void validate_capacity() {
                      static_cast<unsigned>(cc.pixel_count), static_cast<int>(cc.protocol));
         }
     }
+}
+
+uint16_t channel_max_pixels(size_t ch) {
+    if (ch >= config::kNumChannels) return 0;
+    const uint8_t refresh = config::get_global().refresh_rate_hz;
+    return logic::max_pixels_for(config::get_channel(ch), led::kPclkHz, refresh,
+                                 led::kMaxSamplesPerFrame);
+}
+
+bool clamp_pixel_counts() {
+    const uint8_t refresh = config::get_global().refresh_rate_hz;
+    bool changed          = false;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        auto cc = config::get_channel(ch);
+        if (led::is_off(cc.protocol)) continue;
+        const uint16_t maxpx = logic::max_pixels_for(cc, led::kPclkHz, refresh,
+                                                     led::kMaxSamplesPerFrame);
+        if (cc.pixel_count > maxpx) {
+            ESP_LOGW(TAG, "ch %zu pixel_count %u → %u (refresh=%u Hz cap)", ch,
+                     static_cast<unsigned>(cc.pixel_count), static_cast<unsigned>(maxpx),
+                     static_cast<unsigned>(refresh));
+            cc.pixel_count = maxpx;
+            config::set_channel(ch, cc);
+            mark_channel_dirty(ch);
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 uint64_t frame_emit_us() {

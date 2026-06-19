@@ -1067,6 +1067,9 @@ void commit_edit() {
         auto g            = config::get_global();
         g.refresh_rate_hz = static_cast<uint8_t>(v);
         config::set_global(g);
+        // A higher refresh shrinks every channel's pixel budget — truncate any
+        // strip that no longer fits (e.g. 800 px valid at 30 Hz, not at 60 Hz).
+        dmx::clamp_pixel_counts();
         dmx::mark_global_dirty();
         break;
     }
@@ -1092,6 +1095,9 @@ void commit_edit() {
         auto c     = config::get_channel(s.edit.channel);
         c.protocol = static_cast<led::Protocol>(v);
         config::set_channel(s.edit.channel, c);
+        // New protocol → new per-pixel cost (and DMX caps at one universe);
+        // truncate the pixel count if it no longer fits.
+        dmx::clamp_pixel_counts();
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
@@ -1155,6 +1161,8 @@ void commit_edit() {
         auto c     = config::get_channel(s.edit.channel);
         c.clock_hz = static_cast<uint32_t>(v);
         config::set_channel(s.edit.channel, c);
+        // A slower clock stretches the frame → fewer pixels fit the budget.
+        dmx::clamp_pixel_counts();
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
@@ -1751,14 +1759,20 @@ void dispatch_channel_menu(Event e) {
     case ChItem::Dmx:
         enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", ret, ch);
         break;
-    case ChItem::Pixels:
-        // DMX512 maps one universe → up to 512 slots; LED strips go up to 1024 px.
-        enter_edit(Field::ChPixels, ValueKind::Int, cc.pixel_count, 1, dmx ? 512 : 1024, 1,
-                   dmx ? "Slots" : "Pixels", ret, ch);
+    case ChItem::Pixels: {
+        // Upper bound is whatever the bus can clock out within the refresh
+        // budget (and the DMA buffer) for this protocol — e.g. 512 px for
+        // WS2815 @60 Hz, 1024 @30 Hz, 512 slots for a DMX universe.
+        const int32_t pmax = dmx::channel_max_pixels(ch);
+        int32_t pcur       = cc.pixel_count;
+        if (pcur > pmax) pcur = pmax;
+        enter_edit(Field::ChPixels, ValueKind::Int, pcur, 1, pmax, 1, dmx ? "Slots" : "Pixels", ret,
+                   ch);
         // Light the strip as a live ruler while the count is being edited
         // (LED protocols only — a DMX512 universe has nothing to show).
-        if (!dmx) dmx::set_pixel_preview(ch, cc.pixel_count);
+        if (!dmx) dmx::set_pixel_preview(ch, static_cast<uint16_t>(pcur));
         break;
+    }
     case ChItem::Order: {
         // 3-colour strips pick an RGB permutation; RGBW strips pick a
         // W-suffixed order. Restrict the cycle to the matching family so an

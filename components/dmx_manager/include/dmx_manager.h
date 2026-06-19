@@ -231,6 +231,17 @@ bool is_channel_capacity_ok(size_t ch);
 // Logs warnings for over-capacity channels.
 void validate_capacity();
 
+// Largest pixel_count channel `ch` may use at the current refresh rate without
+// outrunning the bus or the DMA buffer (see logic::max_pixels_for). The UI uses
+// this as the upper bound of the pixel-count editor.
+uint16_t channel_max_pixels(size_t ch);
+
+// Truncate every channel whose pixel_count now exceeds its max (e.g. after the
+// refresh rate was raised), persisting and marking each changed channel dirty.
+// Returns true if any channel was clamped. Call from config-edit paths (UI /
+// web / console / boot) — never from the render task (it writes NVS).
+bool clamp_pixel_counts();
+
 // Physical emission time (µs) of the current frame: the longest configured
 // channel's wire time (all channels emit in parallel on the shared bus). The
 // render loop never paces faster than this, so a channel whose frame outlasts

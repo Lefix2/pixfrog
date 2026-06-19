@@ -320,6 +320,7 @@ int cmd_global(int argc, char** argv) {
     }
 
     const bool persisted = config::set_global(g);
+    dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
     dmx::mark_global_dirty();
     if (!persisted) printf("warn=not_persisted\n");
     if (network_changed) printf("note=network_changes_apply_after_reboot\n");
@@ -425,6 +426,7 @@ int cmd_ch(int argc, char** argv) {
     }
 
     const bool persisted = config::set_channel(ch, c);
+    dmx::clamp_pixel_counts();  // truncate pixel_count to the protocol/refresh budget
     dmx::mark_channel_dirty(ch);
     if (!persisted) printf("warn=not_persisted\n");
     return ok();

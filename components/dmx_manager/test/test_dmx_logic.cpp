@@ -159,6 +159,42 @@ static void test_capacity_dmx_ignores_led_refresh() {
     EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 60));
 }
 
+// ── max_pixels_for: inverse of the capacity check ───────────────────────────
+
+static void test_max_pixels_ws2815() {
+    config::ChannelConfig cc{};
+    cc.protocol      = led::Protocol::WS2815;
+    const size_t buf = led::kMaxSamplesPerFrame;
+
+    // 60 Hz: budget 15 666 µs → 250 656 samples; (250656-4480)/480 = 512.86 → 512.
+    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 60, buf), 512);
+    // 30 Hz: budget 32 333 µs fits well over 1024, so the absolute cap wins.
+    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 30, buf), 1024);
+
+    // The result must pass the capacity check, and one pixel more must not.
+    cc.pixel_count = max_pixels_for(cc, led::kPclkHz, 60, buf);
+    EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 60));
+    cc.pixel_count = static_cast<uint16_t>(cc.pixel_count + 1);
+    EXPECT_TRUE(!channel_fits_refresh(cc, led::kPclkHz, 60));
+}
+
+static void test_max_pixels_dmx() {
+    config::ChannelConfig cc{};
+    cc.protocol = led::Protocol::DMX512;
+    // DMX is one universe regardless of refresh (judged at its own ≤44 Hz rate).
+    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 60, led::kMaxSamplesPerFrame), 512);
+    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 30, led::kMaxSamplesPerFrame), 512);
+}
+
+static void test_max_pixels_off_and_zero_refresh() {
+    config::ChannelConfig cc{};
+    cc.protocol = led::Protocol::Off;
+    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 60, led::kMaxSamplesPerFrame), 1024);
+    cc.protocol = led::Protocol::WS2815;
+    // refresh 0 ⇒ only the buffer constrains ⇒ the absolute cap.
+    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 0, led::kMaxSamplesPerFrame), 1024);
+}
+
 // ── Decoder: single universe ────────────────────────────────────────────────
 
 static void test_decode_single_universe() {
@@ -668,6 +704,9 @@ int main() {
     test_emission_budget();
     test_capacity_check();
     test_capacity_dmx_ignores_led_refresh();
+    test_max_pixels_ws2815();
+    test_max_pixels_dmx();
+    test_max_pixels_off_and_zero_refresh();
     test_decode_single_universe();
     test_decode_dmx_start_offset();
     test_decode_multi_universe();

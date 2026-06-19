@@ -759,6 +759,7 @@ function selectChan(i){
   function v(id,val){ var e=el(id); if(e) e.value=val; }
   function k(id,val){ var e=el(id); if(e) e.checked=!!val; }
   v('cd-proto',c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
+  var pe=el('cd-pix'); if(pe){ pe.max=c.maxpx; pe.min=1; }
   v('cd-order',c.order); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
   v('cd-clk',snapClk(c.clk)); v('cd-gam',c.gam); v('cd-wb',c.wb);
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
@@ -784,13 +785,15 @@ function updateChanVis(){
   function show(id,vis){ var e=el(id); if(e) e.style.display=vis?'flex':'none'; }
   show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
   show('cd-row-inv',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
-  var lbl=el('cd-pixlabel'); if(lbl) lbl.textContent=dmx?t('DMX slots'):t('Pixels');
+  var lbl=el('cd-pixlabel'); if(lbl){ var cc=CHANS[curChan]; var mx=cc&&cc.maxpx?cc.maxpx:1024;
+    lbl.textContent=(dmx?t('DMX slots'):t('Pixels'))+' (max '+mx+')'; }
 }
 function readChanEditor(){
   var c=CHANS[curChan]; if(!c) return;
   function nv(id){ var e=el(id); return e?parseInt(e.value,10)||0:0; }
   c.protoRaw=el('cd-proto').value; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
-  c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx'); c.pixels=nv('cd-pix');
+  c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx');
+  c.pixels=Math.max(1,Math.min(nv('cd-pix'),c.maxpx||1024));
   c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
   c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
@@ -902,7 +905,7 @@ function renderLists(){
 function buildChan(c,i){
   var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
   return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
-    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',
+    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,
     state:'off',px:off?'Off':(dmx?c.pixel_count+' sl':c.pixel_count+' px'),uni:off?'—':'U'+c.universe_start,
     dot:ST.off.dot,txt:ST.off.txt,label:ST.off.label,chip:ST.off.chip,bd:ST.off.bd};
 }
