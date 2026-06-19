@@ -445,10 +445,17 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
             canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
         }
     }
-    // Scroll indicator
+    // Scrollbar: a full-height track with a proportional thumb so the list
+    // length and position are obvious at a glance (not just "more exists").
     if (count > static_cast<uint8_t>(visible)) {
-        if (first > 0) canvas_fill_rect(kTW - 4, kHdrH, 4, 6, color::LightGray);
-        if (first + visible < count) canvas_fill_rect(kTW - 4, kTH - 6, 4, 6, color::LightGray);
+        const int trackY = kHdrH + 2;
+        const int trackH = kTH - trackY - 2;
+        canvas_fill_round_rect(kTW - 4, trackY, 3, trackH, 1, color::CursorBg);
+        int thumbH = trackH * visible / count;
+        if (thumbH < 12) thumbH = 12;
+        const int travel = count - visible;
+        const int thumbY = trackY + (travel > 0 ? (trackH - thumbH) * first / travel : 0);
+        canvas_fill_round_rect(kTW - 4, thumbY, 3, thumbH, 1, color::FrogLine);
     }
 #else
     // ── OLED: classic scrolling text list ────────────────────────────────────
@@ -945,42 +952,73 @@ void render_edit_value() {
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     canvas_clear(color::Black);
     char hdr[32];
-    std::snprintf(hdr, sizeof(hdr), "EDIT %s", s.edit.label);
+    if (s.edit.channel != 0xFF)
+        std::snprintf(hdr, sizeof(hdr), "CH%u: %s", s.edit.channel + 1, s.edit.label);
+    else
+        std::snprintf(hdr, sizeof(hdr), "EDIT %s", s.edit.label);
     draw_tft_header(hdr);
 
     // Large current value (scale 4 = native 12x16 cell doubled, stays crisp)
     constexpr int kBigSc = 4;
-    constexpr int kBigH  = 8 * kBigSc;
     char val[24];
     format_value(s.edit, s.edit.current, val, sizeof(val));
     const int val_w = static_cast<int>(std::strlen(val)) * kFontCellWidth * kBigSc;
-    canvas_draw_text((kTW - val_w) / 2, kHdrH + 30, val, color::Cyan, color::Black, kBigSc);
+    canvas_draw_text((kTW - val_w) / 2, kHdrH + 24, val, color::Cyan, color::Black, kBigSc);
 
-    // Reachable range, so the encoder's travel is known before spinning.
-    if (s.edit.kind == ValueKind::Int) {
-        char rng[32];
-        std::snprintf(rng, sizeof(rng), "%ld .. %ld", static_cast<long>(s.edit.min),
-                      static_cast<long>(s.edit.max));
-        const int rng_w = static_cast<int>(std::strlen(rng)) * kFontCellWidth;
-        canvas_draw_text((kTW - rng_w) / 2, kHdrH + 30 + kBigH + 10, rng, color::DarkGray,
-                         color::Black, 1);
+    const bool gauge = (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz);
+    const bool enumf = (s.edit.kind == ValueKind::Protocol ||
+                        s.edit.kind == ValueKind::ColorOrder || s.edit.kind == ValueKind::Failsafe);
+
+    // Numeric/clock value → a track filled to its position in [min, max], with
+    // the reachable ends labelled (so the encoder's travel is known up front).
+    if (gauge) {
+        const int gx = 44, gw = kTW - 88, gy = kHdrH + 78, gh = 12;
+        canvas_fill_round_rect(gx, gy, gw, gh, 5, color::CursorBg);
+        long span = static_cast<long>(s.edit.max) - s.edit.min;
+        if (span < 1) span = 1;
+        long fw = static_cast<long>(gw) * (s.edit.current - s.edit.min) / span;
+        if (fw < 4) fw = 4;
+        if (fw > gw) fw = gw;
+        canvas_fill_round_rect(gx, gy, static_cast<int>(fw), gh, 5, color::FrogLine);
+        char lo[16], hi[16];
+        format_value(s.edit, s.edit.min, lo, sizeof(lo));
+        format_value(s.edit, s.edit.max, hi, sizeof(hi));
+        canvas_draw_text(gx, gy + gh + 6, lo, color::DarkGray, color::Black, 1);
+        const int hiw = static_cast<int>(std::strlen(hi)) * kFontCellWidth;
+        canvas_draw_text(gx + gw - hiw, gy + gh + 6, hi, color::DarkGray, color::Black, 1);
+    } else if (enumf) {
+        // Position within the choice list, e.g. "3 / 10".
+        char pos[40];
+        std::snprintf(pos, sizeof(pos), "%ld / %ld",
+                      static_cast<long>(s.edit.current - s.edit.min + 1),
+                      static_cast<long>(s.edit.max - s.edit.min + 1));
+        const int pw = static_cast<int>(std::strlen(pos)) * kFontCellWidth * kTxtSc;
+        canvas_draw_text((kTW - pw) / 2, kHdrH + 76, pos, color::DarkGray, color::Black, kTxtSc);
     }
 
-    // "was: X" when changed
+    // "was: X" when changed — makes clear the edit is not yet committed.
     if (s.edit.current != s.edit.original) {
         char orig[24];
         format_value(s.edit, s.edit.original, orig, sizeof(orig));
         char was[32];
         std::snprintf(was, sizeof(was), "was: %s", orig);
         const int was_w = static_cast<int>(std::strlen(was)) * kFontCellWidth * kTxtSc;
-        canvas_draw_text((kTW - was_w) / 2, kHdrH + 30 + kBigH + 28, was, color::Orange,
-                         color::Black, kTxtSc);
+        canvas_draw_text((kTW - was_w) / 2, kHdrH + 118, was, color::Orange, color::Black, kTxtSc);
     }
+
+    // Footer: the encoder controls, so they're discoverable on every edit.
+    canvas_fill_rect(0, kTH - 20, kTW, 20, color::HeaderBg);
+    const char* hint = "TURN  adjust      PRESS  apply";
+    const int hw     = static_cast<int>(std::strlen(hint)) * kFontCellWidth;
+    canvas_draw_text((kTW - hw) / 2, kTH - 14, hint, color::SplashSub, color::HeaderBg, 1);
 #else
     canvas_clear();
     // Buffers are sized to hold the prefix plus a full kOledCols-wide value.
     char line[kOledCols + 4];
-    std::snprintf(line, sizeof(line), "EDIT %s", s.edit.label);
+    if (s.edit.channel != 0xFF)
+        std::snprintf(line, sizeof(line), "CH%u: %s", s.edit.channel + 1, s.edit.label);
+    else
+        std::snprintf(line, sizeof(line), "EDIT %s", s.edit.label);
     draw_row(0, 0, line);
 
     char val[kOledCols + 1];
@@ -997,6 +1035,23 @@ void render_edit_value() {
         std::snprintf(was, sizeof(was), "  was: %s", orig);
         draw_row(4, 0, was);
     }
+
+    // Reachable range (int/clock) or list position (enum), then the controls.
+    char ctx[40];  // wider than the row; draw_row clips to the panel
+    if (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz) {
+        char lo[16], hi[16];
+        format_value(s.edit, s.edit.min, lo, sizeof(lo));
+        format_value(s.edit, s.edit.max, hi, sizeof(hi));
+        std::snprintf(ctx, sizeof(ctx), "  %s..%s", lo, hi);
+        draw_row(5, 0, ctx);
+    } else if (s.edit.kind == ValueKind::Protocol || s.edit.kind == ValueKind::ColorOrder ||
+               s.edit.kind == ValueKind::Failsafe) {
+        std::snprintf(ctx, sizeof(ctx), "  %ld / %ld",
+                      static_cast<long>(s.edit.current - s.edit.min + 1),
+                      static_cast<long>(s.edit.max - s.edit.min + 1));
+        draw_row(5, 0, ctx);
+    }
+    draw_row(7, 0, "turn=adj press=ok");
 #endif
 }
 
