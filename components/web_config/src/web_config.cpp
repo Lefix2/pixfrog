@@ -80,12 +80,6 @@ int log_vprintf(const char* fmt, va_list ap) {
     return g_prev_vprintf ? g_prev_vprintf(fmt, ap) : n;  // tee to UART
 }
 
-void init_log_capture() {
-    if (g_prev_vprintf) return;  // already installed
-    g_prev_vprintf = esp_log_set_vprintf(&log_vprintf);
-    ESP_LOGI(TAG, "log capture ring installed (%u B)", static_cast<unsigned>(kLogRing));
-}
-
 const char* reset_reason_str(esp_reset_reason_t r) {
     switch (r) {
     case ESP_RST_POWERON: return "power-on";
@@ -1320,10 +1314,16 @@ static esp_err_t handle_autopatch(httpd_req_t* req) {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+void init_log_capture() {
+    if (g_prev_vprintf) return;  // already installed
+    g_prev_vprintf = esp_log_set_vprintf(&log_vprintf);
+    ESP_LOGI(TAG, "log capture ring installed (%u B)", static_cast<unsigned>(kLogRing));
+}
+
 void start() {
     if (g_server) return;
 
-    init_log_capture();  // start teeing esp_log into the ring for /api/logs
+    init_log_capture();  // ensure capture is on even if app_main didn't call it
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
     cfg.max_uri_handlers = 26;

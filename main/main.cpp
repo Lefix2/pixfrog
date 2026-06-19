@@ -268,6 +268,9 @@ void power_vdd_io5_pads() {
 }
 
 extern "C" void app_main() {
+    // Capture logs from the very first line so the web Diagnostics tab has the
+    // boot log even when the web server stays disabled (tees to UART as usual).
+    pixfrog::web::init_log_capture();
     ESP_LOGI(TAG, "pixfrog booting on %s", pixfrog::board::kBoardName);
 
     power_vdd_io5_pads();
