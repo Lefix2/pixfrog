@@ -389,24 +389,6 @@ struct ClockedChan {
     uint8_t cur3[3];         // transformed r,g,b of cur_pi
 };
 
-// Transformed (grouping, invert, LUT, brightness) r,g,b for output pixel
-// `out_pi`. Matches encode_spi exactly — clocked protocols ignore color_order
-// and use their native wire order at byte assembly.
-void clocked_pixel_bytes(const ChannelDesc& d, const uint8_t* pixels, uint16_t out_pi,
-                         uint8_t out3[3]) {
-    const uint16_t px_max = d.pixel_count;
-    const uint16_t src_pi = d.invert_direction ? static_cast<uint16_t>(px_max - 1 - out_pi)
-                                               : out_pi;
-    const uint16_t group  = d.grouping ? d.grouping : 1;
-    const uint8_t* p      = pixels + (src_pi / group) * 3;
-    const uint8_t lr      = d.lut ? d.lut->r[p[0]] : p[0];
-    const uint8_t lg      = d.lut ? d.lut->g[p[1]] : p[1];
-    const uint8_t lb      = d.lut ? d.lut->b[p[2]] : p[2];
-    out3[0]               = detail::apply_brightness(lr, d.brightness);
-    out3[1]               = detail::apply_brightness(lg, d.brightness);
-    out3[2]               = detail::apply_brightness(lb, d.brightness);
-}
-
 void clocked_init(ClockedChan& c, const ChannelDesc& d, const uint8_t* pixels) {
     c.d                      = &d;
     c.pixels                 = pixels;
@@ -425,7 +407,7 @@ void clocked_init(ClockedChan& c, const ChannelDesc& d, const uint8_t* pixels) {
     // Pixel 0 is cached ahead of the first data byte (the APA start frame, if
     // any, doesn't touch pixel data). Channels with pixel_count==0 never reach
     // the data phase, so cur3 staying unset is fine.
-    if (px > 0) clocked_pixel_bytes(d, pixels, 0, c.cur3);
+    if (px > 0) detail::transformed_rgb(d, pixels, 0, c.cur3);
 }
 
 // Next byte of the channel's wire stream (MSB emitted first), advancing the
@@ -447,7 +429,7 @@ uint8_t clocked_next_byte(ClockedChan& c) {
         if (++c.pix_byte == c.bpp) {
             c.pix_byte = 0;
             if (++c.cur_pi < c.d->pixel_count) {
-                clocked_pixel_bytes(*c.d, c.pixels, c.cur_pi, c.cur3);
+                detail::transformed_rgb(*c.d, c.pixels, c.cur_pi, c.cur3);
             }
         }
     } else {
