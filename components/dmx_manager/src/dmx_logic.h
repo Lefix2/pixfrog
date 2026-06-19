@@ -70,6 +70,80 @@ inline bool channel_fits_budget(const config::ChannelConfig& cc, uint32_t pclk_h
     return channel_t_dma_us(cc, pclk_hz) <= budget_us;
 }
 
+// DMX512 is an asynchronous 250 kbit/s stream: a full 512-slot frame already
+// takes ~22.7 ms on the wire (BREAK + MAB + 513 × 44 µs), so its physical
+// refresh ceiling is ~44 Hz no matter what the LED refresh is set to. Judging a
+// DMX channel against a faster LED rate (e.g. 60 Hz) is therefore meaningless:
+// running at 44 Hz is the correct, intended behaviour for DMX, not a capacity
+// fault. A DMX channel's budget is taken at min(refresh, 44 Hz), and without the
+// LED encode-overlap reserve — at its ceiling a DMX frame legitimately fills the
+// whole period (a 512-slot frame is ~22.68 ms vs the 22.73 ms 44 Hz period).
+constexpr uint8_t kDmxMaxRefreshHz = 44;
+
+// The emission budget a channel is judged against at the configured refresh:
+// LED channels get the period minus the 1 ms encode-overlap reserve; DMX
+// channels get a full min(refresh, kDmxMaxRefreshHz) period (no reserve).
+inline uint64_t channel_budget_us(const config::ChannelConfig& cc, uint8_t refresh_rate_hz) {
+    if (refresh_rate_hz == 0) return 0;
+    if (led::is_dmx(cc.protocol)) {
+        const uint8_t rate = refresh_rate_hz < kDmxMaxRefreshHz ? refresh_rate_hz
+                                                                : kDmxMaxRefreshHz;
+        return 1'000'000ULL / rate;
+    }
+    return emission_budget_us(refresh_rate_hz);
+}
+
+// Capacity verdict for one channel at the configured refresh rate.
+inline bool channel_fits_refresh(const config::ChannelConfig& cc, uint32_t pclk_hz,
+                                 uint8_t refresh_rate_hz) {
+    if (refresh_rate_hz == 0) return true;
+    return channel_t_dma_us(cc, pclk_hz) <= channel_budget_us(cc, refresh_rate_hz);
+}
+
+// Inverse of channel_fits_refresh: the largest pixel_count whose encoded frame
+// fits BOTH the DMA frame buffer (`buffer_samples`) and the per-channel
+// emission budget at `refresh_rate_hz`. This is the cap the UI should enforce so
+// a strip can never be configured longer than the bus can clock out in time —
+// e.g. WS2815 tops out at 512 px @60 Hz (≈15.4 ms) but 1024 px @30 Hz fits.
+//
+// Bounded by led::kMaxPixelsPerChannel, and by one universe (512) for DMX —
+// where pixel_count counts slots and the budget is DMX's own ≤44 Hz ceiling.
+// Off channels have no constraint. Monotonic encoded size ⇒ binary search.
+inline uint16_t max_pixels_for(const config::ChannelConfig& cc, uint32_t pclk_hz,
+                               uint8_t refresh_rate_hz, size_t buffer_samples) {
+    if (led::is_off(cc.protocol) || pclk_hz == 0)
+        return static_cast<uint16_t>(led::kMaxPixelsPerChannel);
+
+    const uint16_t hard      = led::is_dmx(cc.protocol)
+                                 ? static_cast<uint16_t>(kUniverseSize)
+                                 : static_cast<uint16_t>(led::kMaxPixelsPerChannel);
+    const uint64_t budget_us = channel_budget_us(cc, refresh_rate_hz);  // 0 ⇒ unbounded
+
+    config::ChannelConfig probe = cc;
+    uint16_t best = 1, lo = 1, hi = hard;
+    while (lo <= hi) {
+        const uint16_t mid = static_cast<uint16_t>(lo + (hi - lo) / 2);
+        probe.pixel_count  = mid;
+        led::ChannelDesc d{};
+        d.protocol           = probe.protocol;
+        d.pixel_count        = mid;
+        d.clock_hz           = probe.clock_hz;
+        const size_t samples = led::encoded_size_samples(d);
+        const bool fits_buf  = samples <= buffer_samples;
+        const bool fits_bud  = budget_us == 0 ||
+                              static_cast<uint64_t>(samples) * 1'000'000ULL / pclk_hz <= budget_us;
+        if (fits_buf && fits_bud) {
+            best = mid;
+            lo   = static_cast<uint16_t>(mid + 1);
+        } else if (mid == 0) {
+            break;
+        } else {
+            hi = static_cast<uint16_t>(mid - 1);
+        }
+    }
+    return best;
+}
+
 // ── Pixel-count preview pattern ─────────────────────────────────────────────
 //
 // Live "ruler" while the user edits a channel's pixel count. Colour encodes

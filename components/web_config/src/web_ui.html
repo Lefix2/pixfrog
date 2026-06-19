@@ -206,7 +206,7 @@
                 </select>
               </div>
 
-              <div id="cd-fields" style="grid-column:span 2;display:grid;grid-template-columns:1fr 1fr;gap:16px 22px">
+              <div id="cd-fields" style="grid-column:span 2;display:grid;grid-template-columns:1fr;gap:14px">
                 <div>
                   <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px"><span id="cd-pixlabel">Pixels</span></label>
                   <input id="cd-pix" type="number" value="300" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
@@ -243,8 +243,8 @@
                   <input id="cd-gam" type="number" value="22" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
                 </div>
                 <div id="cd-row-clk" style="display:none">
-                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px" data-i18n="Clock frequency (Hz)">Clock frequency (Hz)</label>
-                  <input id="cd-clk" type="number" value="4000000" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/>
+                  <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px" data-i18n="Clock frequency">Clock frequency</label>
+                  <select id="cd-clk" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'"><option value="1000000">1 MHz</option><option value="2000000">2 MHz</option><option value="4000000">4 MHz</option><option value="8000000">8 MHz</option></select>
                 </div>
                 <div id="cd-row-wb">
                   <label style="display:block;font:600 11px 'IBM Plex Mono';letter-spacing:.06em;color:#9fb0a5;margin-bottom:7px" data-i18n="White balance">White balance</label>
@@ -502,8 +502,22 @@ function createIcons(root){
 
 /* ─────────── constants & state ─────────── */
 var PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806','DMX512'];
-var ORDERS=['RGB','RBG','GRB','GBR','BRG','BGR','RGBW','GRBW','RGBWW'];
 var CLOCKED=['APA102','SK9822','LPD8806'];
+// Achievable bus rates (16 MHz / even divisor). Snap any stored value to the
+// nearest so the dropdown always lands on a real option.
+var CLK_CHOICES=[1000000,2000000,4000000,8000000];
+function snapClk(hz){ hz=hz||4000000; return CLK_CHOICES.reduce(function(b,c){ return Math.abs(c-hz)<Math.abs(b-hz)?c:b; }); }
+// Colour-order choices depend on the strip's channel count: 3-colour strips get
+// the RGB permutations, RGBW strips get the W-suffixed orders.
+var RGBW_PROTOS=['SK6812','WS2814'];
+var ORDERS_RGB=['RGB','RBG','GRB','GBR','BRG','BGR'];
+var ORDERS_RGBW=['RGBW','GRBW'];
+function setOrderOptions(p){
+  var sel=document.getElementById('cd-order'); if(!sel) return;
+  var list=RGBW_PROTOS.indexOf(p)>=0?ORDERS_RGBW:ORDERS_RGB, cur=sel.value;
+  sel.innerHTML=list.map(function(o){return '<option>'+o+'</option>';}).join('');
+  if(list.indexOf(cur)>=0) sel.value=cur;
+}
 var ST={
   active:  {dot:'#70d18b',txt:'#8fdca3',label:'Active',   chip:'rgba(112,209,139,.12)',bd:'rgba(112,209,139,.22)'},
   failsafe:{dot:'#d9534f',txt:'#ec8480',label:'Failsafe', chip:'rgba(217,83,79,.14)',  bd:'rgba(217,83,79,.4)'},
@@ -545,7 +559,7 @@ var FR={
   'LED / DMX PROTOCOL':'PROTOCOLE LED / DMX','Pixels':'Pixels','DMX slots':'Slots DMX','Color order':'Ordre des couleurs',
   'Art-Net address':'Adresse Art-Net','= absolute universe':'= univers absolu','DMX start address':'Adresse DMX de départ',
   'Max brightness':'Luminosité max','Pixel grouping':'Groupement de pixels','Gamma ×10':'Gamma ×10',
-  'Clock frequency (Hz)':'Fréquence horloge (Hz)','White balance':'Balance des blancs','Reverse direction':'Inverser le sens',
+  'Clock frequency':'Fréquence horloge','White balance':'Balance des blancs','Reverse direction':'Inverser le sens',
   'IP ADDRESSING':'ADRESSAGE IP','Automatic DHCP':'DHCP automatique','Static IP':'IP statique',
   'IP address':'Adresse IP','Mask':'Masque','Gateway':'Passerelle',
   'Changing IP mode requires a reboot.':'Le changement de mode IP nécessite un redémarrage.',
@@ -745,8 +759,9 @@ function selectChan(i){
   function v(id,val){ var e=el(id); if(e) e.value=val; }
   function k(id,val){ var e=el(id); if(e) e.checked=!!val; }
   v('cd-proto',c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
+  var pe=el('cd-pix'); if(pe){ pe.max=c.maxpx; pe.min=1; }
   v('cd-order',c.order); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
-  v('cd-clk',c.clk); v('cd-gam',c.gam); v('cd-wb',c.wb);
+  v('cd-clk',snapClk(c.clk)); v('cd-gam',c.gam); v('cd-wb',c.wb);
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
   var ct=document.querySelector('[data-chan-title]'); if(ct) ct.textContent=t('Channel')+' '+c.n;
   var stt=document.querySelector('[data-chan-state]'); if(stt){ stt.textContent=t(c.label); stt.style.color=c.txt; stt.style.background=c.chip; }
@@ -766,16 +781,19 @@ function updateChanVis(){
   var p=sel.value, off=p==='Off', dmx=p==='DMX512', clk=CLOCKED.indexOf(p)>=0;
   var f=el('cd-fields'); if(f) f.style.display=off?'none':'';
   if(off) return;
+  setOrderOptions(p);
   function show(id,vis){ var e=el(id); if(e) e.style.display=vis?'flex':'none'; }
   show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
   show('cd-row-inv',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
-  var lbl=el('cd-pixlabel'); if(lbl) lbl.textContent=dmx?t('DMX slots'):t('Pixels');
+  var lbl=el('cd-pixlabel'); if(lbl){ var cc=CHANS[curChan]; var mx=cc&&cc.maxpx?cc.maxpx:1024;
+    lbl.textContent=(dmx?t('DMX slots'):t('Pixels'))+' (max '+mx+')'; }
 }
 function readChanEditor(){
   var c=CHANS[curChan]; if(!c) return;
   function nv(id){ var e=el(id); return e?parseInt(e.value,10)||0:0; }
   c.protoRaw=el('cd-proto').value; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
-  c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx'); c.pixels=nv('cd-pix');
+  c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx');
+  c.pixels=Math.max(1,Math.min(nv('cd-pix'),c.maxpx||1024));
   c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
   c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
@@ -887,7 +905,7 @@ function renderLists(){
 function buildChan(c,i){
   var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
   return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
-    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',
+    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,
     state:'off',px:off?'Off':(dmx?c.pixel_count+' sl':c.pixel_count+' px'),uni:off?'—':'U'+c.universe_start,
     dot:ST.off.dot,txt:ST.off.txt,label:ST.off.label,chip:ST.off.chip,bd:ST.off.bd};
 }

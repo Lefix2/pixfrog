@@ -140,8 +140,9 @@ static const char* const kProtoNames[] = { "Off",    "WS2815", "WS2812B", "WS281
 static_assert(sizeof(kProtoNames) / sizeof(kProtoNames[0]) ==
               static_cast<size_t>(led::Protocol::COUNT));
 
-static const char* const kOrderNames[] = { "RGB", "RBG",  "GRB",  "GBR",  "BRG",
-                                           "BGR", "RGBW", "GRBW", "RGBWW" };
+static const char* const kOrderNames[] = {
+    "RGB", "RBG", "GRB", "GBR", "BRG", "BGR", "RGBW", "GRBW"
+};
 static_assert(sizeof(kOrderNames) / sizeof(kOrderNames[0]) ==
               static_cast<size_t>(led::ColorOrder::COUNT));
 
@@ -225,6 +226,7 @@ static cJSON* build_channels_json() {
         cJSON_AddNumberToObject(jc, "universe_start", c.universe_start);
         cJSON_AddNumberToObject(jc, "dmx_start", c.dmx_start);
         cJSON_AddNumberToObject(jc, "pixel_count", c.pixel_count);
+        cJSON_AddNumberToObject(jc, "max_pixels", dmx::channel_max_pixels(i));
         cJSON_AddNumberToObject(jc, "brightness", c.brightness);
         cJSON_AddNumberToObject(jc, "grouping", c.grouping);
         cJSON_AddBoolToObject(jc, "invert", c.invert_direction);
@@ -425,6 +427,7 @@ static void restore_global(cJSON* jg) {
     if (num("boot_scene", 0, config::kNumScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
     if (num("merge_mode", 0, 1, &v)) g.merge_mode = static_cast<uint8_t>(v);
     config::set_global(g);
+    dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
 }
 
 static void restore_channel(size_t i, cJSON* jc) {
@@ -470,6 +473,7 @@ static void restore_channel(size_t i, cJSON* jc) {
         }
     }
     config::set_channel(i, c);
+    dmx::clamp_pixel_counts();  // truncate pixel_count to the protocol/refresh budget
     dmx::mark_channel_dirty(i);
 }
 
@@ -664,6 +668,7 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     cJSON_Delete(j);
     config::set_global(g);
     if (password_changed) config::set_web_password(pwd);
+    dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
     dmx::mark_global_dirty();
 
     if (sacn_changed) {
@@ -775,6 +780,7 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
 
     cJSON_Delete(j);
     config::set_channel(static_cast<size_t>(idx), c);
+    dmx::clamp_pixel_counts();  // truncate pixel_count to the protocol/refresh budget
     dmx::mark_channel_dirty(static_cast<size_t>(idx));
     return send_ok(req);
 }

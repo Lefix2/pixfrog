@@ -69,15 +69,18 @@ constexpr size_t bytes_per_pixel(Protocol p) {
 // ────────────────────────────────────────────────────────────────────────────
 
 enum class ColorOrder : uint8_t {
+    // RGB permutations (3-colour strips). The W byte, when the protocol has one,
+    // is always appended last by apply_order.
     RGB,
     RBG,
     GRB,
     GBR,
     BRG,
     BGR,
+    // RGBW strips: RGB sub-order + W last. (A former RGBWW entry was dropped —
+    // it produced {r,g,b,w}, identical to RGBW.)
     RGBW,
     GRBW,
-    RGBWW,
     COUNT,
 };
 

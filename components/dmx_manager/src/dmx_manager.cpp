@@ -172,6 +172,9 @@ bool init() {
 
     for (size_t i = 0; i < config::kNumChannels; ++i)
         g_channel_capacity_ok[i] = true;
+    // Correct any stored pixel_count that exceeds the current refresh budget
+    // (e.g. a config saved at a lower refresh, or from before this cap existed).
+    clamp_pixel_counts();
     validate_capacity();
 
     ESP_LOGI(TAG, "init OK, universe LUT built");
@@ -394,22 +397,61 @@ bool is_channel_capacity_ok(size_t ch) {
 void validate_capacity() {
     const uint8_t refresh = config::get_global().refresh_rate_hz;
     if (refresh == 0) return;
-    const uint64_t allowance = logic::emission_budget_us(refresh);
 
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& cc            = config::get_channel(ch);
-        const bool ok             = logic::channel_fits_budget(cc, led::kPclkHz, allowance);
+        const bool ok             = logic::channel_fits_refresh(cc, led::kPclkHz, refresh);
         g_channel_capacity_ok[ch] = ok;
         if (!ok) {
             const uint64_t t_us = logic::channel_t_dma_us(cc, led::kPclkHz);
+            // DMX is judged at its own ~44 Hz ceiling; everything else at the
+            // configured refresh's emission budget.
+            const uint64_t budget = logic::channel_budget_us(cc, refresh);
             ESP_LOGW(TAG,
                      "ch %zu over capacity: t_dma=%llu µs > budget=%llu µs "
                      "(refresh=%u Hz, %u px, proto=%d) — reduce pixel_count or refresh",
                      ch, static_cast<unsigned long long>(t_us),
-                     static_cast<unsigned long long>(allowance), static_cast<unsigned>(refresh),
+                     static_cast<unsigned long long>(budget), static_cast<unsigned>(refresh),
                      static_cast<unsigned>(cc.pixel_count), static_cast<int>(cc.protocol));
         }
     }
+}
+
+uint16_t channel_max_pixels(size_t ch) {
+    if (ch >= config::kNumChannels) return 0;
+    const uint8_t refresh = config::get_global().refresh_rate_hz;
+    return logic::max_pixels_for(config::get_channel(ch), led::kPclkHz, refresh,
+                                 led::kMaxSamplesPerFrame);
+}
+
+bool clamp_pixel_counts() {
+    const uint8_t refresh = config::get_global().refresh_rate_hz;
+    bool changed          = false;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        auto cc = config::get_channel(ch);
+        if (led::is_off(cc.protocol)) continue;
+        const uint16_t maxpx = logic::max_pixels_for(cc, led::kPclkHz, refresh,
+                                                     led::kMaxSamplesPerFrame);
+        if (cc.pixel_count > maxpx) {
+            ESP_LOGW(TAG, "ch %zu pixel_count %u → %u (refresh=%u Hz cap)", ch,
+                     static_cast<unsigned>(cc.pixel_count), static_cast<unsigned>(maxpx),
+                     static_cast<unsigned>(refresh));
+            cc.pixel_count = maxpx;
+            config::set_channel(ch, cc);
+            mark_channel_dirty(ch);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+uint64_t frame_emit_us() {
+    uint64_t longest = 0;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        const uint64_t t = logic::channel_t_dma_us(config::get_channel(ch), led::kPclkHz);
+        if (t > longest) longest = t;
+    }
+    return longest;
 }
 
 int channel_for_universe(uint16_t universe_number) {

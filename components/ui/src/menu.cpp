@@ -174,6 +174,7 @@ enum class ValueKind : uint8_t {
     Protocol,
     ColorOrder,
     Failsafe,
+    ClockHz,  // clocked-SPI rate, picked from kClockChoices (achievable divisors)
 };
 
 struct EditCtx {
@@ -318,7 +319,6 @@ const char* color_order_name(led::ColorOrder o) {
     case led::ColorOrder::BGR: return "BGR";
     case led::ColorOrder::RGBW: return "RGBW";
     case led::ColorOrder::GRBW: return "GRBW";
-    case led::ColorOrder::RGBWW: return "RGBWW";
     default: return "?";
     }
 }
@@ -339,6 +339,34 @@ const char* failsafe_name(uint8_t m) {
     }
 }
 
+// Clocked-SPI rates the 16 MHz bus can actually realise (f = 16 MHz / spc, spc
+// even): 8/4/2/1 MHz are the clean integer-divisor steps (spc 2/4/8/16). The
+// picker offers only these so every shown value maps exactly to itself instead
+// of being silently rounded by led::timing_for. APA102/SK9822 ≤30 MHz, LPD8806
+// ≤20 MHz per the datasheets, so all four are in spec.
+constexpr int32_t kClockChoices[] = { 1'000'000, 2'000'000, 4'000'000, 8'000'000 };
+constexpr int kClockChoiceCount   = static_cast<int>(sizeof(kClockChoices) /
+                                                     sizeof(kClockChoices[0]));
+
+// Index of the choice nearest to `hz` (legacy/odd values snap to a real rate).
+int clock_choice_index(int32_t hz) {
+    int best          = 0;
+    int32_t best_dist = 0x7fffffff;
+    for (int i = 0; i < kClockChoiceCount; ++i) {
+        const int32_t d = hz > kClockChoices[i] ? hz - kClockChoices[i] : kClockChoices[i] - hz;
+        if (d < best_dist) {
+            best_dist = d;
+            best      = i;
+        }
+    }
+    return best;
+}
+
+void format_clock_mhz(int32_t hz, char* out, size_t cap) {
+    std::snprintf(out, cap, "%ld.%01ldMHz", static_cast<long>(hz / 1'000'000),
+                  static_cast<long>((hz % 1'000'000) / 100'000));
+}
+
 void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
     switch (e.kind) {
     case ValueKind::Int: std::snprintf(out, cap, "%ld", static_cast<long>(v)); return;
@@ -352,6 +380,7 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
     case ValueKind::ColorOrder:
         std::snprintf(out, cap, "%s", color_order_name(static_cast<led::ColorOrder>(v)));
         return;
+    case ValueKind::ClockHz: format_clock_mhz(v, out, cap); return;
     }
 }
 
@@ -1038,6 +1067,9 @@ void commit_edit() {
         auto g            = config::get_global();
         g.refresh_rate_hz = static_cast<uint8_t>(v);
         config::set_global(g);
+        // A higher refresh shrinks every channel's pixel budget — truncate any
+        // strip that no longer fits (e.g. 800 px valid at 30 Hz, not at 60 Hz).
+        dmx::clamp_pixel_counts();
         dmx::mark_global_dirty();
         break;
     }
@@ -1063,6 +1095,9 @@ void commit_edit() {
         auto c     = config::get_channel(s.edit.channel);
         c.protocol = static_cast<led::Protocol>(v);
         config::set_channel(s.edit.channel, c);
+        // New protocol → new per-pixel cost (and DMX caps at one universe);
+        // truncate the pixel count if it no longer fits.
+        dmx::clamp_pixel_counts();
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
@@ -1126,6 +1161,8 @@ void commit_edit() {
         auto c     = config::get_channel(s.edit.channel);
         c.clock_hz = static_cast<uint32_t>(v);
         config::set_channel(s.edit.channel, c);
+        // A slower clock stretches the frame → fewer pixels fit the budget.
+        dmx::clamp_pixel_counts();
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
@@ -1136,6 +1173,14 @@ void commit_edit() {
 
 void dispatch_edit_value(Event e) {
     if (e == Event::RotateLeft || e == Event::RotateRight) {
+        if (s.edit.kind == ValueKind::ClockHz) {
+            // Step through the discrete achievable rates, not raw Hz.
+            int idx = clock_choice_index(s.edit.current) + (e == Event::RotateRight ? 1 : -1);
+            if (idx < 0) idx = 0;
+            if (idx >= kClockChoiceCount) idx = kClockChoiceCount - 1;
+            s.edit.current = kClockChoices[idx];
+            return;
+        }
         // Acceleration only makes sense for plain integers; enums/bools have
         // tiny ranges where a ×10 jump would just slam into the clamp.
         const int32_t mult  = (s.edit.kind == ValueKind::Int) ? accel_note_rotation() : 1;
@@ -1600,8 +1645,7 @@ void dispatch_network_menu(Event e) {
 
 // ── CHANNEL MENU ────────────────────────────────────────────────────────────
 
-constexpr size_t kColorOrderCount = static_cast<size_t>(led::ColorOrder::COUNT);
-constexpr size_t kProtocolCount   = static_cast<size_t>(led::Protocol::COUNT);
+constexpr size_t kProtocolCount = static_cast<size_t>(led::Protocol::COUNT);
 
 // The channel menu is layout-driven: the visible items depend on the protocol
 // family. DMX512 output ignores the LED-only fields (color order, brightness,
@@ -1668,7 +1712,7 @@ void render_channel_menu() {
     std::snprintf(vbri, sizeof(vbri), "%u", cc.brightness);
     std::snprintf(vgrp, sizeof(vgrp), "%u", cc.grouping);
     std::snprintf(vinv, sizeof(vinv), "%s", cc.invert_direction ? "ON" : "OFF");
-    std::snprintf(vclk, sizeof(vclk), "%lukHz", static_cast<unsigned long>(cc.clock_hz / 1000u));
+    format_clock_mhz(static_cast<int32_t>(cc.clock_hz), vclk, sizeof(vclk));
     std::snprintf(vgam, sizeof(vgam), "%u.%u", cc.gamma_x10 / 10, cc.gamma_x10 % 10);
 
     ChItem order[12];
@@ -1715,18 +1759,35 @@ void dispatch_channel_menu(Event e) {
     case ChItem::Dmx:
         enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", ret, ch);
         break;
-    case ChItem::Pixels:
-        // DMX512 maps one universe → up to 512 slots; LED strips go up to 1024 px.
-        enter_edit(Field::ChPixels, ValueKind::Int, cc.pixel_count, 1, dmx ? 512 : 1024, 1,
-                   dmx ? "Slots" : "Pixels", ret, ch);
+    case ChItem::Pixels: {
+        // Upper bound is whatever the bus can clock out within the refresh
+        // budget (and the DMA buffer) for this protocol — e.g. 512 px for
+        // WS2815 @60 Hz, 1024 @30 Hz, 512 slots for a DMX universe.
+        const int32_t pmax = dmx::channel_max_pixels(ch);
+        int32_t pcur       = cc.pixel_count;
+        if (pcur > pmax) pcur = pmax;
+        enter_edit(Field::ChPixels, ValueKind::Int, pcur, 1, pmax, 1, dmx ? "Slots" : "Pixels", ret,
+                   ch);
         // Light the strip as a live ruler while the count is being edited
         // (LED protocols only — a DMX512 universe has nothing to show).
-        if (!dmx) dmx::set_pixel_preview(ch, cc.pixel_count);
+        if (!dmx) dmx::set_pixel_preview(ch, static_cast<uint16_t>(pcur));
         break;
-    case ChItem::Order:
-        enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, static_cast<int32_t>(cc.color_order),
-                   0, static_cast<int32_t>(kColorOrderCount) - 1, 1, "Order", ret, ch);
+    }
+    case ChItem::Order: {
+        // 3-colour strips pick an RGB permutation; RGBW strips pick a
+        // W-suffixed order. Restrict the cycle to the matching family so an
+        // RGBW channel can't land on a bare RGB order (and vice versa).
+        const bool rgbw    = led::is_rgbw(cc.protocol);
+        const int32_t omin = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBW) : 0;
+        const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::GRBW)
+                                  : static_cast<int32_t>(led::ColorOrder::BGR);
+        int32_t ocur       = static_cast<int32_t>(cc.color_order);
+        if (ocur < omin) ocur = omin;
+        if (ocur > omax) ocur = omax;
+        enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, ocur, omin, omax, 1, "Order", ret,
+                   ch);
         break;
+    }
     case ChItem::Bright:
         enter_edit(Field::ChBrightness, ValueKind::Int, cc.brightness, 0, 255, 1, "Bright", ret,
                    ch);
@@ -1745,10 +1806,14 @@ void dispatch_channel_menu(Event e) {
         enter_edit(Field::ChInvert, ValueKind::Bool, cc.invert_direction ? 1 : 0, 0, 1, 1, "Invert",
                    ret, ch);
         break;
-    case ChItem::Clock:
-        enter_edit(Field::ChClock, ValueKind::Int, static_cast<int32_t>(cc.clock_hz), 250'000,
-                   24'000'000, 250'000, "Clock", ret, ch);
+    case ChItem::Clock: {
+        // Snap to a real divisor rate; the picker then steps through kClockChoices.
+        const int32_t snapped =
+            kClockChoices[clock_choice_index(static_cast<int32_t>(cc.clock_hz))];
+        enter_edit(Field::ChClock, ValueKind::ClockHz, snapped, kClockChoices[0],
+                   kClockChoices[kClockChoiceCount - 1], 1, "Clock", ret, ch);
         break;
+    }
     case ChItem::Back:
         s.screen = Screen::MainMenu;
         s.cursor = 2 + ch;

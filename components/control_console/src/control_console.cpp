@@ -38,8 +38,7 @@ const char* const kProtocolNames[] = { "Off",    "WS2815", "WS2812B", "WS2811", 
 static_assert(sizeof(kProtocolNames) / sizeof(kProtocolNames[0]) ==
               static_cast<size_t>(led::Protocol::COUNT));
 
-const char* const kOrderNames[] = { "RGB", "RBG",  "GRB",  "GBR",  "BRG",
-                                    "BGR", "RGBW", "GRBW", "RGBWW" };
+const char* const kOrderNames[] = { "RGB", "RBG", "GRB", "GBR", "BRG", "BGR", "RGBW", "GRBW" };
 static_assert(sizeof(kOrderNames) / sizeof(kOrderNames[0]) ==
               static_cast<size_t>(led::ColorOrder::COUNT));
 
@@ -321,6 +320,7 @@ int cmd_global(int argc, char** argv) {
     }
 
     const bool persisted = config::set_global(g);
+    dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
     dmx::mark_global_dirty();
     if (!persisted) printf("warn=not_persisted\n");
     if (network_changed) printf("note=network_changes_apply_after_reboot\n");
@@ -388,7 +388,7 @@ int cmd_ch(int argc, char** argv) {
         c.protocol = static_cast<led::Protocol>(p);
     } else if (strcmp(key, "order") == 0) {
         const int o = lookup_name(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), val);
-        if (o < 0) return err("order: RGB|RBG|GRB|GBR|BRG|BGR|RGBW|GRBW|RGBWW or 0..8");
+        if (o < 0) return err("order: RGB|RBG|GRB|GBR|BRG|BGR|RGBW|GRBW or 0..7");
         c.color_order = static_cast<led::ColorOrder>(o);
     } else if (strcmp(key, "universe") == 0) {
         if (!parse_u32_in(val, 0, 32767, u)) return err("universe: 0..32767");
@@ -426,6 +426,7 @@ int cmd_ch(int argc, char** argv) {
     }
 
     const bool persisted = config::set_channel(ch, c);
+    dmx::clamp_pixel_counts();  // truncate pixel_count to the protocol/refresh budget
     dmx::mark_channel_dirty(ch);
     if (!persisted) printf("warn=not_persisted\n");
     return ok();

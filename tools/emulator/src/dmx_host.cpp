@@ -33,6 +33,15 @@ bool is_channel_capacity_ok(size_t ch) {
 
 void mark_channel_dirty(size_t /*channel_index*/) {}
 void mark_global_dirty() {}
+
+// The emulator doesn't link the encoder, so it can't compute the real budget;
+// report the absolute cap and never clamp (capacity is exercised on hardware).
+uint16_t channel_max_pixels(size_t /*ch*/) {
+    return static_cast<uint16_t>(led::kMaxPixelsPerChannel);
+}
+bool clamp_pixel_counts() {
+    return false;
+}
 bool auto_patch_universes(uint16_t /*base*/, uint16_t* next_free) {
     if (next_free) *next_free = 0;
     return true;
