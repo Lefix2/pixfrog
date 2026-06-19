@@ -59,6 +59,7 @@
     <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i>ArtNet / sACN</div>
     <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
     <div data-nav="system" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="settings"></i><span data-i18n="System">System</span></div>
+    <div data-nav="diag" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;cursor:pointer;color:#a5b2a8;background:transparent;font-size:13.5px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="activity"></i><span data-i18n="Diagnostics">Diagnostics</span></div>
 
     <div style="margin-top:auto;background:#101a14;border:1px solid #1f2c24;border-radius:10px;padding:11px 12px">
       <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600"><span data-live="side-dot" style="width:8px;height:8px;border-radius:50%;background:#70d18b;box-shadow:0 0 8px #70d18b;animation:pf-pulse 2.4s infinite"></span><span data-live="side-link">Network link</span></div>
@@ -386,6 +387,70 @@
         </div>
       </div>
 
+      <!-- ===== DIAGNOSTICS (stats for nerds + logs) ===== -->
+      <div data-screen="diag" style="display:none">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:14px;max-width:1060px">
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px 20px">
+            <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70" data-i18n="RENDER PIPELINE">RENDER PIPELINE</span>
+            <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;font:500 12.5px 'IBM Plex Mono'">
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">fps</span><span data-live="d-fps" style="color:#f8c662">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">encode</span><span data-live="d-encode">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">wait</span><span data-live="d-wait">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">submit</span><span data-live="d-submit">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="wire emit">wire emit</span><span data-live="d-emit">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="frames">frames</span><span data-live="d-frames">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="underruns">underruns</span><span data-live="d-underruns">—</span></div>
+            </div>
+          </div>
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px 20px">
+            <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70" data-i18n="MEMORY">MEMORY</span>
+            <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;font:500 12.5px 'IBM Plex Mono'">
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="heap free">heap free</span><span data-live="d-heap">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="heap min">heap min</span><span data-live="d-heapmin">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="PSRAM free">PSRAM free</span><span data-live="d-psram">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="frame buffer">frame buffer</span><span data-live="d-fb">—</span></div>
+            </div>
+          </div>
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px 20px">
+            <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70" data-i18n="RECEPTION">RECEPTION</span>
+            <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;font:500 12.5px 'IBM Plex Mono'">
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">ArtNet</span><span data-live="d-art">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="ArtNet ctrl">ArtNet ctrl</span><span data-live="d-artctrl">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">sACN</span><span data-live="d-sacn">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="bad packets">bad packets</span><span data-live="d-bad">—</span></div>
+            </div>
+          </div>
+          <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px 20px">
+            <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70" data-i18n="SYSTEM">SYSTEM</span>
+            <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;font:500 12.5px 'IBM Plex Mono'">
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="uptime">uptime</span><span data-live="d-uptime">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="firmware">firmware</span><span data-live="d-ver">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">IDF</span><span data-live="d-idf">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="partition">partition</span><span data-live="d-part">—</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5" data-i18n="last reset">last reset</span><span data-live="d-reset" style="color:#f0b53b">—</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px 20px;max-width:1060px">
+          <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70" data-i18n="PER-CHANNEL CAPACITY">PER-CHANNEL CAPACITY</span>
+          <div id="d-chans" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(116px,1fr));gap:8px;margin-top:12px"></div>
+        </div>
+
+        <div style="margin-top:14px;background:#16221b;border:1px solid #243228;border-radius:14px;padding:18px 20px;max-width:1060px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70" data-i18n="DEVICE LOGS">DEVICE LOGS</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="d-loglevel" style="background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:8px;padding:6px 9px;font:500 12px 'IBM Plex Mono'"><option value="error">error</option><option value="warn">warn</option><option value="info" selected>info</option><option value="debug">debug</option><option value="verbose">verbose</option><option value="none">none</option></select>
+              <label style="display:inline-flex;align-items:center;gap:6px;font:500 12px 'IBM Plex Mono';color:#9fb0a5;cursor:pointer"><input id="d-autolog" type="checkbox" checked style="accent-color:#f8c662"/><span data-i18n="auto">auto</span></label>
+              <button data-action="logs-refresh" style="background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:8px;padding:6px 11px;font:600 12px 'IBM Plex Sans';cursor:pointer" data-i18n="Refresh">Refresh</button>
+              <button data-action="logs-download" style="background:#101a14;border:1px solid #2d3d31;color:#eaf3ee;border-radius:8px;padding:6px 11px;font:600 12px 'IBM Plex Sans';cursor:pointer" data-i18n="Download">Download</button>
+            </div>
+          </div>
+          <pre id="d-logs" style="margin:12px 0 0;max-height:360px;overflow:auto;background:#0c1510;border:1px solid #1f2c24;border-radius:9px;padding:12px;font:500 11.5px 'IBM Plex Mono';color:#bdcabf;white-space:pre-wrap;word-break:break-word">…</pre>
+        </div>
+      </div>
+
     </div>
 
     <footer style="flex:none;height:58px;border-top:1px solid #1c2922;background:#0c1510;display:flex;align-items:center;justify-content:space-between;padding:0 28px">
@@ -532,6 +597,14 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 /* ─────────── i18n (English source strings, French overrides) ─────────── */
 var LANG='en';
 var FR={
+  'Diagnostics':'Diagnostics','RENDER PIPELINE':'PIPELINE DE RENDU','MEMORY':'MÉMOIRE',
+  'RECEPTION':'RÉCEPTION','SYSTEM':'SYSTÈME','PER-CHANNEL CAPACITY':'CAPACITÉ PAR CANAL',
+  'DEVICE LOGS':'LOGS DE L’APPAREIL','wire emit':'émission fil','frames':'trames',
+  'underruns':'sous-débits','heap free':'heap libre','heap min':'heap min','PSRAM free':'PSRAM libre',
+  'frame buffer':'frame buffer','ArtNet ctrl':'ArtNet ctrl','bad packets':'paquets invalides',
+  'uptime':'uptime','firmware':'firmware','partition':'partition','last reset':'dernier reset',
+  'auto':'auto','Refresh':'Rafraîchir','Download':'Télécharger','Log level: ':'Niveau de log : ',
+  'Stats for nerds · live telemetry & device logs':'Stats pour les nerds · télémétrie & logs en direct',
   'Dashboard':'Tableau de bord','Scenes':'Scènes','FSEQ sequences':'Séquences FSEQ',
   'Channels':'Canaux','Network':'Réseau','Auto-patch':'Auto-patch','System':'Système',
   'CONTROL':'PILOTAGE','CONFIGURATION':'CONFIGURATION','Network link':'Lien réseau',
@@ -733,8 +806,8 @@ function buildPatch(){
 }
 
 /* ─────────── navigation ─────────── */
-var TITLES={dashboard:'Dashboard',scenes:'Scenes',fseq:'FSEQ sequences',channels:'Channels',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',system:'System'};
-var SUBS={dashboard:'Live update · every 1 s',scenes:'8 parametric slots · solid / chase / rainbow',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance'};
+var TITLES={dashboard:'Dashboard',scenes:'Scenes',fseq:'FSEQ sequences',channels:'Channels',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',system:'System',diag:'Diagnostics'};
+var SUBS={dashboard:'Live update · every 1 s',scenes:'8 parametric slots · solid / chase / rainbow',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
 var curScreen='dashboard';
 function go(name){
   curScreen=name;
@@ -744,6 +817,8 @@ function go(name){
   var sb=document.querySelector('[data-screen-sub]'); if(sb) sb.textContent=t(SUBS[name]||'');
   var sc=document.getElementById('pf-scroll'); if(sc) sc.scrollTop=0;
   if(name==='fseq') loadFseq();
+  if(diagTimer){ clearInterval(diagTimer); diagTimer=null; }
+  if(name==='diag'){ pollDiag(); diagTimer=setInterval(pollDiag,1500); }
 }
 function navStyle(el,active){
   if(el.tagName!=='DIV'||!el.hasAttribute('data-nav')) return;
@@ -873,6 +948,49 @@ function pollStatus(){
     chanLive=s.channels||[]; applyChanStates();
     prevStatus=s;
   }).catch(function(){ setLive('hdr-link',t('offline')); setLive('link-big','down'); });
+}
+var diagTimer=null;
+function fmtKB(b){ b=b||0; return b>=1048576?(fmtFr(b/1048576,2)+' MB'):(Math.round(b/1024)+' KB'); }
+function pollDiag(){
+  api('GET','/api/diag').then(function(d){
+    var r=d.render||{},m=d.mem||{},x=d.rx||{},s=d.sys||{};
+    setLive('d-fps',r.fps);
+    setLive('d-encode',r.encode_us!=null?(r.encode_us/1000).toFixed(2)+' ms':'—');
+    setLive('d-wait',r.wait_us!=null?r.wait_us+' µs':'—');
+    setLive('d-submit',r.submit_us!=null?(r.submit_us/1000).toFixed(2)+' ms':'—');
+    setLive('d-emit',r.frame_emit_us!=null?(r.frame_emit_us/1000).toFixed(2)+' ms':'—');
+    setLive('d-frames',nf(r.frames_emitted)); setLive('d-underruns',nf(r.dma_underruns));
+    setLive('d-heap',fmtKB(m.heap_free)); setLive('d-heapmin',fmtKB(m.heap_min));
+    setLive('d-psram',fmtKB(m.psram_free)+' / '+fmtKB(m.psram_total)); setLive('d-fb',fmtKB(m.fb_bytes));
+    setLive('d-art',nf(x.artnet_rx)); setLive('d-artctrl',nf(x.artnet_ctrl_rx));
+    setLive('d-sacn',nf(x.sacn_rx)); setLive('d-bad',nf(x.bad_rx));
+    setLive('d-uptime',fmtUptime(s.uptime_s)); setLive('d-ver',s.version);
+    setLive('d-idf',s.idf); setLive('d-part',s.partition); setLive('d-reset',s.reset_reason);
+    var box=el('d-chans');
+    if(box){ box.innerHTML=(d.channels||[]).map(function(c,i){
+      var ok=c.capacity_ok, col=ok?'#8fdca3':'#ec8480';
+      return '<div style="background:'+(ok?'rgba(112,209,139,.07)':'rgba(236,132,128,.1)')+';border:1px solid '+(ok?'#243228':'rgba(236,132,128,.35)')+';border-radius:9px;padding:8px 10px;font:500 11.5px \'IBM Plex Mono\'">'
+        +'<div style="display:flex;justify-content:space-between"><span style="color:#9fb0a5">CH'+(i+1)+'</span><span style="color:'+col+'">'+(ok?'OK':'!')+'</span></div>'
+        +'<div style="color:#6b7a70;margin-top:3px">max '+c.max_pixels+(c.active?' · live':'')+'</div></div>';
+    }).join(''); }
+  }).catch(function(){});
+  if(el('d-autolog')&&el('d-autolog').checked) fetchLogs();
+}
+function stripAnsi(s){ return (s||'').replace(/\x1b\[[0-9;]*m/g,''); }
+function fetchLogs(){
+  api('GET','/api/logs').then(function(txt){
+    var pre=el('d-logs'); if(!pre) return;
+    var atBottom=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-8;
+    txt=stripAnsi(txt);
+    pre.textContent=txt&&txt.length?txt:'(empty)';
+    if(atBottom) pre.scrollTop=pre.scrollHeight;
+  }).catch(function(){});
+}
+function downloadLogs(){
+  api('GET','/api/logs').then(function(txt){
+    var b=new Blob([stripAnsi(txt)],{type:'text/plain'}),u=URL.createObjectURL(b),a=document.createElement('a');
+    a.href=u; a.download='pixfrog-logs.txt'; a.click(); URL.revokeObjectURL(u);
+  }).catch(function(e){ toast(t('Error: ')+e.message,true); });
 }
 function setBadge(on,txt){
   document.querySelectorAll('[data-live="now-badge"],[data-live="fseq-badge"]').forEach(function(e){
@@ -1101,6 +1219,8 @@ function doAction(a){
   else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast(t('Identifying channel ')+(curChan+1)); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='stop-all'){ Promise.all([api('POST','/api/scenes/stop',{}),api('POST','/api/fseq/stop',{})]).then(function(){ toast(t('Outputs stopped')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='autopatch'){ api('POST','/api/autopatch',{base:0}).then(function(r){ toast(t('Patch — next free universe U')+r.next_free); reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
+  else if(a==='logs-refresh'){ fetchLogs(); }
+  else if(a==='logs-download'){ downloadLogs(); }
   else if(a==='export'){ location.href='/api/backup'; }
   else if(a==='import'){ el('restore-file').click(); }
   else if(a==='ota'){ el('ota-file').click(); }
@@ -1179,6 +1299,9 @@ function init(){
   el('ota-file').addEventListener('change',otaUpload);
   el('restore-file').addEventListener('change',restoreUpload);
   el('fseq-file').addEventListener('change',fseqUpload);
+  var ll=el('d-loglevel'); if(ll) ll.addEventListener('change',function(){
+    api('POST','/api/loglevel',{level:ll.value}).then(function(){ toast(t('Log level: ')+ll.value); fetchLogs(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
+  });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closePicker(); closeModal(); } });
   applyI18n();
   reloadConfig().then(function(){ pollStatus(); }).catch(function(e){ toast(t('Cannot connect: ')+e.message,true); });
