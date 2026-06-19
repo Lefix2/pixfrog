@@ -8,7 +8,7 @@ Reference for the software architecture of **pixfrog**, a high-performance 8-cha
 
 ## 1. Overview
 
-pixfrog is built around one principle: **decouple network ingest (bursty, jittery) from LED rendering (strict timing)** via multiple double-buffered stages. Each stage runs on a pinned core, shares only atomic pointers, and never allocates on the hot path.
+pixfrog is built around one principle: **decouple network ingest (bursty, jittery) from LED rendering (strict timing)** via multiple buffered stages (double-buffered universe and pixel banks, triple-buffered output frame). Each stage runs on a pinned core, shares only atomic pointers, and never allocates on the hot path.
 
 ![pixfrog system overview](img/architecture-overview.svg)
 
@@ -75,7 +75,7 @@ When `render_task` wakes (t = 0), it runs, in order:
       / scene (hold = fall through to a normal decode of the stale data)
    5. **Network decode** — universes → pixels (DMX offset, multi-universe
       spanning)
-3. `output::render_frame()`: encode every channel into `fb_back` in a single pass (`led::encode_frame` — pure stores, no pre-zeroing; **gamma/white-balance LUT**, color order, brightness, grouping and invert applied inline per pixel) **while the previous frame is still emitting from the other FB**, `esp_cache_msync(…, DIR_C2M)` on the written region, then hand the buffer to the DMA engine (PARLIO loop remount, or draw_bitmap on the legacy LCD_CAM path). Encode (CPU) and emission (DMA) overlap; the frame rate is bounded by max of the two, not their sum.
+3. `output::render_frame()`: encode every channel into a drained back buffer in a single pass (`led::encode_frame` — pure stores, no pre-zeroing; **gamma/white-balance LUT**, color order, brightness, grouping and invert applied inline per pixel) **while previous frames are still emitting from the other FBs** (PARLIO keeps two buffers mounted in its DMA loop; the third is the one being encoded — see §4.4), `esp_cache_msync(…, DIR_C2M)` on the written region, then hand the buffer to the DMA engine (PARLIO loop remount, or draw_bitmap on the legacy LCD_CAM path). Encode (CPU) and emission (DMA) overlap; the frame rate is bounded by max of the two, not their sum.
 4. `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
 
 In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]`; an ArtSync calls `dmx::note_sync()`, which wakes `render_task` early via the semaphore.
@@ -93,17 +93,17 @@ In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `
 | Item                                     | Size      | Note                                            |
 |------------------------------------------|----------:|-------------------------------------------------|
 | FreeRTOS + lwIP + IDF drivers            | ~120 kB   | Measured on similar projects                    |
-| `pixel_buf[8]` (one scratch buf/channel) | 8 × 4 kB  | 1024 px × 4 bytes RGBW worst case               |
+| `pixel_buf[8]` (double-buffered, per channel) | 8 × 2 × 4 kB | 1024 px × 4 bytes RGBW worst case            |
 | All task stacks                          | ~30 kB    | cf. §3                                          |
 | General heap                             | ~330 kB   | Ethernet init, NVS, OLED                        |
 
-`pixel_buf` is a per-frame scratch buffer holding decoded DMX pixels before they're encoded into the PSRAM FB. No double-buffering needed: it's ephemeral.
+`pixel_buf` holds a channel's decoded DMX pixels before they're encoded into the PSRAM FB. It is double-buffered per channel (atomic front/back swap): the network decode writes the back buffer, swaps, and the encoder reads a stable front while the next decode runs.
 
 ### Octal PSRAM (32 MB)
 
 | Item                              | Size       | Note                                                |
 |-----------------------------------|-----------:|-----------------------------------------------------|
-| `frame_buf[2]` (PSRAM)            | 2 × actual frame | sized to the longest configured channel (e.g. 512 px WS2815 → 2 × ~0.5 MB); hard cap 2 × ~2.6 MB (1024 px × 32 bits × 40 samples, WS2811-slow RGBW) |
+| `frame_buf[3]` (PSRAM)            | 3 × actual frame | triple-buffered (PARLIO) so encode overlaps the two FBs in the DMA loop; sized to the longest configured channel (e.g. 512 px WS2815 → 3 × ~0.5 MB); hard cap 3 × ~2.6 MB (1024 px × 32 bits × 40 samples worst-case sizing). Legacy LCD_CAM uses 2 FBs. |
 | `universe_pool[2][N]`             | 2 × 48 kB  | 48 universes × 512 bytes × 2 buffers                |
 | Circular logs                     | 64 kB      | Post-mortem debug                                   |
 | Application headroom              | ~27 MB     | Future sequencer / FX engine / ...                  |
