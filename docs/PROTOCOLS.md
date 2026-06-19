@@ -184,9 +184,9 @@ For clocked protocols there's no latch — the bus simply repeats (PARLIO) or go
 
 ### 4.4 Single PSRAM frame buffer, no chunks
 
-The encoder produces **one complete PSRAM frame buffer** per frame, not a chain of small chunks. Two PSRAM buffers are allocated up front; the render task writes into the back buffer, flushes the cache (`esp_cache_msync`, DIR_C2M), hands it to the DMA engine, and GDMA streams the PSRAM directly without any CPU involvement. How the swap is armed differs per backend:
+The encoder produces **one complete PSRAM frame buffer** per frame, not a chain of small chunks. The render task writes into a drained back buffer, flushes the cache (`esp_cache_msync`, DIR_C2M), hands it to the DMA engine, and GDMA streams the PSRAM directly without any CPU involvement. How many buffers and how the swap is armed differ per backend:
 
-- **PARLIO TX** (default): a flat buffer mounted in loop transmission mode. `parlio_tx_unit_transmit` while looping concatenates the new buffer onto the tail of the running DMA link list, so it takes over at the next frame boundary, gapless. Loop mode marks no DMA EOF, so a retired buffer is known free only one frame duration after its swap was submitted — `render_frame()` waits that long before re-encoding into it.
+- **PARLIO TX** (default): **three** flat buffers, one mounted in loop transmission mode. `parlio_tx_unit_transmit` while looping concatenates the next buffer onto the tail of the running DMA link list, so it takes over at the next frame boundary, gapless. Loop mode marks no DMA EOF, so a retired buffer is known free only one frame duration after its swap was submitted. With only two buffers the one to reuse is exactly the one freed one frame ago (no slack) — a third buffer gives a full frame of drain so the encode of frame N+2 overlaps the wire emission of N and N+1 instead of serialising after it (`led_output/src/parlio_output.cpp`, `kNumFb = 3`).
 - **LCD_CAM** (legacy): `esp_lcd_new_rgb_panel(flags.fb_in_psram = true, num_fbs = 2)`; `esp_lcd_panel_draw_bitmap` swaps the active FB pointer and a `vsync` callback releases the previous one.
 
 Consequence for the encoder: **no sub-frame real-time deadline**. It has the full DMA emission window of the current frame (up to ~30 ms at 30 Hz with 1024 px WS2815) to produce the next one.
@@ -204,31 +204,36 @@ All channels share the same PCLK = 16 MHz. Consequences:
 
 ### 5.1 Practical limits per protocol
 
-Each protocol's bit-rate sets a physical floor that no software optimization can bypass.
+Each protocol's bit-rate sets a physical floor that no software optimization can bypass. The numbers below are the caps the firmware **computes and enforces** (`dmx::logic::max_pixels_for`): the largest `pixel_count` whose encoded frame fits both the emission budget (period − 1 ms encode-overlap reserve) and the DMA frame buffer, capped at 1024 px (512 slots for DMX, one universe).
 
-| Protocol           | Useful bit rate | Bits/px | Max pixels @ 60 Hz | Max pixels @ 30 Hz |
-|--------------------|----------------:|--------:|-------------------:|-------------------:|
-| WS2815 / WS2814    | 800 kbps        | 24 (RGB) or 32 (RGBW) | **555** RGB / 416 RGBW | 1024 (with margin) |
-| WS2812B            | 800 kbps        | 24      | **555**            | 1024               |
-| WS2811-fast        | 800 kbps        | 24      | **555**            | 1024               |
-| WS2811-slow        | 400 kbps        | 24      | **277**            | **555**            |
-| SK6812 (RGBW)      | 800 kbps        | 32      | **416**            | **833**            |
-| APA102 / SK9822 @ 4 MHz CLOCK | 4 Mbps | 32 | **5208**          | (trivial)          |
-| APA102 / SK9822 @ 8 MHz CLOCK | 8 Mbps | 32 | **10416**         | (trivial)          |
-| LPD8806 @ 4 MHz    | 4 Mbps          | 24      | **6944**           | (trivial)          |
+| Protocol             | Useful bit rate | Bits/px | Max px @ 60 Hz | Max px @ 30 Hz |
+|----------------------|----------------:|--------:|---------------:|---------------:|
+| WS2815 (RGB)         | 800 kbps        | 24      | **512**        | 1024           |
+| WS2812B / WS2811     | 800 kbps        | 24      | **520**        | 1024           |
+| WS2814 (RGBW)        | 800 kbps        | 32      | **384**        | **801**        |
+| SK6812 (RGBW)        | 800 kbps        | 32      | **410**        | **848**        |
+| APA102 / SK9822 @ 4 MHz CLOCK | 4 Mbps | 32     | 1024*          | 1024*          |
+| LPD8806 @ 4 MHz CLOCK | 4 Mbps         | 24      | 1024*          | 1024*          |
+| DMX512               | 250 kbps        | 8/slot  | 512 (1 universe) | 512          |
 
-Formula: `max_pixels = (1/f_refresh − T_reset) × bit_rate / bits_per_pixel`
+\* Clocked at 4 MHz the bus clears the frame well inside the budget, so the 1024-px hard cap is reached first. WS2815 (RGB, 280 µs reset) caps lower than WS2812B/WS2811 (50 µs reset) despite the same bit rate.
+
+Formula (LED): `max_pixels = floor( (period_µs − 1000 − T_reset_µs) / (bits_per_pixel × samples_per_bit / f_PCLK) )`, then clamped to the buffer and the 1024/512 ceiling. e.g. WS2815 @ 60 Hz: `(16666 − 1000 − 280) / 30 µs = 512`.
 
 ### 5.2 Worked example
 
 8 channels × 600 px WS2815, in parallel = **600 × 24 × 20 / 16e6 = 18 ms of pure DMA**, plus 280 µs TRESET → **~18.3 ms per frame**.
 
-- At 60 Hz (budget 16.67 ms): **does not fit**. Hard ceiling at 555 px per channel.
+- At 60 Hz (budget 16.67 ms): **does not fit**. The per-channel cap truncates each WS2815 channel to 512 px.
 - At 30 Hz (budget 33.33 ms): comfortable, ~15 ms of slack left for encoding the next frame in parallel.
 
-### 5.3 Boot-time sanity check
+### 5.3 Pixel-count is bounded to the budget
 
-`dmx_manager::validate_capacity` computes `t_dma = pixel_count × bits × samples / PCLK + T_reset` for each channel and verifies `max(t_dma) ≤ 1/refresh_rate − 1 ms`. Channels that don't fit are flagged (`is_channel_capacity_ok(ch) = false`); HOME shows `!` next to them. Logs include the actual µs vs the budget µs so the operator can fix from the panel — pixel_count is never silently modified.
+`pixel_count` can never exceed what the bus can clock out in time:
+
+- The UI bounds the pixel-count editor to `dmx::channel_max_pixels(ch)` (the table above); the web editor sends `max_pixels` and the server clamps on save; the console clamps too.
+- `dmx::clamp_pixel_counts()` truncates any over-budget channel when the refresh rate is raised (e.g. 800 px valid at 30 Hz → 512 at 60 Hz) or the protocol/clock changes, and once at boot so a pre-existing config is corrected.
+- `dmx_manager::validate_capacity` is the defensive check that still recomputes `t_dma = pixel_count × bits × samples / PCLK + T_reset` and flags any channel where `max(t_dma) > 1/refresh_rate − 1 ms` (`is_channel_capacity_ok(ch) = false`, `!` on HOME) — it should never fire now that the value is clamped, but it logs actual µs vs budget µs as a safety net.
 
 ---
 

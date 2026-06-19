@@ -9,7 +9,7 @@
   </defs>
   <rect width="1240" height="680" fill="#ffffff"/>
   <text x="32" y="42" font-size="26" font-weight="700" fill="#11201a">pixfrog — system overview</text>
-  <text x="32" y="64" font-size="14" fill="#5b6b64">Decouple bursty network ingest from strict-timing LED rendering via double-buffered, core-pinned stages.</text>
+  <text x="32" y="64" font-size="14" fill="#5b6b64">Decouple bursty network ingest from strict-timing LED rendering via buffered, core-pinned stages.</text>
 
   <!-- Chip outline -->
   <rect x="24" y="84" width="1192" height="520" rx="14" fill="#fbfdfc" stroke="#cfdbd5" stroke-width="1.5"/>
@@ -80,7 +80,7 @@
     <text x="684" y="293" font-size="12.5" fill="#167a41">5 · wait frame retired (timed) / ArtSync</text>
 
     <rect x="664" y="318" width="528" height="42" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
-    <text x="684" y="344" font-size="14" fill="#11201a">frame_buf[2] — PSRAM (double-buffered)</text>
+    <text x="684" y="344" font-size="14" fill="#11201a">frame_buf[3] — PSRAM (triple-buffered)</text>
 
     <rect x="664" y="378" width="528" height="42" rx="8" fill="#f1f5f3" stroke="#cfdbd5"/>
     <text x="684" y="404" font-size="14" fill="#11201a">PARLIO TX + GDMA — gapless loop at PCLK</text>
