@@ -1638,8 +1638,7 @@ void dispatch_network_menu(Event e) {
 
 // ── CHANNEL MENU ────────────────────────────────────────────────────────────
 
-constexpr size_t kColorOrderCount = static_cast<size_t>(led::ColorOrder::COUNT);
-constexpr size_t kProtocolCount   = static_cast<size_t>(led::Protocol::COUNT);
+constexpr size_t kProtocolCount = static_cast<size_t>(led::Protocol::COUNT);
 
 // The channel menu is layout-driven: the visible items depend on the protocol
 // family. DMX512 output ignores the LED-only fields (color order, brightness,
@@ -1761,10 +1760,21 @@ void dispatch_channel_menu(Event e) {
         // (LED protocols only — a DMX512 universe has nothing to show).
         if (!dmx) dmx::set_pixel_preview(ch, cc.pixel_count);
         break;
-    case ChItem::Order:
-        enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, static_cast<int32_t>(cc.color_order),
-                   0, static_cast<int32_t>(kColorOrderCount) - 1, 1, "Order", ret, ch);
+    case ChItem::Order: {
+        // 3-colour strips pick an RGB permutation; RGBW strips pick a
+        // W-suffixed order. Restrict the cycle to the matching family so an
+        // RGBW channel can't land on a bare RGB order (and vice versa).
+        const bool rgbw    = led::is_rgbw(cc.protocol);
+        const int32_t omin = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBW) : 0;
+        const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBWW)
+                                  : static_cast<int32_t>(led::ColorOrder::BGR);
+        int32_t ocur       = static_cast<int32_t>(cc.color_order);
+        if (ocur < omin) ocur = omin;
+        if (ocur > omax) ocur = omax;
+        enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, ocur, omin, omax, 1, "Order", ret,
+                   ch);
         break;
+    }
     case ChItem::Bright:
         enter_edit(Field::ChBrightness, ValueKind::Int, cc.brightness, 0, 255, 1, "Bright", ret,
                    ch);

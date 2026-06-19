@@ -508,6 +508,17 @@ var CLOCKED=['APA102','SK9822','LPD8806'];
 // nearest so the dropdown always lands on a real option.
 var CLK_CHOICES=[1000000,2000000,4000000,8000000];
 function snapClk(hz){ hz=hz||4000000; return CLK_CHOICES.reduce(function(b,c){ return Math.abs(c-hz)<Math.abs(b-hz)?c:b; }); }
+// Colour-order choices depend on the strip's channel count: 3-colour strips get
+// the RGB permutations, RGBW strips get the W-suffixed orders.
+var RGBW_PROTOS=['SK6812','WS2814'];
+var ORDERS_RGB=['RGB','RBG','GRB','GBR','BRG','BGR'];
+var ORDERS_RGBW=['RGBW','GRBW','RGBWW'];
+function setOrderOptions(p){
+  var sel=document.getElementById('cd-order'); if(!sel) return;
+  var list=RGBW_PROTOS.indexOf(p)>=0?ORDERS_RGBW:ORDERS_RGB, cur=sel.value;
+  sel.innerHTML=list.map(function(o){return '<option>'+o+'</option>';}).join('');
+  if(list.indexOf(cur)>=0) sel.value=cur;
+}
 var ST={
   active:  {dot:'#70d18b',txt:'#8fdca3',label:'Active',   chip:'rgba(112,209,139,.12)',bd:'rgba(112,209,139,.22)'},
   failsafe:{dot:'#d9534f',txt:'#ec8480',label:'Failsafe', chip:'rgba(217,83,79,.14)',  bd:'rgba(217,83,79,.4)'},
@@ -770,6 +781,7 @@ function updateChanVis(){
   var p=sel.value, off=p==='Off', dmx=p==='DMX512', clk=CLOCKED.indexOf(p)>=0;
   var f=el('cd-fields'); if(f) f.style.display=off?'none':'';
   if(off) return;
+  setOrderOptions(p);
   function show(id,vis){ var e=el(id); if(e) e.style.display=vis?'flex':'none'; }
   show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
   show('cd-row-inv',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
