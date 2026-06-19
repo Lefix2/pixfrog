@@ -489,6 +489,39 @@ static void test_frame_dmx_dominant() {
     check_frame_equivalence(descs, px, __LINE__);
 }
 
+static void test_frame_nrz_with_clocked() {
+    // NRZ store group is the largest extent (no DMX) and clocked channels fit
+    // inside it → exercises the fused single-pass NRZ+clocked store path. Mixed
+    // NRZ timings (WS2815 {5,15} + WS2812B {6,11}) + APA102/SK9822/LPD8806, with
+    // ragged lengths so a clocked channel ends before the NRZ store group.
+    std::vector<ChannelDesc> descs{
+        make_desc(0, Protocol::WS2815, 512),  make_desc(1, Protocol::WS2812B, 400),
+        make_desc(2, Protocol::APA102, 200),  make_desc(3, Protocol::WS2811, 256),
+        make_desc(4, Protocol::SK9822, 150),  make_desc(5, Protocol::LPD8806, 90),
+        make_desc(6, Protocol::LPD8806, 300), make_desc(7, Protocol::WS2814, 120),
+    };
+    for (auto& d : descs) {
+        d.brightness = 200;
+    }
+    std::vector<std::vector<uint8_t>> px;
+    for (const auto& d : descs)
+        px.push_back(random_pixels(d));
+    check_frame_equivalence(descs, px, __LINE__);
+
+    // Homogeneous NRZ store group + clocked (segment model must match the
+    // homogeneous fast path the reference uses).
+    std::vector<ChannelDesc> descs2{
+        make_desc(0, Protocol::WS2815, 300),
+        make_desc(1, Protocol::WS2815, 300),
+        make_desc(2, Protocol::APA102, 120),
+        make_desc(3, Protocol::LPD8806, 64),
+    };
+    std::vector<std::vector<uint8_t>> px2;
+    for (const auto& d : descs2)
+        px2.push_back(random_pixels(d));
+    check_frame_equivalence(descs2, px2, __LINE__);
+}
+
 static void test_frame_capacity_too_small() {
     std::vector<ChannelDesc> descs{ make_desc(0, Protocol::WS2815, 10) };
     std::vector<std::vector<uint8_t>> px{ random_pixels(descs[0]) };
@@ -653,6 +686,7 @@ int main() {
     test_frame_fuzz();
     test_frame_all_dmx();
     test_frame_dmx_dominant();
+    test_frame_nrz_with_clocked();
     test_frame_capacity_too_small();
     test_perf_frame_8x512();
     test_perf_frame_8xdmx512();
