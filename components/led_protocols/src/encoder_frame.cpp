@@ -49,7 +49,6 @@ struct NrzChan {
     size_t bytes_per_px;
     uint16_t out_pi;
     uint8_t byte_idx;
-    uint8_t bit_idx;
     uint8_t bytes[4];
 };
 
@@ -63,24 +62,7 @@ void chan_init(NrzChan& c, const ChannelDesc& d, const uint8_t* pixels, const Ti
     c.total_bits   = static_cast<uint32_t>(d.pixel_count) * c.bytes_per_px * 8u;
     c.out_pi       = 0;
     c.byte_idx     = 0;
-    c.bit_idx      = 0;
     if (d.pixel_count > 0) detail::transformed_pixel_bytes(d, pixels, 0, c.bytes);
-}
-
-// Returns the current bit (MSB-first within each byte, bytes in wire order)
-// and advances the cursor. Must not be called past total_bits.
-bool chan_next_bit(NrzChan& c) {
-    const bool bit = (c.bytes[c.byte_idx] >> (7 - c.bit_idx)) & 1u;
-    if (++c.bit_idx == 8) {
-        c.bit_idx = 0;
-        if (++c.byte_idx == c.bytes_per_px) {
-            c.byte_idx = 0;
-            if (++c.out_pi < c.d->pixel_count) {
-                detail::transformed_pixel_bytes(*c.d, c.pixels, c.out_pi, c.bytes);
-            }
-        }
-    }
-    return bit;
 }
 
 // Fill / OR a run of `n` identical samples into the 16-bit DMA buffer. Plain
@@ -113,15 +95,6 @@ uint8_t chan_next_byte(NrzChan& c) {
     }
     return b;
 }
-
-// A sample offset within the bit cell where some channels may go low.
-// clear0: channels whose T0H ends here (cleared when their bit is 0).
-// clear1: channels whose T1H ends here (cleared when their bit is 1).
-struct Edge {
-    uint16_t pos;
-    uint16_t clear0;
-    uint16_t clear1;
-};
 
 // Fast path for a group whose channels all share the same T0H and T1H (any
 // single-protocol group — the common 8×WS2815 case). The bus word inside each
@@ -209,68 +182,108 @@ uint32_t sweep_group(NrzChan* ch, size_t n, uint16_t samples_bit, uint16_t* out)
     }
     if (homogeneous) return sweep_group_homogeneous<kStore>(ch, n, samples_bit, out, max_bits);
 
-    Edge edges[2 * kMaxChannels + 1];
-    size_t nedges     = 0;
-    uint16_t all_mask = 0;
-
-    const auto add_edge = [&](uint16_t pos, uint16_t mask, bool on_zero) {
-        size_t k = 0;
-        while (k < nedges && edges[k].pos < pos)
-            ++k;
-        if (k == nedges || edges[k].pos != pos) {
-            for (size_t m = nedges; m > k; --m)
-                edges[m] = edges[m - 1];
-            edges[k] = Edge{ pos, 0, 0 };
-            ++nedges;
-        }
-        if (on_zero) {
-            edges[k].clear0 = static_cast<uint16_t>(edges[k].clear0 | mask);
-        } else {
-            edges[k].clear1 = static_cast<uint16_t>(edges[k].clear1 | mask);
-        }
+    // Segment model. Split the bit cell at every distinct timing edge (each
+    // channel's t0h and t1h, plus the cell end). Inside a run starting at sample
+    // offset `start`, a channel is HIGH iff its high window exceeds `start` —
+    // t0h for a 0-bit, t1h for a 1-bit. So with two per-run masks precomputed at
+    // rebuild — A = channels whose t0h > start, B = channels whose t1h > start —
+    // the bus word for that run is just (A & ~ones) | (B & ones): two bitwise
+    // ops, no per-edge incremental masking, no sorted-edge struct scan per bit.
+    struct Seg {
+        uint16_t len;
+        uint16_t a;
+        uint16_t b;
     };
+    Seg segs[2 * kMaxChannels + 1];
+    size_t nsegs = 0;
 
-    // The edge table only changes when a channel runs out of bits, so it is
-    // rebuilt at bt=0 and at each channel dropout — not per bit.
-    uint32_t next_rebuild = 0;
-    uint32_t out_pos      = 0;
+    // Segments and the active set only change when a channel runs out of bits,
+    // so they're rebuilt at byte 0 and at each dropout — not per bit. total_bits
+    // is always a whole number of bytes (pixel_count × bpp × 8), so dropouts are
+    // byte-aligned and all 8 bits of a byte share one segment table.
+    const uint32_t max_bytes   = max_bits >> 3;
+    uint32_t next_rebuild_byte = 0;
+    uint32_t out_pos           = 0;
 
-    for (uint32_t bt = 0; bt < max_bits; ++bt) {
-        if (bt == next_rebuild) {
-            nedges       = 0;
-            all_mask     = 0;
-            next_rebuild = max_bits;
+    size_t active[kMaxChannels];   // indices of channels still emitting
+    uint16_t amask[kMaxChannels];  // their bus masks (cached for the inner loop)
+    uint8_t cur[kMaxChannels];     // their current transformed byte
+    size_t active_n = 0;
+
+    for (uint32_t byte_pos = 0; byte_pos < max_bytes; ++byte_pos) {
+        if (byte_pos == next_rebuild_byte) {
+            active_n          = 0;
+            next_rebuild_byte = max_bytes;
+            // Sorted set of distinct edge positions (t0h/t1h of every active
+            // channel + the cell end). Insertion sort — at most 2n+1 entries.
+            uint16_t pos[2 * kMaxChannels + 1];
+            size_t np          = 0;
+            const auto add_pos = [&](uint16_t p) {
+                size_t k = 0;
+                while (k < np && pos[k] < p)
+                    ++k;
+                if (k == np || pos[k] != p) {
+                    for (size_t m = np; m > k; --m)
+                        pos[m] = pos[m - 1];
+                    pos[k] = p;
+                    ++np;
+                }
+            };
             for (size_t i = 0; i < n; ++i) {
-                if (ch[i].total_bits <= bt) continue;
-                all_mask = static_cast<uint16_t>(all_mask | ch[i].mask);
-                add_edge(ch[i].t0h, ch[i].mask, true);
-                add_edge(ch[i].t1h, ch[i].mask, false);
-                if (ch[i].total_bits < next_rebuild) next_rebuild = ch[i].total_bits;
+                const uint32_t end_byte = ch[i].total_bits >> 3;
+                if (end_byte <= byte_pos) continue;
+                active[active_n] = i;
+                amask[active_n]  = ch[i].mask;
+                ++active_n;
+                add_pos(ch[i].t0h);
+                add_pos(ch[i].t1h);
+                if (end_byte < next_rebuild_byte) next_rebuild_byte = end_byte;
             }
-            add_edge(samples_bit, 0, true);  // terminator: fill to end of cell
+            add_pos(samples_bit);  // close the final run at the cell end
+
+            // Each sorted position is a run end; the run starts at the previous
+            // end (0 for the first). Precompute A/B from that start.
+            uint16_t start = 0;
+            nsegs          = 0;
+            for (size_t k = 0; k < np; ++k) {
+                uint16_t a = 0, b = 0;
+                for (size_t ai = 0; ai < active_n; ++ai) {
+                    const NrzChan& c = ch[active[ai]];
+                    if (c.t0h > start) a = static_cast<uint16_t>(a | amask[ai]);
+                    if (c.t1h > start) b = static_cast<uint16_t>(b | amask[ai]);
+                }
+                segs[nsegs].len = static_cast<uint16_t>(pos[k] - start);
+                segs[nsegs].a   = a;
+                segs[nsegs].b   = b;
+                ++nsegs;
+                start = pos[k];
+            }
         }
 
-        uint16_t ones = 0;
-        for (size_t i = 0; i < n; ++i) {
-            if (ch[i].total_bits > bt && chan_next_bit(ch[i])) {
-                ones = static_cast<uint16_t>(ones | ch[i].mask);
-            }
-        }
+        // Gather each active channel's byte once (8× fewer cursor advances and
+        // pixel transforms than the per-bit path).
+        for (size_t a = 0; a < active_n; ++a)
+            cur[a] = chan_next_byte(ch[active[a]]);
 
-        uint16_t word = all_mask;  // every active channel starts its bit high
-        uint16_t pos  = 0;
-        for (size_t e = 0; e < nedges; ++e) {
-            const uint16_t b = edges[e].pos;
-            if (kStore) {
-                fill_run(out + out_pos + pos, word, static_cast<uint16_t>(b - pos));
-            } else {
-                or_run(out + out_pos + pos, word, static_cast<uint16_t>(b - pos));
+        for (int bit = 7; bit >= 0; --bit) {
+            uint16_t ones = 0;
+            for (size_t a = 0; a < active_n; ++a) {
+                if ((cur[a] >> bit) & 1u) ones = static_cast<uint16_t>(ones | amask[a]);
             }
-            word = static_cast<uint16_t>(word &
-                                         ~((edges[e].clear0 & ~ones) | (edges[e].clear1 & ones)));
-            pos  = b;
+
+            uint16_t* p = out + out_pos;
+            for (size_t s = 0; s < nsegs; ++s) {
+                const uint16_t word = static_cast<uint16_t>((segs[s].a & ~ones) |
+                                                            (segs[s].b & ones));
+                if (kStore) {
+                    fill_run(p, word, segs[s].len);
+                } else {
+                    or_run(p, word, segs[s].len);
+                }
+                p += segs[s].len;
+            }
+            out_pos += samples_bit;
         }
-        out_pos += samples_bit;
     }
     return out_pos;
 }
@@ -355,6 +368,157 @@ template <bool kStore> uint32_t sweep_dmx(DmxChan* ch, size_t n, uint16_t* out) 
     return out_pos;
 }
 
+// One clocked (APA102/SK9822/LPD8806) channel in the merged sweep. Like the NRZ
+// case, separate per-channel encode_spi passes are read-modify-write traversals;
+// merging every clocked channel sharing samples_per_clock into ONE sweep cuts
+// that to a single OR pass over the group's span. The byte stream is identical
+// to encode_spi (native protocol order, no color_order remap, brightness/LUT).
+struct ClockedChan {
+    const ChannelDesc* d;
+    const uint8_t* pixels;
+    uint16_t data_mask;
+    uint16_t clk_mask;
+    bool is_apa;  // APA102/SK9822: 4-byte start + per-pixel brightness byte
+    uint8_t bpp;  // output bytes per pixel (4 APA, 3 LPD)
+    uint32_t start_bytes;
+    uint32_t data_end_byte;  // start_bytes + bpp × pixel_count
+    uint32_t total_bits;     // total_bytes × 8
+    uint32_t byte_idx;       // cursor over the byte stream
+    uint16_t cur_pi;         // pixel whose transformed bytes are cached in cur3
+    uint8_t pix_byte;        // byte index within the current pixel (0..bpp-1)
+    uint8_t cur3[3];         // transformed r,g,b of cur_pi
+};
+
+// Transformed (grouping, invert, LUT, brightness) r,g,b for output pixel
+// `out_pi`. Matches encode_spi exactly — clocked protocols ignore color_order
+// and use their native wire order at byte assembly.
+void clocked_pixel_bytes(const ChannelDesc& d, const uint8_t* pixels, uint16_t out_pi,
+                         uint8_t out3[3]) {
+    const uint16_t px_max = d.pixel_count;
+    const uint16_t src_pi = d.invert_direction ? static_cast<uint16_t>(px_max - 1 - out_pi)
+                                               : out_pi;
+    const uint16_t group  = d.grouping ? d.grouping : 1;
+    const uint8_t* p      = pixels + (src_pi / group) * 3;
+    const uint8_t lr      = d.lut ? d.lut->r[p[0]] : p[0];
+    const uint8_t lg      = d.lut ? d.lut->g[p[1]] : p[1];
+    const uint8_t lb      = d.lut ? d.lut->b[p[2]] : p[2];
+    out3[0]               = detail::apply_brightness(lr, d.brightness);
+    out3[1]               = detail::apply_brightness(lg, d.brightness);
+    out3[2]               = detail::apply_brightness(lb, d.brightness);
+}
+
+void clocked_init(ClockedChan& c, const ChannelDesc& d, const uint8_t* pixels) {
+    c.d                      = &d;
+    c.pixels                 = pixels;
+    c.data_mask              = static_cast<uint16_t>(1u << d.bus_bit_data);
+    c.clk_mask               = static_cast<uint16_t>(1u << d.bus_bit_clock);
+    c.is_apa                 = (d.protocol == Protocol::APA102 || d.protocol == Protocol::SK9822);
+    c.bpp                    = c.is_apa ? 4 : 3;
+    c.start_bytes            = c.is_apa ? 4 : 0;
+    const uint32_t px        = d.pixel_count;
+    const uint32_t end_bytes = c.is_apa ? ((px + 15) / 16 + 1) : ((px + 31) / 32);
+    c.data_end_byte          = c.start_bytes + c.bpp * px;
+    c.total_bits             = (c.data_end_byte + end_bytes) * 8u;
+    c.byte_idx               = 0;
+    c.cur_pi                 = 0;
+    c.pix_byte               = 0;
+    // Pixel 0 is cached ahead of the first data byte (the APA start frame, if
+    // any, doesn't touch pixel data). Channels with pixel_count==0 never reach
+    // the data phase, so cur3 staying unset is fine.
+    if (px > 0) clocked_pixel_bytes(d, pixels, 0, c.cur3);
+}
+
+// Next byte of the channel's wire stream (MSB emitted first), advancing the
+// cursor. Must not be called past total_bits/8.
+uint8_t clocked_next_byte(ClockedChan& c) {
+    uint8_t out;
+    if (c.byte_idx < c.start_bytes) {
+        out = 0x00;  // APA start frame
+    } else if (c.byte_idx < c.data_end_byte) {
+        // pix_byte / cur_pi advance incrementally — no per-byte division.
+        const uint8_t r = c.cur3[0], g = c.cur3[1], b = c.cur3[2];
+        if (c.is_apa) {  // [0xFF brightness, B, G, R]
+            out = (c.pix_byte == 0) ? 0xFF : (c.pix_byte == 1) ? b : (c.pix_byte == 2) ? g : r;
+        } else {  // LPD8806: [0x80|G>>1, 0x80|R>>1, 0x80|B>>1]
+            out = (c.pix_byte == 0) ? static_cast<uint8_t>(0x80 | (g >> 1))
+                : (c.pix_byte == 1) ? static_cast<uint8_t>(0x80 | (r >> 1))
+                                    : static_cast<uint8_t>(0x80 | (b >> 1));
+        }
+        if (++c.pix_byte == c.bpp) {
+            c.pix_byte = 0;
+            if (++c.cur_pi < c.d->pixel_count) {
+                clocked_pixel_bytes(*c.d, c.pixels, c.cur_pi, c.cur3);
+            }
+        }
+    } else {
+        out = c.is_apa ? 0xFF : 0x00;  // APA end frame / LPD latch
+    }
+    ++c.byte_idx;
+    return out;
+}
+
+// Merge clocked channels sharing samples_per_clock. Each bit spans spc samples:
+// DATA held for the whole bit, CLOCK low for the first half then high. The clock
+// is asserted for every active channel regardless of data, so clk_all is fixed
+// per active set; only the data word varies per bit.
+template <bool kStore>
+uint32_t sweep_clocked(ClockedChan* ch, size_t n, uint16_t spc, uint16_t* out) {
+    uint32_t max_bits = 0;
+    for (size_t i = 0; i < n; ++i) {
+        if (ch[i].total_bits > max_bits) max_bits = ch[i].total_bits;
+    }
+    const uint32_t max_bytes = max_bits >> 3;
+    const uint16_t half      = static_cast<uint16_t>(spc / 2);
+
+    uint32_t next_rebuild_byte = 0;
+    uint32_t out_pos           = 0;
+    uint16_t clk_all           = 0;  // OR of active channels' clock masks
+
+    size_t active[kMaxChannels];
+    uint16_t dmask[kMaxChannels];
+    uint8_t cur[kMaxChannels];
+    size_t active_n = 0;
+
+    for (uint32_t byte_pos = 0; byte_pos < max_bytes; ++byte_pos) {
+        if (byte_pos == next_rebuild_byte) {
+            active_n          = 0;
+            clk_all           = 0;
+            next_rebuild_byte = max_bytes;
+            for (size_t i = 0; i < n; ++i) {
+                const uint32_t end_byte = ch[i].total_bits >> 3;
+                if (end_byte <= byte_pos) continue;
+                active[active_n] = i;
+                dmask[active_n]  = ch[i].data_mask;
+                ++active_n;
+                clk_all = static_cast<uint16_t>(clk_all | ch[i].clk_mask);
+                if (end_byte < next_rebuild_byte) next_rebuild_byte = end_byte;
+            }
+        }
+
+        for (size_t a = 0; a < active_n; ++a)
+            cur[a] = clocked_next_byte(ch[active[a]]);
+
+        for (int bit = 7; bit >= 0; --bit) {
+            uint16_t data = 0;
+            for (size_t a = 0; a < active_n; ++a) {
+                if ((cur[a] >> bit) & 1u) data = static_cast<uint16_t>(data | dmask[a]);
+            }
+            uint16_t* p = out + out_pos;
+            if (kStore) {
+                fill_run(p, data, half);
+                fill_run(p + half, static_cast<uint16_t>(data | clk_all),
+                         static_cast<uint16_t>(spc - half));
+            } else {
+                or_run(p, data, half);
+                or_run(p + half, static_cast<uint16_t>(data | clk_all),
+                       static_cast<uint16_t>(spc - half));
+            }
+            out_pos += spc;
+        }
+    }
+    return out_pos;
+}
+
 }  // namespace
 
 size_t encode_frame(const ChannelDesc* descs, const uint8_t* const* pixels, size_t channel_count,
@@ -416,6 +580,39 @@ size_t encode_frame(const ChannelDesc* descs, const uint8_t* const* pixels, size
         dmx_init(dmx_chans[ndmx++], descs[i], pixels[i]);
     }
 
+    // Clocked SPI channels grouped by samples_per_clock (≤ 3 distinct rates in
+    // practice), each group merged into one OR pass instead of per-channel ones.
+    struct ClockedGroup {
+        uint16_t spc;
+        size_t n;
+        ClockedChan chans[kMaxChannels];
+    };
+    ClockedGroup cgroups[3]{};
+    size_t ncgroups = 0;
+    size_t leftover_clk[kMaxChannels];
+    size_t nleftover_clk = 0;
+    for (size_t i = 0; i < channel_count; ++i) {
+        if (!is_clocked(descs[i].protocol) || !pixels[i] || descs[i].pixel_count == 0) continue;
+        const uint16_t spc = timing_for(descs[i].protocol, descs[i].clock_hz).samples_per_clock;
+        ClockedGroup* g    = nullptr;
+        for (size_t k = 0; k < ncgroups; ++k) {
+            if (cgroups[k].spc == spc) {
+                g = &cgroups[k];
+                break;
+            }
+        }
+        if (!g && ncgroups < sizeof(cgroups) / sizeof(cgroups[0])) {
+            g      = &cgroups[ncgroups++];
+            g->spc = spc;
+            g->n   = 0;
+        }
+        if (!g || g->n == kMaxChannels) {
+            if (nleftover_clk < kMaxChannels) leftover_clk[nleftover_clk++] = i;
+            continue;
+        }
+        clocked_init(g->chans[g->n++], descs[i], pixels[i]);
+    }
+
     // Extents (samples each sweep would write, reset tails excluded — those
     // are zeros). The largest-extent sweep gets the pure-store pass; the
     // others pay read-modify-write only over their own smaller span.
@@ -468,11 +665,12 @@ size_t encode_frame(const ChannelDesc* descs, const uint8_t* const* pixels, size
         const size_t i = leftover_dmx[k];
         detail::encode_dmx(descs[i], pixels[i], out_samples, out_samples_capacity);
     }
-    for (size_t i = 0; i < channel_count; ++i) {
-        if (!pixels[i]) continue;
-        if (is_clocked(descs[i].protocol)) {
-            detail::encode_spi(descs[i], pixels[i], out_samples, out_samples_capacity);
-        }
+    for (size_t k = 0; k < ncgroups; ++k) {
+        sweep_clocked<false>(cgroups[k].chans, cgroups[k].n, cgroups[k].spc, out_samples);
+    }
+    for (size_t k = 0; k < nleftover_clk; ++k) {
+        const size_t i = leftover_clk[k];
+        detail::encode_spi(descs[i], pixels[i], out_samples, out_samples_capacity);
     }
 
     return frame_len;
