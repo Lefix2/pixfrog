@@ -8,6 +8,7 @@ idf_component_register(
         dmx_manager
         fpp_sync
         fseq_player
+        led_output
         led_protocols
         sacn
         ui

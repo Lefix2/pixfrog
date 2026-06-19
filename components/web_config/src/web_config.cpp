@@ -8,6 +8,7 @@
 #include "cJSON.h"
 #include "esp_app_desc.h"
 #include "esp_core_dump.h"
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -22,6 +23,7 @@
 #include "dmx_manager.h"
 #include "fpp_sync.h"
 #include "fseq_player.h"
+#include "led_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
 #include "ui.h"
@@ -37,6 +39,68 @@ httpd_handle_t g_server = nullptr;
 // Embedded SPA (web_ui.html baked in at link time).
 extern const uint8_t web_ui_html_start[] asm("_binary_web_ui_html_start");
 extern const uint8_t web_ui_html_end[] asm("_binary_web_ui_html_end");
+
+// ── Log capture ring ────────────────────────────────────────────────────────
+// A vprintf tee on esp_log: every formatted log line also lands in a fixed ring
+// so the Diagnostics tab can read recent logs over HTTP (GET /api/logs). The
+// original sink (UART) is preserved. The hook runs in task context — esp_log is
+// not called from ISRs here — so a short spinlock around the ring is enough.
+
+constexpr size_t kLogRing = 8192;
+char g_log_ring[kLogRing];
+size_t g_log_head             = 0;  // next write position
+bool g_log_wrapped            = false;
+portMUX_TYPE g_log_mux        = portMUX_INITIALIZER_UNLOCKED;
+vprintf_like_t g_prev_vprintf = nullptr;
+
+int log_vprintf(const char* fmt, va_list ap) {
+    char line[256];
+    va_list ap2;
+    va_copy(ap2, ap);
+    const int n = vsnprintf(line, sizeof(line), fmt, ap2);
+    va_end(ap2);
+    if (n > 0) {
+        const size_t len = (static_cast<size_t>(n) < sizeof(line)) ? static_cast<size_t>(n)
+                                                                   : sizeof(line) - 1;
+        portENTER_CRITICAL(&g_log_mux);
+        for (size_t i = 0; i < len; ++i) {
+            if (line[i] == '\x1b') {  // drop the "ESC [ … m" colour escapes
+                while (i < len && line[i] != 'm')
+                    ++i;
+                continue;
+            }
+            g_log_ring[g_log_head++] = line[i];
+            if (g_log_head == kLogRing) {
+                g_log_head    = 0;
+                g_log_wrapped = true;
+            }
+        }
+        portEXIT_CRITICAL(&g_log_mux);
+    }
+    return g_prev_vprintf ? g_prev_vprintf(fmt, ap) : n;  // tee to UART
+}
+
+void init_log_capture() {
+    if (g_prev_vprintf) return;  // already installed
+    g_prev_vprintf = esp_log_set_vprintf(&log_vprintf);
+    ESP_LOGI(TAG, "log capture ring installed (%u B)", static_cast<unsigned>(kLogRing));
+}
+
+const char* reset_reason_str(esp_reset_reason_t r) {
+    switch (r) {
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_EXT: return "external";
+    case ESP_RST_SW: return "software";
+    case ESP_RST_PANIC: return "panic";
+    case ESP_RST_INT_WDT: return "int-wdt";
+    case ESP_RST_TASK_WDT: return "task-wdt";
+    case ESP_RST_WDT: return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deep-sleep";
+    case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_SDIO: return "sdio";
+    default: return "unknown";
+    }
+}
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
 
@@ -303,6 +367,124 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
     }
     cJSON_AddItemToObject(root, "channels", jchs);
     return send_json(req, root);
+}
+
+// ── GET /api/diag — "stats for nerds" ───────────────────────────────────────
+// Deeper telemetry than /api/status: render-pipeline timings, frame counters,
+// memory (incl. PSRAM + frame-buffer footprint), system identity and the
+// reset reason, plus per-channel capacity. Polled only while the Diagnostics
+// tab is open.
+
+static esp_err_t handle_get_diag(httpd_req_t* req) {
+    const auto st                  = dmx::get_stats();
+    const output::DebugCounters dc = output::get_debug_counters();
+    cJSON* root                    = cJSON_CreateObject();
+
+    // Render pipeline (most recent frame).
+    cJSON* jr = cJSON_CreateObject();
+    cJSON_AddNumberToObject(jr, "fps", static_cast<double>(st.current_fps));
+    cJSON_AddNumberToObject(jr, "encode_us", dc.encode_us);
+    cJSON_AddNumberToObject(jr, "wait_us", dc.wait_us);
+    cJSON_AddNumberToObject(jr, "submit_us", dc.submit_us);
+    cJSON_AddNumberToObject(jr, "frame_emit_us", static_cast<double>(dmx::frame_emit_us()));
+    cJSON_AddNumberToObject(jr, "frames_emitted", static_cast<double>(st.frames_emitted));
+    cJSON_AddNumberToObject(jr, "trans_done", dc.trans_done);
+    cJSON_AddNumberToObject(jr, "dma_underruns", st.dma_underruns);
+    cJSON_AddNumberToObject(jr, "msync_err", dc.msync_err);
+    cJSON_AddItemToObject(root, "render", jr);
+
+    // Reception counters.
+    cJSON* jx = cJSON_CreateObject();
+    cJSON_AddNumberToObject(jx, "artnet_rx", static_cast<double>(st.artnet_packets_rx));
+    cJSON_AddNumberToObject(jx, "artnet_ctrl_rx", static_cast<double>(st.artnet_ctrl_rx));
+    cJSON_AddNumberToObject(jx, "sacn_rx", static_cast<double>(st.sacn_packets_rx));
+    cJSON_AddNumberToObject(jx, "bad_rx", static_cast<double>(st.artnet_bad_packets));
+    cJSON_AddItemToObject(root, "rx", jx);
+
+    // Memory.
+    cJSON* jm = cJSON_CreateObject();
+    cJSON_AddNumberToObject(jm, "heap_free", static_cast<double>(esp_get_free_heap_size()));
+    cJSON_AddNumberToObject(jm, "heap_min", static_cast<double>(esp_get_minimum_free_heap_size()));
+    cJSON_AddNumberToObject(jm, "psram_free",
+                            static_cast<double>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+    cJSON_AddNumberToObject(jm, "psram_total",
+                            static_cast<double>(heap_caps_get_total_size(MALLOC_CAP_SPIRAM)));
+    cJSON_AddNumberToObject(jm, "fb_bytes", static_cast<double>(output::fb_bytes()));
+    cJSON_AddItemToObject(root, "mem", jm);
+
+    // System identity.
+    cJSON* js = cJSON_CreateObject();
+    cJSON_AddNumberToObject(js, "uptime_s", static_cast<double>(esp_timer_get_time() / 1000000));
+    cJSON_AddStringToObject(js, "version", esp_app_get_description()->version);
+    cJSON_AddStringToObject(js, "idf", esp_get_idf_version());
+    cJSON_AddStringToObject(js, "partition", esp_ota_get_running_partition()->label);
+    cJSON_AddStringToObject(js, "reset_reason", reset_reason_str(esp_reset_reason()));
+    cJSON_AddItemToObject(root, "sys", js);
+
+    // Per-channel capacity.
+    cJSON* jchs = cJSON_CreateArray();
+    for (size_t i = 0; i < config::kNumChannels; ++i) {
+        cJSON* jc = cJSON_CreateObject();
+        cJSON_AddBoolToObject(jc, "active", dmx::is_channel_active(i));
+        cJSON_AddBoolToObject(jc, "capacity_ok", dmx::is_channel_capacity_ok(i));
+        cJSON_AddNumberToObject(jc, "max_pixels", dmx::channel_max_pixels(i));
+        cJSON_AddItemToArray(jchs, jc);
+    }
+    cJSON_AddItemToObject(root, "channels", jchs);
+    return send_json(req, root);
+}
+
+// ── GET /api/logs — recent log lines (text/plain) ───────────────────────────
+// Streams the capture ring oldest-first. Sent straight from the ring without a
+// snapshot: a concurrent writer can tear a byte at the seam, which is fine for
+// a log view and avoids an 8 kB copy on the httpd task stack.
+
+static esp_err_t handle_get_logs(httpd_req_t* req) {
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    portENTER_CRITICAL(&g_log_mux);
+    const size_t head  = g_log_head;
+    const bool wrapped = g_log_wrapped;
+    portEXIT_CRITICAL(&g_log_mux);
+    if (wrapped && kLogRing - head > 0)
+        httpd_resp_send_chunk(req, g_log_ring + head, kLogRing - head);
+    if (head > 0) httpd_resp_send_chunk(req, g_log_ring, head);
+    httpd_resp_send_chunk(req, nullptr, 0);
+    return ESP_OK;
+}
+
+// ── POST /api/loglevel — {"level":"none|error|warn|info|debug|verbose"} ──────
+
+static esp_err_t handle_post_loglevel(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    char buf[64];
+    const size_t n = read_body(req, buf, sizeof(buf) - 1);
+    if (n == 0) return send_err(req, 400, "empty body");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "bad json");
+    const cJSON* it     = cJSON_GetObjectItemCaseSensitive(j, "level");
+    esp_log_level_t lvl = ESP_LOG_INFO;
+    bool ok             = cJSON_IsString(it);
+    if (ok) {
+        const char* s = it->valuestring;
+        if (strcasecmp(s, "none") == 0)
+            lvl = ESP_LOG_NONE;
+        else if (strcasecmp(s, "error") == 0)
+            lvl = ESP_LOG_ERROR;
+        else if (strcasecmp(s, "warn") == 0)
+            lvl = ESP_LOG_WARN;
+        else if (strcasecmp(s, "info") == 0)
+            lvl = ESP_LOG_INFO;
+        else if (strcasecmp(s, "debug") == 0)
+            lvl = ESP_LOG_DEBUG;
+        else if (strcasecmp(s, "verbose") == 0)
+            lvl = ESP_LOG_VERBOSE;
+        else
+            ok = false;
+    }
+    cJSON_Delete(j);
+    if (!ok) return send_err(req, 400, "level: none|error|warn|info|debug|verbose");
+    esp_log_level_set("*", lvl);
+    return send_ok(req);
 }
 
 // ── GET/DELETE /api/coredump ────────────────────────────────────────────────
@@ -1141,8 +1323,10 @@ static esp_err_t handle_autopatch(httpd_req_t* req) {
 void start() {
     if (g_server) return;
 
+    init_log_capture();  // start teeing esp_log into the ring for /api/logs
+
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 22;
+    cfg.max_uri_handlers = 26;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -1219,6 +1403,12 @@ void start() {
         { .uri      = "/api/coredump",
           .method   = HTTP_DELETE,
           .handler  = handle_coredump_delete,
+          .user_ctx = nullptr },
+        { .uri = "/api/diag", .method = HTTP_GET, .handler = handle_get_diag, .user_ctx = nullptr },
+        { .uri = "/api/logs", .method = HTTP_GET, .handler = handle_get_logs, .user_ctx = nullptr },
+        { .uri      = "/api/loglevel",
+          .method   = HTTP_POST,
+          .handler  = handle_post_loglevel,
           .user_ctx = nullptr },
     };
     for (const auto& r : routes)
