@@ -421,44 +421,33 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         if (first + visible > count) first = count - visible;
     }
     for (int i = 0; i < visible && first + i < count; ++i) {
-        const int idx      = first + i;
-        const int ry       = kHdrH + i * kItemH;
-        const ListItem& it = items[idx];
-        const bool sel     = (idx == cursor);
-        const bool is_back = (it.label[0] == '[');
-        const int chev_x   = kTW - kChevW - kIndent;
+        const int idx       = first + i;
+        const int ry        = kHdrH + i * kItemH;
+        const ListItem& it  = items[idx];
+        const bool sel      = (idx == cursor);
+        const bool is_back  = (it.label[0] == '[');
+        const Color text_bg = sel ? color::CursorBg : color::Black;
 
         if (sel) {
-            // Focused row: full size, rounded highlight + signature-green edge.
+            // Rounded highlight with a signature-green bar on the left edge.
             canvas_fill_round_rect_aa(3, ry + 1, kTW - 6, kItemH - 2, 6, color::CursorBg,
                                       color::Black);
             canvas_fill_round_rect_aa(5, ry + 4, 4, kItemH - 8, 2, color::FrogLine,
                                       color::CursorBg);
-            if (it.badge >= 0) {
-                const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
-                                                                        : color::Black;
-                draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, color::CursorBg);
-            }
-            canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, color::CursorBg, kTxtSc);
-            if (!is_back)
-                canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, color::CursorBg, kTxtSc);
-            if (it.value && it.value[0]) {
-                const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
-                const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
-                canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, color::CursorBg,
-                                 kTxtSc);
-            }
-        } else {
-            // Off-focus rows recede: smaller (scale 1), grey fading with distance.
-            const int d      = (idx > cursor) ? (idx - cursor) : (cursor - idx);
-            const Color fade = fade_gray(d);
-            const int ty     = ry + (kItemH - 8) / 2;  // vertically centre 8px text
-            canvas_draw_text(kGutter, ty, it.label, fade, color::Black, 1);
-            if (it.value && it.value[0]) {
-                const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth;
-                const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
-                canvas_draw_text(vend - vw, ty, it.value, fade, color::Black, 1);
-            }
+        }
+        if (it.badge >= 0) {
+            const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
+                                                                    : color::Black;
+            draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, text_bg);
+        }
+        canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
+
+        const int chev_x = kTW - kChevW - kIndent;
+        if (!is_back) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
+        if (it.value && it.value[0]) {
+            const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
+            const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
+            canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
         }
     }
     // Scrollbar: a full-height track with a proportional thumb so the list
@@ -974,52 +963,69 @@ void render_edit_value() {
         std::snprintf(hdr, sizeof(hdr), "EDIT %s", s.edit.label);
     draw_tft_header(hdr);
 
-    // Large current value (scale 4 = native 12x16 cell doubled, stays crisp)
-    constexpr int kBigSc = 4;
-    char val[24];
-    format_value(s.edit, s.edit.current, val, sizeof(val));
-    const int val_w = static_cast<int>(std::strlen(val)) * kFontCellWidth * kBigSc;
-    canvas_draw_text((kTW - val_w) / 2, kHdrH + 24, val, color::Cyan, color::Black, kBigSc);
-
     const bool gauge = (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz);
     const bool enumf = (s.edit.kind == ValueKind::Protocol ||
                         s.edit.kind == ValueKind::ColorOrder || s.edit.kind == ValueKind::Failsafe);
 
-    // Numeric/clock value → a track filled to its position in [min, max], with
-    // the reachable ends labelled (so the encoder's travel is known up front).
-    if (gauge) {
-        const int gx = 44, gw = kTW - 88, gy = kHdrH + 78, gh = 12;
-        canvas_fill_round_rect(gx, gy, gw, gh, 5, color::CursorBg);
-        long span = static_cast<long>(s.edit.max) - s.edit.min;
-        if (span < 1) span = 1;
-        long fw = static_cast<long>(gw) * (s.edit.current - s.edit.min) / span;
-        if (fw < 4) fw = 4;
-        if (fw > gw) fw = gw;
-        canvas_fill_round_rect(gx, gy, static_cast<int>(fw), gh, 5, color::FrogLine);
-        char lo[16], hi[16];
-        format_value(s.edit, s.edit.min, lo, sizeof(lo));
-        format_value(s.edit, s.edit.max, hi, sizeof(hi));
-        canvas_draw_text(gx, gy + gh + 6, lo, color::DarkGray, color::Black, 1);
-        const int hiw = static_cast<int>(std::strlen(hi)) * kFontCellWidth;
-        canvas_draw_text(gx + gw - hiw, gy + gh + 6, hi, color::DarkGray, color::Black, 1);
-    } else if (enumf) {
-        // Position within the choice list, e.g. "3 / 10".
-        char pos[40];
-        std::snprintf(pos, sizeof(pos), "%ld / %ld",
-                      static_cast<long>(s.edit.current - s.edit.min + 1),
-                      static_cast<long>(s.edit.max - s.edit.min + 1));
-        const int pw = static_cast<int>(std::strlen(pos)) * kFontCellWidth * kTxtSc;
-        canvas_draw_text((kTW - pw) / 2, kHdrH + 76, pos, color::DarkGray, color::Black, kTxtSc);
-    }
-
-    // "was: X" when changed — makes clear the edit is not yet committed.
-    if (s.edit.current != s.edit.original) {
-        char orig[24];
-        format_value(s.edit, s.edit.original, orig, sizeof(orig));
-        char was[32];
-        std::snprintf(was, sizeof(was), "was: %s", orig);
-        const int was_w = static_cast<int>(std::strlen(was)) * kFontCellWidth * kTxtSc;
-        canvas_draw_text((kTW - was_w) / 2, kHdrH + 118, was, color::Orange, color::Black, kTxtSc);
+    if (enumf) {
+        // A list-of-values picker → a vertical "dropdown": the current choice is
+        // centred and highlighted, neighbours shrink and fade with distance. A
+        // small orange dot flags the original value so the change stays clear.
+        const int cx        = kTW / 2;
+        const int midY      = (kHdrH + (kTH - 20)) / 2;
+        constexpr int kRowH = 28;
+        for (int off = -3; off <= 3; ++off) {
+            const int32_t v = s.edit.current + off;
+            if (v < s.edit.min || v > s.edit.max) continue;
+            char buf[24];
+            format_value(s.edit, v, buf, sizeof(buf));
+            const int len = static_cast<int>(std::strlen(buf));
+            if (off == 0) {
+                const int w = len * kFontCellWidth * kTxtSc;
+                canvas_fill_round_rect_aa(cx - w / 2 - 14, midY - 9, w + 28, kTxtH + 6, 6,
+                                          color::CursorBg, color::Black);
+                canvas_draw_text(cx - w / 2, midY - 8, buf, color::Cyan, color::CursorBg, kTxtSc);
+            } else {
+                const int w  = len * kFontCellWidth;
+                const int ty = midY + off * kRowH - 4;
+                canvas_draw_text(cx - w / 2, ty, buf, fade_gray(off < 0 ? -off : off), color::Black,
+                                 1);
+                if (v == s.edit.original)
+                    canvas_fill_round_rect(cx - w / 2 - 13, ty, 6, 6, 3, color::Orange);
+            }
+        }
+    } else {
+        // Numeric / bool: a large value, plus a fill gauge for numeric ranges.
+        constexpr int kBigSc = 4;
+        char val[24];
+        format_value(s.edit, s.edit.current, val, sizeof(val));
+        const int val_w = static_cast<int>(std::strlen(val)) * kFontCellWidth * kBigSc;
+        canvas_draw_text((kTW - val_w) / 2, kHdrH + 24, val, color::Cyan, color::Black, kBigSc);
+        if (gauge) {
+            const int gx = 44, gw = kTW - 88, gy = kHdrH + 78, gh = 12;
+            canvas_fill_round_rect(gx, gy, gw, gh, 5, color::CursorBg);
+            long span = static_cast<long>(s.edit.max) - s.edit.min;
+            if (span < 1) span = 1;
+            long fw = static_cast<long>(gw) * (s.edit.current - s.edit.min) / span;
+            if (fw < 4) fw = 4;
+            if (fw > gw) fw = gw;
+            canvas_fill_round_rect(gx, gy, static_cast<int>(fw), gh, 5, color::FrogLine);
+            char lo[16], hi[16];
+            format_value(s.edit, s.edit.min, lo, sizeof(lo));
+            format_value(s.edit, s.edit.max, hi, sizeof(hi));
+            canvas_draw_text(gx, gy + gh + 6, lo, color::DarkGray, color::Black, 1);
+            const int hiw = static_cast<int>(std::strlen(hi)) * kFontCellWidth;
+            canvas_draw_text(gx + gw - hiw, gy + gh + 6, hi, color::DarkGray, color::Black, 1);
+        }
+        if (s.edit.current != s.edit.original) {
+            char orig[24];
+            format_value(s.edit, s.edit.original, orig, sizeof(orig));
+            char was[32];
+            std::snprintf(was, sizeof(was), "was: %s", orig);
+            const int was_w = static_cast<int>(std::strlen(was)) * kFontCellWidth * kTxtSc;
+            canvas_draw_text((kTW - was_w) / 2, kHdrH + 118, was, color::Orange, color::Black,
+                             kTxtSc);
+        }
     }
 
     // Footer: the encoder controls, so they're discoverable on every edit.
