@@ -269,7 +269,13 @@ constexpr const char kAlphabet[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                                    "-_.";
 constexpr int kAlphabetLen       = sizeof(kAlphabet) - 1;  // 66
 
+// Transient sentinel that rotates in after the last real glyph: choosing it
+// ends (and saves) the string at the cursor. Never stored in a committed name.
+constexpr char kStrEnd  = '\x01';
+constexpr int kStrCycle = kAlphabetLen + 1;  // last slot = end marker
+
 int char_to_idx(char c) {
+    if (c == kStrEnd) return kAlphabetLen;
     for (int i = 0; i < kAlphabetLen; ++i) {
         if (kAlphabet[i] == c) return i;
     }
@@ -277,9 +283,8 @@ int char_to_idx(char c) {
 }
 
 char idx_to_char(int i) {
-    if (i < 0) i = ((i % kAlphabetLen) + kAlphabetLen) % kAlphabetLen;
-    if (i >= kAlphabetLen) i %= kAlphabetLen;
-    return kAlphabet[i];
+    i = ((i % kStrCycle) + kStrCycle) % kStrCycle;
+    return (i == kAlphabetLen) ? kStrEnd : kAlphabet[i];
 }
 
 // ── Helpers: enum → name ────────────────────────────────────────────────────
@@ -394,6 +399,15 @@ struct ListItem {
     Color value_col = color::Gold;
 };
 
+// Off-focus rows fade with their distance from the cursor (1 = nearest).
+Color fade_gray(int d) {
+    static const Color g[] = { color::LightGray, Color{ 0x8C71 }, Color{ 0x5AEB },
+                               color::DarkGray };
+    if (d < 1) d = 1;
+    if (d > 4) d = 4;
+    return g[d - 1];
+}
+
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     // ── TFT: dark list with rounded cursor highlight ──────────────────────────
@@ -407,42 +421,44 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         if (first + visible > count) first = count - visible;
     }
     for (int i = 0; i < visible && first + i < count; ++i) {
-        const int idx       = first + i;
-        const int ry        = kHdrH + i * kItemH;
-        const ListItem& it  = items[idx];
-        const bool sel      = (idx == cursor);
-        const bool is_back  = (it.label[0] == '[');
-        const Color text_bg = sel ? color::CursorBg : color::Black;
+        const int idx      = first + i;
+        const int ry       = kHdrH + i * kItemH;
+        const ListItem& it = items[idx];
+        const bool sel     = (idx == cursor);
+        const bool is_back = (it.label[0] == '[');
+        const int chev_x   = kTW - kChevW - kIndent;
 
         if (sel) {
-            // Rounded highlight with a signature-green bar on the left edge.
+            // Focused row: full size, rounded highlight + signature-green edge.
             canvas_fill_round_rect_aa(3, ry + 1, kTW - 6, kItemH - 2, 6, color::CursorBg,
                                       color::Black);
             canvas_fill_round_rect_aa(5, ry + 4, 4, kItemH - 8, 2, color::FrogLine,
                                       color::CursorBg);
-        }
-
-        // Left gutter: numbered channel badge when present. A grey badge marks
-        // a disabled channel — lighten the digit so it stays readable.
-        if (it.badge >= 0) {
-            const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
-                                                                    : color::Black;
-            draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, text_bg);
-        }
-
-        canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
-
-        // Chevron at the right edge for rows that open a sub-screen.
-        const int chev_x = kTW - kChevW - kIndent;
-        if (!is_back) {
-            canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
-        }
-
-        // Right-aligned gold value, left of the chevron.
-        if (it.value && it.value[0]) {
-            const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
-            const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
-            canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
+            if (it.badge >= 0) {
+                const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
+                                                                        : color::Black;
+                draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, color::CursorBg);
+            }
+            canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, color::CursorBg, kTxtSc);
+            if (!is_back)
+                canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, color::CursorBg, kTxtSc);
+            if (it.value && it.value[0]) {
+                const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
+                const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
+                canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, color::CursorBg,
+                                 kTxtSc);
+            }
+        } else {
+            // Off-focus rows recede: smaller (scale 1), grey fading with distance.
+            const int d      = (idx > cursor) ? (idx - cursor) : (cursor - idx);
+            const Color fade = fade_gray(d);
+            const int ty     = ry + (kItemH - 8) / 2;  // vertically centre 8px text
+            canvas_draw_text(kGutter, ty, it.label, fade, color::Black, 1);
+            if (it.value && it.value[0]) {
+                const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth;
+                const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
+                canvas_draw_text(vend - vw, ty, it.value, fade, color::Black, 1);
+            }
         }
     }
     // Scrollbar: a full-height track with a proportional thumb so the list
@@ -1008,7 +1024,7 @@ void render_edit_value() {
 
     // Footer: the encoder controls, so they're discoverable on every edit.
     canvas_fill_rect(0, kTH - 20, kTW, 20, color::HeaderBg);
-    const char* hint = "TURN  adjust      PRESS  apply";
+    const char* hint = "TURN  adjust     PRESS  apply     HOLD  cancel";
     const int hw     = static_cast<int>(std::strlen(hint)) * kFontCellWidth;
     canvas_draw_text((kTW - hw) / 2, kTH - 14, hint, color::SplashSub, color::HeaderBg, 1);
 #else
@@ -1293,9 +1309,10 @@ void render_edit_string() {
     char window[kWin + 1];
     std::memset(window, 0, sizeof(window));
     for (int i = 0; i < kWin && win_start + i < len; ++i) {
-        char c    = s.str_edit.buf[win_start + i];
-        window[i] = (c == ' ') ? '_' : c;
+        const char c = s.str_edit.buf[win_start + i];
+        window[i]    = (c == ' ') ? '_' : (c == kStrEnd ? ' ' : c);  // end marker drawn separately
     }
+    const bool end_marker = (cursor < len && s.str_edit.buf[cursor] == kStrEnd);
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     canvas_clear(color::Black);
@@ -1303,21 +1320,34 @@ void render_edit_string() {
 
     canvas_draw_text(kIndent, kHdrH + 20, window, color::Cyan, color::Black, kTxtSc);
 
-    if (cursor < len) {
-        // Highlight active char
-        const int col    = cursor - win_start;
-        const int high_x = kIndent + col * kFontCellWidth * kTxtSc;
+    if (end_marker) {
+        // The validate glyph: a green "save here" cell + spelled-out action.
+        const int cx = kIndent + (cursor - win_start) * kFontCellWidth * kTxtSc;
+        canvas_fill_round_rect(cx - 1, kHdrH + 18, kFontCellWidth * kTxtSc + 2, kTxtH + 4, 3,
+                               color::FrogLine);
+        canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 12, "SAVE & FINISH", color::FrogLine,
+                         color::Black, kTxtSc);
+    } else if (cursor < len) {
+        const int high_x = kIndent + (cursor - win_start) * kFontCellWidth * kTxtSc;
         canvas_fill_rect(high_x, kHdrH + 20 + kTxtH + 4, kFontCellWidth * kTxtSc, 4, color::Cyan);
     } else {
-        canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 10, "[end of string]", color::Orange,
+        canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 12, "SAVE & FINISH", color::FrogLine,
                          color::Black, kTxtSc);
     }
+
+    canvas_fill_rect(0, kTH - 20, kTW, 20, color::HeaderBg);
+    const char* hint = end_marker ? "TURN  back        PRESS  save        HOLD  cancel"
+                                  : "TURN  letter      PRESS  next        HOLD  cancel";
+    const int hw     = static_cast<int>(std::strlen(hint)) * kFontCellWidth;
+    canvas_draw_text((kTW - hw) / 2, kTH - 14, hint, color::SplashSub, color::HeaderBg, 1);
 #else
     canvas_clear();
     draw_row(0, 0, title);
     draw_row(2, 0, window);
 
-    if (cursor < len) {
+    if (end_marker) {
+        draw_row(3, 0, "  >> SAVE & FINISH");
+    } else if (cursor < len) {
         char caret[kWin + 1];
         std::memset(caret, 0, sizeof(caret));
         const int col = cursor - win_start;
@@ -1326,8 +1356,9 @@ void render_edit_string() {
         if (col >= 0 && col < kWin) caret[col] = '^';
         draw_row(3, 0, caret);
     } else {
-        draw_row(3, 0, "[end of string]");
+        draw_row(3, 0, ">> SAVE & FINISH");
     }
+    draw_row(7, 0, "press=ok hold=cancel");
 #endif
 }
 
@@ -1355,12 +1386,19 @@ void commit_edit_string() {
 void dispatch_edit_string(Event e) {
     const uint8_t len = s.str_edit.max_len;
     if (s.str_edit.cursor < len) {
+        char& cur = s.str_edit.buf[s.str_edit.cursor];
         if (e == Event::RotateLeft || e == Event::RotateRight) {
-            int idx                            = char_to_idx(s.str_edit.buf[s.str_edit.cursor]);
-            idx                               += (e == Event::RotateRight) ? 1 : -1;
-            s.str_edit.buf[s.str_edit.cursor]  = idx_to_char(idx);
+            cur = idx_to_char(char_to_idx(cur) + (e == Event::RotateRight ? 1 : -1));
         } else if (e == Event::Click) {
-            s.str_edit.cursor++;
+            if (cur == kStrEnd) {
+                // Validate-and-finish: drop this cell and everything after it.
+                for (uint8_t i = s.str_edit.cursor; i < len; ++i)
+                    s.str_edit.buf[i] = ' ';
+                commit_edit_string();
+                s.screen = s.str_edit.return_screen;
+            } else {
+                s.str_edit.cursor++;
+            }
         }
     } else {
         // At DONE position: rotate-left returns to last char; click commits.
@@ -1876,9 +1914,9 @@ void dispatch_channel_menu(Event e) {
     }
 }
 
-// ── Long press: commit-as-is and climb one level ────────────────────────────
-// In any edit screen the current state is committed instantly (a string edit
-// keeps every remaining character as-is); in a list menu it acts as Back.
+// ── Long press: cancel an edit / go Back in a list ──────────────────────────
+// In any edit screen the pending change is DISCARDED (nothing committed) and we
+// return to where we came from; in a list menu it acts as Back (climb a level).
 
 void dispatch_long_press() {
     switch (s.screen) {
@@ -1916,23 +1954,14 @@ void dispatch_long_press() {
         s.screen = Screen::MainMenu;
         s.cursor = 13;
         break;
+    // Edit screens: cancel — discard the pending value, commit nothing.
     case Screen::EditValue:
         dmx::clear_pixel_preview();
-        commit_edit();
         s.screen = s.edit.return_screen;
         break;
-    case Screen::EditString:
-        commit_edit_string();
-        s.screen = s.str_edit.return_screen;
-        break;
-    case Screen::EditIp:
-        commit_edit_ip();
-        s.screen = s.ip_edit.return_screen;
-        break;
-    case Screen::EditUni:
-        commit_edit_uni();
-        s.screen = s.uni_edit.return_screen;
-        break;
+    case Screen::EditString: s.screen = s.str_edit.return_screen; break;
+    case Screen::EditIp: s.screen = s.ip_edit.return_screen; break;
+    case Screen::EditUni: s.screen = s.uni_edit.return_screen; break;
     }
 }
 
