@@ -140,8 +140,9 @@ static const char* const kProtoNames[] = { "Off",    "WS2815", "WS2812B", "WS281
 static_assert(sizeof(kProtoNames) / sizeof(kProtoNames[0]) ==
               static_cast<size_t>(led::Protocol::COUNT));
 
-static const char* const kOrderNames[] = { "RGB", "RBG",  "GRB",  "GBR",  "BRG",
-                                           "BGR", "RGBW", "GRBW", "RGBWW" };
+static const char* const kOrderNames[] = {
+    "RGB", "RBG", "GRB", "GBR", "BRG", "BGR", "RGBW", "GRBW"
+};
 static_assert(sizeof(kOrderNames) / sizeof(kOrderNames[0]) ==
               static_cast<size_t>(led::ColorOrder::COUNT));
 

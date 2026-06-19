@@ -319,7 +319,6 @@ const char* color_order_name(led::ColorOrder o) {
     case led::ColorOrder::BGR: return "BGR";
     case led::ColorOrder::RGBW: return "RGBW";
     case led::ColorOrder::GRBW: return "GRBW";
-    case led::ColorOrder::RGBWW: return "RGBWW";
     default: return "?";
     }
 }
@@ -1766,7 +1765,7 @@ void dispatch_channel_menu(Event e) {
         // RGBW channel can't land on a bare RGB order (and vice versa).
         const bool rgbw    = led::is_rgbw(cc.protocol);
         const int32_t omin = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBW) : 0;
-        const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBWW)
+        const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::GRBW)
                                   : static_cast<int32_t>(led::ColorOrder::BGR);
         int32_t ocur       = static_cast<int32_t>(cc.color_order);
         if (ocur < omin) ocur = omin;

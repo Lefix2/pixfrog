@@ -143,6 +143,11 @@ inline void sanitize_channel(ChannelConfig& c) {
     if (c.wb_r == 0) c.wb_r = 255;
     if (c.wb_g == 0) c.wb_g = 255;
     if (c.wb_b == 0) c.wb_b = 255;
+    // The dropped RGBWW order (former index 8) survives in old NVS blobs; it was
+    // identical to RGBW, so remap it there and keep color_order in range (the
+    // name tables are indexed by it).
+    if (static_cast<uint8_t>(c.color_order) >= static_cast<uint8_t>(led::ColorOrder::COUNT))
+        c.color_order = led::ColorOrder::RGBW;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

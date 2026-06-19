@@ -502,7 +502,6 @@ function createIcons(root){
 
 /* ─────────── constants & state ─────────── */
 var PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806','DMX512'];
-var ORDERS=['RGB','RBG','GRB','GBR','BRG','BGR','RGBW','GRBW','RGBWW'];
 var CLOCKED=['APA102','SK9822','LPD8806'];
 // Achievable bus rates (16 MHz / even divisor). Snap any stored value to the
 // nearest so the dropdown always lands on a real option.
@@ -512,7 +511,7 @@ function snapClk(hz){ hz=hz||4000000; return CLK_CHOICES.reduce(function(b,c){ r
 // the RGB permutations, RGBW strips get the W-suffixed orders.
 var RGBW_PROTOS=['SK6812','WS2814'];
 var ORDERS_RGB=['RGB','RBG','GRB','GBR','BRG','BGR'];
-var ORDERS_RGBW=['RGBW','GRBW','RGBWW'];
+var ORDERS_RGBW=['RGBW','GRBW'];
 function setOrderOptions(p){
   var sel=document.getElementById('cd-order'); if(!sel) return;
   var list=RGBW_PROTOS.indexOf(p)>=0?ORDERS_RGBW:ORDERS_RGB, cur=sel.value;
