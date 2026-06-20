@@ -996,11 +996,12 @@ void render_edit_value() {
         }
     } else {
         // Numeric / bool: a large value, plus a fill gauge for numeric ranges.
-        constexpr int kBigSc = 4;
+        // Use the natively-rasterised 18x24 XL cell (crisp) rather than upscaling
+        // the small cell, which looked pixelated.
         char val[24];
         format_value(s.edit, s.edit.current, val, sizeof(val));
-        const int val_w = static_cast<int>(std::strlen(val)) * kFontCellWidth * kBigSc;
-        canvas_draw_text((kTW - val_w) / 2, kHdrH + 24, val, color::Cyan, color::Black, kBigSc);
+        const int val_w = canvas_text_xl_width(val);
+        canvas_draw_text_xl((kTW - val_w) / 2, kHdrH + 26, val, color::Cyan, color::Black);
         if (gauge) {
             const int gx = 44, gw = kTW - 88, gy = kHdrH + 78, gh = 12;
             canvas_fill_round_rect(gx, gy, gw, gh, 5, color::CursorBg);
