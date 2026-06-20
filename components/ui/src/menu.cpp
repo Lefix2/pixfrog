@@ -269,7 +269,13 @@ constexpr const char kAlphabet[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                                    "-_.";
 constexpr int kAlphabetLen       = sizeof(kAlphabet) - 1;  // 66
 
+// Transient sentinel that rotates in after the last real glyph: choosing it
+// ends (and saves) the string at the cursor. Never stored in a committed name.
+constexpr char kStrEnd  = '\x01';
+constexpr int kStrCycle = kAlphabetLen + 1;  // last slot = end marker
+
 int char_to_idx(char c) {
+    if (c == kStrEnd) return kAlphabetLen;
     for (int i = 0; i < kAlphabetLen; ++i) {
         if (kAlphabet[i] == c) return i;
     }
@@ -277,9 +283,8 @@ int char_to_idx(char c) {
 }
 
 char idx_to_char(int i) {
-    if (i < 0) i = ((i % kAlphabetLen) + kAlphabetLen) % kAlphabetLen;
-    if (i >= kAlphabetLen) i %= kAlphabetLen;
-    return kAlphabet[i];
+    i = ((i % kStrCycle) + kStrCycle) % kStrCycle;
+    return (i == kAlphabetLen) ? kStrEnd : kAlphabet[i];
 }
 
 // ── Helpers: enum → name ────────────────────────────────────────────────────
@@ -394,6 +399,15 @@ struct ListItem {
     Color value_col = color::Gold;
 };
 
+// Off-focus rows fade with their distance from the cursor (1 = nearest).
+Color fade_gray(int d) {
+    static const Color g[] = { color::LightGray, Color{ 0x8C71 }, Color{ 0x5AEB },
+                               color::DarkGray };
+    if (d < 1) d = 1;
+    if (d > 4) d = 4;
+    return g[d - 1];
+}
+
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     // ── TFT: dark list with rounded cursor highlight ──────────────────────────
@@ -421,34 +435,32 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
             canvas_fill_round_rect_aa(5, ry + 4, 4, kItemH - 8, 2, color::FrogLine,
                                       color::CursorBg);
         }
-
-        // Left gutter: numbered channel badge when present. A grey badge marks
-        // a disabled channel — lighten the digit so it stays readable.
         if (it.badge >= 0) {
             const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
                                                                     : color::Black;
             draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, text_bg);
         }
-
         canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
 
-        // Chevron at the right edge for rows that open a sub-screen.
         const int chev_x = kTW - kChevW - kIndent;
-        if (!is_back) {
-            canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
-        }
-
-        // Right-aligned gold value, left of the chevron.
+        if (!is_back) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
         if (it.value && it.value[0]) {
             const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
             const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
             canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
         }
     }
-    // Scroll indicator
+    // Scrollbar: a full-height track with a proportional thumb so the list
+    // length and position are obvious at a glance (not just "more exists").
     if (count > static_cast<uint8_t>(visible)) {
-        if (first > 0) canvas_fill_rect(kTW - 4, kHdrH, 4, 6, color::LightGray);
-        if (first + visible < count) canvas_fill_rect(kTW - 4, kTH - 6, 4, 6, color::LightGray);
+        const int trackY = kHdrH + 2;
+        const int trackH = kTH - trackY - 2;
+        canvas_fill_round_rect(kTW - 4, trackY, 3, trackH, 1, color::CursorBg);
+        int thumbH = trackH * visible / count;
+        if (thumbH < 12) thumbH = 12;
+        const int travel = count - visible;
+        const int thumbY = trackY + (travel > 0 ? (trackH - thumbH) * first / travel : 0);
+        canvas_fill_round_rect(kTW - 4, thumbY, 3, thumbH, 1, color::FrogLine);
     }
 #else
     // ── OLED: classic scrolling text list ────────────────────────────────────
@@ -945,42 +957,101 @@ void render_edit_value() {
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     canvas_clear(color::Black);
     char hdr[32];
-    std::snprintf(hdr, sizeof(hdr), "EDIT %s", s.edit.label);
+    if (s.edit.channel != 0xFF)
+        std::snprintf(hdr, sizeof(hdr), "CH%u: %s", s.edit.channel + 1, s.edit.label);
+    else
+        std::snprintf(hdr, sizeof(hdr), "EDIT %s", s.edit.label);
     draw_tft_header(hdr);
 
-    // Large current value (scale 4 = native 12x16 cell doubled, stays crisp)
-    constexpr int kBigSc = 4;
-    constexpr int kBigH  = 8 * kBigSc;
-    char val[24];
-    format_value(s.edit, s.edit.current, val, sizeof(val));
-    const int val_w = static_cast<int>(std::strlen(val)) * kFontCellWidth * kBigSc;
-    canvas_draw_text((kTW - val_w) / 2, kHdrH + 30, val, color::Cyan, color::Black, kBigSc);
+    const bool gauge = (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz);
+    const bool enumf = (s.edit.kind == ValueKind::Protocol ||
+                        s.edit.kind == ValueKind::ColorOrder || s.edit.kind == ValueKind::Failsafe);
 
-    // Reachable range, so the encoder's travel is known before spinning.
-    if (s.edit.kind == ValueKind::Int) {
-        char rng[32];
-        std::snprintf(rng, sizeof(rng), "%ld .. %ld", static_cast<long>(s.edit.min),
-                      static_cast<long>(s.edit.max));
-        const int rng_w = static_cast<int>(std::strlen(rng)) * kFontCellWidth;
-        canvas_draw_text((kTW - rng_w) / 2, kHdrH + 30 + kBigH + 10, rng, color::DarkGray,
-                         color::Black, 1);
+    if (enumf) {
+        // A list-of-values picker → a vertical "dropdown": the current choice is
+        // centred and highlighted, neighbours shrink and fade with distance. A
+        // small orange dot flags the original value so the change stays clear.
+        const int cx        = kTW / 2;
+        const int midY      = (kHdrH + (kTH - 20)) / 2;
+        constexpr int kRowH = 28;
+        for (int off = -3; off <= 3; ++off) {
+            const int32_t v = s.edit.current + off;
+            if (v < s.edit.min || v > s.edit.max) continue;
+            char buf[24];
+            format_value(s.edit, v, buf, sizeof(buf));
+            const int len = static_cast<int>(std::strlen(buf));
+            if (off == 0) {
+                const int w = len * kFontCellWidth * kTxtSc;
+                canvas_fill_round_rect_aa(cx - w / 2 - 14, midY - 9, w + 28, kTxtH + 6, 6,
+                                          color::CursorBg, color::Black);
+                canvas_draw_text(cx - w / 2, midY - 8, buf, color::Cyan, color::CursorBg, kTxtSc);
+            } else {
+                const int w  = len * kFontCellWidth;
+                const int ty = midY + off * kRowH - 4;
+                canvas_draw_text(cx - w / 2, ty, buf, fade_gray(off < 0 ? -off : off), color::Black,
+                                 1);
+                if (v == s.edit.original)
+                    canvas_fill_round_rect(cx - w / 2 - 13, ty, 6, 6, 3, color::Orange);
+            }
+        }
+    } else {
+        // Numeric / bool: a large value, plus a fill gauge for numeric ranges.
+        // Use the natively-rasterised 18x24 XL cell (crisp) rather than upscaling
+        // the small cell, which looked pixelated.
+        char val[24];
+        format_value(s.edit, s.edit.current, val, sizeof(val));
+        const int val_w = canvas_text_xl_width(val);
+        canvas_draw_text_xl((kTW - val_w) / 2, kHdrH + 26, val, color::Cyan, color::Black);
+        if (gauge) {
+            const int gx = 44, gw = kTW - 88, gy = kHdrH + 78, gh = 12;
+            canvas_fill_round_rect(gx, gy, gw, gh, 5, color::CursorBg);
+            long span = static_cast<long>(s.edit.max) - s.edit.min;
+            if (span < 1) span = 1;
+            long fw = static_cast<long>(gw) * (s.edit.current - s.edit.min) / span;
+            if (fw < 4) fw = 4;
+            if (fw > gw) fw = gw;
+            canvas_fill_round_rect(gx, gy, static_cast<int>(fw), gh, 5, color::FrogLine);
+            // Orange up-triangle under the original value (mirrors the dropdown's
+            // original-value dot) so you can see where you started from.
+            if (s.edit.current != s.edit.original) {
+                long ofw = static_cast<long>(gw) * (s.edit.original - s.edit.min) / span;
+                if (ofw < 0) ofw = 0;
+                if (ofw > gw) ofw = gw;
+                const int ox = gx + static_cast<int>(ofw);
+                for (int r = 0; r < 4; ++r)
+                    canvas_hline(ox - r, gy + gh + 1 + r, 2 * r + 1, color::Orange);
+            }
+            char lo[16], hi[16];
+            format_value(s.edit, s.edit.min, lo, sizeof(lo));
+            format_value(s.edit, s.edit.max, hi, sizeof(hi));
+            canvas_draw_text(gx, gy + gh + 10, lo, color::DarkGray, color::Black, 1);
+            const int hiw = static_cast<int>(std::strlen(hi)) * kFontCellWidth;
+            canvas_draw_text(gx + gw - hiw, gy + gh + 10, hi, color::DarkGray, color::Black, 1);
+        }
+        if (s.edit.current != s.edit.original) {
+            char orig[24];
+            format_value(s.edit, s.edit.original, orig, sizeof(orig));
+            char was[32];
+            std::snprintf(was, sizeof(was), "was: %s", orig);
+            const int was_w = static_cast<int>(std::strlen(was)) * kFontCellWidth * kTxtSc;
+            canvas_draw_text((kTW - was_w) / 2, kHdrH + 118, was, color::Orange, color::Black,
+                             kTxtSc);
+        }
     }
 
-    // "was: X" when changed
-    if (s.edit.current != s.edit.original) {
-        char orig[24];
-        format_value(s.edit, s.edit.original, orig, sizeof(orig));
-        char was[32];
-        std::snprintf(was, sizeof(was), "was: %s", orig);
-        const int was_w = static_cast<int>(std::strlen(was)) * kFontCellWidth * kTxtSc;
-        canvas_draw_text((kTW - was_w) / 2, kHdrH + 30 + kBigH + 28, was, color::Orange,
-                         color::Black, kTxtSc);
-    }
+    // Footer: the encoder controls, so they're discoverable on every edit.
+    canvas_fill_rect(0, kTH - 20, kTW, 20, color::HeaderBg);
+    const char* hint = "TURN  adjust     PRESS  apply     HOLD  cancel";
+    const int hw     = static_cast<int>(std::strlen(hint)) * kFontCellWidth;
+    canvas_draw_text((kTW - hw) / 2, kTH - 14, hint, color::SplashSub, color::HeaderBg, 1);
 #else
     canvas_clear();
     // Buffers are sized to hold the prefix plus a full kOledCols-wide value.
     char line[kOledCols + 4];
-    std::snprintf(line, sizeof(line), "EDIT %s", s.edit.label);
+    if (s.edit.channel != 0xFF)
+        std::snprintf(line, sizeof(line), "CH%u: %s", s.edit.channel + 1, s.edit.label);
+    else
+        std::snprintf(line, sizeof(line), "EDIT %s", s.edit.label);
     draw_row(0, 0, line);
 
     char val[kOledCols + 1];
@@ -997,6 +1068,23 @@ void render_edit_value() {
         std::snprintf(was, sizeof(was), "  was: %s", orig);
         draw_row(4, 0, was);
     }
+
+    // Reachable range (int/clock) or list position (enum), then the controls.
+    char ctx[40];  // wider than the row; draw_row clips to the panel
+    if (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz) {
+        char lo[16], hi[16];
+        format_value(s.edit, s.edit.min, lo, sizeof(lo));
+        format_value(s.edit, s.edit.max, hi, sizeof(hi));
+        std::snprintf(ctx, sizeof(ctx), "  %s..%s", lo, hi);
+        draw_row(5, 0, ctx);
+    } else if (s.edit.kind == ValueKind::Protocol || s.edit.kind == ValueKind::ColorOrder ||
+               s.edit.kind == ValueKind::Failsafe) {
+        std::snprintf(ctx, sizeof(ctx), "  %ld / %ld",
+                      static_cast<long>(s.edit.current - s.edit.min + 1),
+                      static_cast<long>(s.edit.max - s.edit.min + 1));
+        draw_row(5, 0, ctx);
+    }
+    draw_row(7, 0, "turn=adj press=ok");
 #endif
 }
 
@@ -1238,9 +1326,10 @@ void render_edit_string() {
     char window[kWin + 1];
     std::memset(window, 0, sizeof(window));
     for (int i = 0; i < kWin && win_start + i < len; ++i) {
-        char c    = s.str_edit.buf[win_start + i];
-        window[i] = (c == ' ') ? '_' : c;
+        const char c = s.str_edit.buf[win_start + i];
+        window[i]    = (c == ' ') ? '_' : (c == kStrEnd ? ' ' : c);  // end marker drawn separately
     }
+    const bool end_marker = (cursor < len && s.str_edit.buf[cursor] == kStrEnd);
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     canvas_clear(color::Black);
@@ -1248,21 +1337,34 @@ void render_edit_string() {
 
     canvas_draw_text(kIndent, kHdrH + 20, window, color::Cyan, color::Black, kTxtSc);
 
-    if (cursor < len) {
-        // Highlight active char
-        const int col    = cursor - win_start;
-        const int high_x = kIndent + col * kFontCellWidth * kTxtSc;
+    if (end_marker) {
+        // The validate glyph: a green "save here" cell + spelled-out action.
+        const int cx = kIndent + (cursor - win_start) * kFontCellWidth * kTxtSc;
+        canvas_fill_round_rect(cx - 1, kHdrH + 18, kFontCellWidth * kTxtSc + 2, kTxtH + 4, 3,
+                               color::FrogLine);
+        canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 12, "SAVE & FINISH", color::FrogLine,
+                         color::Black, kTxtSc);
+    } else if (cursor < len) {
+        const int high_x = kIndent + (cursor - win_start) * kFontCellWidth * kTxtSc;
         canvas_fill_rect(high_x, kHdrH + 20 + kTxtH + 4, kFontCellWidth * kTxtSc, 4, color::Cyan);
     } else {
-        canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 10, "[end of string]", color::Orange,
+        canvas_draw_text(kIndent, kHdrH + 20 + kTxtH + 12, "SAVE & FINISH", color::FrogLine,
                          color::Black, kTxtSc);
     }
+
+    canvas_fill_rect(0, kTH - 20, kTW, 20, color::HeaderBg);
+    const char* hint = end_marker ? "TURN  back        PRESS  save        HOLD  cancel"
+                                  : "TURN  letter      PRESS  next        HOLD  cancel";
+    const int hw     = static_cast<int>(std::strlen(hint)) * kFontCellWidth;
+    canvas_draw_text((kTW - hw) / 2, kTH - 14, hint, color::SplashSub, color::HeaderBg, 1);
 #else
     canvas_clear();
     draw_row(0, 0, title);
     draw_row(2, 0, window);
 
-    if (cursor < len) {
+    if (end_marker) {
+        draw_row(3, 0, "  >> SAVE & FINISH");
+    } else if (cursor < len) {
         char caret[kWin + 1];
         std::memset(caret, 0, sizeof(caret));
         const int col = cursor - win_start;
@@ -1271,8 +1373,9 @@ void render_edit_string() {
         if (col >= 0 && col < kWin) caret[col] = '^';
         draw_row(3, 0, caret);
     } else {
-        draw_row(3, 0, "[end of string]");
+        draw_row(3, 0, ">> SAVE & FINISH");
     }
+    draw_row(7, 0, "press=ok hold=cancel");
 #endif
 }
 
@@ -1300,12 +1403,19 @@ void commit_edit_string() {
 void dispatch_edit_string(Event e) {
     const uint8_t len = s.str_edit.max_len;
     if (s.str_edit.cursor < len) {
+        char& cur = s.str_edit.buf[s.str_edit.cursor];
         if (e == Event::RotateLeft || e == Event::RotateRight) {
-            int idx                            = char_to_idx(s.str_edit.buf[s.str_edit.cursor]);
-            idx                               += (e == Event::RotateRight) ? 1 : -1;
-            s.str_edit.buf[s.str_edit.cursor]  = idx_to_char(idx);
+            cur = idx_to_char(char_to_idx(cur) + (e == Event::RotateRight ? 1 : -1));
         } else if (e == Event::Click) {
-            s.str_edit.cursor++;
+            if (cur == kStrEnd) {
+                // Validate-and-finish: drop this cell and everything after it.
+                for (uint8_t i = s.str_edit.cursor; i < len; ++i)
+                    s.str_edit.buf[i] = ' ';
+                commit_edit_string();
+                s.screen = s.str_edit.return_screen;
+            } else {
+                s.str_edit.cursor++;
+            }
         }
     } else {
         // At DONE position: rotate-left returns to last char; click commits.
@@ -1821,9 +1931,9 @@ void dispatch_channel_menu(Event e) {
     }
 }
 
-// ── Long press: commit-as-is and climb one level ────────────────────────────
-// In any edit screen the current state is committed instantly (a string edit
-// keeps every remaining character as-is); in a list menu it acts as Back.
+// ── Long press: cancel an edit / go Back in a list ──────────────────────────
+// In any edit screen the pending change is DISCARDED (nothing committed) and we
+// return to where we came from; in a list menu it acts as Back (climb a level).
 
 void dispatch_long_press() {
     switch (s.screen) {
@@ -1861,23 +1971,14 @@ void dispatch_long_press() {
         s.screen = Screen::MainMenu;
         s.cursor = 13;
         break;
+    // Edit screens: cancel — discard the pending value, commit nothing.
     case Screen::EditValue:
         dmx::clear_pixel_preview();
-        commit_edit();
         s.screen = s.edit.return_screen;
         break;
-    case Screen::EditString:
-        commit_edit_string();
-        s.screen = s.str_edit.return_screen;
-        break;
-    case Screen::EditIp:
-        commit_edit_ip();
-        s.screen = s.ip_edit.return_screen;
-        break;
-    case Screen::EditUni:
-        commit_edit_uni();
-        s.screen = s.uni_edit.return_screen;
-        break;
+    case Screen::EditString: s.screen = s.str_edit.return_screen; break;
+    case Screen::EditIp: s.screen = s.ip_edit.return_screen; break;
+    case Screen::EditUni: s.screen = s.uni_edit.return_screen; break;
     }
 }
 
