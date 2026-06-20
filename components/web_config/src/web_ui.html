@@ -589,6 +589,7 @@ var ST={
   off:     {dot:'#3a4a40',txt:'#6b7a70',label:'Off',      chip:'rgba(255,255,255,.03)',bd:'#243228'}
 };
 var CHANS=[], SCENES=[], sceneColors={}, curChan=0, chanLive=[], netDhcp=true, prevStatus=null, heapMax=0;
+var DEVICES=[], peerData={}, activeDev=null, EMBED=/[?&]embed=/.test(location.search);
 var dirty=new Set(), langDirty=false;
 function el(id){ return document.getElementById(id); }
 function setLive(s,v){ document.querySelectorAll('[data-live="'+s+'"]').forEach(function(e){ if(e.tagName==='INPUT') e.value=v; else e.textContent=v; }); }
@@ -617,6 +618,7 @@ var FR={
   'Contiguous re-addressing of every channel':'Ré-adressage contigu de tous les canaux',
   'General · security · firmware · maintenance':'Général · sécurité · firmware · maintenance',
   'link':'lien','offline':'hors-ligne','Network link active':'Lien réseau actif','Network link down':'Lien réseau absent',
+  'this device':'cet appareil',
   'Connected · 100 Mb/s full-duplex':'Connecté · 100 Mb/s full-duplex','Disconnected':'Déconnecté',
   'NETWORK LINK':'LIEN RÉSEAU','FRAMES / S':'IMAGES / S','FREE HEAP':'HEAP LIBRE','UPTIME':'UPTIME',
   'NOW PLAYING':'LECTURE EN COURS','stopped':'à l’arrêt','playing':'en lecture','scene active':'scène active',
@@ -811,6 +813,8 @@ var SUBS={dashboard:'Live update · every 1 s',scenes:'8 parametric slots · sol
 var curScreen='dashboard';
 function go(name){
   curScreen=name;
+  // The sidebar drives the local box; leaving a remote device's iframe view.
+  if(activeDev!==null){ activeDev=null; hideIframe(); renderDeviceBar(); }
   document.querySelectorAll('[data-screen]').forEach(function(s){ s.style.display = s.getAttribute('data-screen')===name?'':'none'; });
   document.querySelectorAll('[data-nav]').forEach(function(n){ navStyle(n, n.getAttribute('data-nav')===name); });
   var tt=document.querySelector('[data-screen-title]'); if(tt) tt.textContent=t(TITLES[name]||'');
@@ -1014,9 +1018,116 @@ function applyChanStates(){
   if(changed) renderLists();
 }
 function renderLists(){
-  var d=el('dash-chan-mount'); if(d){ d.innerHTML=CHANS.map(dashTile).join(''); createIcons(d); }
+  var d=el('dash-chan-mount'); if(d){ if(!EMBED && DEVICES.length>1) renderDashGrid(); else { d.innerHTML=CHANS.map(dashTile).join(''); createIcons(d); } }
   var l=el('chan-list-mount'); if(l){ l.innerHTML=CHANS.map(chanRow).join(''); createIcons(l); }
   var cur=CHANS[curChan]; if(cur){ document.querySelectorAll('[data-chan]').forEach(function(r){ var on=+r.getAttribute('data-chan')===curChan; r.style.borderColor=on?'rgba(248,198,98,.45)':'#1f2c24'; r.style.background=on?'rgba(248,198,98,.07)':'#0f1812'; }); }
+}
+
+/* ─────────── multi-node (fleet) ─────────── */
+// The same SPA runs on every pixfrog. GET /api/peers lists the boxes on the
+// LAN (self first). With one box the UI is unchanged; with several it gains a
+// device bar (config of each box via its own UI in an iframe — no CORS) and an
+// aggregated channel grid on the dashboard (cross-origin GET /api/status +
+// /api/config, simple requests, no preflight). ?embed=1 = framed child: skip
+// all the fleet chrome so a framed box shows only its native UI.
+function peerBase(d){ return location.protocol+'//'+d.ip+(d.port&&d.port!=80?(':'+d.port):''); }
+// Bare fetch (no custom headers) keeps these CORS "simple requests" → no preflight.
+function peerGet(base,path){ return fetch(base+path).then(function(r){ if(!r.ok) throw new Error('http'); return r.json(); }); }
+function devByIp(ip){ return DEVICES.filter(function(d){ return d.ip===ip; })[0]; }
+
+function loadPeers(){
+  if(EMBED) return Promise.resolve();
+  return fetch('/api/peers').then(function(r){ return r.json(); }).then(function(list){
+    DEVICES=Array.isArray(list)?list:[];
+    if(activeDev!==null && !devByIp(activeDev)){ activeDev=null; hideIframe(); }
+    renderDeviceBar(); renderLists();
+  }).catch(function(){ DEVICES=[]; renderDeviceBar(); });
+}
+
+function renderDeviceBar(){
+  var bar=el('pf-devbar'); if(!bar) return;
+  if(EMBED || DEVICES.length<=1){ bar.style.display='none'; return; }
+  bar.style.display='flex';
+  bar.innerHTML=DEVICES.map(function(d){
+    var on=d.self?(activeDev===null):(activeDev===d.ip);
+    var label=esc(d.name||d.ip)+(d.self?(' · '+t('this device')):('  '+esc(d.ip)));
+    return '<div data-dev="'+esc(d.ip)+'" data-dev-self="'+(d.self?1:0)+'" style="display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:9px;cursor:pointer;white-space:nowrap;font:600 12px \'IBM Plex Sans\';'
+      +(on?'background:rgba(248,198,98,.14);color:#f8c662;border:1px solid rgba(248,198,98,.35)':'background:#101a14;color:#a5b2a8;border:1px solid #1f2c24')+'">'
+      +'<i data-lucide="'+(d.self?'monitor':'cpu')+'" class="ic14"></i>'+label+'</div>';
+  }).join('');
+  createIcons(bar);
+}
+
+function selectDevice(ip,isSelf){
+  if(isSelf){ activeDev=null; hideIframe(); }
+  else { activeDev=ip; showIframe(ip); }
+  renderDeviceBar();
+}
+function showIframe(ip){
+  var ifr=el('pf-iframe'), sc=el('pf-scroll'), ft=document.querySelector('main > footer');
+  var d=devByIp(ip); if(!ifr||!d) return;
+  ifr.src=peerBase(d)+'/?embed=1';
+  ifr.style.display='block'; if(sc) sc.style.display='none'; if(ft) ft.style.display='none';
+}
+function hideIframe(){
+  var ifr=el('pf-iframe'), sc=el('pf-scroll'), ft=document.querySelector('main > footer');
+  if(ifr){ ifr.style.display='none'; ifr.removeAttribute('src'); }
+  if(sc) sc.style.display=''; if(ft) ft.style.display='';
+}
+
+function aggTile(devName,n,proto,px,uni,s){
+  return '<div style="background:#0f1812;border:1px solid '+s.bd+';border-radius:11px;padding:10px 11px;display:flex;flex-direction:column;gap:6px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;background:#16221b;border:1px solid #2d3d31;font:600 11px \'IBM Plex Mono\';color:#9fb0a5">'+n+'</span><span style="width:8px;height:8px;border-radius:50%;background:'+s.dot+'"></span></div>'
+    +'<div style="font:600 13px \'IBM Plex Mono\';color:#eaf3ee">'+proto+'</div>'
+    +'<div style="font:500 11px \'IBM Plex Mono\';color:#7c8a80">'+px+' · '+uni+'</div>'
+    +'<div style="font:600 9px \'IBM Plex Mono\';letter-spacing:.06em;color:#6b7a70;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(devName)+'</div></div>';
+}
+function tilesForChans(devName,chans,live){
+  return (chans||[]).map(function(c,i){
+    var st=(!c||c.protocol==='Off')?'off':((live&&live[i]&&live[i].failsafe)?'failsafe':'active');
+    var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
+    return aggTile(devName,i+1,off?'—':c.protocol,off?'Off':(dmx?c.pixel_count+' sl':c.pixel_count+' px'),off?'—':'U'+c.universe_start,ST[st]);
+  }).join('');
+}
+function offlineTiles(devName){
+  var h=''; for(var i=0;i<8;i++) h+=aggTile(devName+' ('+t('offline')+')',i+1,'—','—','—',ST.off); return h;
+}
+function renderDashGrid(){
+  var mount=el('dash-chan-mount'); if(!mount) return;
+  var html='';
+  DEVICES.forEach(function(d){
+    if(d.self){
+      var cfg=CHANS.map(function(c){ return {protocol:c.protoRaw,pixel_count:c.pixels,universe_start:c.universe}; });
+      var live=CHANS.map(function(c){ return {failsafe:c.state==='failsafe'}; });
+      html+=tilesForChans(d.name,cfg,live);
+    } else {
+      var pd=peerData[d.ip];
+      html+=(pd&&pd.online)?tilesForChans(d.name,pd.chans,pd.live):offlineTiles(d.name);
+    }
+  });
+  mount.innerHTML=html; createIcons(mount);
+}
+function pollPeers(){
+  if(EMBED || DEVICES.length<=1) return;
+  DEVICES.filter(function(d){ return !d.self; }).forEach(function(d){
+    var base=peerBase(d);
+    Promise.all([peerGet(base,'/api/config'),peerGet(base,'/api/status')]).then(function(res){
+      peerData[d.ip]={online:true,chans:res[0].channels||[],live:res[1].channels||[]};
+    }).catch(function(){ peerData[d.ip]={online:false}; }).then(function(){
+      if(curScreen==='dashboard' && activeDev===null) renderDashGrid();
+    });
+  });
+}
+function buildChrome(){
+  if(EMBED) return;
+  var main=document.querySelector('main'); if(!main) return;
+  var sc=el('pf-scroll'), ft=document.querySelector('main > footer');
+  var bar=document.createElement('div'); bar.id='pf-devbar';
+  bar.style.cssText='display:none;gap:7px;align-items:center;padding:10px 28px;border-bottom:1px solid #1c2922;background:#0c1510;overflow-x:auto;flex:none';
+  main.insertBefore(bar,sc);
+  var ifr=document.createElement('iframe'); ifr.id='pf-iframe';
+  ifr.style.cssText='display:none;flex:1;width:100%;border:0;background:#0f1a14';
+  main.insertBefore(ifr,ft);
 }
 
 /* ─────────── config load ─────────── */
@@ -1268,6 +1379,7 @@ function onClick(e){
   var fpl=e.target.closest('[data-fseq-play]'); if(fpl){ var fn=fpl.getAttribute('data-fseq-play'); api('POST','/api/fseq/play',{filename:fn}).then(function(){ toast(t('Playing: ')+fn); loadFseq(); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var reboot=e.target.closest('[data-reboot]'); if(reboot){ openModal('reboot'); return; }
   var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
+  var dev=e.target.closest('[data-dev]'); if(dev){ selectDevice(dev.getAttribute('data-dev'), dev.getAttribute('data-dev-self')==='1'); return; }
   var nav=e.target.closest('[data-nav]'); if(nav){ go(nav.getAttribute('data-nav')); return; }
   var tile=e.target.closest('[data-nav-chan]'); if(tile){ go('channels'); selectChan(+tile.getAttribute('data-nav-chan')); return; }
   var row=e.target.closest('[data-chan]'); if(row){ selectChan(+row.getAttribute('data-chan')); return; }
@@ -1289,6 +1401,7 @@ function onInput(e){
 /* ─────────── boot ─────────── */
 function init(){
   createIcons(document);
+  buildChrome();
   go(curScreen);
   initPicker(); initModal();
   initSparks(); raf=requestAnimationFrame(loop);
@@ -1304,8 +1417,9 @@ function init(){
   });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closePicker(); closeModal(); } });
   applyI18n();
-  reloadConfig().then(function(){ pollStatus(); }).catch(function(e){ toast(t('Cannot connect: ')+e.message,true); });
+  reloadConfig().then(function(){ pollStatus(); loadPeers(); }).catch(function(e){ toast(t('Cannot connect: ')+e.message,true); });
   setInterval(pollStatus,1000);
+  if(!EMBED){ setInterval(loadPeers,10000); setInterval(pollPeers,2000); }
   updateSaveBar();
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
