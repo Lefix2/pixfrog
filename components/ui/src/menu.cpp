@@ -1010,12 +1010,22 @@ void render_edit_value() {
             if (fw < 4) fw = 4;
             if (fw > gw) fw = gw;
             canvas_fill_round_rect(gx, gy, static_cast<int>(fw), gh, 5, color::FrogLine);
+            // Orange up-triangle under the original value (mirrors the dropdown's
+            // original-value dot) so you can see where you started from.
+            if (s.edit.current != s.edit.original) {
+                long ofw = static_cast<long>(gw) * (s.edit.original - s.edit.min) / span;
+                if (ofw < 0) ofw = 0;
+                if (ofw > gw) ofw = gw;
+                const int ox = gx + static_cast<int>(ofw);
+                for (int r = 0; r < 4; ++r)
+                    canvas_hline(ox - r, gy + gh + 1 + r, 2 * r + 1, color::Orange);
+            }
             char lo[16], hi[16];
             format_value(s.edit, s.edit.min, lo, sizeof(lo));
             format_value(s.edit, s.edit.max, hi, sizeof(hi));
-            canvas_draw_text(gx, gy + gh + 6, lo, color::DarkGray, color::Black, 1);
+            canvas_draw_text(gx, gy + gh + 10, lo, color::DarkGray, color::Black, 1);
             const int hiw = static_cast<int>(std::strlen(hi)) * kFontCellWidth;
-            canvas_draw_text(gx + gw - hiw, gy + gh + 6, hi, color::DarkGray, color::Black, 1);
+            canvas_draw_text(gx + gw - hiw, gy + gh + 10, hi, color::DarkGray, color::Black, 1);
         }
         if (s.edit.current != s.edit.original) {
             char orig[24];
