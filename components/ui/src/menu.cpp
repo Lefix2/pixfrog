@@ -115,21 +115,41 @@ void fmt_count(char* out, size_t cap, uint64_t v) {
 #endif
 
 // ── Screens ─────────────────────────────────────────────────────────────────
+// All the scrolling list menus collapse into a single Screen::Menu driven by the
+// declarative node engine (see NodeId / kNodes below). Only the screens with
+// bespoke rendering/input stay distinct: the Home dashboard, the About info
+// page, and the four value editors.
 enum class Screen : uint8_t {
     Home,
-    MainMenu,
-    ArtnetMenu,
-    NetworkMenu,
-    ChannelMenu,
-    TestPatternMenu,
-    ScenesMenu,
-    FSeqMenu,
+    Menu,  // node engine active — the current list is s.node
     About,
     EditValue,
     EditString,
     EditIp,
     EditUni,
 };
+
+// ── Menu tree nodes ─────────────────────────────────────────────────────────
+// Every scrolling list is a node. The engine handles cursor, scroll, enter and
+// back (via each node's parent) generically, so navigation carries no hardcoded
+// cursor indices. Indexed by value into kNodes[].
+enum class NodeId : uint8_t {
+    Main,
+    Inputs,
+    Network,
+    Output,
+    Playback,
+    Channel,
+    Scenes,
+    Fseq,
+    TestPattern,
+    Count,
+};
+
+// Forward declarations: build_* lambdas wire these as click actions.
+void go(NodeId n);
+void go_back();
+void open_channel(uint8_t idx);
 
 // ── Editable fields ─────────────────────────────────────────────────────────
 enum class Field : uint8_t {
@@ -186,7 +206,7 @@ struct EditCtx {
     int32_t min          = 0;
     int32_t max          = 0;
     uint8_t channel      = 0;
-    Screen return_screen = Screen::MainMenu;
+    Screen return_screen = Screen::Menu;
     const char* label    = "";
 };
 
@@ -195,7 +215,7 @@ struct EditStringCtx {
     uint8_t max_len      = 0;
     uint8_t cursor       = 0;  // 0..max_len; max_len = DONE position
     StringField field    = StringField::ArtnetShort;
-    Screen return_screen = Screen::ArtnetMenu;
+    Screen return_screen = Screen::Menu;
     const char* label    = "";
 };
 
@@ -203,7 +223,7 @@ struct EditIpCtx {
     uint32_t value       = 0;  // host-order
     uint8_t cursor       = 0;  // 0..4; 4 = DONE position
     IpField field        = IpField::StaticIp;
-    Screen return_screen = Screen::NetworkMenu;
+    Screen return_screen = Screen::Menu;
     const char* label    = "";
 };
 
@@ -214,13 +234,18 @@ struct EditUniCtx {
     uint16_t value       = 0;  // packed 15-bit port-address
     uint8_t cursor       = 0;  // 0..3; 3 = DONE position
     uint8_t channel      = 0;
-    Screen return_screen = Screen::ChannelMenu;
+    Screen return_screen = Screen::Menu;
 };
 
 struct State {
-    Screen screen         = Screen::Home;
-    uint8_t cursor        = 0;
-    uint8_t channel_index = 0;
+    Screen screen  = Screen::Home;
+    NodeId node    = NodeId::Main;  // current list when screen == Menu
+    uint8_t cursor = 0;             // active cursor for the current node
+    uint8_t scroll = 0;             // active scroll offset for the current node
+    // Per-node memory so back/forward restores where you were in each list.
+    uint8_t cur[static_cast<uint8_t>(NodeId::Count)] = {};
+    uint8_t scr[static_cast<uint8_t>(NodeId::Count)] = {};
+    uint8_t channel_index                            = 0;
     EditCtx edit;
     EditStringCtx str_edit;
     EditIpCtx ip_edit;
@@ -397,7 +422,45 @@ struct ListItem {
     int8_t badge    = -1;  // ≥0 → draw a numbered badge (badge+1)
     Color badge_col = color::BadgeGreen;
     Color value_col = color::Gold;
+    bool back       = false;  // "return to parent" row → back-arrow glyph, no brackets
 };
+
+// A node row's click action. Non-capturing lambdas convert to this pointer, so
+// each build_* wires actions inline without a giant union. `idx` is the row
+// index within the node (used by the dynamic lists: channels, scenes, files).
+using OnClick = void (*)(uint8_t idx);
+
+// Widest node: the main menu (8 channels + 6 entries). Build buffers size to it.
+constexpr uint8_t kMaxRows = 16;
+
+// A "return to the parent menu" row. Rendered with a left back-arrow glyph
+// instead of bracketed text; `label` lets Main say "HOME" and the test-pattern
+// node say "Stop & back".
+ListItem back_item(const char* label = "Back") {
+    ListItem it{};
+    it.label = label;
+    it.value = "";
+    it.back  = true;
+    return it;
+}
+
+// Free-roaming scroll viewport: the cursor moves anywhere within the visible
+// window and only drags the scroll offset when it would leave the top or bottom
+// edge. The offset persists in s.scroll across renders, so coming back up
+// un-sticks the cursor from the last row instead of dragging the whole list.
+// Returns the index of the first visible row.
+uint8_t viewport_first(uint8_t cursor, uint8_t count, uint8_t visible) {
+    if (count <= visible) {
+        s.scroll = 0;
+        return 0;
+    }
+    if (cursor < s.scroll)
+        s.scroll = cursor;
+    else if (cursor >= s.scroll + visible)
+        s.scroll = static_cast<uint8_t>(cursor - visible + 1);
+    if (s.scroll + visible > count) s.scroll = static_cast<uint8_t>(count - visible);
+    return s.scroll;
+}
 
 // Off-focus rows fade with their distance from the cursor (1 = nearest).
 Color fade_gray(int d) {
@@ -408,6 +471,18 @@ Color fade_gray(int d) {
     return g[d - 1];
 }
 
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+// A small left-pointing arrow ("◀—") vertically centred in an `h`-tall row at
+// (x, y) — the prettier replacement for a "[Back]" label.
+void draw_back_arrow(int x, int y, int h, Color c) {
+    const int mid  = y + h / 2;
+    const int head = 5;  // triangle half-height (apex at x, base at x+head)
+    for (int d = 0; d <= head; ++d)
+        canvas_vline(x + d, mid - d, 2 * d + 1, c);  // widens rightward → points left
+    canvas_fill_rect(x + head, mid - 1, 7, 3, c);    // tail
+}
+#endif
+
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     // ── TFT: dark list with rounded cursor highlight ──────────────────────────
@@ -415,18 +490,16 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
     draw_tft_header(title);
 
     const int visible = kMaxVis;
-    int first         = 0;
-    if (count > static_cast<uint8_t>(visible)) {
-        if (cursor >= static_cast<uint8_t>(visible)) first = cursor - (visible - 1);
-        if (first + visible > count) first = count - visible;
-    }
+    const int first   = viewport_first(cursor, count, static_cast<uint8_t>(visible));
     for (int i = 0; i < visible && first + i < count; ++i) {
-        const int idx       = first + i;
-        const int ry        = kHdrH + i * kItemH;
-        const ListItem& it  = items[idx];
-        const bool sel      = (idx == cursor);
-        const bool is_back  = (it.label[0] == '[');
-        const Color text_bg = sel ? color::CursorBg : color::Black;
+        const int idx      = first + i;
+        const int ry       = kHdrH + i * kItemH;
+        const ListItem& it = items[idx];
+        const bool sel     = (idx == cursor);
+        // Terminal rows (back rows + bracketed actions like "[Stop]") carry no
+        // ">" sub-menu chevron.
+        const bool no_chevron = it.back || (it.label[0] == '[');
+        const Color text_bg   = sel ? color::CursorBg : color::Black;
 
         if (sel) {
             // Rounded highlight with a signature-green bar on the left edge.
@@ -434,6 +507,12 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
                                       color::Black);
             canvas_fill_round_rect_aa(5, ry + 4, 4, kItemH - 8, 2, color::FrogLine,
                                       color::CursorBg);
+        }
+        if (it.back) {
+            // Back-arrow glyph in the badge column, label in the signature green.
+            draw_back_arrow(kGutter, ry, kItemH, color::FrogLine);
+            canvas_draw_text(kGutter + 18, ry + kPad, it.label, color::FrogLine, text_bg, kTxtSc);
+            continue;
         }
         if (it.badge >= 0) {
             const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
@@ -443,10 +522,10 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
 
         const int chev_x = kTW - kChevW - kIndent;
-        if (!is_back) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
+        if (!no_chevron) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
         if (it.value && it.value[0]) {
             const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
-            const int vend = is_back ? (kTW - kIndent) : (chev_x - 6);
+            const int vend = no_chevron ? (kTW - kIndent) : (chev_x - 6);
             canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
         }
     }
@@ -467,16 +546,16 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
     canvas_clear();
     draw_row(0, 0, title);
     const uint8_t visible = kRows - 1;
-    uint8_t first         = 0;
-    if (count > visible) {
-        if (cursor >= visible) first = cursor - (visible - 1);
-        if (first + visible > count) first = count - visible;
-    }
+    const uint8_t first   = viewport_first(cursor, count, visible);
     for (uint8_t i = 0; i < visible && first + i < count; ++i) {
         const uint8_t idx = first + i;
         char line[kOledCols + 1];
         const char prefix = (idx == cursor) ? '>' : ' ';
-        if (items[idx].value && items[idx].value[0]) {
+        if (items[idx].back) {
+            // Back row: a "<" return indicator instead of bracketed text (the
+            // 5x7 OLED font has no arrow glyph).
+            std::snprintf(line, sizeof(line), "%c< %s", prefix, items[idx].label);
+        } else if (items[idx].value && items[idx].value[0]) {
             std::snprintf(line, sizeof(line), "%c%s:%s", prefix, items[idx].label,
                           items[idx].value);
         } else {
@@ -698,64 +777,39 @@ void render_home() {
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
 
-constexpr uint8_t kMainItemCount                  = 15;
-constexpr const char* kMainLabels[kMainItemCount] = {
-    "ArtNet",    "Network",   "Channel 1",    "Channel 2", "Channel 3",
-    "Channel 4", "Channel 5", "Channel 6",    "Channel 7", "Channel 8",
-    "Scenes",    "FSEQ",      "Test pattern", "About",     "[Back to HOME]",
-};
+// Main menu layout: the 8 channels first (direct access, with protocol badges),
+// then the grouped config sub-menus, About, and the way back to HOME.
+constexpr uint8_t kChannelRows = config::kNumChannels;  // 8
 
-void render_main_menu() {
-    ListItem items[kMainItemCount];
-    for (uint8_t i = 0; i < kMainItemCount; ++i) {
-        items[i].label = kMainLabels[i];
-        items[i].value = "";
-        // Channel rows (indices 2..9): show the configured protocol + a badge.
+uint8_t build_main(ListItem* items, OnClick* fns) {
+    static char names[kChannelRows][12];
+    for (uint8_t i = 0; i < kChannelRows; ++i) {
+        // Channel rows: show the configured protocol + a numbered badge.
         // A disabled channel ("Off") is greyed out instead of gold.
-        if (i >= 2 && i <= 9) {
-            const auto& cc     = config::get_channel(i - 2);
-            items[i].value     = protocol_name(cc.protocol);  // points to static string
-            items[i].badge     = static_cast<int8_t>(i - 2);
-            items[i].badge_col = badge_color(cc.protocol);
-            items[i].value_col = led::is_off(cc.protocol) ? color::DarkGray : color::Gold;
-        }
+        std::snprintf(names[i], sizeof(names[i]), "Channel %u", i + 1);
+        const auto& cc     = config::get_channel(i);
+        items[i]           = {};
+        items[i].label     = names[i];
+        items[i].value     = protocol_name(cc.protocol);  // points to static string
+        items[i].badge     = static_cast<int8_t>(i);
+        items[i].badge_col = badge_color(cc.protocol);
+        items[i].value_col = led::is_off(cc.protocol) ? color::DarkGray : color::Gold;
+        fns[i]             = open_channel;
     }
-    render_list("MENU", items, kMainItemCount, s.cursor);
-}
-
-void dispatch_main_menu(Event e) {
-    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
-    if (e == Event::RotateRight && s.cursor < kMainItemCount - 1) s.cursor++;
-    if (e == Event::Click) {
-        if (s.cursor == 0) {
-            s.screen = Screen::ArtnetMenu;
-            s.cursor = 0;
-        } else if (s.cursor == 1) {
-            s.screen = Screen::NetworkMenu;
-            s.cursor = 0;
-        } else if (s.cursor >= 2 && s.cursor <= 9) {
-            s.channel_index = s.cursor - 2;
-            s.screen        = Screen::ChannelMenu;
-            s.cursor        = 0;
-        } else if (s.cursor == 10) {
-            s.screen = Screen::ScenesMenu;
-            s.cursor = 0;
-        } else if (s.cursor == 11) {
-            g_fseq_file_count = static_cast<uint8_t>(
-                fseq::list_files(g_fseq_names, kFseqMenuMaxFiles));
-            s.screen = Screen::FSeqMenu;
-            s.cursor = 0;
-        } else if (s.cursor == 12) {
-            s.screen = Screen::TestPatternMenu;
-            s.cursor = 0;
-        } else if (s.cursor == 13) {
-            s.screen = Screen::About;
-            s.cursor = 0;
-        } else {
-            s.screen = Screen::Home;
-            s.cursor = 0;
-        }
-    }
+    uint8_t n = kChannelRows;
+    items[n]  = { "Inputs", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Inputs); };
+    items[n]  = { "Network", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Network); };
+    items[n]  = { "Output", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Output); };
+    items[n]  = { "Playback", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Playback); };
+    items[n]  = { "About", "" };
+    fns[n++]  = [](uint8_t) { s.screen = Screen::About; };
+    items[n]  = back_item("HOME");
+    fns[n++]  = [](uint8_t) { go_back(); };
+    return n;
 }
 
 // ── ABOUT ───────────────────────────────────────────────────────────────────
@@ -784,155 +838,97 @@ void render_about() {
 }
 
 void dispatch_about(Event e) {
-    if (e == Event::Click) {
-        s.screen = Screen::MainMenu;
-        s.cursor = 13;
-    }
+    // Return to the main menu list; the node engine restores the cursor on the
+    // "About" row automatically.
+    if (e == Event::Click) s.screen = Screen::Menu;
 }
 
-// ── TEST PATTERN MENU (TODO B5) ─────────────────────────────────────────────
+// ── TEST PATTERN NODE (TODO B5) ─────────────────────────────────────────────
 
-constexpr uint8_t kTestPatternItemCount                         = 4;
-constexpr const char* kTestPatternLabels[kTestPatternItemCount] = {
+constexpr const char* kTestPatternLabels[3] = {
     "Pat 0 sq 1kHz",
     "Pat 1 walk-1",
     "Pat 2 altern.",
-    "[Stop & Back]",
 };
 
-void render_test_pattern_menu() {
-    const int8_t active                               = output::get_calibration_mode();
-    char marked[kTestPatternItemCount][kOledCols + 1] = {};
-    ListItem items[kTestPatternItemCount];
-    for (uint8_t i = 0; i < kTestPatternItemCount; ++i) {
-        if (i < 3 && active == static_cast<int8_t>(i)) {
-            std::snprintf(marked[i], kOledCols + 1, "%s *", kTestPatternLabels[i]);
-            items[i].label = marked[i];
+uint8_t build_testpattern(ListItem* items, OnClick* fns) {
+    static char marked[3][24];
+    const int8_t active = output::get_calibration_mode();
+    for (uint8_t i = 0; i < 3; ++i) {
+        if (active == static_cast<int8_t>(i)) {
+            std::snprintf(marked[i], sizeof(marked[i]), "%s *", kTestPatternLabels[i]);
+            items[i] = { marked[i], "" };
         } else {
-            items[i].label = kTestPatternLabels[i];
+            items[i] = { kTestPatternLabels[i], "" };
         }
-        items[i].value = "";
+        // Activate the chosen pattern; stay in the node so the user can switch
+        // patterns without leaving.
+        fns[i] = [](uint8_t idx) { output::set_calibration_mode(static_cast<int8_t>(idx)); };
     }
-    render_list("TEST PATTERN", items, kTestPatternItemCount, s.cursor);
-}
-
-void dispatch_test_pattern_menu(Event e) {
-    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
-    if (e == Event::RotateRight && s.cursor < kTestPatternItemCount - 1) s.cursor++;
-    if (e != Event::Click) return;
-    if (s.cursor < 3) {
-        // Activate the chosen pattern; stay in the menu so the user can
-        // switch between patterns or stop without leaving.
-        output::set_calibration_mode(static_cast<int8_t>(s.cursor));
-    } else {
-        // Stop calibration and return.
+    items[3] = back_item("Stop & back");
+    fns[3]   = [](uint8_t) {
         output::set_calibration_mode(-1);
-        s.screen = Screen::MainMenu;
-        s.cursor = 12;
-    }
+        go_back();
+    };
+    return 4;
 }
 
-// ── SCENES MENU ─────────────────────────────────────────────────────────────
+// ── SCENES NODE ──────────────────────────────────────────────────────────────
 // Play/stop only — editing colours and masks on a rotary encoder is web/UART
 // territory. The active scene is starred.
 
-constexpr uint8_t kScenesItemCount = config::kNumScenes + 2;  // 8 + [Stop] + [Back]
-
-void render_scenes_menu() {
-    char marked[config::kNumScenes][kOledCols + 1] = {};
-    ListItem items[kScenesItemCount];
+uint8_t build_scenes(ListItem* items, OnClick* fns) {
+    static char marked[config::kNumScenes][kOledCols + 1];
     const int active = dmx::active_scene();
     for (uint8_t i = 0; i < config::kNumScenes; ++i) {
         const auto& sc = config::get_scene(i);
         if (active == static_cast<int>(i)) {
             std::snprintf(marked[i], sizeof(marked[i]), "%s *", sc.name);
-            items[i].label = marked[i];
+            items[i] = { marked[i], "" };
         } else {
-            items[i].label = sc.name;
+            items[i] = { sc.name, "" };
         }
-        items[i].value = "";
+        fns[i] = [](uint8_t idx) { dmx::scene_start(idx); };  // stay to switch scenes
     }
-    items[config::kNumScenes]     = { "[Stop]", "" };
-    items[config::kNumScenes + 1] = { "[Back]", "" };
-    render_list("SCENES", items, kScenesItemCount, s.cursor);
+    uint8_t n = config::kNumScenes;
+    items[n]  = { "[Stop]", "" };
+    fns[n++]  = [](uint8_t) { dmx::scene_stop(); };
+    items[n]  = back_item();
+    fns[n++]  = [](uint8_t) { go_back(); };
+    return n;
 }
 
-void dispatch_scenes_menu(Event e) {
-    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
-    if (e == Event::RotateRight && s.cursor < kScenesItemCount - 1) s.cursor++;
-    if (e != Event::Click) return;
-    if (s.cursor < config::kNumScenes) {
-        dmx::scene_start(s.cursor);  // stay in the menu to switch scenes
-    } else if (s.cursor == config::kNumScenes) {
-        dmx::scene_stop();
-    } else {
-        s.screen = Screen::MainMenu;
-        s.cursor = 10;
-    }
-}
+// ── FSEQ NODE ────────────────────────────────────────────────────────────────
+// Shows .fseq files on the SD card. Clicking a filename starts playback. The
+// file list is cached (g_fseq_names) when the node is opened from Playback.
 
-// ── FSEQ MENU ────────────────────────────────────────────────────────────────
-// Shows .fseq files on the SD card.  Clicking a filename starts playback.
-// The file list is cached when entering the screen.
-
-void render_fseq_menu() {
-    // items: [0..n-1] = files, n = [Stop], n+1 = [Back]
-    // If no card / no files: item 0 = note, item 1 = [Back]
+uint8_t build_fseq(ListItem* items, OnClick* fns) {
     const bool no_card  = (fseq::sd_state() == fseq::SdState::Absent);
     const uint8_t n     = no_card ? 0 : g_fseq_file_count;
-    const uint8_t total = n > 0 ? (n + 2) : 2;
-
-    char marked[kFseqMenuMaxFiles][fseq::kMaxNameLen + 3];
-    memset(marked, 0, sizeof(marked));
-    ListItem items[kFseqMenuMaxFiles + 2];
-
     const char* playing = fseq::active_file();
-    if (no_card) {
-        items[0] = { "No SD card", "" };
-        items[1] = { "[Back]", "" };
-    } else if (n == 0) {
-        items[0] = { "No .fseq files", "" };
-        items[1] = { "[Back]", "" };
-    } else {
-        for (uint8_t i = 0; i < n; ++i) {
-            if (playing && strcmp(g_fseq_names[i], playing) == 0) {
-                snprintf(marked[i], sizeof(marked[i]), "%.*s *",
-                         static_cast<int>(fseq::kMaxNameLen) - 1, g_fseq_names[i]);
-                items[i] = { marked[i], "" };
-            } else {
-                items[i] = { g_fseq_names[i], "" };
-            }
-        }
-        items[n]     = { "[Stop]", "" };
-        items[n + 1] = { "[Back]", "" };
-    }
-    render_list("FSEQ", items, total, s.cursor);
-}
-
-void dispatch_fseq_menu(Event e) {
-    const bool no_card  = (fseq::sd_state() == fseq::SdState::Absent);
-    const uint8_t n     = no_card ? 0 : g_fseq_file_count;
-    const uint8_t total = n > 0 ? (n + 2) : 2;
-    // Clamp cursor in case the card was removed while browsing.
-    if (s.cursor >= total) s.cursor = 0;
-    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
-    if (e == Event::RotateRight && s.cursor < total - 1) s.cursor++;
-    if (e != Event::Click) return;
-
     if (n == 0) {
-        // item 0 = note (no action), item 1 = [Back]
-        if (s.cursor == 1) {
-            s.screen = Screen::MainMenu;
-            s.cursor = 11;
-        }
-    } else if (s.cursor < n) {
-        fseq::start(g_fseq_names[s.cursor]);
-    } else if (s.cursor == n) {
-        fseq::stop();
-    } else {
-        s.screen = Screen::MainMenu;
-        s.cursor = 11;
+        items[0] = { no_card ? "No SD card" : "No .fseq files", "" };
+        fns[0]   = nullptr;  // inert note
+        items[1] = back_item();
+        fns[1]   = [](uint8_t) { go_back(); };
+        return 2;
     }
+    static char marked[kFseqMenuMaxFiles][fseq::kMaxNameLen + 3];
+    for (uint8_t i = 0; i < n; ++i) {
+        if (playing && strcmp(g_fseq_names[i], playing) == 0) {
+            snprintf(marked[i], sizeof(marked[i]), "%.*s *",
+                     static_cast<int>(fseq::kMaxNameLen) - 1, g_fseq_names[i]);
+            items[i] = { marked[i], "" };
+        } else {
+            items[i] = { g_fseq_names[i], "" };
+        }
+        fns[i] = [](uint8_t idx) { fseq::start(g_fseq_names[idx]); };
+    }
+    items[n]     = { "[Stop]", "" };
+    fns[n]       = [](uint8_t) { fseq::stop(); };
+    items[n + 1] = back_item();
+    fns[n + 1]   = [](uint8_t) { go_back(); };
+    return static_cast<uint8_t>(n + 2);
 }
 
 // ── EDIT VALUE — generic int / bool / enum ──────────────────────────────────
@@ -968,28 +964,49 @@ void render_edit_value() {
                         s.edit.kind == ValueKind::ColorOrder || s.edit.kind == ValueKind::Failsafe);
 
     if (enumf) {
-        // A list-of-values picker → a vertical "dropdown": the current choice is
-        // centred and highlighted, neighbours shrink and fade with distance. A
-        // small orange dot flags the original value so the change stays clear.
-        const int cx        = kTW / 2;
-        const int midY      = (kHdrH + (kTH - 20)) / 2;
-        constexpr int kRowH = 28;
+        // A list-of-values picker rendered as a spinning "wheel": the current
+        // choice is centred in the XL cell (font 2), its immediate neighbours in
+        // the large cell (font 1) and the rest in the small cell (font 0) — sizes
+        // run 0-0-1-2-1-0-0 top-to-bottom, so the selection reads big like the
+        // detent of a physical wheel. A small orange dot flags the original value
+        // so the pending change stays clear.
+        const int cx   = kTW / 2;
+        const int midY = (kHdrH + (kTH - 20)) / 2;
+        // Row-centre y by |distance| from the selection: gaps shrink outward so
+        // the rows pack toward the rim like a wheel curving away.
+        auto row_center_y = [&](int off) {
+            const int a = off < 0 ? -off : off;
+            const int d = (a == 0) ? 0 : (a == 1) ? 38 : (a == 2) ? 56 : 68;
+            return midY + (off < 0 ? -d : d);
+        };
         for (int off = -3; off <= 3; ++off) {
             const int32_t v = s.edit.current + off;
             if (v < s.edit.min || v > s.edit.max) continue;
             char buf[24];
             format_value(s.edit, v, buf, sizeof(buf));
             const int len = static_cast<int>(std::strlen(buf));
-            if (off == 0) {
-                const int w = len * kFontCellWidth * kTxtSc;
-                canvas_fill_round_rect_aa(cx - w / 2 - 14, midY - 9, w + 28, kTxtH + 6, 6,
-                                          color::CursorBg, color::Black);
-                canvas_draw_text(cx - w / 2, midY - 8, buf, color::Cyan, color::CursorBg, kTxtSc);
+            const int y   = row_center_y(off);
+            const int a   = off < 0 ? -off : off;
+            if (a == 0) {
+                // Font 2 (XL 18×24), highlighted on a rounded pill. Drawn with a
+                // transparent bg so the glyphs composite over the pill's corners.
+                const int w = canvas_text_xl_width(buf);
+                canvas_fill_round_rect_aa(cx - w / 2 - 14, y - kFontXLHeight / 2 - 4, w + 28,
+                                          kFontXLHeight + 8, 8, color::CursorBg, color::Black);
+                canvas_draw_text_xl(cx - w / 2, y - kFontXLHeight / 2, buf, color::Cyan,
+                                    color::Transparent);
+            } else if (a == 1) {
+                // Font 1 (large 12×16).
+                const int w  = len * kFontCellWidth * kTxtSc;
+                const int ty = y - kTxtH / 2;
+                canvas_draw_text(cx - w / 2, ty, buf, fade_gray(a), color::Black, kTxtSc);
+                if (v == s.edit.original)
+                    canvas_fill_round_rect(cx - w / 2 - 14, ty + 5, 6, 6, 3, color::Orange);
             } else {
+                // Font 0 (small 6×8).
                 const int w  = len * kFontCellWidth;
-                const int ty = midY + off * kRowH - 4;
-                canvas_draw_text(cx - w / 2, ty, buf, fade_gray(off < 0 ? -off : off), color::Black,
-                                 1);
+                const int ty = y - kFontHeight / 2;
+                canvas_draw_text(cx - w / 2, ty, buf, fade_gray(a), color::Black, 1);
                 if (v == s.edit.original)
                     canvas_fill_round_rect(cx - w / 2 - 13, ty, 6, 6, 3, color::Orange);
             }
@@ -1619,96 +1636,120 @@ void dispatch_edit_uni(Event e) {
     }
 }
 
-// ── ARTNET MENU ─────────────────────────────────────────────────────────────
+// ── INPUTS NODE ──────────────────────────────────────────────────────────────
+// DMX-over-IP reception: Art-Net addressing + alternative input protocols
+// (sACN, FPP) + the universe auto-patch helper.
 
-void render_artnet_menu() {
-    char vnet[8], vsub[8], vrefresh[8], vunicast[8], vsacn[8], vfpp[8], vfsm[8], vfst[8];
-    char vshort[14], vlong[14];
+uint8_t build_inputs(ListItem* items, OnClick* fns) {
+    static char vnet[8], vsub[8], vunicast[8], vsacn[8], vfpp[8];
     const auto& g = config::get_global();
     std::snprintf(vnet, sizeof(vnet), "%u", g.artnet_net);
     std::snprintf(vsub, sizeof(vsub), "%u", g.artnet_subnet);
-    std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
     std::snprintf(vunicast, sizeof(vunicast), "%s", g.artnet_poll_reply_unicast ? "ON" : "OFF");
     std::snprintf(vsacn, sizeof(vsacn), "%s", g.sacn_enabled ? "ON" : "OFF");
     std::snprintf(vfpp, sizeof(vfpp), "%s", g.fpp_remote ? "ON" : "OFF");
+
+    items[0] = { "Net", vnet };
+    fns[0]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetNet, ValueKind::Int, g.artnet_net, 0, 127, 1, "Net", Screen::Menu);
+    };
+    items[1] = { "Sub", vsub };
+    fns[1]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetSubnet, ValueKind::Int, g.artnet_subnet, 0, 15, 1, "Sub",
+                     Screen::Menu);
+    };
+    items[2] = { "Unicast", vunicast };
+    fns[2]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetReplyUnicast, ValueKind::Bool, g.artnet_poll_reply_unicast ? 1 : 0,
+                     0, 1, 1, "Unicast", Screen::Menu);
+    };
+    items[3] = { "sACN", vsacn };
+    fns[3]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetSacn, ValueKind::Bool, g.sacn_enabled ? 1 : 0, 0, 1, 1, "sACN",
+                     Screen::Menu);
+    };
+    items[4] = { "FPP", vfpp };
+    fns[4]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetFpp, ValueKind::Bool, g.fpp_remote ? 1 : 0, 0, 1, 1, "FPP",
+                     Screen::Menu);
+    };
+    items[5] = { "Auto-patch", "" };
+    fns[5]   = [](uint8_t) {
+        // Cascade all channels from a base universe; seed with channel 0's so
+        // re-patching in place is one click.
+        enter_edit(Field::AutoPatch, ValueKind::Int, config::get_channel(0).universe_start, 0,
+                     32767, 1, "Patch", Screen::Menu);
+    };
+    items[6] = back_item();
+    fns[6]   = [](uint8_t) { go_back(); };
+    return 7;
+}
+
+// ── OUTPUT NODE ──────────────────────────────────────────────────────────────
+// Global output behaviour: the LED refresh rate and what the strips do when the
+// live input drops (failsafe mode + timeout).
+
+uint8_t build_output(ListItem* items, OnClick* fns) {
+    static char vrefresh[8], vfsm[8], vfst[8];
+    const auto& g = config::get_global();
+    std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
     std::snprintf(vfsm, sizeof(vfsm), "%s", failsafe_name(g.failsafe_mode));
     std::snprintf(vfst, sizeof(vfst), "%us", g.failsafe_timeout_s);
-    truncate(vshort, sizeof(vshort), g.short_name);
-    truncate(vlong, sizeof(vlong), g.long_name);
 
-    ListItem items[12] = {
-        { "Net", vnet },         { "Sub", vsub },         { "Short", vshort },  { "Long", vlong },
-        { "Refresh", vrefresh }, { "Unicast", vunicast }, { "sACN", vsacn },    { "FPP", vfpp },
-        { "FSafe", vfsm },       { "FSafeS", vfst },      { "Auto-patch", "" }, { "[Back]", "" },
-    };
-    render_list("ARTNET", items, 12, s.cursor);
-}
-
-void dispatch_artnet_menu(Event e) {
-    constexpr uint8_t kCount = 12;
-    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
-    if (e == Event::RotateRight && s.cursor < kCount - 1) s.cursor++;
-    if (e != Event::Click) return;
-    const auto& g = config::get_global();
-    switch (s.cursor) {
-    case 0:
-        enter_edit(Field::ArtnetNet, ValueKind::Int, g.artnet_net, 0, 127, 1, "Net",
-                   Screen::ArtnetMenu);
-        break;
-    case 1:
-        enter_edit(Field::ArtnetSubnet, ValueKind::Int, g.artnet_subnet, 0, 15, 1, "Sub",
-                   Screen::ArtnetMenu);
-        break;
-    case 2:
-        enter_edit_string(StringField::ArtnetShort, g.short_name, sizeof(g.short_name) - 1, "Short",
-                          Screen::ArtnetMenu);
-        break;
-    case 3:
-        enter_edit_string(StringField::ArtnetLong, g.long_name, sizeof(g.long_name) - 1, "Long",
-                          Screen::ArtnetMenu);
-        break;
-    // Refresh: step 30 → only [30, 60] reachable; satisfies spec §4.
-    case 4:
+    items[0] = { "Refresh", vrefresh };
+    fns[0]   = [](uint8_t) {
+        // Refresh: step 30 → only [30, 60] reachable; satisfies spec §4.
+        const auto& g = config::get_global();
         enter_edit(Field::GlobalRefresh, ValueKind::Int, g.refresh_rate_hz, 30, 60, 30, "Refresh",
-                   Screen::ArtnetMenu);
-        break;
-    case 5:
-        enter_edit(Field::ArtnetReplyUnicast, ValueKind::Bool, g.artnet_poll_reply_unicast ? 1 : 0,
-                   0, 1, 1, "Unicast", Screen::ArtnetMenu);
-        break;
-    case 6:
-        enter_edit(Field::ArtnetSacn, ValueKind::Bool, g.sacn_enabled ? 1 : 0, 0, 1, 1, "sACN",
-                   Screen::ArtnetMenu);
-        break;
-    case 7:
-        enter_edit(Field::ArtnetFpp, ValueKind::Bool, g.fpp_remote ? 1 : 0, 0, 1, 1, "FPP",
-                   Screen::ArtnetMenu);
-        break;
-    case 8:
+                     Screen::Menu);
+    };
+    items[1] = { "Failsafe", vfsm };
+    fns[1]   = [](uint8_t) {
+        const auto& g = config::get_global();
         enter_edit(Field::ArtnetFailsafeMode, ValueKind::Failsafe, g.failsafe_mode, 0, 3, 1,
-                   "FSafe", Screen::ArtnetMenu);
-        break;
-    case 9:
+                     "Failsafe", Screen::Menu);
+    };
+    items[2] = { "FSafe s", vfst };
+    fns[2]   = [](uint8_t) {
+        const auto& g = config::get_global();
         enter_edit(Field::ArtnetFailsafeTimeout, ValueKind::Int, g.failsafe_timeout_s, 0, 3600, 1,
-                   "FSafeS", Screen::ArtnetMenu);
-        break;
-    case 10:
-        // Auto-patch: cascade all channels from a base universe. Seed the edit
-        // with channel 0's current universe so re-patching in place is one click.
-        enter_edit(Field::AutoPatch, ValueKind::Int, config::get_channel(0).universe_start, 0,
-                   32767, 1, "Patch", Screen::ArtnetMenu);
-        break;
-    case 11:
-        s.screen = Screen::MainMenu;
-        s.cursor = 0;
-        break;
-    }
+                     "FSafe s", Screen::Menu);
+    };
+    items[3] = back_item();
+    fns[3]   = [](uint8_t) { go_back(); };
+    return 4;
 }
 
-// ── NETWORK MENU ────────────────────────────────────────────────────────────
+// ── PLAYBACK NODE ────────────────────────────────────────────────────────────
+// Output sources that aren't live DMX-over-IP: stored scenes, SD-card FSEQ
+// sequences, and the built-in test patterns.
 
-void render_network_menu() {
-    char vdhcp[8], vip[kOledCols + 1], vmsk[kOledCols + 1], vgw[kOledCols + 1], vweb[8];
+uint8_t build_playback(ListItem* items, OnClick* fns) {
+    items[0] = { "Scenes", "" };
+    fns[0]   = [](uint8_t) { go(NodeId::Scenes); };
+    items[1] = { "FSEQ", "" };
+    fns[1]   = [](uint8_t) {
+        // Refresh the SD listing as we open the file browser.
+        g_fseq_file_count = static_cast<uint8_t>(fseq::list_files(g_fseq_names, kFseqMenuMaxFiles));
+        go(NodeId::Fseq);
+    };
+    items[2] = { "Test pattern", "" };
+    fns[2]   = [](uint8_t) { go(NodeId::TestPattern); };
+    items[3] = back_item();
+    fns[3]   = [](uint8_t) { go_back(); };
+    return 4;
+}
+
+// ── NETWORK NODE ─────────────────────────────────────────────────────────────
+
+uint8_t build_network(ListItem* items, OnClick* fns) {
+    static char vdhcp[8], vip[kOledCols + 1], vmsk[kOledCols + 1], vgw[kOledCols + 1], vweb[8];
+    static char vshort[14], vlong[14];
     const auto& g = config::get_global();
     std::snprintf(vdhcp, sizeof(vdhcp), "%s", g.use_dhcp ? "ON" : "OFF");
     std::snprintf(vweb, sizeof(vweb), "%s", g.web_enabled ? "ON" : "OFF");
@@ -1720,37 +1761,48 @@ void render_network_menu() {
     fmt_ip(vip, sizeof(vip), g.static_ip);
     fmt_ip(vmsk, sizeof(vmsk), g.static_mask);
     fmt_ip(vgw, sizeof(vgw), g.static_gateway);
+    truncate(vshort, sizeof(vshort), g.short_name);
+    truncate(vlong, sizeof(vlong), g.long_name);
 
-    ListItem items[6] = {
-        { "DHCP", vdhcp }, { "IP", vip },      { "Msk", vmsk },
-        { "GW", vgw },     { "Web UI", vweb }, { "[Back]", "" },
-    };
-    render_list("NETWORK", items, 6, s.cursor);
-}
-
-void dispatch_network_menu(Event e) {
-    constexpr uint8_t kCount = 6;
-    if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
-    if (e == Event::RotateRight && s.cursor < kCount - 1) s.cursor++;
-    if (e != Event::Click) return;
-    const auto& g = config::get_global();
-    switch (s.cursor) {
-    case 0:
+    items[0] = { "DHCP", vdhcp };
+    fns[0]   = [](uint8_t) {
+        const auto& g = config::get_global();
         enter_edit(Field::NetworkDhcp, ValueKind::Bool, g.use_dhcp ? 1 : 0, 0, 1, 1, "DHCP",
-                   Screen::NetworkMenu);
-        break;
-    case 1: enter_edit_ip(IpField::StaticIp, g.static_ip, "IP", Screen::NetworkMenu); break;
-    case 2: enter_edit_ip(IpField::StaticMask, g.static_mask, "Mask", Screen::NetworkMenu); break;
-    case 3: enter_edit_ip(IpField::StaticGw, g.static_gateway, "GW", Screen::NetworkMenu); break;
-    case 4:
+                     Screen::Menu);
+    };
+    items[1] = { "IP", vip };
+    fns[1]   = [](uint8_t) {
+        enter_edit_ip(IpField::StaticIp, config::get_global().static_ip, "IP", Screen::Menu);
+    };
+    items[2] = { "Msk", vmsk };
+    fns[2]   = [](uint8_t) {
+        enter_edit_ip(IpField::StaticMask, config::get_global().static_mask, "Mask", Screen::Menu);
+    };
+    items[3] = { "GW", vgw };
+    fns[3]   = [](uint8_t) {
+        enter_edit_ip(IpField::StaticGw, config::get_global().static_gateway, "GW", Screen::Menu);
+    };
+    items[4] = { "Web UI", vweb };
+    fns[4]   = [](uint8_t) {
+        const auto& g = config::get_global();
         enter_edit(Field::NetworkWebEnabled, ValueKind::Bool, g.web_enabled ? 1 : 0, 0, 1, 1,
-                   "Web UI", Screen::NetworkMenu);
-        break;
-    case 5:
-        s.screen = Screen::MainMenu;
-        s.cursor = 1;
-        break;
-    }
+                     "Web UI", Screen::Menu);
+    };
+    items[5] = { "Name", vshort };
+    fns[5]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit_string(StringField::ArtnetShort, g.short_name, sizeof(g.short_name) - 1, "Name",
+                            Screen::Menu);
+    };
+    items[6] = { "Long", vlong };
+    fns[6]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit_string(StringField::ArtnetLong, g.long_name, sizeof(g.long_name) - 1, "Long",
+                            Screen::Menu);
+    };
+    items[7] = back_item();
+    fns[7]   = [](uint8_t) { go_back(); };
+    return 8;
 }
 
 // ── CHANNEL MENU ────────────────────────────────────────────────────────────
@@ -1801,19 +1853,111 @@ uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     return n;
 }
 
-uint8_t channel_item_count() {
-    ChItem items[12];
-    return channel_items(config::get_channel(s.channel_index), items);
+// Channel node title is dynamic ("CHANNEL N"); build_channel fills this buffer
+// each frame and the kNodes entry points its title at it.
+char g_channel_title[16];
+
+// Per-ChItem click action. Each reads the channel fresh at click time (the
+// channel is s.channel_index, set when the node was opened from the main menu).
+OnClick channel_action(ChItem it) {
+    switch (it) {
+    case ChItem::Proto:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChProtocol, ValueKind::Protocol, static_cast<int32_t>(cc.protocol), 0,
+                       static_cast<int32_t>(kProtocolCount) - 1, 1, "Proto", Screen::Menu,
+                       s.channel_index);
+        };
+    case ChItem::Uni:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit_uni(s.channel_index, cc.universe_start, Screen::Menu);
+        };
+    case ChItem::Dmx:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", Screen::Menu,
+                       s.channel_index);
+        };
+    case ChItem::Pixels:
+        return [](uint8_t) {
+            // Upper bound is whatever the bus can clock out within the refresh
+            // budget (and DMA buffer) for this protocol — e.g. 512 px WS2815
+            // @60 Hz, 1024 @30 Hz, 512 slots for a DMX universe.
+            const auto& cc     = config::get_channel(s.channel_index);
+            const bool dmx     = led::is_dmx(cc.protocol);
+            const int32_t pmax = dmx::channel_max_pixels(s.channel_index);
+            int32_t pcur       = cc.pixel_count;
+            if (pcur > pmax) pcur = pmax;
+            enter_edit(Field::ChPixels, ValueKind::Int, pcur, 1, pmax, 1, dmx ? "Slots" : "Pixels",
+                       Screen::Menu, s.channel_index);
+            // Live strip ruler while editing (LED protocols only).
+            if (!dmx) dmx::set_pixel_preview(s.channel_index, static_cast<uint16_t>(pcur));
+        };
+    case ChItem::Order:
+        return [](uint8_t) {
+            // 3-colour strips pick an RGB permutation; RGBW strips a W-suffixed
+            // order. Restrict the cycle to the matching family.
+            const auto& cc     = config::get_channel(s.channel_index);
+            const bool rgbw    = led::is_rgbw(cc.protocol);
+            const int32_t omin = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBW) : 0;
+            const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::GRBW)
+                                      : static_cast<int32_t>(led::ColorOrder::BGR);
+            int32_t ocur       = static_cast<int32_t>(cc.color_order);
+            if (ocur < omin) ocur = omin;
+            if (ocur > omax) ocur = omax;
+            enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, ocur, omin, omax, 1, "Order",
+                       Screen::Menu, s.channel_index);
+        };
+    case ChItem::Bright:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChBrightness, ValueKind::Int, cc.brightness, 0, 255, 1, "Bright",
+                       Screen::Menu, s.channel_index);
+        };
+    case ChItem::Gamma:
+        return [](uint8_t) {
+            // Stored ×10: 10 = linear, 22 = the classic 2.2.
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChGamma, ValueKind::Int, cc.gamma_x10, 10, 40, 1, "Gamma",
+                       Screen::Menu, s.channel_index);
+        };
+    case ChItem::Group:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChGrouping, ValueKind::Int, cc.grouping, 1, 8, 1, "Group",
+                       Screen::Menu, s.channel_index);
+        };
+    case ChItem::Invert:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChInvert, ValueKind::Bool, cc.invert_direction ? 1 : 0, 0, 1, 1,
+                       "Invert", Screen::Menu, s.channel_index);
+        };
+    case ChItem::Clock:
+        return [](uint8_t) {
+            // Snap to a real divisor rate; the picker steps through kClockChoices.
+            const auto& cc = config::get_channel(s.channel_index);
+            const int32_t snapped =
+                kClockChoices[clock_choice_index(static_cast<int32_t>(cc.clock_hz))];
+            enter_edit(Field::ChClock, ValueKind::ClockHz, snapped, kClockChoices[0],
+                       kClockChoices[kClockChoiceCount - 1], 1, "Clock", Screen::Menu,
+                       s.channel_index);
+        };
+    case ChItem::Identify:
+        return [](uint8_t) { dmx::identify_start(s.channel_index); };  // 10 s blink; stay
+    case ChItem::Back: return [](uint8_t) { go_back(); };
+    }
+    return nullptr;
 }
 
-void render_channel_menu() {
+uint8_t build_channel(ListItem* items, OnClick* fns) {
     const auto& cc = config::get_channel(s.channel_index);
     const bool dmx = led::is_dmx(cc.protocol);
-    char title[kOledCols + 1];
-    std::snprintf(title, sizeof(title), "CHANNEL %u", s.channel_index + 1);
+    std::snprintf(g_channel_title, sizeof(g_channel_title), "CHANNEL %u", s.channel_index + 1);
 
-    char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12],
-        vgam[8];
+    static char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8],
+        vclk[12], vgam[8];
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
     format_uni(vuni, sizeof(vuni), cc.universe_start);
     std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
@@ -1827,7 +1971,6 @@ void render_channel_menu() {
 
     ChItem order[12];
     const uint8_t count = channel_items(cc, order);
-    ListItem items[12];
     for (uint8_t i = 0; i < count; ++i) {
         switch (order[i]) {
         case ChItem::Proto: items[i] = { "Proto", vproto }; break;
@@ -1841,136 +1984,94 @@ void render_channel_menu() {
         case ChItem::Group: items[i] = { "Group", vgrp }; break;
         case ChItem::Invert: items[i] = { "Invert", vinv }; break;
         case ChItem::Clock: items[i] = { "Clock", vclk }; break;
-        case ChItem::Back: items[i] = { "[Back]", "" }; break;
+        case ChItem::Back: items[i] = back_item(); break;
         }
+        fns[i] = channel_action(order[i]);
     }
-    render_list(title, items, count, s.cursor);
+    return count;
 }
 
-void dispatch_channel_menu(Event e) {
-    const auto& cc = config::get_channel(s.channel_index);
-    ChItem order[12];
-    const uint8_t count = channel_items(cc, order);
+// ── Node table + engine ──────────────────────────────────────────────────────
 
+struct Node {
+    const char* title;
+    NodeId parent;  // ignored for Main (its back = Home)
+    uint8_t (*build)(ListItem* items, OnClick* fns);
+};
+
+// Indexed by NodeId. Main's parent is a placeholder (back goes to Home).
+const Node kNodes[static_cast<uint8_t>(NodeId::Count)] = {
+    { "MENU", NodeId::Main, build_main },
+    { "INPUTS", NodeId::Main, build_inputs },
+    { "NETWORK", NodeId::Main, build_network },
+    { "OUTPUT", NodeId::Main, build_output },
+    { "PLAYBACK", NodeId::Main, build_playback },
+    { g_channel_title, NodeId::Main, build_channel },
+    { "SCENES", NodeId::Playback, build_scenes },
+    { "FSEQ", NodeId::Playback, build_fseq },
+    { "TEST PATTERN", NodeId::Playback, build_testpattern },
+};
+
+const Node& cur_node() {
+    return kNodes[static_cast<uint8_t>(s.node)];
+}
+
+void go(NodeId n) {
+    // Save the active cursor/scroll for the node we are leaving, restore the
+    // destination's so back/forward returns to where you were.
+    s.cur[static_cast<uint8_t>(s.node)] = s.cursor;
+    s.scr[static_cast<uint8_t>(s.node)] = s.scroll;
+    s.node                              = n;
+    s.cursor                            = s.cur[static_cast<uint8_t>(n)];
+    s.scroll                            = s.scr[static_cast<uint8_t>(n)];
+    s.screen                            = Screen::Menu;
+}
+
+void go_back() {
+    if (s.node == NodeId::Main) {
+        s.screen = Screen::Home;
+        return;
+    }
+    go(cur_node().parent);
+}
+
+void open_channel(uint8_t idx) {
+    s.channel_index                              = idx;
+    s.cur[static_cast<uint8_t>(NodeId::Channel)] = 0;  // a fresh channel starts at the top
+    s.scr[static_cast<uint8_t>(NodeId::Channel)] = 0;
+    go(NodeId::Channel);
+}
+
+void engine_render() {
+    ListItem items[kMaxRows];
+    OnClick fns[kMaxRows];
+    const Node& n       = cur_node();
+    const uint8_t count = n.build(items, fns);
+    if (count > 0 && s.cursor >= count) s.cursor = count - 1;
+    render_list(n.title, items, count, s.cursor);
+}
+
+void engine_dispatch(Event e) {
+    ListItem items[kMaxRows];
+    OnClick fns[kMaxRows];
+    const uint8_t count = cur_node().build(items, fns);
+    if (count == 0) return;
+    if (s.cursor >= count) s.cursor = count - 1;
     if (e == Event::RotateLeft && s.cursor > 0) s.cursor--;
     if (e == Event::RotateRight && s.cursor < count - 1) s.cursor++;
-    if (e != Event::Click) return;
-
-    const Screen ret = Screen::ChannelMenu;
-    const uint8_t ch = s.channel_index;
-    const bool dmx   = led::is_dmx(cc.protocol);
-
-    switch (order[s.cursor]) {
-    case ChItem::Proto:
-        enter_edit(Field::ChProtocol, ValueKind::Protocol, static_cast<int32_t>(cc.protocol), 0,
-                   static_cast<int32_t>(kProtocolCount) - 1, 1, "Proto", ret, ch);
-        break;
-    case ChItem::Uni: enter_edit_uni(ch, cc.universe_start, ret); break;
-    case ChItem::Dmx:
-        enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", ret, ch);
-        break;
-    case ChItem::Pixels: {
-        // Upper bound is whatever the bus can clock out within the refresh
-        // budget (and the DMA buffer) for this protocol — e.g. 512 px for
-        // WS2815 @60 Hz, 1024 @30 Hz, 512 slots for a DMX universe.
-        const int32_t pmax = dmx::channel_max_pixels(ch);
-        int32_t pcur       = cc.pixel_count;
-        if (pcur > pmax) pcur = pmax;
-        enter_edit(Field::ChPixels, ValueKind::Int, pcur, 1, pmax, 1, dmx ? "Slots" : "Pixels", ret,
-                   ch);
-        // Light the strip as a live ruler while the count is being edited
-        // (LED protocols only — a DMX512 universe has nothing to show).
-        if (!dmx) dmx::set_pixel_preview(ch, static_cast<uint16_t>(pcur));
-        break;
-    }
-    case ChItem::Order: {
-        // 3-colour strips pick an RGB permutation; RGBW strips pick a
-        // W-suffixed order. Restrict the cycle to the matching family so an
-        // RGBW channel can't land on a bare RGB order (and vice versa).
-        const bool rgbw    = led::is_rgbw(cc.protocol);
-        const int32_t omin = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBW) : 0;
-        const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::GRBW)
-                                  : static_cast<int32_t>(led::ColorOrder::BGR);
-        int32_t ocur       = static_cast<int32_t>(cc.color_order);
-        if (ocur < omin) ocur = omin;
-        if (ocur > omax) ocur = omax;
-        enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, ocur, omin, omax, 1, "Order", ret,
-                   ch);
-        break;
-    }
-    case ChItem::Bright:
-        enter_edit(Field::ChBrightness, ValueKind::Int, cc.brightness, 0, 255, 1, "Bright", ret,
-                   ch);
-        break;
-    case ChItem::Gamma:
-        // Stored ×10: 10 = linear, 22 = the classic 2.2.
-        enter_edit(Field::ChGamma, ValueKind::Int, cc.gamma_x10, 10, 40, 1, "Gamma", ret, ch);
-        break;
-    case ChItem::Identify:
-        dmx::identify_start(ch);  // 10 s white blink on this strip; stay in menu
-        break;
-    case ChItem::Group:
-        enter_edit(Field::ChGrouping, ValueKind::Int, cc.grouping, 1, 8, 1, "Group", ret, ch);
-        break;
-    case ChItem::Invert:
-        enter_edit(Field::ChInvert, ValueKind::Bool, cc.invert_direction ? 1 : 0, 0, 1, 1, "Invert",
-                   ret, ch);
-        break;
-    case ChItem::Clock: {
-        // Snap to a real divisor rate; the picker then steps through kClockChoices.
-        const int32_t snapped =
-            kClockChoices[clock_choice_index(static_cast<int32_t>(cc.clock_hz))];
-        enter_edit(Field::ChClock, ValueKind::ClockHz, snapped, kClockChoices[0],
-                   kClockChoices[kClockChoiceCount - 1], 1, "Clock", ret, ch);
-        break;
-    }
-    case ChItem::Back:
-        s.screen = Screen::MainMenu;
-        s.cursor = 2 + ch;
-        break;
-    }
+    if (e == Event::Click && fns[s.cursor]) fns[s.cursor](s.cursor);
 }
 
-// ── Long press: cancel an edit / go Back in a list ──────────────────────────
+// ── Long press: cancel an edit / go Back ────────────────────────────────────
 // In any edit screen the pending change is DISCARDED (nothing committed) and we
-// return to where we came from; in a list menu it acts as Back (climb a level).
+// return to where we came from; in the menu engine it climbs one level (Main →
+// Home).
 
 void dispatch_long_press() {
     switch (s.screen) {
     case Screen::Home: break;
-    case Screen::MainMenu:
-        s.screen = Screen::Home;
-        s.cursor = 0;
-        break;
-    case Screen::ArtnetMenu:
-        s.screen = Screen::MainMenu;
-        s.cursor = 0;
-        break;
-    case Screen::NetworkMenu:
-        s.screen = Screen::MainMenu;
-        s.cursor = 1;
-        break;
-    case Screen::ChannelMenu:
-        s.screen = Screen::MainMenu;
-        s.cursor = 2 + s.channel_index;
-        break;
-    case Screen::TestPatternMenu:
-        output::set_calibration_mode(-1);
-        s.screen = Screen::MainMenu;
-        s.cursor = 12;
-        break;
-    case Screen::ScenesMenu:
-        s.screen = Screen::MainMenu;
-        s.cursor = 10;
-        break;
-    case Screen::FSeqMenu:
-        s.screen = Screen::MainMenu;
-        s.cursor = 11;
-        break;
-    case Screen::About:
-        s.screen = Screen::MainMenu;
-        s.cursor = 13;
-        break;
+    case Screen::Menu: go_back(); break;
+    case Screen::About: s.screen = Screen::Menu; break;
     // Edit screens: cancel — discard the pending value, commit nothing.
     case Screen::EditValue:
         dmx::clear_pixel_preview();
@@ -1993,13 +2094,7 @@ void menu_init() {
 void menu_render() {
     switch (s.screen) {
     case Screen::Home: render_home(); break;
-    case Screen::MainMenu: render_main_menu(); break;
-    case Screen::ArtnetMenu: render_artnet_menu(); break;
-    case Screen::NetworkMenu: render_network_menu(); break;
-    case Screen::ChannelMenu: render_channel_menu(); break;
-    case Screen::TestPatternMenu: render_test_pattern_menu(); break;
-    case Screen::ScenesMenu: render_scenes_menu(); break;
-    case Screen::FSeqMenu: render_fseq_menu(); break;
+    case Screen::Menu: engine_render(); break;
     case Screen::About: render_about(); break;
     case Screen::EditValue: render_edit_value(); break;
     case Screen::EditString: render_edit_string(); break;
@@ -2015,18 +2110,9 @@ void menu_dispatch(Event e) {
     }
     switch (s.screen) {
     case Screen::Home:
-        if (e == Event::Click) {
-            s.screen = Screen::MainMenu;
-            s.cursor = 0;
-        }
+        if (e == Event::Click) go(NodeId::Main);  // enter the menu engine at the top
         break;
-    case Screen::MainMenu: dispatch_main_menu(e); break;
-    case Screen::ArtnetMenu: dispatch_artnet_menu(e); break;
-    case Screen::NetworkMenu: dispatch_network_menu(e); break;
-    case Screen::ChannelMenu: dispatch_channel_menu(e); break;
-    case Screen::TestPatternMenu: dispatch_test_pattern_menu(e); break;
-    case Screen::ScenesMenu: dispatch_scenes_menu(e); break;
-    case Screen::FSeqMenu: dispatch_fseq_menu(e); break;
+    case Screen::Menu: engine_dispatch(e); break;
     case Screen::About: dispatch_about(e); break;
     case Screen::EditValue: dispatch_edit_value(e); break;
     case Screen::EditString: dispatch_edit_string(e); break;
@@ -2038,7 +2124,12 @@ void menu_dispatch(Event e) {
 void menu_on_idle_timeout() {
     dmx::clear_pixel_preview();
     s.screen = Screen::Home;
-    s.cursor = 0;
+    // Reopening from Home shows the main menu at the top.
+    s.node                                    = NodeId::Main;
+    s.cursor                                  = 0;
+    s.scroll                                  = 0;
+    s.cur[static_cast<uint8_t>(NodeId::Main)] = 0;
+    s.scr[static_cast<uint8_t>(NodeId::Main)] = 0;
 }
 
 bool menu_is_home() {
@@ -2047,12 +2138,23 @@ bool menu_is_home() {
 
 #ifdef PIXFROG_EMULATOR
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
-    static const char* const kNames[] = {
-        "Home",       "MainMenu", "ArtnetMenu", "NetworkMenu", "ChannelMenu", "TestPatternMenu",
-        "ScenesMenu", "FSeqMenu", "About",      "EditValue",   "EditString",  "EditIp",
-        "EditUni",
+    // Node names mirror the old per-screen names so the emulator agent API and
+    // existing navigation scripts keep matching.
+    static const char* const kNodeNames[static_cast<uint8_t>(NodeId::Count)] = {
+        "MainMenu",    "InputsMenu", "NetworkMenu", "OutputMenu",      "PlaybackMenu",
+        "ChannelMenu", "ScenesMenu", "FSeqMenu",    "TestPatternMenu",
     };
-    if (screen_name) *screen_name = kNames[static_cast<uint8_t>(s.screen)];
+    if (screen_name) {
+        switch (s.screen) {
+        case Screen::Home: *screen_name = "Home"; break;
+        case Screen::Menu: *screen_name = kNodeNames[static_cast<uint8_t>(s.node)]; break;
+        case Screen::About: *screen_name = "About"; break;
+        case Screen::EditValue: *screen_name = "EditValue"; break;
+        case Screen::EditString: *screen_name = "EditString"; break;
+        case Screen::EditIp: *screen_name = "EditIp"; break;
+        case Screen::EditUni: *screen_name = "EditUni"; break;
+        }
+    }
     if (cursor) *cursor = s.cursor;
     if (channel) *channel = s.channel_index;
 }
