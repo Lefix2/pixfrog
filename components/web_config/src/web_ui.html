@@ -872,7 +872,10 @@ function updateChanVis(){
   var f=el('cd-fields'); if(f) f.style.display=off?'none':'';
   if(off) return;
   setOrderOptions(p);
-  function show(id,vis){ var e=el(id); if(e) e.style.display=vis?'flex':'none'; }
+  // Field rows stack label-over-input (block); only the invert toggle is a flex
+  // row (label + switch side by side). 'flex' on the others put the input beside
+  // the label and broke alignment.
+  function show(id,vis){ var e=el(id); if(e) e.style.display=vis?(id==='cd-row-inv'?'flex':'block'):'none'; }
   show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
   show('cd-row-inv',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
   var lbl=el('cd-pixlabel'); if(lbl){ var cc=CHANS[curChan]; var mx=cc&&cc.maxpx?cc.maxpx:1024;
