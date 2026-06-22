@@ -415,6 +415,13 @@ bool init(const InitConfig& cfg) {
     g_init_cfg  = cfg;
     g_init_done = true;
 
+    // A missing microSD is a normal field state, but the 1 Hz mount retry would
+    // otherwise spam the console with the driver's per-attempt errors
+    // (sdmmc_common send_op_cond, vfs_fat_sdmmc card_init). Mute those two tags;
+    // our own mount/unmount/removed lines (TAG) still report SD state.
+    esp_log_level_set("sdmmc_common", ESP_LOG_NONE);
+    esp_log_level_set("vfs_fat_sdmmc", ESP_LOG_NONE);
+
     // Try an immediate mount; the monitor task will retry every second if absent.
     do_mount();
 
