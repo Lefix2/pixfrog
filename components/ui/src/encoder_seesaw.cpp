@@ -70,7 +70,7 @@ int64_t g_last_btn_change_us     = 0;
 // before any further event can fire. The release after a LongPress is
 // swallowed so a single hold never also produces a Click; short presses
 // emit Click on release.
-constexpr int64_t kLongPressUs = 1'000'000;  // 1 s
+constexpr int64_t kLongPressUs = 600'000;  // 600 ms
 int64_t g_press_start_us       = 0;
 bool g_long_fired              = false;
 
