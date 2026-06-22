@@ -59,6 +59,10 @@ int log_vprintf(const char* fmt, va_list ap) {
     va_copy(ap2, ap);
     const int n = vsnprintf(line, sizeof(line), fmt, ap2);
     va_end(ap2);
+    // Demote the IDF SD mount-retry spam to debug: with no microSD the
+    // sdmmc/vfs_fat drivers emit an ERROR line every second. Keep it out of the
+    // log (ring + UART tee) unless debug verbosity is explicitly enabled.
+    if (n > 0 && esp_log_level_get("*") < ESP_LOG_DEBUG && strstr(line, "sdmmc")) return n;
     if (n > 0) {
         const size_t len = (static_cast<size_t>(n) < sizeof(line)) ? static_cast<size_t>(n)
                                                                    : sizeof(line) - 1;
