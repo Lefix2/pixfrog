@@ -59,6 +59,15 @@ int log_vprintf(const char* fmt, va_list ap) {
     va_copy(ap2, ap);
     const int n = vsnprintf(line, sizeof(line), fmt, ap2);
     va_end(ap2);
+    // Demote the IDF SD mount-retry spam to debug: with no microSD the
+    // sdmmc/vfs_fat drivers emit an ERROR line every second. Below debug
+    // verbosity, keep it out of the log entirely; at debug, relabel its 'E'
+    // severity to 'D' in the ring so the Diagnostics panel shows it as debug.
+    if (n > 0 && strstr(line, "sdmmc")) {
+        if (esp_log_level_get("*") < ESP_LOG_DEBUG) return n;
+        char* sev = strstr(line, "E (");
+        if (sev) *sev = 'D';
+    }
     if (n > 0) {
         const size_t len = (static_cast<size_t>(n) < sizeof(line)) ? static_cast<size_t>(n)
                                                                    : sizeof(line) - 1;
@@ -133,6 +142,11 @@ static esp_err_t send_json(httpd_req_t* req, cJSON* root) {
     cJSON_Delete(root);
     if (!str) return httpd_resp_send_500(req);
     httpd_resp_set_type(req, "application/json");
+    // CORS: the aggregated multi-node dashboard reads /api/config + /api/status
+    // from sibling pixfrogs cross-origin. These are simple read-only GETs (no
+    // custom headers → no preflight); ACAO:* is enough. Writes stay protected
+    // by Basic auth, so opening reads carries no extra mutation surface.
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     esp_err_t r = httpd_resp_sendstr(req, str);
     cJSON_free(str);
     return r;
@@ -1272,8 +1286,16 @@ static void start_mdns() {
         return;
     }
     mdns_hostname_set("pixfrog");
-    mdns_instance_name_set(config::get_global().short_name);
-    mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0);
+    const auto& g = config::get_global();
+    mdns_instance_name_set(g.short_name);
+    // TXT record lets the aggregated UI tell pixfrogs apart from other
+    // _http._tcp hosts on the LAN, and carries the human node name + firmware.
+    mdns_txt_item_t txt[3] = {
+        { "product", "pixfrog" },
+        { "node", g.short_name },
+        { "fw", esp_app_get_description()->version },
+    };
+    mdns_service_add(nullptr, "_http", "_tcp", 80, txt, 3);
     g_mdns_up = true;
     ESP_LOGI(TAG, "mDNS: pixfrog.local");
 }
@@ -1308,6 +1330,94 @@ static esp_err_t handle_autopatch(httpd_req_t* req) {
     cJSON_AddBoolToObject(root, "ok", true);
     cJSON_AddNumberToObject(root, "next_free", next);
     return send_json(req, root);
+}
+
+// ── GET /api/peers ──────────────────────────────────────────────────────────
+// Browse the LAN for other pixfrogs (mDNS PTR on _http._tcp, filtered by the
+// product=pixfrog TXT record) so the SPA can build the multi-node UI. Self is
+// always listed first with self:true. The mDNS browse blocks, so the JSON is
+// cached briefly to keep the SPA's periodic poll from stalling the server.
+
+static const char* txt_value(const mdns_result_t* r, const char* key) {
+    for (size_t i = 0; i < r->txt_count; ++i)
+        if (r->txt[i].key && strcmp(r->txt[i].key, key) == 0) return r->txt[i].value;
+    return nullptr;
+}
+
+static void build_peers_json(char* out, size_t cap) {
+    char self_ip[16]   = "";
+    const uint32_t cur = ui::get_ip();
+    if (cur) fmt_ip(self_ip, sizeof(self_ip), cur);
+    const auto& g = config::get_global();
+
+    char seen[16][16];
+    size_t nseen = 0;
+    snprintf(seen[nseen++], sizeof(seen[0]), "%s", self_ip);
+
+    cJSON* arr = cJSON_CreateArray();
+    cJSON* me  = cJSON_CreateObject();
+    cJSON_AddStringToObject(me, "name", g.short_name);
+    cJSON_AddStringToObject(me, "ip", self_ip);
+    cJSON_AddNumberToObject(me, "port", 80);
+    cJSON_AddStringToObject(me, "fw", esp_app_get_description()->version);
+    cJSON_AddBoolToObject(me, "self", true);
+    cJSON_AddItemToArray(arr, me);
+
+    mdns_result_t* res = nullptr;
+    if (mdns_query_ptr("_http", "_tcp", 750, 16, &res) == ESP_OK) {
+        for (mdns_result_t* r = res; r; r = r->next) {
+            const char* product = txt_value(r, "product");
+            if (!product || strcmp(product, "pixfrog") != 0) continue;
+
+            char ip[16] = "";
+            for (mdns_ip_addr_t* a = r->addr; a; a = a->next) {
+                if (a->addr.type == ESP_IPADDR_TYPE_V4) {
+                    const uint8_t* b = reinterpret_cast<const uint8_t*>(&a->addr.u_addr.ip4.addr);
+                    snprintf(ip, sizeof(ip), "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
+                    break;
+                }
+            }
+            if (ip[0] == '\0') continue;
+            bool dup = false;
+            for (size_t i = 0; i < nseen; ++i)
+                if (strcmp(seen[i], ip) == 0) {
+                    dup = true;
+                    break;
+                }
+            if (dup || nseen >= 16) continue;
+            snprintf(seen[nseen++], sizeof(seen[0]), "%s", ip);
+
+            const char* node = txt_value(r, "node");
+            const char* fw   = txt_value(r, "fw");
+            cJSON* o         = cJSON_CreateObject();
+            cJSON_AddStringToObject(
+                o, "name", node ? node : (r->instance_name ? r->instance_name : "pixfrog"));
+            cJSON_AddStringToObject(o, "ip", ip);
+            cJSON_AddNumberToObject(o, "port", r->port ? r->port : 80);
+            cJSON_AddStringToObject(o, "fw", fw ? fw : "");
+            cJSON_AddBoolToObject(o, "self", false);
+            cJSON_AddItemToArray(arr, o);
+        }
+        mdns_query_results_free(res);
+    }
+
+    char* str = cJSON_PrintUnformatted(arr);
+    cJSON_Delete(arr);
+    snprintf(out, cap, "%s", str ? str : "[]");
+    if (str) cJSON_free(str);
+}
+
+static esp_err_t handle_get_peers(httpd_req_t* req) {
+    static char cache[2048];
+    static int64_t cache_us = 0;
+    const int64_t now       = esp_timer_get_time();
+    if (cache[0] == '\0' || now - cache_us > 5'000'000) {
+        build_peers_json(cache, sizeof(cache));
+        cache_us = now;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_sendstr(req, cache);
 }
 
 }  // namespace
@@ -1395,6 +1505,10 @@ void start() {
         { .uri      = "/api/status",
           .method   = HTTP_GET,
           .handler  = handle_get_status,
+          .user_ctx = nullptr },
+        { .uri      = "/api/peers",
+          .method   = HTTP_GET,
+          .handler  = handle_get_peers,
           .user_ctx = nullptr },
         { .uri      = "/api/coredump",
           .method   = HTTP_GET,

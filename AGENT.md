@@ -63,10 +63,19 @@ Controlled by `GlobalConfig::web_enabled` (NVS-backed, default **off**). No TCP 
 opened while the flag is off — opt-in only. Toggle from the Network submenu, via
 `global web_enabled 0|1` in the UART console, or via POST `/api/global`.
 
-REST endpoints: `GET /` (SPA), `GET /api/config`, `GET /api/backup`, `POST /api/restore`,
-`POST /api/global`, `POST /api/channel/{0..7}[/identify]`, `POST /api/scene/{0..7}[/play]`,
+REST endpoints: `GET /` (SPA), `GET /api/config`, `GET /api/status`, `GET /api/peers`,
+`GET /api/backup`, `POST /api/restore`, `POST /api/global`,
+`POST /api/channel/{0..7}[/identify]`, `POST /api/scene/{0..7}[/play]`,
 `POST /api/scenes/stop`, `POST /api/ota` (raw .bin body), `POST /api/reboot`,
 `POST /api/factory-reset`. All JSON.
+
+Multi-node: `GET /api/peers` browses mDNS for sibling pixfrogs (filtered on the
+`product=pixfrog` TXT record, self listed first). With several boxes the SPA
+shows a device bar, an aggregated channel grid on the dashboard (cross-origin
+`GET /api/status`+`/api/config`), and configures each remote box through its own
+UI in an `iframe` (`/?embed=1` hides the device bar in the framed child) — no
+cross-origin writes. All JSON GET responses carry `Access-Control-Allow-Origin: *`
+(simple read-only requests, no preflight); writes stay behind Basic auth.
 
 Auth: HTTP Basic on every POST (GETs stay open), enabled by setting an admin
 password (`web_password` via the SPA, `/api/global`, or UART

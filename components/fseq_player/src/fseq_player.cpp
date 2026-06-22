@@ -416,6 +416,8 @@ bool init(const InitConfig& cfg) {
     g_init_done = true;
 
     // Try an immediate mount; the monitor task will retry every second if absent.
+    // The driver's per-attempt errors when no card is present are demoted to
+    // debug by the web log tee (web_config log_vprintf), not muted here.
     do_mount();
 
     const BaseType_t ok = xTaskCreate(sd_monitor_task, "sd_mon", 4096, nullptr, 2, nullptr);
