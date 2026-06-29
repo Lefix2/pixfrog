@@ -55,9 +55,15 @@ bool is_link_up() {
 
 namespace {
 
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+constexpr int kFbW  = 142;
+constexpr int kFbH  = 428;
+constexpr int kZoom = 3;  // window = 426x1284
+#else
 constexpr int kFbW  = 320;
 constexpr int kFbH  = 240;
 constexpr int kZoom = 3;  // window = 960x720
+#endif
 
 // ── stdin command queue (filled by reader thread, drained on main thread) ─────
 std::mutex g_cmd_mtx;

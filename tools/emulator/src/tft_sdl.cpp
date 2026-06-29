@@ -19,8 +19,13 @@ namespace pixfrog::ui::detail {
 
 namespace {
 
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+constexpr int kW = 142;  // portrait width  (NV3007)
+constexpr int kH = 428;  // portrait height (NV3007)
+#else
 constexpr int kW = 320;  // landscape width
 constexpr int kH = 240;  // landscape height
+#endif
 
 uint16_t s_fb[kW * kH];  // native-endian RGB565
 

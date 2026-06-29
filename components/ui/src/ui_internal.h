@@ -54,10 +54,15 @@ constexpr Color Transparent{ 0xFFFF };
 
 // ── Display layout ────────────────────────────────────────────────────────────
 
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#if defined(CONFIG_PIXFROG_DISPLAY_TFT) || defined(CONFIG_PIXFROG_DISPLAY_NV3007)
 constexpr uint8_t kDisplayScale = 2;
+  #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+constexpr uint8_t kRows         = 18;  // (428 - 26) / 22 visible rows (portrait)
+constexpr uint8_t kCols         = 11;  // 142 / (6*2) chars at scale 2
+  #else
 constexpr uint8_t kRows         = 8;   // (240 - 28) / 24 visible rows (landscape)
 constexpr uint8_t kCols         = 26;  // 320 / (6*2)
+  #endif
 #else
 constexpr uint8_t kDisplayScale = 1;
 constexpr uint8_t kRows         = 8;

@@ -11,16 +11,21 @@ menu "Display backend"
 
         config PIXFROG_DISPLAY_TFT
             bool "TFT ST7789V / ILI9341 (SPI 320x240 landscape)"
+
+        config PIXFROG_DISPLAY_NV3007
+            bool "TFT NV3007 (SPI 142x428 portrait, 2.79\")"
     endchoice
 
     config PIXFROG_TFT_WIDTH
-        int "TFT logical width in pixels (landscape)"
-        depends on PIXFROG_DISPLAY_TFT
+        int "TFT logical width in pixels"
+        depends on PIXFROG_DISPLAY_TFT || PIXFROG_DISPLAY_NV3007
+        default 142 if PIXFROG_DISPLAY_NV3007
         default 320
 
     config PIXFROG_TFT_HEIGHT
-        int "TFT logical height in pixels (landscape)"
-        depends on PIXFROG_DISPLAY_TFT
+        int "TFT logical height in pixels"
+        depends on PIXFROG_DISPLAY_TFT || PIXFROG_DISPLAY_NV3007
+        default 428 if PIXFROG_DISPLAY_NV3007
         default 240
 
 endmenu

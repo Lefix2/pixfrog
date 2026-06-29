@@ -1,6 +1,7 @@
 // Emulator-facing accessors for the SDL TFT backend (tft_sdl.cpp).
-// Exposes the internal 320x240 RGB565 framebuffer so main_emulator.cpp can
-// upload it to an SDL texture / save it as a screenshot.
+// Exposes the internal RGB565 framebuffer (320x240 landscape or 142x428 NV3007
+// portrait) so main_emulator.cpp can upload it to an SDL texture / save it as
+// a screenshot.
 
 #pragma once
 

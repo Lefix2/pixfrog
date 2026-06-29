@@ -43,7 +43,7 @@ add_executable(pixfrog_emu
     src/main_emulator.cpp
 )
 
-target_compile_definitions(pixfrog_emu PRIVATE CONFIG_PIXFROG_DISPLAY_TFT PIXFROG_EMULATOR)
+target_compile_definitions(pixfrog_emu PRIVATE CONFIG_PIXFROG_DISPLAY_TFT CONFIG_PIXFROG_DISPLAY_NV3007 PIXFROG_EMULATOR)
 
 target_include_directories(pixfrog_emu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/shims          # driver/i2c_master.h shim (must precede IDF)

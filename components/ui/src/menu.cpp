@@ -43,27 +43,52 @@ static void draw_row(uint8_t row, uint8_t col, const char* str) {
 
 // ── TFT layout ────────────────────────────────────────────────────────────────
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+// NV3007 portrait 142×428 layout
+constexpr int kTW    = 142;         // TFT width  (portrait)
+constexpr int kTH    = 428;         // TFT height (portrait)
+constexpr int kHdrH  = 26;          // header bar height
+constexpr int kItemH = 20;          // list item height
+constexpr int kTxtSc = 2;           // scale for headers / edit-screen values (12x16)
+constexpr int kLstSc = 1;           // scale for list-item text (6x8, fits 142px)
+constexpr int kTxtH  = 8 * kTxtSc;  // 16px (header/edit text height)
+constexpr int kTxtYBias = 2;
+constexpr int kPad      = (kItemH - kFontHeight) / 2;  // vertical offset for list items
+constexpr int kIndent   = 4;                            // left margin
+constexpr int kMaxVis   = (kTH - kHdrH) / kItemH;      // 20 visible items
+constexpr int kBadge    = kItemH - 6;                   // square channel-badge side (14px)
+constexpr int kGutter   = kIndent + kBadge + 4;         // label x: 22px
+constexpr int kChevW    = kFontCellWidth * kLstSc;      // chevron glyph width (6px)
+#else
+// ST7789 landscape 320×240 layout
 constexpr int kTW    = 320;         // TFT width  (landscape)
 constexpr int kTH    = 240;         // TFT height (landscape)
 constexpr int kHdrH  = 28;          // header bar height
 constexpr int kItemH = 24;          // list item height
 constexpr int kTxtSc = 2;           // standard text scale (12x16 per char)
+constexpr int kLstSc = 2;           // same as kTxtSc for landscape
 constexpr int kTxtH  = 8 * kTxtSc;  // 16px
 // +2: glyph ink sits in the upper ~12 of the 16px cell (descender space below),
 // so centring the full cell reads high — nudge text down to centre the ink.
 constexpr int kTxtYBias = 2;
 constexpr int kPad      = (kItemH - kTxtH) / 2 + kTxtYBias;  // vertical text offset in item
-constexpr int kIndent   = 6;                                 // left margin
-constexpr int kMaxVis   = (kTH - kHdrH) / kItemH;            // 8 visible items
-constexpr int kBadge    = kItemH - 6;                        // square channel-badge side (18px)
-constexpr int kGutter   = 5 + kBadge + 6;                    // label x: clears the badge column
-constexpr int kChevW    = kFontCellWidth * kTxtSc;           // chevron glyph width (12px)
+constexpr int kIndent   = 6;                                   // left margin
+constexpr int kMaxVis   = (kTH - kHdrH) / kItemH;             // 8 visible items
+constexpr int kBadge    = kItemH - 6;                          // square channel-badge side (18px)
+constexpr int kGutter   = 5 + kBadge + 6;                      // label x: clears the badge column
+constexpr int kChevW    = kFontCellWidth * kTxtSc;             // chevron glyph width (12px)
+#endif
 
 // Shared screen header: dark bar + signature-green accent line + title.
 void draw_tft_header(const char* title, Color title_col = color::Cream) {
     canvas_fill_rect(0, 0, kTW, kHdrH - 2, color::HeaderBg);
     canvas_fill_rect(0, kHdrH - 2, kTW, 2, color::FrogLine);
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // Scale 1 so even long titles like "EDIT ARTNET_LONG" fit in 142px.
+    canvas_draw_text(kIndent, (kHdrH - kFontHeight) / 2, title, title_col, color::HeaderBg, 1);
+#else
     canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, title_col, color::HeaderBg, kTxtSc);
+#endif
 }
 
 // Small-font status capsule over a solid backdrop; returns the x past it.
@@ -83,16 +108,25 @@ int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
 
 // Channel-number badge: AA rounded square with the digit drawn on a transparent
 // background so its ink composites over the badge and never squares off the
-// rounded corners. Digit ink sits in the upper ~13 rows of the 12×16 cell, so
-// bias the cell down a touch to centre the visible glyph in the square.
+// rounded corners.
 void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col, Color behind) {
     canvas_fill_round_rect_aa(x, y, side, side, 4, badge_col, behind);
     char num[8];
     std::snprintf(num, sizeof(num), "%d", number);
-    const int cw = kFontCellWidth * kTxtSc;  // one digit = 12 px wide
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // Scale 1: a digit is 6×8 — centred in the 14px badge.
+    const int cw = kFontCellWidth;
+    const int ch = kFontHeight;
     const int tx = x + (side - cw) / 2;
-    const int ty = y + (side - kTxtH) / 2 + 2;  // +2: glyph ink is top-weighted
+    const int ty = y + (side - ch) / 2;
+    canvas_draw_text(tx, ty, num, num_col, color::Transparent, 1);
+#else
+    // Scale 2: digit ink sits in the upper ~13 rows of the 12×16 cell, bias down.
+    const int cw = kFontCellWidth * kTxtSc;  // 12 px wide
+    const int tx = x + (side - cw) / 2;
+    const int ty = y + (side - kTxtH) / 2 + 2;
     canvas_draw_text(tx, ty, num, num_col, color::Transparent, kTxtSc);
+#endif
 }
 
 // Right-aligned standard-scale text; returns the x where the text starts.
@@ -511,22 +545,31 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         if (it.back) {
             // Back-arrow glyph in the badge column, label in the signature green.
             draw_back_arrow(kGutter, ry, kItemH, color::FrogLine);
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+            canvas_draw_text(kGutter + 10, ry + kPad, it.label, color::FrogLine, text_bg, kLstSc);
+#else
             canvas_draw_text(kGutter + 18, ry + kPad, it.label, color::FrogLine, text_bg, kTxtSc);
+#endif
             continue;
         }
         if (it.badge >= 0) {
             const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
                                                                     : color::Black;
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+            draw_badge(kIndent, ry + (kItemH - kBadge) / 2, kBadge, it.badge + 1,
+                       it.badge_col, num_col, text_bg);
+#else
             draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, text_bg);
+#endif
         }
-        canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
+        canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kLstSc);
 
         const int chev_x = kTW - kChevW - kIndent;
-        if (!no_chevron) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
+        if (!no_chevron) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kLstSc);
         if (it.value && it.value[0]) {
-            const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
-            const int vend = no_chevron ? (kTW - kIndent) : (chev_x - 6);
-            canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
+            const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kLstSc;
+            const int vend = no_chevron ? (kTW - kIndent) : (chev_x - 4);
+            canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kLstSc);
         }
     }
     // Scrollbar: a full-height track with a proportional thumb so the list
@@ -571,6 +614,151 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 void render_home() {
     char line[48];
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 portrait 142×428 dashboard ─────────────────────────────────────
+    // Header 26 | network+fps 22 | services 22 | col-hdr 17 | 8×40px 2-line rows.
+    constexpr int kInfoH   = 22;
+    constexpr int kSvcH    = 22;
+    constexpr int kColHdrH = 17;   // col header height (last row is the divider line)
+    constexpr int kChH     = 40;   // two-line channel row
+    constexpr int kChL1H   = 22;   // line-1 (badge + protocol) height within the row
+    constexpr int kDotD    = 8;    // activity dot diameter
+
+    canvas_clear(color::Black);
+
+    const auto stats = dmx::get_stats();
+    const auto& g    = config::get_global();
+
+    // ── Header: "pixfrog" wordmark + link pill ────────────────────────────────
+    canvas_fill_rect(0, 0, kTW, kHdrH - 2, color::HeaderBg);
+    canvas_fill_rect(0, kHdrH - 2, kTW, 2, color::FrogLine);
+    // Scale 1 so the link pill still fits in 142px.
+    canvas_draw_text(kIndent, (kHdrH - kFontHeight) / 2, "pixfrog",
+                     color::FrogLine, color::HeaderBg, 1);
+    if (!config::is_persistence_ok()) {
+        draw_pill(kIndent + 7 * kFontCellWidth + 4, (kHdrH - 2 - kPillH) / 2,
+                  "NVS!", color::Red, color::Black, color::HeaderBg);
+    }
+    {
+        const char* link_txt = ui::is_link_up() ? "LINK" : "NO LINK";
+        const Color link_bg  = ui::is_link_up() ? color::BadgeGreen : color::Red;
+        draw_pill(kTW - pill_width(link_txt) - kIndent, (kHdrH - 2 - kPillH) / 2,
+                  link_txt, link_bg, color::Black, color::HeaderBg);
+    }
+
+    // ── Network row: IP + DHCP/STATIC | fps right ────────────────────────────
+    // "192.168.1.100 D" (15 chars=90px) + "60fps" (5 chars right) fit in 142px.
+    int ry = kHdrH;
+    canvas_fill_rect(0, ry, kTW, kInfoH, color::AltRowBg);
+    const int iy      = ry + (kInfoH - kFontHeight) / 2;
+    const uint32_t ip = ui::get_ip();
+    if (ip == 0) {
+        canvas_draw_text(kIndent, iy, "no addr", color::DarkGray, color::AltRowBg, 1);
+    } else {
+        std::snprintf(line, sizeof(line), "%u.%u.%u.%u",
+                      static_cast<unsigned>((ip >> 24) & 0xFFu),
+                      static_cast<unsigned>((ip >> 16) & 0xFFu),
+                      static_cast<unsigned>((ip >> 8) & 0xFFu),
+                      static_cast<unsigned>(ip & 0xFFu));
+        canvas_draw_text(kIndent, iy, line, color::White, color::AltRowBg, 1);
+        const int ip_end = kIndent + static_cast<int>(std::strlen(line)) * kFontCellWidth;
+        canvas_draw_text(ip_end + 4, iy, g.use_dhcp ? "D" : "S", color::DarkGray, color::AltRowBg, 1);
+    }
+    {
+        std::snprintf(line, sizeof(line), "%lufps",
+                      static_cast<unsigned long>(stats.current_fps));
+        canvas_draw_text(kTW - static_cast<int>(std::strlen(line)) * kFontCellWidth - kIndent,
+                         iy, line, color::Gold, color::AltRowBg, 1);
+    }
+
+    // ── Services row: sACN / WEB / Hz pills | source or RX count right ─────────
+    ry          += kInfoH;
+    int px       = kIndent;
+    const int py = ry + (kSvcH - kPillH) / 2;
+    px = draw_pill(px, py, "sACN", g.sacn_enabled ? color::BadgeGreen : color::HeaderBg,
+                   g.sacn_enabled ? color::Black : color::DarkGray, color::Black);
+    px = draw_pill(px, py, "WEB",  g.web_enabled  ? color::BadgeGreen : color::HeaderBg,
+                   g.web_enabled  ? color::Black : color::DarkGray, color::Black);
+    std::snprintf(line, sizeof(line), "%uHz", g.refresh_rate_hz);
+    draw_pill(px, py, line, color::HeaderBg, color::DarkGray, color::Black);
+    {
+        const char* mark = nullptr;
+        Color mark_col   = color::Black;
+        const int scene  = dmx::active_scene();
+        char scene_nm[10];
+        if (output::get_calibration_mode() >= 0) {
+            mark = "TEST PAT"; mark_col = color::Orange;
+        } else if (dmx::fseq_is_active()) {
+            mark = "FSEQ PLY"; mark_col = color::Gold;
+        } else if (scene >= 0) {
+            truncate(scene_nm, sizeof(scene_nm),
+                     config::get_scene(static_cast<size_t>(scene)).name);
+            std::snprintf(line, sizeof(line), ">%s", scene_nm);
+            mark = line; mark_col = color::Gold;
+        } else {
+            (void)scene_nm;  // no active source, nothing to show on the right
+        }
+        if (mark) {
+            canvas_draw_text(kTW - static_cast<int>(std::strlen(mark)) * kFontCellWidth - kIndent,
+                             ry + (kSvcH - kFontHeight) / 2, mark, mark_col, color::Black, 1);
+        }
+    }
+
+    // ── Column header ──────────────────────────────────────────────────────────
+    ry          += kSvcH;
+    const int ly = ry + (kColHdrH - 1 - kFontHeight) / 2;
+    canvas_draw_text(kIndent, ly, "CH", color::DarkGray, color::Black, 1);
+    canvas_draw_text(kGutter + 2, ly, "PROTOCOL", color::DarkGray, color::Black, 1);
+    canvas_draw_text(kTW - kFontCellWidth - kDotD / 2 - kIndent, ly, "A",
+                     color::DarkGray, color::Black, 1);
+    canvas_hline(0, ry + kColHdrH - 1, kTW, color::DarkGray);
+
+    // ── Channel rows (8 × 40px, 2-line layout) ─────────────────────────────────
+    ry += kColHdrH;
+    for (int i = 0; i < 8; ++i) {
+        const int cy       = ry + i * kChH;
+        const Color row_bg = (i & 1) ? color::AltRowBg : color::Black;
+        canvas_fill_rect(0, cy, kTW, kChH, row_bg);
+
+        const auto& cc = config::get_channel(i);
+        const bool off = led::is_off(cc.protocol);
+
+        // Line 1: badge + protocol at scale 2 + activity dot
+        const int l1y = cy + (kChL1H - kTxtH) / 2 + kTxtYBias;
+        draw_badge(kIndent, cy + (kChL1H - kBadge) / 2, kBadge, i + 1,
+                   badge_color(cc.protocol), off ? color::LightGray : color::Black, row_bg);
+        canvas_draw_text(kGutter, l1y, protocol_name(cc.protocol),
+                         off ? color::DarkGray : color::Cream, row_bg, kTxtSc);
+
+        const bool ok    = dmx::is_channel_capacity_ok(i);
+        const bool fsafe = dmx::is_channel_failsafe(i);
+        const Color act_col = off                       ? color::HeaderBg
+                            : !ok                       ? color::Red
+                            : fsafe                     ? color::Orange
+                            : dmx::is_channel_active(i) ? color::FrogLine
+                                                        : color::DarkGray;
+        canvas_fill_round_rect_aa(kTW - kDotD - kIndent, cy + (kChL1H - kDotD) / 2,
+                                  kDotD, kDotD, kDotD / 2, act_col, row_bg);
+
+        // Line 2: universe + pixels + brightness at scale 1
+        if (!off) {
+            const int l2y   = cy + kChL1H + (kChH - kChL1H - kFontHeight) / 2;
+            const int col_w = (kTW - 2 * kIndent) / 3;
+
+            std::snprintf(line, sizeof(line), "U:%u", cc.universe_start);
+            canvas_draw_text(kIndent, l2y, line, ok ? color::Gold : color::Red, row_bg, 1);
+
+            std::snprintf(line, sizeof(line), "P:%u", cc.pixel_count);
+            canvas_draw_text(kIndent + col_w, l2y, line, color::LightGray, row_bg, 1);
+
+            if (!led::is_dmx(cc.protocol)) {
+                std::snprintf(line, sizeof(line), "B:%u%%",
+                              (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
+                canvas_draw_text(kIndent + 2 * col_w, l2y, line, color::LightGray, row_bg, 1);
+            }
+        }
+    }
+#else
     // ── TFT dashboard ────────────────────────────────────────────────────────
     // Header 28 | network 24 | services 18 | column header 14 | 8×19 channels.
     constexpr int kInfoH   = 24;
@@ -719,6 +907,7 @@ void render_home() {
         canvas_fill_round_rect_aa(kColDot, cy + (kChH - kDotD) / 2, kDotD, kDotD, kDotD / 2,
                                   act_col, row_bg);
     }
+#endif  // !CONFIG_PIXFROG_DISPLAY_NV3007
 #else
     // ── OLED classic home ─────────────────────────────────────────────────────
     canvas_clear();
