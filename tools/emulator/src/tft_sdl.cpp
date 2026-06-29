@@ -20,8 +20,8 @@ namespace pixfrog::ui::detail {
 namespace {
 
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-constexpr int kW = 142;  // portrait width  (NV3007)
-constexpr int kH = 428;  // portrait height (NV3007)
+constexpr int kW = 428;  // NV3007 rotated 90° → landscape width  (2.79")
+constexpr int kH = 142;  // NV3007 rotated 90° → landscape height
 #else
 constexpr int kW = 320;  // landscape width
 constexpr int kH = 240;  // landscape height

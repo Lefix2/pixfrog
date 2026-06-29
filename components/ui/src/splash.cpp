@@ -16,14 +16,13 @@ namespace pixfrog::ui::detail {
 namespace {
 
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-// NV3007 portrait: frog centred at top, wordmark below.
-constexpr int kW    = 142;
-constexpr int kH    = 428;
-constexpr int kFrogX = 1;   // (142 - 140) / 2 — frog is 140px wide
-constexpr int kFrogY = 20;  // top margin
+// NV3007 rotated 90° → 428×142 landscape: frog left, wordmark right.
+constexpr int kW     = 428;
+constexpr int kH     = 142;
+constexpr int kFrogX = 16;
 #else
-constexpr int kW    = 320;
-constexpr int kH    = 240;
+constexpr int kW = 320;
+constexpr int kH = 240;
 // Frog window: left of the wordmark, vertically centred.
 constexpr int kFrogX = 10;
 #endif
@@ -42,29 +41,8 @@ bool splash_render(uint32_t t_ms, bool clicked) {
 
     canvas_clear(color::FrogBg);
 
-#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-    // Portrait layout: frog centred at top, wordmark + subtitle stacked below.
-    const int textTop = kFrogY + fh + 18;
-    canvas_draw_mask(kFrogX, kFrogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
-    // "pixfrog" in XL font, centred on the 142px panel.
-    const int xlW  = canvas_text_xl_width("pixfrog");
-    canvas_draw_text_xl((kW - xlW) / 2, textTop, "pixfrog", color::Cream, color::FrogBg);
-    // Subtitle centred at scale 1 (6px/char).
-    constexpr const char* kSub = "ARTNET . LED DRIVER";
-    int sub_len = 0;
-    for (const char* p = kSub; *p; ++p) ++sub_len;
-    canvas_draw_text((kW - sub_len * kFontCellWidth) / 2,
-                     textTop + kFontXLHeight + 8, kSub,
-                     color::SplashSub, color::FrogBg, 1);
-    // Version string centred.
-    const char* ver = fw_version();
-    int ver_len     = 0;
-    while (ver[ver_len]) ++ver_len;
-    canvas_draw_text((kW - ver_len * kFontCellWidth) / 2,
-                     textTop + kFontXLHeight + 20, ver,
-                     color::SplashSub, color::FrogBg, 1);
-#else
-    // Landscape layout: frog left, wordmark right.
+    // Landscape layout: frog left, wordmark right (ST7789 320×240 and NV3007
+    // rotated 428×142 share this).
     const int frogY    = (kH - fh) / 2;
     const int wx       = kFrogX + fw + 12;
     const int titleTop = kH / 2 - kFontXLHeight / 2 - 6;
@@ -74,7 +52,6 @@ bool splash_render(uint32_t t_ms, bool clicked) {
     canvas_draw_text(wx, titleTop + kFontXLHeight + 16, fw_version(), color::SplashSub,
                      color::FrogBg, 1);
     canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
-#endif
 
     canvas_flush();
     return false;

@@ -56,9 +56,9 @@ bool is_link_up() {
 namespace {
 
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-constexpr int kFbW  = 142;
-constexpr int kFbH  = 428;
-constexpr int kZoom = 3;  // window = 426x1284
+constexpr int kFbW  = 428;  // NV3007 rotated 90° → landscape
+constexpr int kFbH  = 142;
+constexpr int kZoom = 3;  // window = 1284x426
 #else
 constexpr int kFbW  = 320;
 constexpr int kFbH  = 240;

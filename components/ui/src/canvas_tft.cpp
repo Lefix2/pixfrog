@@ -25,9 +25,14 @@ bool s_force_full  = true;  // first flush pushes everything
 
 // Per-band staging buffer (internal RAM, DMA-safe): the flush copies each
 // changed band here before tft_draw_bitmap, so the panel DMA never sources
-// from PSRAM. 320 px × up to 32 rows.
+// from PSRAM. Sized to the widest supported panel × up to 32 rows.
 constexpr int kBandRows = 32;
-static uint16_t s_band_buf[320 * kBandRows];
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+constexpr int kMaxWidth = 428;  // NV3007 rotated 90° → 428px wide
+#else
+constexpr int kMaxWidth = 320;
+#endif
+static uint16_t s_band_buf[kMaxWidth * kBandRows];
 
 // ST7789 expects big-endian RGB565; swap bytes since ESP32 is little-endian.
 inline uint16_t to_hw(Color c) {
@@ -38,7 +43,7 @@ bool ensure_fb() {
     if (s_back) return true;
     s_W = tft_width();
     s_H = tft_height();
-    if (s_W <= 0 || s_H <= 0 || s_W > 320) return false;
+    if (s_W <= 0 || s_H <= 0 || s_W > kMaxWidth) return false;
     const unsigned long n = static_cast<unsigned long>(s_W) * s_H;
     s_back                = static_cast<uint16_t*>(tft_fb_alloc(n * sizeof(uint16_t)));
     s_shadow              = static_cast<uint16_t*>(tft_fb_alloc(n * sizeof(uint16_t)));
