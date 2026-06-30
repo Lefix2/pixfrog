@@ -38,7 +38,7 @@ constexpr uint8_t kOledCols = 21;
 // ── Canvas text helpers ───────────────────────────────────────────────────────
 // Thin wrappers that map OLED-style (row, col) coordinates to pixel coords.
 
-static void draw_row(uint8_t row, uint8_t col, const char* str) {
+[[maybe_unused]] static void draw_row(uint8_t row, uint8_t col, const char* str) {
     canvas_draw_text(col * kFontCellWidth, row * kFontHeight, str, color::White);
 }
 
@@ -213,7 +213,7 @@ int pill_width(const char* txt) {
     return static_cast<int>(std::strlen(txt)) * kFontCellWidth + 12;
 }
 
-int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
+[[maybe_unused]] int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
     const int w = pill_width(txt);
     canvas_fill_round_rect_aa(x, y, w, kPillH, kPillH / 2, bg, behind);
     // Small-font caps ink spans rows 0..5 of the 8px cell: +4 centres it.
@@ -224,7 +224,7 @@ int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
 // Channel-number badge: AA rounded square with the digit drawn on a transparent
 // background so its ink composites over the badge and never squares off the
 // rounded corners.
-void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col, Color behind) {
+[[maybe_unused]] void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col, Color behind) {
     canvas_fill_round_rect_aa(x, y, side, side, 4, badge_col, behind);
     char num[8];
     std::snprintf(num, sizeof(num), "%d", number);
@@ -245,14 +245,14 @@ void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_c
 }
 
 // Right-aligned standard-scale text; returns the x where the text starts.
-int draw_text_r(int x_end, int y, const char* txt, Color fg, Color bg) {
+[[maybe_unused]] int draw_text_r(int x_end, int y, const char* txt, Color fg, Color bg) {
     const int x = x_end - static_cast<int>(std::strlen(txt)) * kFontCellWidth * kTxtSc;
     canvas_draw_text(x, y, txt, fg, bg, kTxtSc);
     return x;
 }
 
 // Packet counters outgrow their column fast; keep them to ≤6 glyphs.
-void fmt_count(char* out, size_t cap, uint64_t v) {
+[[maybe_unused]] void fmt_count(char* out, size_t cap, uint64_t v) {
     if (v < 1'000'000ull)
         std::snprintf(out, cap, "%llu", static_cast<unsigned long long>(v));
     else if (v < 1'000'000'000ull)
@@ -598,7 +598,7 @@ ListItem back_item(const char* label = "Back") {
 // edge. The offset persists in s.scroll across renders, so coming back up
 // un-sticks the cursor from the last row instead of dragging the whole list.
 // Returns the index of the first visible row.
-uint8_t viewport_first(uint8_t cursor, uint8_t count, uint8_t visible) {
+[[maybe_unused]] uint8_t viewport_first(uint8_t cursor, uint8_t count, uint8_t visible) {
     if (count <= visible) {
         s.scroll = 0;
         return 0;
@@ -612,7 +612,7 @@ uint8_t viewport_first(uint8_t cursor, uint8_t count, uint8_t visible) {
 }
 
 // Off-focus rows fade with their distance from the cursor (1 = nearest).
-Color fade_gray(int d) {
+[[maybe_unused]] Color fade_gray(int d) {
     static const Color g[] = { color::LightGray, Color{ 0x8C71 }, Color{ 0x5AEB },
                                color::DarkGray };
     if (d < 1) d = 1;
@@ -653,7 +653,7 @@ void draw_list_item_col(const ListItem& it, bool sel, int x0, int colW, int ry, 
         const int cy        = ry + (kRowH - kChip) / 2;
         const Color num_col = (it.badge_col == color::DarkGray) ? color::DimGreen : color::Black;
         canvas_fill_round_rect_aa(x, cy, kChip, kChip, 4, it.badge_col, bg);
-        char n[4];
+        char n[8];
         std::snprintf(n, sizeof(n), "%d", it.badge + 1);
         canvas_draw_text_f(x + (kChip - body_w(n)) / 2, cy + (kChip - canvas_font_h(FontId::Body)) / 2,
                            n, num_col, color::Transparent, FontId::Body);
