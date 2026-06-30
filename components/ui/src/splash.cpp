@@ -41,9 +41,20 @@ bool splash_render(uint32_t t_ms, bool clicked) {
 
     canvas_clear(color::FrogBg);
 
-    // Landscape layout: frog left, wordmark right (ST7789 320×240 and NV3007
-    // rotated 428×142 share this).
-    const int frogY    = (kH - fh) / 2;
+    // Landscape layout: frog left, wordmark right.
+    const int frogY = (kH - fh) / 2;
+    canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // NV3007: big native Mega wordmark + tagline + version, vertically centred.
+    const int wx       = kFrogX + fw + 16;
+    const int wordH    = canvas_font_h(FontId::Mega);
+    const int titleTop = kH / 2 - wordH / 2 - 10;
+    canvas_draw_text_f(wx, titleTop, "pixfrog", color::Cream, color::FrogBg, FontId::Mega);
+    canvas_draw_text(wx + 1, titleTop + wordH + 4, "ARTNET . LED DRIVER", color::Gold,
+                     color::FrogBg, 1);
+    canvas_draw_text(wx + 1, titleTop + wordH + 16, fw_version(), color::SplashSub, color::FrogBg,
+                     1);
+#else
     const int wx       = kFrogX + fw + 12;
     const int titleTop = kH / 2 - kFontXLHeight / 2 - 6;
     canvas_draw_text_xl(wx, titleTop, "pixfrog", color::Cream, color::FrogBg);
@@ -51,7 +62,7 @@ bool splash_render(uint32_t t_ms, bool clicked) {
                      color::FrogBg, 1);
     canvas_draw_text(wx, titleTop + kFontXLHeight + 16, fw_version(), color::SplashSub,
                      color::FrogBg, 1);
-    canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
+#endif
 
     canvas_flush();
     return false;

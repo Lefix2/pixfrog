@@ -276,6 +276,73 @@ int canvas_text_xl_width(const char* str) {
     return n * kFontXLCellWidth;
 }
 
+// ── Multi-font text (native cells, no scaling) ──────────────────────────────
+namespace {
+struct FontDesc {
+    const uint8_t* (*glyph)(char);
+    int cell_w, cell_h;
+};
+FontDesc font_desc(FontId f) {
+    switch (f) {
+    case FontId::Body: return { font_body_alpha_for, kFontBodyCellWidth, kFontBodyHeight };
+    case FontId::Large: return { font_large_alpha_for, kFontLargeCellWidth, kFontLargeHeight };
+    case FontId::Mega: return { font_mega_alpha_for, kFontMegaCellWidth, kFontMegaHeight };
+    case FontId::XL: return { font_xl_alpha_for, kFontXLCellWidth, kFontXLHeight };
+    case FontId::Small:
+    default: return { font_alpha_for, kFontCellWidth, kFontHeight };
+    }
+}
+}  // namespace
+
+int canvas_font_adv(FontId f) {
+    return font_desc(f).cell_w;
+}
+int canvas_font_h(FontId f) {
+    return font_desc(f).cell_h;
+}
+int canvas_text_w(const char* str, FontId f) {
+    int n = 0;
+    if (str)
+        while (str[n])
+            ++n;
+    return n * font_desc(f).cell_w;
+}
+
+// Blit a string from one of the native cells. 1:1, no upscaling. Mirrors the
+// XL path: opaque bg fills the block first; Transparent composites over the FB.
+void canvas_draw_text_f(int x, int y, const char* str, Color fg, Color bg, FontId f) {
+    if (!ensure_fb() || !str || !*str) return;
+    const FontDesc fd = font_desc(f);
+    const int cw = fd.cell_w, ch = fd.cell_h;
+    int len = 0;
+    while (str[len])
+        ++len;
+    const bool transparent = (bg.v == 0xFFFFu);
+    const uint16_t nat_bg  = bg.v;
+    if (!transparent) {
+        const uint16_t hw_bg = to_hw(bg);
+        for (int row = 0; row < ch; ++row)
+            fb_hspan(x, y + row, len * cw, hw_bg);
+    }
+    auto put = [&](int X, int Y, uint8_t a) {
+        if (static_cast<unsigned>(X) >= static_cast<unsigned>(s_W) ||
+            static_cast<unsigned>(Y) >= static_cast<unsigned>(s_H))
+            return;
+        uint16_t& d         = s_back[static_cast<long>(Y) * s_W + X];
+        const uint16_t bgnt = transparent ? __builtin_bswap16(d) : nat_bg;
+        d                   = __builtin_bswap16(a == 255 ? fg.v : blend565(fg.v, bgnt, a));
+    };
+    for (int ci = 0; ci < len; ++ci) {
+        const uint8_t* glyph = fd.glyph(str[ci]);
+        const int gx         = ci * cw;
+        for (int col = 0; col < cw; ++col)
+            for (int row = 0; row < ch; ++row) {
+                const uint8_t a = glyph[row * cw + col];
+                if (a != 0) put(x + gx + col, y + row, a);
+            }
+    }
+}
+
 // Crisp 18×24 wordmark, rendered 1:1 from the native XL cell (no upscaling).
 void canvas_draw_text_xl(int x, int y, const char* str, Color fg, Color bg) {
     if (!ensure_fb() || !str || !*str) return;

@@ -30,8 +30,14 @@ The shipped font comes from **DejaVu Sans Mono** with the canonical metrics
 
 ```bash
 ./build/fontgen /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf \
-    ../../components/ui/src/font_data.cpp 9 6 0 2
+    ../../components/ui/src/font_data.cpp 9 6 0 2 19 12 1.1 26 19 1.05 \
+    /usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf
 ```
+
+The trailing 13th argument is the **bold** TTF used for the NV3007 landscape
+cells — `kFontBodyAlpha` (8×13, ~12px body text) and `kFontMegaAlpha` (21×31,
+~30px edit values / splash wordmark). The base 6×8 / 12×16 / 18×24 cells stay on
+the regular face. Omit the bold path to reuse the regular face for everything.
 
 | arg           | meaning                                                            |
 |---------------|--------------------------------------------------------------------|

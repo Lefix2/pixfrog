@@ -46,6 +46,11 @@ struct CellGeom {
 constexpr CellGeom kSmall{ 6, 8, 5 };
 constexpr CellGeom kLarge{ 12, 16, 11 };
 constexpr CellGeom kXL{ 18, 24, 16 };  // splash wordmark only
+// NV3007 landscape design fonts (DejaVuSansMono-Bold):
+//   body — ~12px body text (list labels, protocol names, IP, values)
+//   mega — ~30px edit values + splash wordmark (no upscaling)
+constexpr CellGeom kBody{ 8, 13, 7 };
+constexpr CellGeom kMega{ 21, 31, 19 };
 
 // cells[glyph][row*cell_w + col] = coverage 0..255
 std::vector<uint8_t> rasterize(const stbtt_fontinfo& font, const CellGeom& g, float px,
@@ -153,6 +158,9 @@ int main(int argc, char** argv) {
     const float px_xl     = (argc > 10) ? std::atof(argv[10]) : 26.0f;
     const int baseline_xl = (argc > 11) ? std::atoi(argv[11]) : 19;
     const float gain_xl   = (argc > 12) ? std::atof(argv[12]) : 1.05f;
+    // Body + mega cells use a fixed bold TTF (passed as argv[13]) so the small
+    // base font can stay the regular DejaVu while the NV3007 design text is bold.
+    const char* bold_path = (argc > 13) ? argv[13] : ttf_path;
 
     std::FILE* f = std::fopen(ttf_path, "rb");
     if (!f) {
@@ -179,13 +187,43 @@ int main(int argc, char** argv) {
     const auto large = rasterize(font, kLarge, px_l, baseline_l, 0, gain_l);
     const auto xl    = rasterize(font, kXL, px_xl, baseline_xl, 0, gain_xl);
 
+    // Load the (optional) bold face for the NV3007 body + mega cells.
+    std::vector<unsigned char> bold_ttf;
+    stbtt_fontinfo bold_font;
+    const stbtt_fontinfo* bf = &font;
+    if (std::strcmp(bold_path, ttf_path) != 0) {
+        std::FILE* bf_f = std::fopen(bold_path, "rb");
+        if (!bf_f) {
+            std::fprintf(stderr, "fontgen: cannot open bold %s\n", bold_path);
+            return 1;
+        }
+        std::fseek(bf_f, 0, SEEK_END);
+        long bsz = std::ftell(bf_f);
+        std::fseek(bf_f, 0, SEEK_SET);
+        bold_ttf.resize(bsz);
+        if (std::fread(bold_ttf.data(), 1, bsz, bf_f) != static_cast<size_t>(bsz)) {
+            std::fprintf(stderr, "fontgen: short read on bold %s\n", bold_path);
+            return 1;
+        }
+        std::fclose(bf_f);
+        if (!stbtt_InitFont(&bold_font, bold_ttf.data(),
+                            stbtt_GetFontOffsetForIndex(bold_ttf.data(), 0))) {
+            std::fprintf(stderr, "fontgen: stbtt_InitFont failed (bold)\n");
+            return 1;
+        }
+        bf = &bold_font;
+    }
+    // body: caps ~9px in a 13px cell; mega: caps ~22px in a 31px cell.
+    const auto body = rasterize(*bf, kBody, 12.5f, 10, 0, 1.0f);
+    const auto mega = rasterize(*bf, kMega, 30.0f, 24, 0, 1.0f);
+
     // Debug: if out_path looks like "preview:TEXT", render TEXT as terminal
     // ASCII shading instead of writing a source file. Lets metrics be tuned fast.
     if (std::strncmp(out_path, "preview:", 8) == 0) {
         const char* text = out_path + 8;
-        preview(small, kSmall, text);
+        preview(body, kBody, text);
         std::printf("\n");
-        preview(large, kLarge, text);
+        preview(mega, kMega, text);
         return 0;
     }
 
@@ -247,6 +285,30 @@ int main(int argc, char** argv) {
                     "        return kFallbackXLAlpha;\n"
                     "    }\n"
                     "    return kFontXLAlpha[uc - static_cast<uint8_t>(kFontFirstChar)];\n"
+                    "}\n\n");
+    emit_table(o, body, kBody, "kFontBodyAlpha", "kFontBodyCellWidth * kFontBodyHeight");
+    std::fprintf(o, "\n");
+    emit_fallback(o, kBody, "kFallbackBodyAlpha", "kFontBodyCellWidth * kFontBodyHeight");
+    std::fprintf(o, "\n"
+                    "const uint8_t* font_body_alpha_for(char c) {\n"
+                    "    const uint8_t uc = static_cast<uint8_t>(c);\n"
+                    "    if (uc < static_cast<uint8_t>(kFontFirstChar) ||\n"
+                    "        uc > static_cast<uint8_t>(kFontLastChar)) {\n"
+                    "        return kFallbackBodyAlpha;\n"
+                    "    }\n"
+                    "    return kFontBodyAlpha[uc - static_cast<uint8_t>(kFontFirstChar)];\n"
+                    "}\n\n");
+    emit_table(o, mega, kMega, "kFontMegaAlpha", "kFontMegaCellWidth * kFontMegaHeight");
+    std::fprintf(o, "\n");
+    emit_fallback(o, kMega, "kFallbackMegaAlpha", "kFontMegaCellWidth * kFontMegaHeight");
+    std::fprintf(o, "\n"
+                    "const uint8_t* font_mega_alpha_for(char c) {\n"
+                    "    const uint8_t uc = static_cast<uint8_t>(c);\n"
+                    "    if (uc < static_cast<uint8_t>(kFontFirstChar) ||\n"
+                    "        uc > static_cast<uint8_t>(kFontLastChar)) {\n"
+                    "        return kFallbackMegaAlpha;\n"
+                    "    }\n"
+                    "    return kFontMegaAlpha[uc - static_cast<uint8_t>(kFontFirstChar)];\n"
                     "}\n"
                     "#endif  // CONFIG_PIXFROG_DISPLAY_TFT\n"
                     "// clang-format on\n\n"

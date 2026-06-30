@@ -24,6 +24,11 @@ struct Color {
     bool operator!=(Color o) const { return v != o.v; }
 };
 
+// Pack 8-bit RGB into RGB565 (top bits of each channel), for the design tokens.
+constexpr uint16_t RGB565(uint8_t r, uint8_t g, uint8_t b) {
+    return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
 namespace color {
 constexpr Color Black{ 0x0000 };
 constexpr Color White{ 0xFFFF };
@@ -46,6 +51,14 @@ constexpr Color CursorBg{ 0x1A45 };     // dark spring-green cursor highlight (#
 constexpr Color BadgeGreen{ 0x7691 };   // channel badge — NRZ strips (#70d18b)
 constexpr Color BadgePurple{ 0xACDC };  // channel badge — clocked SPI (#a89be0)
 constexpr Color AltRowBg{ 0x18C3 };     // slightly lighter dark for alternating rows
+// ── NV3007 landscape design tokens (pixfrog-themes.js, ported 1:1) ──────────
+constexpr Color EditCyan{ RGB565(0x4F, 0xE3, 0xE3) };    // value being edited
+constexpr Color GoodBright{ RGB565(0x5B, 0xF5, 0x9A) };  // active RX dot / sel bar
+constexpr Color BadCoral{ RGB565(0xFF, 0x6A, 0x5A) };    // conflict "!", LINK DOWN
+constexpr Color IdleGreen{ RGB565(0x2C, 0x5C, 0x3D) };   // channel at rest
+constexpr Color DimGreen{ RGB565(0x6E, 0x7E, 0x72) };    // secondary labels / dim
+constexpr Color SelBg{ RGB565(0x10, 0x30, 0x1E) };       // list selection fill
+constexpr Color Hair{ RGB565(0x1C, 0x33, 0x26) };        // ~10% green hairline
 // Sentinel for a see-through text/mask background: glyph ink is composited over
 // whatever is already in the framebuffer (shares White's value — White is only
 // ever used as a foreground, never as a text background).
@@ -56,13 +69,13 @@ constexpr Color Transparent{ 0xFFFF };
 
 #if defined(CONFIG_PIXFROG_DISPLAY_TFT) || defined(CONFIG_PIXFROG_DISPLAY_NV3007)
 constexpr uint8_t kDisplayScale = 2;
-  #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-constexpr uint8_t kRows         = 5;   // (142 - 24) / 22 rows per column (landscape, rotated)
-constexpr uint8_t kCols         = 35;  // 428 / (6*2) chars at scale 2
-  #else
-constexpr uint8_t kRows         = 8;   // (240 - 28) / 24 visible rows (landscape)
-constexpr uint8_t kCols         = 26;  // 320 / (6*2)
-  #endif
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+constexpr uint8_t kRows = 5;   // (142 - 24) / 22 rows per column (landscape, rotated)
+constexpr uint8_t kCols = 35;  // 428 / (6*2) chars at scale 2
+#else
+constexpr uint8_t kRows = 8;   // (240 - 28) / 24 visible rows (landscape)
+constexpr uint8_t kCols = 26;  // 320 / (6*2)
+#endif
 #else
 constexpr uint8_t kDisplayScale = 1;
 constexpr uint8_t kRows         = 8;
@@ -93,6 +106,17 @@ void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg = color:
 // bg == color::Transparent composites over the framebuffer. TFT only.
 void canvas_draw_text_xl(int x, int y, const char* str, Color fg, Color bg = color::Black);
 int canvas_text_xl_width(const char* str);
+
+// Multi-font text (TFT only). Each FontId maps to a natively rasterised cell —
+// no upscaling, so glyphs stay crisp at every size the NV3007 design needs.
+//   Small 6×8 · Body 8×13 · Large 12×16 · Mega 21×31 · XL 18×24
+// bg == color::Transparent composites the ink over the framebuffer.
+enum class FontId : uint8_t { Small, Body, Large, Mega, XL };
+void canvas_draw_text_f(int x, int y, const char* str, Color fg, Color bg, FontId f);
+int canvas_text_w(const char* str, FontId f);  // pixel width (len × advance)
+int canvas_font_h(FontId f);                   // cell height
+int canvas_font_adv(FontId f);                 // per-glyph x advance
+
 void canvas_flush();
 
 // ── OLED low-level (used only by oled_ssd1306.cpp + canvas_oled.cpp) ─────────
