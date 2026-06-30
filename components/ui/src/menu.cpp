@@ -159,18 +159,24 @@ void draw_data_icon(int x, int y, DataFlow f) {
 
 // Channel-number badge: a rounded square filled with the wiring-family colour
 // when the channel is in use, or a hollow 2px ring of that colour when it is
-// Off. The digit is the homogeneous Body face — big enough to fill the square —
-// nudged 1px low to balance the cell's descender space. `behind` is the row tint
-// the AA edges and the hollow centre blend into.
+// Off. The digit is the homogeneous Body face — big enough to fill the square.
+// `behind` is the row tint the AA edges and the hollow centre blend into.
+//
+// Body figures don't fill their 9×16 advance cell: the ink box spans roughly
+// cols 0–6 / rows 2–11 (caps hug the baseline at row 12, the descender rows stay
+// blank), so centring on the advance drifts the digit up and to the left. Offset
+// the draw origin so the digit's *ink* box lands on the badge centre instead.
 void draw_chan_badge(int x, int y, int side, int number, Color family, bool filled, Color behind) {
     canvas_fill_round_rect_aa(x, y, side, side, 4, family, behind);
     if (!filled)  // carve the centre back to the row tint → a family-colour ring
         canvas_fill_round_rect_aa(x + 2, y + 2, side - 4, side - 4, 3, behind, family);
     char n[4];
     std::snprintf(n, sizeof(n), "%d", number);
-    const Color ink = filled ? color::Black : family;
-    canvas_draw_text_f(x + (side - body_w(n)) / 2, y + (side - canvas_font_h(FontId::Body)) / 2 + 1,
-                       n, ink, color::Transparent, FontId::Body);
+    const Color ink      = filled ? color::Black : family;
+    constexpr int kInkCx = 3;  // Body digit ink centre column within the cell
+    constexpr int kInkCy = 6;  // Body digit ink centre row within the cell (≈6.5)
+    canvas_draw_text_f(x + (side - 1) / 2 - kInkCx, y + (side - 1) / 2 - kInkCy, n, ink,
+                       color::Transparent, FontId::Body);
 }
 
 // Edit-screen hint bar: green keycaps + dim actions, three segments (design
