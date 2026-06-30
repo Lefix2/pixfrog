@@ -59,6 +59,7 @@ constexpr Color IdleGreen{ RGB565(0x2C, 0x5C, 0x3D) };   // channel at rest
 constexpr Color DimGreen{ RGB565(0x6E, 0x7E, 0x72) };    // secondary labels / dim
 constexpr Color SelBg{ RGB565(0x10, 0x30, 0x1E) };       // list selection fill
 constexpr Color Hair{ RGB565(0x1C, 0x33, 0x26) };        // ~10% green hairline
+constexpr Color RowAlt{ RGB565(0x0E, 0x16, 0x11) };      // zebra row tint (softer than a hairline)
 // Sentinel for a see-through text/mask background: glyph ink is composited over
 // whatever is already in the framebuffer (shares White's value — White is only
 // ever used as a foreground, never as a text background).

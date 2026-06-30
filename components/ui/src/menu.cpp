@@ -91,6 +91,16 @@ inline void text_body(int x, int y, int h, const char* s, Color fg, Color bg = c
 inline int body_w(const char* s) {
     return canvas_text_w(s, FontId::Body);
 }
+// Large 12×16 cell — the soft, readable face from the original dashboard. Used
+// for the marquee status (the IP) so the address reads at a glance like the
+// reference design, where the rest of the row stays in the denser bold cells.
+inline void text_large(int x, int y, int h, const char* s, Color fg,
+                       Color bg = color::Transparent) {
+    canvas_draw_text_f(x, y + (h - canvas_font_h(FontId::Large)) / 2, s, fg, bg, FontId::Large);
+}
+inline int large_w(const char* s) {
+    return canvas_text_w(s, FontId::Large);
+}
 inline int small_w(const char* s) {
     return canvas_text_w(s, FontId::Small);
 }
@@ -635,10 +645,12 @@ void draw_back_arrow(int x, int y, int h, Color c) {
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
 // One list row inside a column (left edge x0, width colW, top ry). Matches
 // pixfrog-screen.jsx ListRow: optional chip, label, optional gold value, chevron.
-void draw_list_item_col(const ListItem& it, bool sel, int x0, int colW, int ry, bool lastRow) {
-    const Color bg = sel ? color::SelBg : color::Black;
-    if (sel) canvas_fill_rect(x0, ry, colW, kRowH, color::SelBg);
-    if (!lastRow) canvas_hline(x0, ry + kRowH - 1, colW, color::Hair);
+void draw_list_item_col(const ListItem& it, bool sel, int x0, int colW, int ry, int row) {
+    // Zebra bands (selection > alt-row tint > black) replace the row hairlines
+    // and the column divider — softer, and consistent with the HOME table.
+    const bool alt = (row & 1) != 0;
+    const Color bg = sel ? color::SelBg : (alt ? color::RowAlt : color::Black);
+    canvas_fill_rect(x0, ry, colW, kRowH, bg);
     if (sel) canvas_fill_round_rect(x0, ry + 3, 3, kRowH - 6, 1, color::GoodBright);
 
     const bool terminal = it.back || (it.label[0] == '[');
@@ -713,10 +725,8 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         const int row = p / 2;  // top → bottom
         const int x0  = col * kColW;
         const int ry  = kHdrH + row * kRowH;
-        draw_list_item_col(items[idx], idx == cursor, x0, kColW, ry, row == kListRows - 1);
+        draw_list_item_col(items[idx], idx == cursor, x0, kColW, ry, row);
     }
-    // Divider between columns.
-    canvas_vline(kColW, kHdrH, kTH - kHdrH, color::Hair);
     // Scrollbar (row-based): track + proportional thumb on the far right.
     if (totalRows > kListRows) {
         const int trackH = kTH - kHdrH - 6;
@@ -845,15 +855,22 @@ void render_home() {
         int x             = kPadX;
         const uint32_t ip = ui::get_ip();
         if (ip == 0) {
-            text_body(x, 0, h, "0.0.0.0", color::DimGreen);
-            x += body_w("0.0.0.0") + 8;
+            text_large(x, 0, h, "0.0.0.0", color::DimGreen);
+            x += large_w("0.0.0.0") + 10;
         } else {
             std::snprintf(
                 line, sizeof(line), "%u.%u.%u.%u", static_cast<unsigned>((ip >> 24) & 0xFFu),
                 static_cast<unsigned>((ip >> 16) & 0xFFu), static_cast<unsigned>((ip >> 8) & 0xFFu),
                 static_cast<unsigned>(ip & 0xFFu));
-            text_body(x, 0, h, line, color::White);
-            x += body_w(line) + 8;
+            // Big readable address when it fits; the denser body cell for long
+            // static IPs so the chips never collide with the fps/icon group.
+            if (std::strlen(line) <= 13) {
+                text_large(x, 0, h, line, color::Cream);
+                x += large_w(line) + 10;
+            } else {
+                text_body(x, 0, h, line, color::Cream);
+                x += body_w(line) + 8;
+            }
         }
         // Chips: greyed when inactive, coloured when active.
         x = draw_chip(x, cy, g.use_dhcp ? "DHCP" : "STATIC", g.use_dhcp, color::FrogLine,
@@ -881,24 +898,30 @@ void render_home() {
     canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
 
     // ── Channel grid: 8 single-line cells, row-major (1 2 / 3 4 / …) ──────────
+    // Soft zebra rows instead of hairlines/dividers: alternating row tints carry
+    // the table structure without the busy grid — the photo-design "douceur" on
+    // the landscape ratio. Each visual row (a pair of channels) shares one band.
     for (int i = 0; i < 8; ++i) {
-        const int col  = i % 2;
-        const int row  = i / 2;
-        const int x0   = col * kCellW;
-        const int cy   = kChTop + row * kChH;
+        const int col      = i % 2;
+        const int row      = i / 2;
+        const int x0       = col * kCellW;
+        const int cy       = kChTop + row * kChH;
+        const Color row_bg = (row & 1) ? color::RowAlt : color::Black;
+        if (col == 0) canvas_fill_rect(0, cy, kTW, kChH, row_bg);
+
         const auto& cc = config::get_channel(i);
         const bool off = led::is_off(cc.protocol);
         const bool dmx = led::is_dmx(cc.protocol);
         const bool ok  = dmx::is_channel_capacity_ok(i);
 
-        if (row != 3) canvas_hline(x0, cy + kChH - 1, kCellW, color::Hair);
         const int myc = cy + (kChH - mfh) / 2;  // mini-font y, centred
 
-        // Chip with channel number (Body, centred).
+        // Chip with channel number (Body, centred). AA edges blend to the row
+        // tint so the badge keeps its soft rounded corners on either band.
         const int chcy      = cy + (kChH - kChip) / 2;
         const Color fam     = badge_color(cc.protocol);
         const Color num_col = off ? color::DimGreen : color::Black;
-        canvas_fill_round_rect_aa(x0 + 9, chcy, kChip, kChip, 4, fam, color::Black);
+        canvas_fill_round_rect_aa(x0 + 9, chcy, kChip, kChip, 4, fam, row_bg);
         char n[4];
         std::snprintf(n, sizeof(n), "%d", i + 1);
         canvas_draw_text_f(x0 + 9 + (kChip - body_w(n)) / 2,
@@ -907,35 +930,35 @@ void render_home() {
 
         // Protocol name (Body).
         text_body(x0 + 9 + kChip + 6, cy, kChH, protocol_name(cc.protocol),
-                  off ? color::DimGreen : color::Cream);
+                  off ? color::DimGreen : color::Cream, row_bg);
 
-        // Right-aligned columns: dot/! | bri | pixels | universe (Mini).
+        // Right-aligned columns: dot/! | bri | pixels | universe (Mini). Numbers
+        // stay bright (gold/light/cream) for legibility, no dim hierarchy.
         int rx = x0 + kCellW - 9;
         if (!ok) {
-            canvas_draw_text_f(rx - mini_w("!"), myc, "!", color::BadCoral, color::Black,
-                               FontId::Mini);
+            canvas_draw_text_f(rx - mini_w("!"), myc, "!", color::BadCoral, row_bg, FontId::Mini);
         } else if (!off) {
             const bool act     = dmx::is_channel_active(i);
             const bool fsafe   = dmx::is_channel_failsafe(i);
             const Color dotcol = fsafe ? color::Orange : act ? color::GoodBright : color::IdleGreen;
-            canvas_fill_round_rect_aa(rx - 7, cy + (kChH - 7) / 2, 7, 7, 3, dotcol, color::Black);
+            canvas_fill_round_rect_aa(rx - 7, cy + (kChH - 7) / 2, 7, 7, 3, dotcol, row_bg);
         }
         rx -= 10;
         if (!off) {
             if (!dmx) {
                 std::snprintf(line, sizeof(line), "%u%%",
                               (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
-                text_mini(rx - mini_w(line), cy, kChH, line, color::Cream);
+                text_mini(rx - mini_w(line), cy, kChH, line, color::Cream, row_bg);
             }
             rx -= 36;
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
-            text_mini(rx - mini_w(line), cy, kChH, line, color::DimGreen);
+            text_mini(rx - mini_w(line), cy, kChH, line, color::LightGray, row_bg);
             rx -= 38;
             std::snprintf(line, sizeof(line), "%u", cc.universe_start);
-            text_mini(rx - mini_w(line), cy, kChH, line, ok ? color::Gold : color::BadCoral);
+            text_mini(rx - mini_w(line), cy, kChH, line, ok ? color::Gold : color::BadCoral,
+                      row_bg);
         }
     }
-    canvas_vline(kCellW, kChTop, kTH - kChTop, color::Hair);
 #else
     // ── TFT dashboard ────────────────────────────────────────────────────────
     // Header 28 | network 24 | services 18 | column header 14 | 8×19 channels.
