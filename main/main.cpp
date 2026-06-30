@@ -47,6 +47,10 @@ esp_eth_handle_t g_eth_handle = nullptr;
 void publish_ip(uint32_t host_order_ip) {
     pixfrog::ui::set_ip(host_order_ip);
     pixfrog::artnet::set_local_ip(host_order_ip);
+    // IP acquired (or lost): Connected when non-zero, Disconnected when zero.
+    // The DHCP-acquiring window (link up, no IP yet) is set in on_eth_event.
+    pixfrog::ui::set_net_state(host_order_ip != 0 ? pixfrog::ui::NetState::Connected
+                                                  : pixfrog::ui::NetState::Disconnected);
 }
 
 // Item 7: IP_EVENT_ETH_GOT_IP handler — fires after DHCP completes (or
@@ -66,10 +70,17 @@ extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/, int32_t e
     switch (event_id) {
     case ETHERNET_EVENT_START: ESP_LOGI(TAG, "Ethernet driver started"); break;
     case ETHERNET_EVENT_STOP: ESP_LOGI(TAG, "Ethernet driver stopped"); break;
-    case ETHERNET_EVENT_CONNECTED:
+    case ETHERNET_EVENT_CONNECTED: {
         ESP_LOGI(TAG, "Ethernet link UP");
         pixfrog::ui::set_link_up(true);
+        // Link is up but DHCP may still be negotiating a lease: show Acquiring
+        // until IP_EVENT_ETH_GOT_IP fires (publish_ip flips it to Connected).
+        // Static-IP mode publishes the IP synchronously in init_network(), so
+        // this only applies to the DHCP path.
+        if (pixfrog::ui::get_ip() == 0)
+            pixfrog::ui::set_net_state(pixfrog::ui::NetState::Acquiring);
         break;
+    }
     case ETHERNET_EVENT_DISCONNECTED:
         ESP_LOGW(TAG, "Ethernet link DOWN");
         pixfrog::ui::set_link_up(false);

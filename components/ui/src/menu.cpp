@@ -17,6 +17,7 @@
 #include "dmx_manager.h"
 #include "fpp_sync.h"
 #include "fseq_player.h"
+#include "icons_net.h"
 #include "led_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
@@ -57,7 +58,7 @@ constexpr int kColW     = kTW / kCols2;               // 214px per column
 constexpr int kListRows = 4;                          // design ROWS = 4 per column
 constexpr int kMaxVis   = kCols2 * kListRows;         // 8 visible list items
 constexpr int kRowH     = (kTH - kHdrH) / kListRows;  // 30px list row
-constexpr int kChip     = 15;                         // 15×15 channel chip
+constexpr int kChip     = 20;                         // 20×20 channel chip
 // kTxtSc/kBadge/kGutter kept for code paths still shared with the splash helpers.
 constexpr int kTxtSc = 2;
 constexpr int kTxtH  = 8 * kTxtSc;
@@ -101,13 +102,66 @@ inline void text_mini(int x, int y, int h, const char* s, Color fg, Color bg = c
     canvas_draw_text_f(x, y + (h - canvas_font_h(FontId::Mini)) / 2, s, fg, bg, FontId::Mini);
 }
 
-// Activity icon: a down-arrow ("packets incoming"), drawn only when data flows.
-void draw_rx_icon(int x, int y, Color c) {
-    // 9×9: arrow shaft + filled head, with a short baseline tray underneath.
-    canvas_fill_rect(x + 3, y, 3, 4, c);  // shaft
-    for (int r = 0; r < 4; ++r)           // head (widening downward)
-        canvas_hline(x + 4 - r, y + 3 + r, 2 * r + 1, c);
-    canvas_hline(x + 1, y + 9, 7, c);  // tray
+// ── Status icons (16×16, two 1bpp layers from icons_net.h) ───────────────────
+// The 'dim' layer is the muted base shape (e.g. the wired cable), the 'main'
+// layer is the active overlay (e.g. the red X, the green check). Both are
+// composited over the framebuffer so the icon sits on any backdrop.
+constexpr int kIconSize = 16;
+
+void draw_icon_layer(int x, int y, const uint8_t* alpha, Color fg) {
+    canvas_draw_mask_aa(x, y, kIconSize, kIconSize, alpha, fg);
+}
+
+// Network-state icon: one per NetState, themed to the design palette.
+//   Disconnected → red X over a dim grey cable
+//   Acquiring     → dim grey cable + orange dots
+//   Connected     → green cable
+//   Error         → orange "?" over a dim grey cable
+void draw_net_icon(int x, int y, ui::NetState st) {
+    using ui::NetState;
+    const Color dim = color::DimGreen;  // muted base (grey-green)
+    switch (st) {
+    case NetState::Disconnected:
+        draw_icon_layer(x, y, kIcon_net_disconnected_dim, dim);
+        draw_icon_layer(x, y, kIcon_net_disconnected_main, color::BadCoral);
+        break;
+    case NetState::Acquiring:
+        draw_icon_layer(x, y, kIcon_net_acquiring_dim, dim);
+        draw_icon_layer(x, y, kIcon_net_acquiring_main, color::Orange);
+        break;
+    case NetState::Connected:
+        draw_icon_layer(x, y, kIcon_net_connected_main, color::FrogLine);
+        break;
+    case NetState::Error:
+        draw_icon_layer(x, y, kIcon_net_no_route_dim, dim);
+        draw_icon_layer(x, y, kIcon_net_no_route_main, color::Orange);
+        break;
+    }
+}
+
+// Data-flow icon: idle / receiving / transmitting / both. The 'main' layer is
+// the active arrow (bright), the 'dim' layer is the inactive one (muted).
+enum class DataFlow : uint8_t { None, Receive, Transmit, Both };
+
+void draw_data_icon(int x, int y, DataFlow f) {
+    const Color active = color::GoodBright;
+    const Color muted  = color::DimGreen;
+    switch (f) {
+    case DataFlow::None:
+        draw_icon_layer(x, y, kIcon_data_idle_dim, muted);
+        break;
+    case DataFlow::Receive:
+        draw_icon_layer(x, y, kIcon_data_receive_dim, muted);
+        draw_icon_layer(x, y, kIcon_data_receive_main, active);
+        break;
+    case DataFlow::Transmit:
+        draw_icon_layer(x, y, kIcon_data_transmit_dim, muted);
+        draw_icon_layer(x, y, kIcon_data_transmit_main, active);
+        break;
+    case DataFlow::Both:
+        draw_icon_layer(x, y, kIcon_data_txrx_main, active);
+        break;
+    }
 }
 
 // Outlined status chip: 1px rounded border (accent if on, hairline if off),
@@ -601,8 +655,8 @@ void draw_list_item_col(const ListItem& it, bool sel, int x0, int colW, int ry, 
         canvas_fill_round_rect_aa(x, cy, kChip, kChip, 4, it.badge_col, bg);
         char n[4];
         std::snprintf(n, sizeof(n), "%d", it.badge + 1);
-        canvas_draw_text_f(x + (kChip - small_w(n)) / 2, cy + (kChip - kFontHeight) / 2, n, num_col,
-                           color::Transparent, FontId::Small);
+        canvas_draw_text_f(x + (kChip - body_w(n)) / 2, cy + (kChip - canvas_font_h(FontId::Body)) / 2,
+                           n, num_col, color::Transparent, FontId::Body);
         x += kChip + 7;
     }
 
@@ -636,13 +690,22 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
     draw_tft_header(title);
 
     const int totalRows = (count + 1) / 2;
-    int firstRow        = 0;
-    if (totalRows > kListRows) {
+    // Free-roaming row viewport: the cursor row moves freely within the visible
+    // window and only drags the scroll offset when it would leave the top or
+    // bottom edge. The offset persists in s.scroll across renders, so coming
+    // back up un-sticks the cursor from the last row instead of dragging the
+    // whole list (mirrors viewport_first() used by the TFT/OLED paths).
+    int firstRow = static_cast<int>(s.scroll);
+    if (totalRows <= kListRows) {
+        firstRow = 0;
+    } else {
         const int crow = cursor / 2;
-        if (crow >= kListRows) firstRow = crow - (kListRows - 1);
+        if (crow < firstRow) firstRow = crow;
+        else if (crow >= firstRow + kListRows) firstRow = crow - (kListRows - 1);
         if (firstRow + kListRows > totalRows) firstRow = totalRows - kListRows;
         if (firstRow < 0) firstRow = 0;
     }
+    s.scroll = static_cast<uint8_t>(firstRow);
     const int first = firstRow * 2;
     for (int p = 0; p < kMaxVis && first + p < count; ++p) {
         const int idx = first + p;
@@ -800,20 +863,20 @@ void render_home() {
         std::snprintf(line, sizeof(line), "%uHz", g.refresh_rate_hz);
         draw_chip(x, cy, line, true, color::Gold, color::Black);
 
-        // Right group: LINK chip · fps · rx-icon.
-        const bool up        = ui::is_link_up();
-        const char* link_txt = up ? "LINK" : "DOWN";
-        int rx               = kTW - kPadX - (mini_w(link_txt) + 8);
-        draw_chip(rx, cy, link_txt, up, up ? color::FrogLine : color::BadCoral, color::Black);
-        std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
+        // Right group: data-flow icon · net-state icon · fps.
+        // Two 16×16 icons sit flush right; the data icon is directly left of
+        // the net icon. fps text sits to the left of the pair.
+        const int iconY = (h - kIconSize) / 2;
+        int rx = kTW - kPadX - kIconSize;
+        draw_net_icon(rx, iconY, ui::get_net_state());
+        rx -= 2 + kIconSize;
+        const DataFlow flow = rx_active ? DataFlow::Receive : DataFlow::None;
+        draw_data_icon(rx, iconY, flow);
         rx -= 6 + mini_w("fps");
         text_mini(rx, 0, h, "fps", color::DimGreen);
+        std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
         rx -= 2 + body_w(line);
         text_body(rx, 0, h, line, color::Gold);
-        if (rx_active) {
-            rx -= 8 + 9;
-            draw_rx_icon(rx, (h - 11) / 2, color::GoodBright);
-        }
     }
     canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
 
@@ -831,15 +894,16 @@ void render_home() {
         if (row != 3) canvas_hline(x0, cy + kChH - 1, kCellW, color::Hair);
         const int myc = cy + (kChH - mfh) / 2;  // mini-font y, centred
 
-        // Chip with channel number (Mini).
+        // Chip with channel number (Body, centred).
         const int chcy      = cy + (kChH - kChip) / 2;
         const Color fam     = badge_color(cc.protocol);
         const Color num_col = off ? color::DimGreen : color::Black;
         canvas_fill_round_rect_aa(x0 + 9, chcy, kChip, kChip, 4, fam, color::Black);
         char n[4];
         std::snprintf(n, sizeof(n), "%d", i + 1);
-        canvas_draw_text_f(x0 + 9 + (kChip - mini_w(n)) / 2, chcy + (kChip - mfh) / 2, n, num_col,
-                           color::Transparent, FontId::Mini);
+        canvas_draw_text_f(x0 + 9 + (kChip - body_w(n)) / 2,
+                           chcy + (kChip - canvas_font_h(FontId::Body)) / 2, n, num_col,
+                           color::Transparent, FontId::Body);
 
         // Protocol name (Body).
         text_body(x0 + 9 + kChip + 6, cy, kChH, protocol_name(cc.protocol),
@@ -2568,9 +2632,18 @@ void go(NodeId n) {
 void go_back() {
     if (s.node == NodeId::Main) {
         s.screen = Screen::Home;
+        // Re-entering from Home starts at the top (matches menu_on_idle_timeout).
+        s.cur[static_cast<uint8_t>(NodeId::Main)] = 0;
+        s.scr[static_cast<uint8_t>(NodeId::Main)] = 0;
+        s.cursor = 0;
+        s.scroll = 0;
         return;
     }
+    const NodeId leaving = s.node;
     go(cur_node().parent);
+    // A menu we back out of restarts at the top next time it's opened.
+    s.cur[static_cast<uint8_t>(leaving)] = 0;
+    s.scr[static_cast<uint8_t>(leaving)] = 0;
 }
 
 void open_channel(uint8_t idx) {

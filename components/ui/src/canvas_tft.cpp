@@ -167,6 +167,25 @@ void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
 // Forward declaration (defined below, shared with the AA shape fill).
 inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a);
 
+// 8bpp alpha mask (row-major, w*h bytes, 0..255 coverage). Composites fg over
+// whatever is already in the framebuffer by per-pixel coverage, so edges
+// anti-alias over any background. a==0 → skip, a==255 → opaque.
+void canvas_draw_mask_aa(int x, int y, int w, int h, const uint8_t* alpha, Color fg) {
+    if (!ensure_fb() || !alpha || w <= 0 || h <= 0) return;
+    for (int row = 0; row < h; ++row) {
+        const int py = y + row;
+        if (static_cast<unsigned>(py) >= static_cast<unsigned>(s_H)) continue;
+        for (int col = 0; col < w; ++col) {
+            const uint8_t a = alpha[row * w + col];
+            if (a == 0) continue;
+            const int px = x + col;
+            if (static_cast<unsigned>(px) >= static_cast<unsigned>(s_W)) continue;
+            uint16_t& dst = s_back[static_cast<long>(py) * s_W + px];
+            dst = __builtin_bswap16(a == 255 ? fg.v : blend565(fg.v, __builtin_bswap16(dst), a));
+        }
+    }
+}
+
 // Anti-aliased rounded rectangle (w == h == 2r gives a circle). Edge pixels are
 // blended against whatever is already in the framebuffer behind the shape, so
 // the contour stays clean over any background (no flat-colour corner fringe —

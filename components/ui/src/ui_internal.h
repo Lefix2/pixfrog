@@ -98,6 +98,9 @@ void canvas_fill_round_rect_aa(int x, int y, int w, int h, int r, Color fg, Colo
 // mask: 1bpp MSB-first data; bg.v==0xFFFF means transparent (TFT only).
 void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
                       Color bg = color::Black);
+// 8bpp alpha mask (row-major, w*h bytes, 0..255 coverage). Composites fg over
+// the framebuffer by coverage — anti-aliased edges. TFT only.
+void canvas_draw_mask_aa(int x, int y, int w, int h, const uint8_t* alpha, Color fg);
 // Draw text at pixel (x,y). scale multiplies the 5x8 glyph.
 // OLED impl: ignores color/scale, maps (x,y) -> (row=y/8, col=x/6).
 void canvas_draw_text(int x, int y, const char* str, Color fg, Color bg = color::Black,

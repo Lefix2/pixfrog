@@ -50,7 +50,7 @@ starts at HOME for deterministic runs.
 | `splash <ms> [p]`  | render the boot splash at t=`ms` and shot it       |
 | `state`            | print `{"screen":..,"cursor":..,"channel":..}`     |
 | `set ip a.b.c.d`   | set the displayed IP (HOME)                        |
-| `set link up/down` | set link state (HOME)                              |
+| `set net <state>`  | set the network icon: `disconnected`/`acquiring`/`connected`/`error` (HOME) |
 | `set fps <n>`      | inject a fake FPS counter (HOME)                   |
 | `set pkts <n>`     | inject a fake ArtNet RX packet counter (HOME)      |
 | `set active <ch>`  | mark channel `ch` (0–7) active (HOME dot)          |

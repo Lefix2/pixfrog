@@ -33,11 +33,13 @@ namespace det  = pixfrog::ui::detail;
 using clock_t_ = std::chrono::steady_clock;
 
 // ── ui:: globals normally provided by components/ui/src/ui.cpp ────────────────
-// menu.cpp reads ui::get_ip() / ui::is_link_up() for the HOME dashboard.
+// menu.cpp reads ui::get_ip() / ui::get_net_state() for the HOME dashboard.
+// set_link_up()/is_link_up() stay for the TFT/OLED backends' legacy link chip.
 namespace pixfrog::ui {
 namespace {
 uint32_t g_ip  = 0;
 bool g_link_up = false;
+NetState g_net_state = NetState::Disconnected;
 }  // namespace
 void set_ip(uint32_t host_order_ip) {
     g_ip = host_order_ip;
@@ -50,6 +52,12 @@ void set_link_up(bool up) {
 }
 bool is_link_up() {
     return g_link_up;
+}
+void set_net_state(NetState s) {
+    g_net_state = s;
+}
+NetState get_net_state() {
+    return g_net_state;
 }
 }  // namespace pixfrog::ui
 
@@ -160,10 +168,6 @@ bool exec_cmd(const std::string& line) {
         print_state();
     } else if (line.rfind("set ip ", 0) == 0) {
         ui::set_ip(parse_ip(line.c_str() + 7));
-    } else if (line == "set link up") {
-        ui::set_link_up(true);
-    } else if (line == "set link down") {
-        ui::set_link_up(false);
     } else if (line.rfind("set fps ", 0) == 0) {
         emu_dmx_set_stats(static_cast<uint32_t>(std::strtoul(line.c_str() + 8, nullptr, 10)), 0);
     } else if (line.rfind("set pkts ", 0) == 0) {
@@ -171,6 +175,14 @@ bool exec_cmd(const std::string& line) {
     } else if (line.rfind("set active ", 0) == 0) {
         int ch = std::atoi(line.c_str() + 11);
         emu_dmx_set_active(ch, true);
+    } else if (line.rfind("set net ", 0) == 0) {
+        // set net <disconnected|acquiring|connected|error>
+        const char* p = line.c_str() + 8;
+        if (std::strcmp(p, "disconnected") == 0) ui::set_net_state(ui::NetState::Disconnected);
+        else if (std::strcmp(p, "acquiring") == 0) ui::set_net_state(ui::NetState::Acquiring);
+        else if (std::strcmp(p, "connected") == 0) ui::set_net_state(ui::NetState::Connected);
+        else if (std::strcmp(p, "error") == 0) ui::set_net_state(ui::NetState::Error);
+        else std::printf("error: unknown net state '%s'\n", p);
     } else if (line == "quit") {
         return false;
     } else {
