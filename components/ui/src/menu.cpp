@@ -50,7 +50,7 @@ constexpr uint8_t kOledCols = 21;
 constexpr int kTW       = 428;                        // TFT width  (landscape, rotated)
 constexpr int kTH       = 142;                        // TFT height (landscape, rotated)
 constexpr int kHdrH     = 22;                         // header bar height (design HDR)
-constexpr int kFootH    = 18;                         // edit-screen hint bar (design FOOT)
+constexpr int kFootH    = 22;                         // edit-screen hint bar (design FOOT)
 constexpr int kPadX     = 12;                         // header / status side padding
 constexpr int kIndent   = 10;                         // list-row side padding
 constexpr int kCols2    = 2;                          // two side-by-side columns
@@ -91,25 +91,12 @@ inline void text_body(int x, int y, int h, const char* s, Color fg, Color bg = c
 inline int body_w(const char* s) {
     return canvas_text_w(s, FontId::Body);
 }
-// Large 12×16 cell — the soft, readable face from the original dashboard. Used
-// for the marquee status (the IP) so the address reads at a glance like the
-// reference design, where the rest of the row stays in the denser bold cells.
-inline void text_large(int x, int y, int h, const char* s, Color fg,
-                       Color bg = color::Transparent) {
-    canvas_draw_text_f(x, y + (h - canvas_font_h(FontId::Large)) / 2, s, fg, bg, FontId::Large);
-}
-inline int large_w(const char* s) {
-    return canvas_text_w(s, FontId::Large);
-}
 inline int small_w(const char* s) {
     return canvas_text_w(s, FontId::Small);
 }
-// Mini font (legible bold ~10px) is the small-label/number face on the NV3007.
+// Mini cell (small bold ~10px) — reserved for the channel-number badges only.
 inline int mini_w(const char* s) {
     return canvas_text_w(s, FontId::Mini);
-}
-inline void text_mini(int x, int y, int h, const char* s, Color fg, Color bg = color::Black) {
-    canvas_draw_text_f(x, y + (h - canvas_font_h(FontId::Mini)) / 2, s, fg, bg, FontId::Mini);
 }
 
 // ── Status icons (16×16, two 1bpp layers from icons_net.h) ───────────────────
@@ -174,16 +161,20 @@ void draw_data_icon(int x, int y, DataFlow f) {
     }
 }
 
-// Outlined status chip: 1px rounded border (accent if on, hairline if off),
-// Mini caps inside. Returns the x just past the chip + gap.
-int draw_chip(int x, int y, const char* txt, bool on, Color accent, Color behind) {
-    const int tw = mini_w(txt), w = tw + 8, h = 14;
-    const Color border = on ? accent : color::Hair;
-    const Color ink    = on ? accent : color::DimGreen;
-    canvas_fill_round_rect(x, y, w, h, 3, border);
-    canvas_fill_round_rect(x + 1, y + 1, w - 2, h - 2, 2, behind);
-    text_mini(x + 4, y, h, txt, ink, behind);
-    return x + w + 4;
+// Channel-number badge: a rounded square filled with the wiring-family colour
+// when the channel is in use, or a hollow 2px ring of that colour when it is
+// Off. The digit is the one place the small Mini cell survives — everything
+// else is the homogeneous Body face. `behind` is the row tint the AA edges and
+// the hollow centre blend into.
+void draw_chan_badge(int x, int y, int side, int number, Color family, bool filled, Color behind) {
+    canvas_fill_round_rect_aa(x, y, side, side, 4, family, behind);
+    if (!filled)  // carve the centre back to the row tint → a family-colour ring
+        canvas_fill_round_rect_aa(x + 2, y + 2, side - 4, side - 4, 3, behind, family);
+    char n[4];
+    std::snprintf(n, sizeof(n), "%d", number);
+    const Color ink = filled ? color::Black : family;
+    canvas_draw_text_f(x + (side - mini_w(n)) / 2, y + (side - canvas_font_h(FontId::Mini)) / 2, n,
+                       ink, color::Transparent, FontId::Mini);
 }
 
 // Edit-screen hint bar: green keycaps + dim actions, three segments (design
@@ -194,11 +185,11 @@ void draw_hint_bar(const char* v_turn, const char* v_press, const char* v_hold) 
     const char* keys[3] = { "TURN", "PRESS", "HOLD" };
     const char* vals[3] = { v_turn, v_press, v_hold };
     for (int i = 0; i < 3; ++i) {
-        const int w  = mini_w(keys[i]) + 5 + mini_w(vals[i]);
+        const int w  = body_w(keys[i]) + 5 + body_w(vals[i]);
         const int cx = kTW * (2 * i + 1) / 6;
         int x        = cx - w / 2;
-        text_mini(x, y, kFootH, keys[i], color::FrogLine);
-        text_mini(x + mini_w(keys[i]) + 5, y, kFootH, vals[i], color::DimGreen);
+        text_body(x, y, kFootH, keys[i], color::FrogLine);
+        text_body(x + body_w(keys[i]) + 5, y, kFootH, vals[i], color::DimGreen);
     }
 }
 #endif
@@ -282,6 +273,7 @@ enum class Screen : uint8_t {
     Home,
     Menu,  // node engine active — the current list is s.node
     About,
+    Stats,  // "nerd stats" telemetry page
     EditValue,
     EditString,
     EditIp,
@@ -662,13 +654,11 @@ void draw_list_item_col(const ListItem& it, bool sel, int x0, int colW, int ry, 
         return;
     }
     if (it.badge >= 0) {
-        const int cy        = ry + (kRowH - kChip) / 2;
-        const Color num_col = (it.badge_col == color::DarkGray) ? color::DimGreen : color::Black;
-        canvas_fill_round_rect_aa(x, cy, kChip, kChip, 4, it.badge_col, bg);
-        char n[8];
-        std::snprintf(n, sizeof(n), "%d", it.badge + 1);
-        canvas_draw_text_f(x + (kChip - body_w(n)) / 2, cy + (kChip - canvas_font_h(FontId::Body)) / 2,
-                           n, num_col, color::Transparent, FontId::Body);
+        // Same badge as HOME: filled when the channel is in use, hollow (a
+        // family-colour ring) when Off — a disabled channel reads as DarkGray.
+        const int cy      = ry + (kRowH - kChip) / 2;
+        const bool filled = (it.badge_col != color::DarkGray);
+        draw_chan_badge(x, cy, kChip, it.badge + 1, it.badge_col, filled, bg);
         x += kChip + 7;
     }
 
@@ -839,68 +829,53 @@ void render_home() {
     constexpr int kChTop = kHdrH;               // channel grid top (22)
     constexpr int kChH   = (kTH - kChTop) / 4;  // 30px per channel row
     constexpr int kCellW = kTW / 2;             // 214px per channel column
-    const int mfh        = canvas_font_h(FontId::Mini);
+    const int bodyAdv    = canvas_font_adv(FontId::Body);
 
     canvas_clear(color::Black);
     const auto stats = dmx::get_stats();
-    const auto& g    = config::get_global();
     bool rx_active   = false;
     for (int i = 0; i < 8; ++i)
         rx_active |= dmx::is_channel_active(i);
 
-    // ── Status line: IP + chips … rx-icon + fps + LINK ────────────────────────
+    // ── Status line: big IP (left) · fps + data/net icons (right) ─────────────
+    // Homogeneous header — the addressing mode, services, refresh rate and the
+    // packet counters now live on the Stats page, so the address and frame rate
+    // read big and uncluttered in the unified Body face.
     {
         const int h       = kHdrH;
-        const int cy      = (h - 14) / 2;  // chip y (14px tall)
-        int x             = kPadX;
         const uint32_t ip = ui::get_ip();
         if (ip == 0) {
-            text_large(x, 0, h, "0.0.0.0", color::DimGreen);
-            x += large_w("0.0.0.0") + 10;
+            text_body(kPadX, 0, h, "0.0.0.0", color::DimGreen);
         } else {
             std::snprintf(
                 line, sizeof(line), "%u.%u.%u.%u", static_cast<unsigned>((ip >> 24) & 0xFFu),
                 static_cast<unsigned>((ip >> 16) & 0xFFu), static_cast<unsigned>((ip >> 8) & 0xFFu),
                 static_cast<unsigned>(ip & 0xFFu));
-            // Big readable address when it fits; the denser body cell for long
-            // static IPs so the chips never collide with the fps/icon group.
-            if (std::strlen(line) <= 13) {
-                text_large(x, 0, h, line, color::Cream);
-                x += large_w(line) + 10;
-            } else {
-                text_body(x, 0, h, line, color::Cream);
-                x += body_w(line) + 8;
-            }
+            text_body(kPadX, 0, h, line, color::Cream);
         }
-        // Chips: greyed when inactive, coloured when active.
-        x = draw_chip(x, cy, g.use_dhcp ? "DHCP" : "STATIC", g.use_dhcp, color::FrogLine,
-                      color::Black);
-        x = draw_chip(x, cy, "sACN", g.sacn_enabled, color::FrogLine, color::Black);
-        x = draw_chip(x, cy, "WEB", g.web_enabled, color::FrogLine, color::Black);
-        std::snprintf(line, sizeof(line), "%uHz", g.refresh_rate_hz);
-        draw_chip(x, cy, line, true, color::Gold, color::Black);
-
-        // Right group: data-flow icon · net-state icon · fps.
-        // Two 16×16 icons sit flush right; the data icon is directly left of
-        // the net icon. fps text sits to the left of the pair.
+        // Right group: fps (Body) · data-flow icon · net-state icon, flush right.
         const int iconY = (h - kIconSize) / 2;
-        int rx = kTW - kPadX - kIconSize;
+        int rx          = kTW - kPadX - kIconSize;
         draw_net_icon(rx, iconY, ui::get_net_state());
-        rx -= 2 + kIconSize;
-        const DataFlow flow = rx_active ? DataFlow::Receive : DataFlow::None;
+        rx                  -= 2 + kIconSize;
+        const DataFlow flow  = rx_active ? DataFlow::Receive : DataFlow::None;
         draw_data_icon(rx, iconY, flow);
-        rx -= 6 + mini_w("fps");
-        text_mini(rx, 0, h, "fps", color::DimGreen);
+        rx -= 6 + body_w("fps");
+        text_body(rx, 0, h, "fps", color::DimGreen);
         std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
-        rx -= 2 + body_w(line);
+        rx -= 3 + body_w(line);
         text_body(rx, 0, h, line, color::Gold);
     }
     canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
 
     // ── Channel grid: 8 single-line cells, row-major (1 2 / 3 4 / …) ──────────
-    // Soft zebra rows instead of hairlines/dividers: alternating row tints carry
-    // the table structure without the busy grid — the photo-design "douceur" on
-    // the landscape ratio. Each visual row (a pair of channels) shares one band.
+    // Soft zebra rows (no hairlines) + one homogeneous Body cell for every value.
+    // Brightness moves to the channel editor so protocol/universe/pixels read big.
+    // Right-edge column anchors (relative to a cell's left x0) keep the numbers
+    // aligned down the table; ≤4-digit universes still clear the protocol name.
+    const int dotR = kCellW - 9;                // activity dot / "!" right edge
+    const int pixR = dotR - 14;                 // pixels right edge
+    const int uniR = pixR - (4 * bodyAdv + 8);  // universe right edge
     for (int i = 0; i < 8; ++i) {
         const int col      = i % 2;
         const int row      = i / 2;
@@ -911,51 +886,30 @@ void render_home() {
 
         const auto& cc = config::get_channel(i);
         const bool off = led::is_off(cc.protocol);
-        const bool dmx = led::is_dmx(cc.protocol);
         const bool ok  = dmx::is_channel_capacity_ok(i);
 
-        const int myc = cy + (kChH - mfh) / 2;  // mini-font y, centred
+        // Badge: filled in the wiring-family colour when in use, hollow when Off.
+        const int chcy = cy + (kChH - kChip) / 2;
+        draw_chan_badge(x0 + 9, chcy, kChip, i + 1, badge_color(cc.protocol), !off, row_bg);
 
-        // Chip with channel number (Body, centred). AA edges blend to the row
-        // tint so the badge keeps its soft rounded corners on either band.
-        const int chcy      = cy + (kChH - kChip) / 2;
-        const Color fam     = badge_color(cc.protocol);
-        const Color num_col = off ? color::DimGreen : color::Black;
-        canvas_fill_round_rect_aa(x0 + 9, chcy, kChip, kChip, 4, fam, row_bg);
-        char n[4];
-        std::snprintf(n, sizeof(n), "%d", i + 1);
-        canvas_draw_text_f(x0 + 9 + (kChip - body_w(n)) / 2,
-                           chcy + (kChip - canvas_font_h(FontId::Body)) / 2, n, num_col,
-                           color::Transparent, FontId::Body);
-
-        // Protocol name (Body).
-        text_body(x0 + 9 + kChip + 6, cy, kChH, protocol_name(cc.protocol),
+        // Protocol name.
+        text_body(x0 + 9 + kChip + 7, cy, kChH, protocol_name(cc.protocol),
                   off ? color::DimGreen : color::Cream, row_bg);
 
-        // Right-aligned columns: dot/! | bri | pixels | universe (Mini). Numbers
-        // stay bright (gold/light/cream) for legibility, no dim hierarchy.
-        int rx = x0 + kCellW - 9;
+        // Activity: live dot (or "!" over capacity), then pixels + universe.
         if (!ok) {
-            canvas_draw_text_f(rx - mini_w("!"), myc, "!", color::BadCoral, row_bg, FontId::Mini);
+            text_body(x0 + dotR - body_w("!"), cy, kChH, "!", color::BadCoral, row_bg);
         } else if (!off) {
             const bool act     = dmx::is_channel_active(i);
             const bool fsafe   = dmx::is_channel_failsafe(i);
             const Color dotcol = fsafe ? color::Orange : act ? color::GoodBright : color::IdleGreen;
-            canvas_fill_round_rect_aa(rx - 7, cy + (kChH - 7) / 2, 7, 7, 3, dotcol, row_bg);
+            canvas_fill_round_rect_aa(x0 + dotR - 8, cy + (kChH - 8) / 2, 8, 8, 4, dotcol, row_bg);
         }
-        rx -= 10;
         if (!off) {
-            if (!dmx) {
-                std::snprintf(line, sizeof(line), "%u%%",
-                              (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
-                text_mini(rx - mini_w(line), cy, kChH, line, color::Cream, row_bg);
-            }
-            rx -= 36;
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
-            text_mini(rx - mini_w(line), cy, kChH, line, color::LightGray, row_bg);
-            rx -= 38;
+            text_body(x0 + pixR - body_w(line), cy, kChH, line, color::LightGray, row_bg);
             std::snprintf(line, sizeof(line), "%u", cc.universe_start);
-            text_mini(rx - mini_w(line), cy, kChH, line, ok ? color::Gold : color::BadCoral,
+            text_body(x0 + uniR - body_w(line), cy, kChH, line, ok ? color::Gold : color::BadCoral,
                       row_bg);
         }
     }
@@ -1195,6 +1149,8 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
     fns[n++]  = [](uint8_t) { go(NodeId::Output); };
     items[n]  = { "Playback", "" };
     fns[n++]  = [](uint8_t) { go(NodeId::Playback); };
+    items[n]  = { "Nerd stats", "" };
+    fns[n++]  = [](uint8_t) { s.screen = Screen::Stats; };
     items[n]  = { "About", "" };
     fns[n++]  = [](uint8_t) { s.screen = Screen::About; };
     items[n]  = back_item("HOME");
@@ -1218,8 +1174,8 @@ void render_about() {
     const int tx = kPadX + fw + 14;
     canvas_draw_text_f(tx, cy - canvas_font_h(FontId::Mega) / 2 - 8, "pixfrog", color::FrogLine,
                        color::Black, FontId::Mega);
-    text_body(tx, cy + 10, 14, "8-channel ArtNet . sACN node", color::Cream);
-    text_mini(tx, cy + 26, 12, fw_build_info(), color::DimGreen);
+    text_body(tx, cy + 6, 16, "8-channel ArtNet . sACN node", color::Cream);
+    text_body(tx, cy + 24, 16, fw_build_info(), color::DimGreen);
 #elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     canvas_clear(color::Black);
     draw_tft_header("ABOUT");
@@ -1245,6 +1201,91 @@ void render_about() {
 void dispatch_about(Event e) {
     // Return to the main menu list; the node engine restores the cursor on the
     // "About" row automatically.
+    if (e == Event::Click) s.screen = Screen::Menu;
+}
+
+// ── NERD STATS ──────────────────────────────────────────────────────────────
+// Read-only telemetry page: frame rate, packet counters, errors, and the
+// service/refresh/addressing state that used to crowd the HOME header. Any
+// click or long-press returns to the menu.
+
+void render_stats() {
+    const auto st = dmx::get_stats();
+    const auto& g = config::get_global();
+    char fps[12], hz[8];
+    std::snprintf(fps, sizeof(fps), "%lu", static_cast<unsigned long>(st.current_fps));
+    std::snprintf(hz, sizeof(hz), "%uHz", g.refresh_rate_hz);
+
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    // fmt_count + the colour-TFT helpers only exist in the TFT build.
+    char frames[16], artnet[16], sacnrx[16], errs[12], under[12];
+    fmt_count(frames, sizeof(frames), st.frames_emitted);
+    fmt_count(artnet, sizeof(artnet), st.artnet_packets_rx);
+    fmt_count(sacnrx, sizeof(sacnrx), st.sacn_packets_rx);
+    std::snprintf(errs, sizeof(errs), "%llu",
+                  static_cast<unsigned long long>(st.artnet_bad_packets));
+    std::snprintf(under, sizeof(under), "%lu", static_cast<unsigned long>(st.dma_underruns));
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    canvas_clear(color::Black);
+    draw_tft_header("NERD STATS");
+    const int colW    = kTW / 2;
+    const int rowH    = (kTH - kHdrH) / 5;
+    const Color errc  = st.artnet_bad_packets ? color::BadCoral : color::DimGreen;
+    const Color undc  = st.dma_underruns ? color::Orange : color::DimGreen;
+    const Color sacnc = g.sacn_enabled ? color::GoodBright : color::DimGreen;
+    const Color webc  = g.web_enabled ? color::GoodBright : color::DimGreen;
+    const char* lL[5] = { "FPS", "Frames", "ArtNet", "sACN rx", "Errors" };
+    const char* vL[5] = { fps, frames, artnet, sacnrx, errs };
+    const Color cL[5] = { color::Gold, color::Cream, color::Cream, color::Cream, errc };
+    const char* lR[5] = { "Refresh", "Net", "sACN", "Web", "Underrun" };
+    const char* vR[5] = { hz, g.use_dhcp ? "DHCP" : "STATIC", g.sacn_enabled ? "ON" : "OFF",
+                          g.web_enabled ? "ON" : "OFF", under };
+    const Color cR[5] = { color::Gold, color::Cream, sacnc, webc, undc };
+    for (int r = 0; r < 5; ++r) {
+        const int ry   = kHdrH + r * rowH;
+        const Color bg = (r & 1) ? color::RowAlt : color::Black;
+        if (r & 1) canvas_fill_rect(0, ry, kTW, rowH, bg);
+        text_body(kPadX, ry, rowH, lL[r], color::DimGreen, bg);
+        text_body(colW - kPadX - body_w(vL[r]), ry, rowH, vL[r], cL[r], bg);
+        text_body(colW + kPadX, ry, rowH, lR[r], color::DimGreen, bg);
+        text_body(kTW - kPadX - body_w(vR[r]), ry, rowH, vR[r], cR[r], bg);
+    }
+#else
+    canvas_clear(color::Black);
+    draw_tft_header("NERD STATS");
+    const char* l[7] = { "FPS", "Frames", "ArtNet", "sACN", "Errors", "Underrun", "Refresh" };
+    const char* v[7] = { fps, frames, artnet, sacnrx, errs, under, hz };
+    int y            = kHdrH + 6;
+    for (int i = 0; i < 7; ++i) {
+        canvas_draw_text(kIndent, y, l[i], color::DimGreen, color::Black, kTxtSc);
+        draw_text_r(kTW - kIndent, y, v[i], color::Cream, color::Black);
+        y += 28;
+    }
+#endif
+#else
+    // OLED: raw counters (no fmt_count) in the classic text rows.
+    canvas_clear();
+    draw_row(0, 0, "NERD STATS");
+    char ln[kOledCols + 1];
+    std::snprintf(ln, sizeof(ln), "FPS  :%s", fps);
+    draw_row(1, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Art  :%llu",
+                  static_cast<unsigned long long>(st.artnet_packets_rx));
+    draw_row(2, 0, ln);
+    std::snprintf(ln, sizeof(ln), "sACN :%llu",
+                  static_cast<unsigned long long>(st.sacn_packets_rx));
+    draw_row(3, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Err  :%llu",
+                  static_cast<unsigned long long>(st.artnet_bad_packets));
+    draw_row(4, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Undr :%lu", static_cast<unsigned long>(st.dma_underruns));
+    draw_row(5, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Hz   :%s", hz);
+    draw_row(6, 0, ln);
+#endif
+}
+
+void dispatch_stats(Event e) {
     if (e == Event::Click) s.screen = Screen::Menu;
 }
 
@@ -2706,6 +2747,7 @@ void dispatch_long_press() {
     case Screen::Home: break;
     case Screen::Menu: go_back(); break;
     case Screen::About: s.screen = Screen::Menu; break;
+    case Screen::Stats: s.screen = Screen::Menu; break;
     // Edit screens: cancel — discard the pending value, commit nothing.
     case Screen::EditValue:
         dmx::clear_pixel_preview();
@@ -2730,6 +2772,7 @@ void menu_render() {
     case Screen::Home: render_home(); break;
     case Screen::Menu: engine_render(); break;
     case Screen::About: render_about(); break;
+    case Screen::Stats: render_stats(); break;
     case Screen::EditValue: render_edit_value(); break;
     case Screen::EditString: render_edit_string(); break;
     case Screen::EditIp: render_edit_ip(); break;
@@ -2748,6 +2791,7 @@ void menu_dispatch(Event e) {
         break;
     case Screen::Menu: engine_dispatch(e); break;
     case Screen::About: dispatch_about(e); break;
+    case Screen::Stats: dispatch_stats(e); break;
     case Screen::EditValue: dispatch_edit_value(e); break;
     case Screen::EditString: dispatch_edit_string(e); break;
     case Screen::EditIp: dispatch_edit_ip(e); break;
@@ -2783,6 +2827,7 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
         case Screen::Home: *screen_name = "Home"; break;
         case Screen::Menu: *screen_name = kNodeNames[static_cast<uint8_t>(s.node)]; break;
         case Screen::About: *screen_name = "About"; break;
+        case Screen::Stats: *screen_name = "Stats"; break;
         case Screen::EditValue: *screen_name = "EditValue"; break;
         case Screen::EditString: *screen_name = "EditString"; break;
         case Screen::EditIp: *screen_name = "EditIp"; break;

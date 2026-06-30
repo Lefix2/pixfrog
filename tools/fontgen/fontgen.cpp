@@ -51,7 +51,7 @@ constexpr CellGeom kXL{ 18, 24, 16 };  // splash wordmark only
 //   body — ~12px body text (list labels, protocol names, IP, values)
 //   mega — ~30px edit values + splash wordmark (no upscaling)
 constexpr CellGeom kMini{ 7, 10, 6 };
-constexpr CellGeom kBody{ 8, 13, 7 };
+constexpr CellGeom kBody{ 9, 16, 8 };
 constexpr CellGeom kMega{ 21, 31, 19 };
 
 // cells[glyph][row*cell_w + col] = coverage 0..255
@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
     }
     // mini: caps ~7px in a 10px cell; body: ~9px in 13; mega: ~22px in 31.
     const auto mini = rasterize(*bf, kMini, 10.0f, 8, 0, 1.0f);
-    const auto body = rasterize(*bf, kBody, 12.5f, 10, 0, 1.0f);
+    const auto body = rasterize(*bf, kBody, 15.0f, 12, 0, 1.0f);
     const auto mega = rasterize(*bf, kMega, 30.0f, 24, 0, 1.0f);
 
     // Debug: if out_path looks like "preview:TEXT", render TEXT as terminal
