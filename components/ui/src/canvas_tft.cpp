@@ -303,7 +303,6 @@ struct FontDesc {
 };
 FontDesc font_desc(FontId f) {
     switch (f) {
-    case FontId::Mini: return { font_mini_alpha_for, kFontMiniCellWidth, kFontMiniHeight };
     case FontId::Body: return { font_body_alpha_for, kFontBodyCellWidth, kFontBodyHeight };
     case FontId::Large: return { font_large_alpha_for, kFontLargeCellWidth, kFontLargeHeight };
     case FontId::Mega: return { font_mega_alpha_for, kFontMegaCellWidth, kFontMegaHeight };

@@ -51,18 +51,10 @@ constexpr uint8_t kFontXLHeight    = 24;
 extern const uint8_t kFontXLAlpha[][kFontXLCellWidth * kFontXLHeight];
 const uint8_t* font_xl_alpha_for(char c);
 
-// Mini cell — natively rasterised ~10px bold mono: legible small labels and
-// numbers on the NV3007 (replaces the thin 6×8 regular for tiny UI text).
-constexpr uint8_t kFontMiniCellWidth = 7;
-constexpr uint8_t kFontMiniHeight    = 10;
-
-extern const uint8_t kFontMiniAlpha[][kFontMiniCellWidth * kFontMiniHeight];
-const uint8_t* font_mini_alpha_for(char c);
-
 // Body cell — natively rasterised ~15px bold mono: the single homogeneous UI
-// face for the NV3007 landscape design (list labels, protocol names, channel
-// values, IP, fps, titles). Sized so the 24/30px rows still breathe; the small
-// Mini cell is reserved for the channel-number badges. TFT-only.
+// face for the NV3007 landscape design — list labels, protocol names, channel
+// values, IP, fps, titles and the channel-number badges. Sized so the 24/30px
+// rows still breathe. TFT-only.
 constexpr uint8_t kFontBodyCellWidth = 9;
 constexpr uint8_t kFontBodyHeight    = 16;
 
