@@ -93,35 +93,32 @@ inline int body_w(const char* s) {
 inline int small_w(const char* s) {
     return canvas_text_w(s, FontId::Small);
 }
+// Mini font (legible bold ~10px) is the small-label/number face on the NV3007.
+inline int mini_w(const char* s) {
+    return canvas_text_w(s, FontId::Mini);
+}
+inline void text_mini(int x, int y, int h, const char* s, Color fg, Color bg = color::Black) {
+    canvas_draw_text_f(x, y + (h - canvas_font_h(FontId::Mini)) / 2, s, fg, bg, FontId::Mini);
+}
 
-// Frog mark (two eyes + smile), scaled from the 24px design glyph.
-void draw_frog(int x, int y, int s, Color col, Color behind) {
-    const int r   = s * 34 / 240;  // eye radius (design r=3.4 in vb 24)
-    const int ex1 = x + s * 7 / 24, ex2 = x + s * 17 / 24, ey = y + s * 9 / 24;
-    canvas_fill_round_rect_aa(ex1 - r, ey - r, 2 * r, 2 * r, r, col, behind);
-    canvas_fill_round_rect_aa(ex2 - r, ey - r, 2 * r, 2 * r, r, col, behind);
-    const int pr = s * 13 / 240;  // pupil
-    if (pr >= 1) {
-        canvas_fill_round_rect_aa(ex1 - pr, ey - pr, 2 * pr, 2 * pr, pr, color::Black, col);
-        canvas_fill_round_rect_aa(ex2 - pr, ey - pr, 2 * pr, 2 * pr, pr, color::Black, col);
-    }
-    // Smile: a shallow arc just below the eyes (thicker centre).
-    const int my = y + s * 13 / 24, mx0 = x + s * 5 / 24, mw = s * 14 / 24;
-    const int th = s >= 30 ? 2 : 1;
-    canvas_fill_rect(mx0 + mw / 6, my, mw - mw / 3, th, col);
-    canvas_fill_rect(mx0, my - th, mw / 6 + 1, th, col);
-    canvas_fill_rect(mx0 + mw - mw / 6, my - th, mw / 6 + 1, th, col);
+// Activity icon: a down-arrow ("packets incoming"), drawn only when data flows.
+void draw_rx_icon(int x, int y, Color c) {
+    // 9×9: arrow shaft + filled head, with a short baseline tray underneath.
+    canvas_fill_rect(x + 3, y, 3, 4, c);  // shaft
+    for (int r = 0; r < 4; ++r)           // head (widening downward)
+        canvas_hline(x + 4 - r, y + 3 + r, 2 * r + 1, c);
+    canvas_hline(x + 1, y + 9, 7, c);  // tray
 }
 
 // Outlined status chip: 1px rounded border (accent if on, hairline if off),
-// small-font caps inside. Returns the x just past the chip + gap.
+// Mini caps inside. Returns the x just past the chip + gap.
 int draw_chip(int x, int y, const char* txt, bool on, Color accent, Color behind) {
-    const int tw = small_w(txt), w = tw + 8, h = 12;
+    const int tw = mini_w(txt), w = tw + 8, h = 14;
     const Color border = on ? accent : color::Hair;
     const Color ink    = on ? accent : color::DimGreen;
     canvas_fill_round_rect(x, y, w, h, 3, border);
     canvas_fill_round_rect(x + 1, y + 1, w - 2, h - 2, 2, behind);
-    canvas_draw_text_f(x + 4, y + (h - kFontHeight) / 2, txt, ink, behind, FontId::Small);
+    text_mini(x + 4, y, h, txt, ink, behind);
     return x + w + 4;
 }
 
@@ -130,16 +127,14 @@ int draw_chip(int x, int y, const char* txt, bool on, Color accent, Color behind
 void draw_hint_bar(const char* v_turn, const char* v_press, const char* v_hold) {
     const int y = kTH - kFootH;
     canvas_hline(0, y, kTW, color::Hair);
-    const int ty        = y + (kFootH - kFontHeight) / 2 + 1;
     const char* keys[3] = { "TURN", "PRESS", "HOLD" };
     const char* vals[3] = { v_turn, v_press, v_hold };
     for (int i = 0; i < 3; ++i) {
-        const int w  = small_w(keys[i]) + 5 + small_w(vals[i]);
+        const int w  = mini_w(keys[i]) + 5 + mini_w(vals[i]);
         const int cx = kTW * (2 * i + 1) / 6;
         int x        = cx - w / 2;
-        canvas_draw_text_f(x, ty, keys[i], color::FrogLine, color::Black, FontId::Small);
-        canvas_draw_text_f(x + small_w(keys[i]) + 5, ty, vals[i], color::DimGreen, color::Black,
-                           FontId::Small);
+        text_mini(x, y, kFootH, keys[i], color::FrogLine);
+        text_mini(x + mini_w(keys[i]) + 5, y, kFootH, vals[i], color::DimGreen);
     }
 }
 #endif
@@ -635,33 +630,37 @@ void draw_list_item_col(const ListItem& it, bool sel, int x0, int colW, int ry, 
 
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-    // ── NV3007 landscape: two-column list (4 rows × 2 cols, 8 visible) ─────────
+    // ── NV3007 landscape: row-major two-column list (1 2 / 3 4 / …) ────────────
+    // Cursor advances left→right then down; scrolling moves whole rows.
     canvas_clear(color::Black);
     draw_tft_header(title);
 
-    // Scroll so the cursor stays in view (design ListView window logic).
-    int first = 0;
-    if (count > kMaxVis) {
-        if (cursor >= kMaxVis) first = cursor - (kMaxVis - 1);
-        if (first + kMaxVis > count) first = count - kMaxVis;
+    const int totalRows = (count + 1) / 2;
+    int firstRow        = 0;
+    if (totalRows > kListRows) {
+        const int crow = cursor / 2;
+        if (crow >= kListRows) firstRow = crow - (kListRows - 1);
+        if (firstRow + kListRows > totalRows) firstRow = totalRows - kListRows;
+        if (firstRow < 0) firstRow = 0;
     }
+    const int first = firstRow * 2;
     for (int p = 0; p < kMaxVis && first + p < count; ++p) {
         const int idx = first + p;
-        const int col = p / kListRows;
-        const int row = p % kListRows;
+        const int col = p % 2;  // left / right
+        const int row = p / 2;  // top → bottom
         const int x0  = col * kColW;
         const int ry  = kHdrH + row * kRowH;
         draw_list_item_col(items[idx], idx == cursor, x0, kColW, ry, row == kListRows - 1);
     }
     // Divider between columns.
     canvas_vline(kColW, kHdrH, kTH - kHdrH, color::Hair);
-    // Scrollbar (design ScrollBar): track + proportional thumb on the far right.
-    if (count > kMaxVis) {
+    // Scrollbar (row-based): track + proportional thumb on the far right.
+    if (totalRows > kListRows) {
         const int trackH = kTH - kHdrH - 6;
-        int thumbH       = trackH * kMaxVis / count;
+        int thumbH       = trackH * kListRows / totalRows;
         if (thumbH < 12) thumbH = 12;
-        const int travel = count - kMaxVis;
-        const int y      = kHdrH + 3 + (travel > 0 ? (trackH - thumbH) * first / travel : 0);
+        const int travel = totalRows - kListRows;
+        const int y      = kHdrH + 3 + (travel > 0 ? (trackH - thumbH) * firstRow / travel : 0);
         canvas_fill_round_rect(kTW - 5, kHdrH + 3, 3, trackH, 1, color::Hair);
         canvas_fill_round_rect(kTW - 5, y, 3, thumbH, 1, color::FrogLine);
     }
@@ -762,82 +761,66 @@ void render_home() {
     char line[48];
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-    // ── NV3007 landscape 428×142 dashboard (pixfrog-screen.jsx Home) ──────────
-    // Status block (2 rows) | green rule | 8 channels in 2 columns × 4 rows.
-    constexpr int kStatusH = 41;                  // status block incl. rule
-    constexpr int kChTop   = kStatusH;            // channel grid top
-    constexpr int kChH     = (kTH - kChTop) / 4;  // 25px per channel row
-    constexpr int kCellW   = kTW / 2;             // 214px per channel column
-    const int sfh          = kFontHeight;         // small-font height (8)
+    // ── NV3007 landscape 428×142 dashboard ────────────────────────────────────
+    // Single status line (22px) | green rule | 8 channels, row-major 4×2 grid.
+    constexpr int kChTop = kHdrH;               // channel grid top (22)
+    constexpr int kChH   = (kTH - kChTop) / 4;  // 30px per channel row
+    constexpr int kCellW = kTW / 2;             // 214px per channel column
+    const int mfh        = canvas_font_h(FontId::Mini);
 
     canvas_clear(color::Black);
     const auto stats = dmx::get_stats();
     const auto& g    = config::get_global();
-    const bool nvs   = config::is_persistence_ok();
+    bool rx_active   = false;
+    for (int i = 0; i < 8; ++i)
+        rx_active |= dmx::is_channel_active(i);
 
-    // ── Status row 1: frog + pixfrog + 8CH NODE … fps + LINK ──────────────────
+    // ── Status line: IP + chips … rx-icon + fps + LINK ────────────────────────
     {
-        const int band = 3, h = 15;
-        draw_frog(kPadX, band + (h - 14) / 2, 14, nvs ? color::FrogLine : color::BadCoral,
-                  color::Black);
-        int x = kPadX + 14 + 7;
-        text_body(x, band, h, "pixfrog", color::White);
-        x += body_w("pixfrog") + 7;
-        canvas_draw_text_f(x, band + (h - sfh) / 2, "8CH NODE", color::DimGreen, color::Black,
-                           FontId::Small);
-        // Right: LINK/DOWN chip, fps to its left.
-        const bool up        = ui::is_link_up();
-        const char* link_txt = up ? "LINK" : "DOWN";
-        const int chipw      = small_w(link_txt) + 8;
-        int rx               = kTW - kPadX - chipw;
-        draw_chip(rx, band + (h - 12) / 2, link_txt, true, up ? color::FrogLine : color::BadCoral,
-                  color::Black);
-        std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
-        rx -= 6 + small_w("fps");
-        canvas_draw_text_f(rx, band + (h - sfh) / 2, "fps", color::DimGreen, color::Black,
-                           FontId::Small);
-        rx -= 2 + body_w(line);
-        text_body(rx, band, h, line, color::Gold);
-    }
-
-    // ── Status row 2: IP + chips … RX <pkts> ──────────────────────────────────
-    {
-        const int band = 20, h = 14;
+        const int h       = kHdrH;
+        const int cy      = (h - 14) / 2;  // chip y (14px tall)
         int x             = kPadX;
         const uint32_t ip = ui::get_ip();
         if (ip == 0) {
-            text_body(x, band, h, "0.0.0.0", color::White);
-            x += body_w("0.0.0.0") + 7;
+            text_body(x, 0, h, "0.0.0.0", color::DimGreen);
+            x += body_w("0.0.0.0") + 8;
         } else {
             std::snprintf(
                 line, sizeof(line), "%u.%u.%u.%u", static_cast<unsigned>((ip >> 24) & 0xFFu),
                 static_cast<unsigned>((ip >> 16) & 0xFFu), static_cast<unsigned>((ip >> 8) & 0xFFu),
                 static_cast<unsigned>(ip & 0xFFu));
-            text_body(x, band, h, line, color::White);
-            x += body_w(line) + 7;
+            text_body(x, 0, h, line, color::White);
+            x += body_w(line) + 8;
         }
-        const int cy = band + (h - 12) / 2;
-        x = draw_chip(x, cy, g.use_dhcp ? "DHCP" : "STATIC", true, color::DimGreen, color::Black);
+        // Chips: greyed when inactive, coloured when active.
+        x = draw_chip(x, cy, g.use_dhcp ? "DHCP" : "STATIC", g.use_dhcp, color::FrogLine,
+                      color::Black);
         x = draw_chip(x, cy, "sACN", g.sacn_enabled, color::FrogLine, color::Black);
         x = draw_chip(x, cy, "WEB", g.web_enabled, color::FrogLine, color::Black);
         std::snprintf(line, sizeof(line), "%uHz", g.refresh_rate_hz);
         draw_chip(x, cy, line, true, color::Gold, color::Black);
-        // Right: RX <pkts>
-        char cnt[24];
-        std::snprintf(cnt, sizeof(cnt), "%llu",
-                      static_cast<unsigned long long>(stats.artnet_packets_rx));
-        int rx = kTW - kPadX - body_w(cnt);
-        text_body(rx, band, h, cnt, color::Cream);
-        rx -= 4 + small_w("RX");
-        canvas_draw_text_f(rx, band + (h - sfh) / 2, "RX", color::DimGreen, color::Black,
-                           FontId::Small);
-    }
-    canvas_hline(0, kStatusH - 1, kTW, color::FrogLine);
 
-    // ── Channel grid: 8 single-line cells, 2 columns × 4 rows ─────────────────
+        // Right group: LINK chip · fps · rx-icon.
+        const bool up        = ui::is_link_up();
+        const char* link_txt = up ? "LINK" : "DOWN";
+        int rx               = kTW - kPadX - (mini_w(link_txt) + 8);
+        draw_chip(rx, cy, link_txt, up, up ? color::FrogLine : color::BadCoral, color::Black);
+        std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
+        rx -= 6 + mini_w("fps");
+        text_mini(rx, 0, h, "fps", color::DimGreen);
+        rx -= 2 + body_w(line);
+        text_body(rx, 0, h, line, color::Gold);
+        if (rx_active) {
+            rx -= 8 + 9;
+            draw_rx_icon(rx, (h - 11) / 2, color::GoodBright);
+        }
+    }
+    canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
+
+    // ── Channel grid: 8 single-line cells, row-major (1 2 / 3 4 / …) ──────────
     for (int i = 0; i < 8; ++i) {
-        const int col  = i / 4;
-        const int row  = i % 4;
+        const int col  = i % 2;
+        const int row  = i / 2;
         const int x0   = col * kCellW;
         const int cy   = kChTop + row * kChH;
         const auto& cc = config::get_channel(i);
@@ -846,50 +829,46 @@ void render_home() {
         const bool ok  = dmx::is_channel_capacity_ok(i);
 
         if (row != 3) canvas_hline(x0, cy + kChH - 1, kCellW, color::Hair);
-        const int syc = cy + (kChH - sfh) / 2;  // small-font y, centred
+        const int myc = cy + (kChH - mfh) / 2;  // mini-font y, centred
 
-        // Chip with channel number.
+        // Chip with channel number (Mini).
         const int chcy      = cy + (kChH - kChip) / 2;
         const Color fam     = badge_color(cc.protocol);
         const Color num_col = off ? color::DimGreen : color::Black;
         canvas_fill_round_rect_aa(x0 + 9, chcy, kChip, kChip, 4, fam, color::Black);
         char n[4];
         std::snprintf(n, sizeof(n), "%d", i + 1);
-        canvas_draw_text_f(x0 + 9 + (kChip - small_w(n)) / 2, chcy + (kChip - sfh) / 2, n, num_col,
-                           color::Transparent, FontId::Small);
+        canvas_draw_text_f(x0 + 9 + (kChip - mini_w(n)) / 2, chcy + (kChip - mfh) / 2, n, num_col,
+                           color::Transparent, FontId::Mini);
 
         // Protocol name (Body).
         text_body(x0 + 9 + kChip + 6, cy, kChH, protocol_name(cc.protocol),
                   off ? color::DimGreen : color::Cream);
 
-        // Right-aligned columns: dot/! | bri | pixels | universe.
+        // Right-aligned columns: dot/! | bri | pixels | universe (Mini).
         int rx = x0 + kCellW - 9;
-        // activity dot or conflict mark
         if (!ok) {
-            canvas_draw_text_f(rx - small_w("!"), syc, "!", color::BadCoral, color::Black,
-                               FontId::Small);
+            canvas_draw_text_f(rx - mini_w("!"), myc, "!", color::BadCoral, color::Black,
+                               FontId::Mini);
         } else if (!off) {
             const bool act     = dmx::is_channel_active(i);
             const bool fsafe   = dmx::is_channel_failsafe(i);
             const Color dotcol = fsafe ? color::Orange : act ? color::GoodBright : color::IdleGreen;
             canvas_fill_round_rect_aa(rx - 7, cy + (kChH - 7) / 2, 7, 7, 3, dotcol, color::Black);
         }
-        rx -= 9;
+        rx -= 10;
         if (!off) {
             if (!dmx) {
                 std::snprintf(line, sizeof(line), "%u%%",
                               (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
-                canvas_draw_text_f(rx - small_w(line), syc, line, color::Cream, color::Black,
-                                   FontId::Small);
+                text_mini(rx - mini_w(line), cy, kChH, line, color::Cream);
             }
-            rx -= 32;
+            rx -= 36;
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
-            canvas_draw_text_f(rx - small_w(line), syc, line, color::DimGreen, color::Black,
-                               FontId::Small);
-            rx -= 34;
+            text_mini(rx - mini_w(line), cy, kChH, line, color::DimGreen);
+            rx -= 38;
             std::snprintf(line, sizeof(line), "%u", cc.universe_start);
-            canvas_draw_text_f(rx - small_w(line), syc, line, ok ? color::Gold : color::BadCoral,
-                               color::Black, FontId::Small);
+            text_mini(rx - mini_w(line), cy, kChH, line, ok ? color::Gold : color::BadCoral);
         }
     }
     canvas_vline(kCellW, kChTop, kTH - kChTop, color::Hair);
@@ -1140,15 +1119,20 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
 
 void render_about() {
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-    // ── NV3007 design: frog mark + wordmark + one-liners ──────────────────────
+    // ── NV3007 design: rasterised frog logo + wordmark + one-liners ───────────
     canvas_clear(color::Black);
     draw_tft_header("ABOUT");
     const int cy = (kHdrH + kTH) / 2;
-    draw_frog(kPadX + 6, cy - 23, 46, color::FrogLine, color::Black);
-    const int tx = kPadX + 6 + 46 + 22;
-    canvas_draw_text_f(tx, cy - 22, "pixfrog", color::FrogLine, color::Black, FontId::Mega);
-    text_body(tx, cy + 8, 14, "8-channel ArtNet . sACN node", color::Cream);
-    canvas_draw_text_f(tx, cy + 24, fw_build_info(), color::DimGreen, color::Black, FontId::Small);
+    // Real SVG-rasterised frog (final splash frame), not a procedural glyph.
+    const int fw = splash_anim_w(), fh = splash_anim_h();
+    const int fy = (kHdrH + kTH) / 2 - fh / 2;
+    canvas_draw_mask(kPadX, fy, fw, fh, splash_anim_frame(splash_anim_count() - 1), color::FrogLine,
+                     color::Transparent);
+    const int tx = kPadX + fw + 14;
+    canvas_draw_text_f(tx, cy - canvas_font_h(FontId::Mega) / 2 - 8, "pixfrog", color::FrogLine,
+                       color::Black, FontId::Mega);
+    text_body(tx, cy + 10, 14, "8-channel ArtNet . sACN node", color::Cream);
+    text_mini(tx, cy + 26, 12, fw_build_info(), color::DimGreen);
 #elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     canvas_clear(color::Black);
     draw_tft_header("ABOUT");
@@ -1355,14 +1339,17 @@ void render_edit_value() {
                            color::Black, FontId::Mega);
         draw_hint_bar("toggle", "apply", "cancel");
     } else {
-        // Numeric gauge.
+        // Numeric gauge — value + bar centred as a group in the content area.
         char val[24];
         format_value(s.edit, s.edit.current, val, sizeof(val));
-        const int vw = canvas_text_w(val, FontId::Mega);
-        canvas_draw_text_f((kTW - vw) / 2, kHdrH + 6, val, color::EditCyan, color::Black,
-                           FontId::Mega);
+        const int vw     = canvas_text_w(val, FontId::Mega);
+        const int sh     = canvas_font_h(FontId::Small);
+        const int gh     = 10;
+        const int groupH = mh + 6 + gh + 8 + sh;  // value, gap, bar, gap, labels
+        const int top    = kHdrH + ((kTH - kFootH) - kHdrH - groupH) / 2;
+        canvas_draw_text_f((kTW - vw) / 2, top, val, color::EditCyan, color::Black, FontId::Mega);
         if (gauge) {
-            const int gx = 30, gw = kTW - 60, gy = kHdrH + 6 + mh + 4, gh = 10;
+            const int gx = 30, gw = kTW - 60, gy = top + mh + 6;
             canvas_fill_round_rect(gx, gy, gw, gh, 5, color::IdleGreen);
             long span = static_cast<long>(s.edit.max) - s.edit.min;
             if (span < 1) span = 1;
@@ -1803,21 +1790,26 @@ void render_edit_string() {
                            cy - canvas_font_h(FontId::Mega) / 2, msg, color::FrogLine, color::Black,
                            FontId::Mega);
     } else {
-        const int adv = canvas_font_adv(FontId::Body) + 3;
-        int n         = 0;
-        while (window[n])
-            ++n;
-        int x        = (kTW - n * adv) / 2;
-        const int ty = cy - canvas_font_h(FontId::Body) / 2;
-        for (int i = 0; window[i]; ++i) {
-            const bool act   = (win_start + i == cursor);
-            const bool blank = (window[i] == '_');
-            char ch[2]       = { window[i], 0 };
+        // 2× font (Mega): a tighter window of cells centred on the cursor.
+        constexpr int kVis = 13;
+        int st             = static_cast<int>(cursor) - kVis / 2;
+        if (st < 0) st = 0;
+        if (st + kVis > len) st = len - kVis;
+        if (st < 0) st = 0;
+        const int shown = (len - st < kVis) ? (len - st) : kVis;
+        const int adv   = canvas_font_adv(FontId::Mega) + 2;
+        const int mfh   = canvas_font_h(FontId::Mega);
+        int x           = (kTW - shown * adv) / 2;
+        const int ty    = cy - mfh / 2;
+        for (int i = 0; i < shown; ++i) {
+            const char raw   = s.str_edit.buf[st + i];
+            const bool act   = (st + i == cursor);
+            const bool blank = (raw == ' ');
+            char ch[2]       = { blank ? '_' : raw, 0 };
             const Color col  = act ? color::EditCyan : blank ? color::IdleGreen : color::Cream;
-            canvas_draw_text_f(x, ty, ch, col, color::Black, FontId::Body);
-            if (act)
-                canvas_fill_rect(x, ty + canvas_font_h(FontId::Body) + 1, adv - 3, 2,
-                                 color::EditCyan);
+            canvas_draw_text_f(x + (adv - canvas_font_adv(FontId::Mega)) / 2, ty, ch, col,
+                               color::Black, FontId::Mega);
+            if (act) canvas_fill_rect(x + 2, ty + mfh + 1, adv - 4, 3, color::EditCyan);
             x += adv;
         }
     }

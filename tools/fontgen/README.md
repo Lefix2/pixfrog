@@ -35,9 +35,10 @@ The shipped font comes from **DejaVu Sans Mono** with the canonical metrics
 ```
 
 The trailing 13th argument is the **bold** TTF used for the NV3007 landscape
-cells — `kFontBodyAlpha` (8×13, ~12px body text) and `kFontMegaAlpha` (21×31,
-~30px edit values / splash wordmark). The base 6×8 / 12×16 / 18×24 cells stay on
-the regular face. Omit the bold path to reuse the regular face for everything.
+cells — `kFontMiniAlpha` (7×10, ~10px legible small labels/numbers),
+`kFontBodyAlpha` (8×13, ~12px body text) and `kFontMegaAlpha` (21×31, ~30px edit
+values / splash wordmark). The base 6×8 / 12×16 / 18×24 cells stay on the regular
+face. Omit the bold path to reuse the regular face for everything.
 
 | arg           | meaning                                                            |
 |---------------|--------------------------------------------------------------------|

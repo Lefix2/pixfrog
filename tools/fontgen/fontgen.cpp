@@ -47,8 +47,10 @@ constexpr CellGeom kSmall{ 6, 8, 5 };
 constexpr CellGeom kLarge{ 12, 16, 11 };
 constexpr CellGeom kXL{ 18, 24, 16 };  // splash wordmark only
 // NV3007 landscape design fonts (DejaVuSansMono-Bold):
+//   mini — ~10px legible small labels/numbers (replaces the thin 6×8 regular)
 //   body — ~12px body text (list labels, protocol names, IP, values)
 //   mega — ~30px edit values + splash wordmark (no upscaling)
+constexpr CellGeom kMini{ 7, 10, 6 };
 constexpr CellGeom kBody{ 8, 13, 7 };
 constexpr CellGeom kMega{ 21, 31, 19 };
 
@@ -213,7 +215,8 @@ int main(int argc, char** argv) {
         }
         bf = &bold_font;
     }
-    // body: caps ~9px in a 13px cell; mega: caps ~22px in a 31px cell.
+    // mini: caps ~7px in a 10px cell; body: ~9px in 13; mega: ~22px in 31.
+    const auto mini = rasterize(*bf, kMini, 10.0f, 8, 0, 1.0f);
     const auto body = rasterize(*bf, kBody, 12.5f, 10, 0, 1.0f);
     const auto mega = rasterize(*bf, kMega, 30.0f, 24, 0, 1.0f);
 
@@ -285,6 +288,18 @@ int main(int argc, char** argv) {
                     "        return kFallbackXLAlpha;\n"
                     "    }\n"
                     "    return kFontXLAlpha[uc - static_cast<uint8_t>(kFontFirstChar)];\n"
+                    "}\n\n");
+    emit_table(o, mini, kMini, "kFontMiniAlpha", "kFontMiniCellWidth * kFontMiniHeight");
+    std::fprintf(o, "\n");
+    emit_fallback(o, kMini, "kFallbackMiniAlpha", "kFontMiniCellWidth * kFontMiniHeight");
+    std::fprintf(o, "\n"
+                    "const uint8_t* font_mini_alpha_for(char c) {\n"
+                    "    const uint8_t uc = static_cast<uint8_t>(c);\n"
+                    "    if (uc < static_cast<uint8_t>(kFontFirstChar) ||\n"
+                    "        uc > static_cast<uint8_t>(kFontLastChar)) {\n"
+                    "        return kFallbackMiniAlpha;\n"
+                    "    }\n"
+                    "    return kFontMiniAlpha[uc - static_cast<uint8_t>(kFontFirstChar)];\n"
                     "}\n\n");
     emit_table(o, body, kBody, "kFontBodyAlpha", "kFontBodyCellWidth * kFontBodyHeight");
     std::fprintf(o, "\n");

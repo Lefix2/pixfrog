@@ -109,9 +109,9 @@ int canvas_text_xl_width(const char* str);
 
 // Multi-font text (TFT only). Each FontId maps to a natively rasterised cell —
 // no upscaling, so glyphs stay crisp at every size the NV3007 design needs.
-//   Small 6×8 · Body 8×13 · Large 12×16 · Mega 21×31 · XL 18×24
+//   Small 6×8 · Mini 7×10 · Body 8×13 · Large 12×16 · Mega 21×31 · XL 18×24
 // bg == color::Transparent composites the ink over the framebuffer.
-enum class FontId : uint8_t { Small, Body, Large, Mega, XL };
+enum class FontId : uint8_t { Small, Mini, Body, Large, Mega, XL };
 void canvas_draw_text_f(int x, int y, const char* str, Color fg, Color bg, FontId f);
 int canvas_text_w(const char* str, FontId f);  // pixel width (len × advance)
 int canvas_font_h(FontId f);                   // cell height
