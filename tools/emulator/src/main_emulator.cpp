@@ -205,6 +205,26 @@ bool exec_cmd(const std::string& line) {
             ui::set_net_state(ui::NetState::Error);
         else
             std::printf("error: unknown net state '%s'\n", p);
+    } else if (line.rfind("set global ", 0) == 0) {
+        // set global <web|sacn|cap> <value> — toggle opt-in services / fps cap so
+        // the HOME header status strip can be exercised.
+        char field[16] = {};
+        int val        = 0;
+        if (std::sscanf(line.c_str() + 11, "%15s %d", field, &val) == 2) {
+            auto g = pixfrog::config::get_global();
+            if (std::strcmp(field, "web") == 0)
+                g.web_enabled = (val != 0);
+            else if (std::strcmp(field, "sacn") == 0)
+                g.sacn_enabled = (val != 0);
+            else if (std::strcmp(field, "cap") == 0)
+                g.refresh_rate_hz = static_cast<uint8_t>(val);
+            else
+                std::printf("error: unknown global field '%s'\n", field);
+            pixfrog::config::set_global(g);
+        } else {
+            std::printf("error: usage: set global <web|sacn|cap> <value>\n");
+        }
+        std::fflush(stdout);
     } else if (line == "quit") {
         return false;
     } else {

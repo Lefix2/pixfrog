@@ -18,6 +18,7 @@
 #include "fpp_sync.h"
 #include "fseq_player.h"
 #include "icons_net.h"
+#include "icons_status.h"
 #include "led_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
@@ -104,6 +105,28 @@ constexpr int kIconSize = 16;
 void draw_icon_layer(int x, int y, const uint8_t* alpha, Color fg) {
     canvas_draw_mask_aa(x, y, kIconSize, kIconSize, alpha, fg);
 }
+
+// ── Status strip ─────────────────────────────────────────────────────────────
+// A dynamically-composed row of header indicators, packed left-to-right from a
+// start x inside the header band. Only active services push an item, so the
+// strip grows and shrinks with the live config. An item is either a 16×16 icon
+// mask (composited in a theme colour) or a short Body-face label — one small
+// graphical component that keeps the header self-arranging.
+struct StatusStrip {
+    int x;       // running pen position (left edge of the next item)
+    int band_h;  // header band height (items are vertically centred in it)
+
+    void icon(const uint8_t* alpha, Color fg) {
+        draw_icon_layer(x, (band_h - kIconSize) / 2, alpha, fg);
+        x += kIconSize + kGap;
+    }
+    void label(const char* s, Color fg) {
+        text_body(x, 0, band_h, s, fg);
+        x += body_w(s) + kGap;
+    }
+
+    static constexpr int kGap = 7;  // spacing between consecutive items
+};
 
 // Network-state icon: one per NetState, themed to the design palette.
 //   Disconnected → red X over a dim grey cable
@@ -879,23 +902,31 @@ void render_home() {
     for (int i = 0; i < 8; ++i)
         rx_active |= dmx::is_channel_active(i);
 
-    // ── Status line: big IP (left) · fps + data/net icons (right) ─────────────
-    // Homogeneous header — the addressing mode, services, refresh rate and the
-    // packet counters now live on the Stats page, so the address and frame rate
-    // read big and uncluttered in the unified Body face.
+    // ── Status line: IP + live-service strip (left) · fps + icons (right) ─────
+    // Left: the address, then a self-arranging strip of active services (web
+    // globe, sACN) via StatusStrip. Right: current/cap fps + data/net icons.
     {
         const int h       = kHdrH;
+        const auto& g     = config::get_global();
         const uint32_t ip = ui::get_ip();
+        int ip_end        = kPadX;
         if (ip == 0) {
             text_body(kPadX, 0, h, "0.0.0.0", color::DimGreen);
+            ip_end += body_w("0.0.0.0");
         } else {
             std::snprintf(
                 line, sizeof(line), "%u.%u.%u.%u", static_cast<unsigned>((ip >> 24) & 0xFFu),
                 static_cast<unsigned>((ip >> 16) & 0xFFu), static_cast<unsigned>((ip >> 8) & 0xFFu),
                 static_cast<unsigned>(ip & 0xFFu));
             text_body(kPadX, 0, h, line, color::Cream);
+            ip_end += body_w(line);
         }
-        // Right group: fps (Body) · data-flow icon · net-state icon, flush right.
+        // Active-service strip to the right of the IP: web globe, then sACN.
+        StatusStrip strip{ ip_end + 11, h };
+        if (g.web_enabled) strip.icon(kIcon_globe, color::FrogLine);
+        if (g.sacn_enabled) strip.label("sACN", color::GoodBright);
+
+        // Right group (flush right): net icon · data icon · "fps" · cur/cap.
         const int iconY = (h - kIconSize) / 2;
         int rx          = kTW - kPadX - kIconSize;
         draw_net_icon(rx, iconY, ui::get_net_state());
@@ -904,8 +935,12 @@ void render_home() {
         draw_data_icon(rx, iconY, flow);
         rx -= 6 + body_w("fps");
         text_body(rx, 0, h, "fps", color::DimGreen);
-        std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
+        // "/<cap>" in dim, then the live fps in gold — reads "56/60 fps".
+        std::snprintf(line, sizeof(line), "/%u", g.refresh_rate_hz);
         rx -= 3 + body_w(line);
+        text_body(rx, 0, h, line, color::DimGreen);
+        std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
+        rx -= body_w(line);
         text_body(rx, 0, h, line, color::Gold);
     }
     canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
