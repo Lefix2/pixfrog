@@ -696,14 +696,9 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
     // bottom edge. The offset persists in s.scroll across renders, so coming
     // back up un-sticks the cursor from the last row instead of dragging the
     // whole list (mirrors viewport_first() used by the TFT/OLED paths).
-    int firstRow    = static_cast<int>(s.scroll);
-    int rowOffsetPx = 0;
+    int firstRow = static_cast<int>(s.scroll);
     if (totalRows <= kListRows) {
         firstRow = 0;
-        // Short lists (OUTPUT, PLAYBACK, an empty FSEQ, an Off channel…) centre
-        // vertically instead of hugging the header — a half-empty grid pinned
-        // to the top reads unfinished.
-        rowOffsetPx = (kListRows - totalRows) * kRowH / 2;
     } else {
         const int crow = cursor / 2;
         if (crow < firstRow)
@@ -720,7 +715,7 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         const int col = p % 2;  // left / right
         const int row = p / 2;  // top → bottom
         const int x0  = col * kColW;
-        const int ry  = kHdrH + rowOffsetPx + row * kRowH;
+        const int ry  = kHdrH + row * kRowH;
         draw_list_item_col(items[idx], idx == cursor, x0, kColW, ry, row);
     }
     // Scrollbar (row-based): track + proportional thumb on the far right.
@@ -740,12 +735,9 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 
     const int visible = kMaxVis;
     const int first   = viewport_first(cursor, count, static_cast<uint8_t>(visible));
-    // Short lists (fewer rows than fit on screen) centre vertically instead of
-    // hugging the header, so e.g. OUTPUT/PLAYBACK don't read as half a menu.
-    const int rowOffsetPx = (count <= visible) ? (visible - count) * kItemH / 2 : 0;
     for (int i = 0; i < visible && first + i < count; ++i) {
         const int idx      = first + i;
-        const int ry       = kHdrH + rowOffsetPx + i * kItemH;
+        const int ry       = kHdrH + i * kItemH;
         const ListItem& it = items[idx];
         const bool sel     = (idx == cursor);
         // Terminal rows (back rows + bracketed actions like "[Stop]") carry no
@@ -1435,7 +1427,8 @@ void render_edit_value() {
             int32_t v;
         };
         Cell cells[5];
-        int nc = 0;
+        int nc     = 0;
+        int center = -1;  // index of the off==0 (Mega, selected) cell within cells[]
         for (int off = -2; off <= 2; ++off) {
             const int32_t v = s.edit.current + off;
             if (v < s.edit.min || v > s.edit.max) continue;
@@ -1446,17 +1439,25 @@ void render_edit_value() {
                                           : FontId::Small;
             c.w = canvas_text_w(c.txt, c.f);
             c.v = v;
+            if (off == 0) center = nc;
             ++nc;
         }
-        int total = 0;
-        for (int i = 0; i < nc; ++i)
-            total += cells[i].w + (i ? gap : 0);
-        int x = (kTW - total) / 2;
+        // Anchor the selected cell at screen-centre and flow its neighbours
+        // outward from there — summing the whole row's width and centring
+        // that shifted the big digit off-centre near either end of the range,
+        // where one side has fewer (or no) neighbours than the other.
+        int xs[5];
+        xs[center] = kTW / 2 - cells[center].w / 2;
+        for (int i = center + 1; i < nc; ++i)
+            xs[i] = xs[i - 1] + cells[i - 1].w + gap;
+        for (int i = center - 1; i >= 0; --i)
+            xs[i] = xs[i + 1] - gap - cells[i].w;
         for (int i = 0; i < nc; ++i) {
             Cell& c        = cells[i];
             const int chh  = canvas_font_h(c.f);
             const int yy   = cy - chh / 2;
             const bool ctr = (c.f == FontId::Mega);
+            const int x    = xs[i];
             if (ctr) {
                 canvas_fill_round_rect_aa(x - 12, yy - 5, c.w + 24, chh + 10, 8, color::SelBg,
                                           color::Black);
@@ -1468,7 +1469,6 @@ void render_edit_value() {
             if (c.v == s.edit.original)
                 canvas_fill_round_rect_aa(x + c.w / 2 - 3, yy - 11, 6, 6, 3, color::Gold,
                                           color::Black);
-            x += c.w + gap;
         }
         draw_hint_bar("adjust", "apply", "cancel");
     } else if (boolf) {
