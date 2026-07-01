@@ -756,6 +756,8 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         const int ry  = kHdrH + row * kRowH;
         draw_list_item_col(items[idx], idx == cursor, x0, kColW, ry, row);
     }
+    // Thin divider between the two columns (only when the right column is used).
+    if (count > 1) canvas_vline(kColW, kHdrH, kTH - kHdrH, color::Hair);
     // Scrollbar (row-based): track + proportional thumb on the far right.
     if (totalRows > kListRows) {
         const int trackH = kTH - kHdrH - 6;
@@ -1017,6 +1019,8 @@ void render_home() {
             text_body(metricLeft, cy, kChH, mv, color::LightGray, row_bg);
         }
     }
+    // Thin divider between the two channel columns.
+    canvas_vline(kCellW, kChTop, kTH - kChTop, color::Hair);
 #else
     // ── TFT dashboard ────────────────────────────────────────────────────────
     // Header 28 | network 24 | services 18 | column header 14 | 8×19 channels.

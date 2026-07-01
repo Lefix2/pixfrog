@@ -9,3 +9,4 @@
 void emu_dmx_set_stats(uint32_t fps, uint64_t pkts);
 void emu_dmx_set_pkts(uint64_t pkts);
 void emu_dmx_set_active(int ch, bool on);
+void emu_dmx_set_failsafe(int ch, bool on);

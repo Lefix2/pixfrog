@@ -175,6 +175,9 @@ bool exec_cmd(const std::string& line) {
     } else if (line.rfind("set active ", 0) == 0) {
         int ch = std::atoi(line.c_str() + 11);
         emu_dmx_set_active(ch, true);
+    } else if (line.rfind("set failsafe ", 0) == 0) {
+        // set failsafe <ch> — mark a channel as held in signal-loss failsafe.
+        emu_dmx_set_failsafe(std::atoi(line.c_str() + 13), true);
     } else if (line.rfind("set chan ", 0) == 0) {
         // set chan <idx> <proto_enum> <universe_start> <pixel_count> — seed a
         // channel directly so HOME/MENU renders can be exercised on rich state
