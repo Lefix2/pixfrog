@@ -175,6 +175,23 @@ bool exec_cmd(const std::string& line) {
     } else if (line.rfind("set active ", 0) == 0) {
         int ch = std::atoi(line.c_str() + 11);
         emu_dmx_set_active(ch, true);
+    } else if (line.rfind("set chan ", 0) == 0) {
+        // set chan <idx> <proto_enum> <universe_start> <pixel_count> — seed a
+        // channel directly so HOME/MENU renders can be exercised on rich state
+        // without driving the whole editor by hand.
+        int idx = 0, proto = 0;
+        unsigned uni = 0, pix = 0;
+        if (std::sscanf(line.c_str() + 9, "%d %d %u %u", &idx, &proto, &uni, &pix) == 4 &&
+            idx >= 0 && idx < static_cast<int>(pixfrog::config::kNumChannels)) {
+            auto cc           = pixfrog::config::get_channel(static_cast<size_t>(idx));
+            cc.protocol       = static_cast<pixfrog::led::Protocol>(proto);
+            cc.universe_start = static_cast<uint16_t>(uni);
+            cc.pixel_count    = static_cast<uint16_t>(pix);
+            pixfrog::config::set_channel(static_cast<size_t>(idx), cc);
+        } else {
+            std::printf("error: usage: set chan <idx> <proto> <uni> <pix>\n");
+            std::fflush(stdout);
+        }
     } else if (line.rfind("set net ", 0) == 0) {
         // set net <disconnected|acquiring|connected|error>
         const char* p = line.c_str() + 8;

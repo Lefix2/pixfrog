@@ -175,6 +175,21 @@ void draw_chan_badge(int x, int y, int side, int number, Color family, bool fill
                        color::Transparent, FontId::Body);
 }
 
+// Number of DMX universes a channel occupies, derived from its pixel
+// byte-footprint (pixels × bytes/px, offset by dmx_start). DMX512 always emits
+// exactly one universe; a disabled channel none. Lets HOME show the real
+// addressing span (U1-2, U8-10) instead of only the start universe.
+int channel_universe_span(const config::ChannelConfig& cc) {
+    if (led::is_off(cc.protocol)) return 0;
+    if (led::is_dmx(cc.protocol)) return 1;
+    const uint32_t offset = (cc.dmx_start > 0) ? (cc.dmx_start - 1u) : 0u;
+    const uint32_t bytes  = static_cast<uint32_t>(cc.pixel_count) *
+                           led::bytes_per_pixel(cc.protocol);
+    const uint32_t total = offset + bytes;
+    if (total == 0) return 1;
+    return static_cast<int>((total + dmx::kUniverseSize - 1) / dmx::kUniverseSize);
+}
+
 // Edit-screen hint bar: green keycaps + dim actions, three segments (design
 // Hints "TURN · PRESS · HOLD"). Drawn flush to the bottom over a top hairline.
 void draw_hint_bar(const char* v_turn, const char* v_press, const char* v_hold) {
@@ -835,8 +850,14 @@ void render_home() {
     canvas_clear(color::Black);
     const auto stats = dmx::get_stats();
     bool rx_active   = false;
-    for (int i = 0; i < 8; ++i)
-        rx_active |= dmx::is_channel_active(i);
+    int total_uni    = 0;  // universes consumed across all configured channels
+    int total_px     = 0;  // pixels driven across all LED channels
+    for (int i = 0; i < 8; ++i) {
+        rx_active      |= dmx::is_channel_active(i);
+        const auto& cc  = config::get_channel(i);
+        total_uni      += channel_universe_span(cc);
+        if (!led::is_off(cc.protocol) && !led::is_dmx(cc.protocol)) total_px += cc.pixel_count;
+    }
 
     // ── Status line: big IP (left) · fps + data/net icons (right) ─────────────
     // Homogeneous header — the addressing mode, services, refresh rate and the
@@ -866,6 +887,17 @@ void render_home() {
         std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
         rx -= 3 + body_w(line);
         text_body(rx, 0, h, line, color::Gold);
+
+        // System footprint between the IP and the fps group: total universes +
+        // total pixels, so the whole patch can be sanity-checked at a glance
+        // (dim units, brighter figures — secondary to the address). Hidden on a
+        // fresh device where nothing is configured (would just read "0U 0px").
+        if (total_uni > 0) {
+            char tot[32];
+            std::snprintf(tot, sizeof(tot), "%dU  %dpx", total_uni, total_px);
+            rx -= 14 + body_w(tot);
+            text_body(rx, 0, h, tot, color::DimGreen, color::Black);
+        }
     }
     canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
 
@@ -907,11 +939,24 @@ void render_home() {
             canvas_fill_round_rect_aa(x0 + dotR - 8, cy + (kChH - 8) / 2, 8, 8, 4, dotcol, row_bg);
         }
         if (!off) {
+            // Pixel count (gray), then the universe *range* the channel occupies
+            // with a dim "U" tag — so the two figures never read alike and the
+            // real addressing footprint (U1-2, U8-10) is visible at a glance.
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
             text_body(x0 + pixR - body_w(line), cy, kChH, line, color::LightGray, row_bg);
-            std::snprintf(line, sizeof(line), "%u", cc.universe_start);
-            text_body(x0 + uniR - body_w(line), cy, kChH, line, ok ? color::Gold : color::BadCoral,
-                      row_bg);
+
+            const int span = channel_universe_span(cc);
+            char ur[16];
+            if (span > 1)
+                std::snprintf(ur, sizeof(ur), "%u-%u", cc.universe_start,
+                              static_cast<unsigned>(cc.universe_start + span - 1));
+            else
+                std::snprintf(ur, sizeof(ur), "%u", cc.universe_start);
+            const int urw = body_w(ur);
+            text_body(x0 + uniR - urw, cy, kChH, ur, ok ? color::Gold : color::BadCoral, row_bg);
+            const int sh = canvas_font_h(FontId::Small);
+            canvas_draw_text_f(x0 + uniR - urw - small_w("U") - 2, cy + (kChH - sh) / 2, "U",
+                               color::DimGreen, row_bg, FontId::Small);
         }
     }
 #else
