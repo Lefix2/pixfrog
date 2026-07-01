@@ -24,8 +24,8 @@ TaskHandle_t g_task = nullptr;
 InitConfig g_cfg{};
 i2c_master_bus_handle_t g_bus = nullptr;
 
-uint32_t g_ip_host = 0;      // host-order IPv4; 0 = no link
-bool g_link_up     = false;  // ETH_EVENT_CONNECTED state
+uint32_t g_ip_host   = 0;      // host-order IPv4; 0 = no link
+bool g_link_up       = false;  // ETH_EVENT_CONNECTED state
 NetState g_net_state = NetState::Disconnected;
 
 bool create_i2c_bus(const InitConfig& cfg) {

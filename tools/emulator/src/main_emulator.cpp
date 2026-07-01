@@ -37,8 +37,8 @@ using clock_t_ = std::chrono::steady_clock;
 // set_link_up()/is_link_up() stay for the TFT/OLED backends' legacy link chip.
 namespace pixfrog::ui {
 namespace {
-uint32_t g_ip  = 0;
-bool g_link_up = false;
+uint32_t g_ip        = 0;
+bool g_link_up       = false;
 NetState g_net_state = NetState::Disconnected;
 }  // namespace
 void set_ip(uint32_t host_order_ip) {
@@ -178,11 +178,16 @@ bool exec_cmd(const std::string& line) {
     } else if (line.rfind("set net ", 0) == 0) {
         // set net <disconnected|acquiring|connected|error>
         const char* p = line.c_str() + 8;
-        if (std::strcmp(p, "disconnected") == 0) ui::set_net_state(ui::NetState::Disconnected);
-        else if (std::strcmp(p, "acquiring") == 0) ui::set_net_state(ui::NetState::Acquiring);
-        else if (std::strcmp(p, "connected") == 0) ui::set_net_state(ui::NetState::Connected);
-        else if (std::strcmp(p, "error") == 0) ui::set_net_state(ui::NetState::Error);
-        else std::printf("error: unknown net state '%s'\n", p);
+        if (std::strcmp(p, "disconnected") == 0)
+            ui::set_net_state(ui::NetState::Disconnected);
+        else if (std::strcmp(p, "acquiring") == 0)
+            ui::set_net_state(ui::NetState::Acquiring);
+        else if (std::strcmp(p, "connected") == 0)
+            ui::set_net_state(ui::NetState::Connected);
+        else if (std::strcmp(p, "error") == 0)
+            ui::set_net_state(ui::NetState::Error);
+        else
+            std::printf("error: unknown net state '%s'\n", p);
     } else if (line == "quit") {
         return false;
     } else {

@@ -140,9 +140,7 @@ void draw_data_icon(int x, int y, DataFlow f) {
     const Color active = color::GoodBright;
     const Color muted  = color::DimGreen;
     switch (f) {
-    case DataFlow::None:
-        draw_icon_layer(x, y, kIcon_data_idle_dim, muted);
-        break;
+    case DataFlow::None: draw_icon_layer(x, y, kIcon_data_idle_dim, muted); break;
     case DataFlow::Receive:
         draw_icon_layer(x, y, kIcon_data_receive_dim, muted);
         draw_icon_layer(x, y, kIcon_data_receive_main, active);
@@ -151,9 +149,7 @@ void draw_data_icon(int x, int y, DataFlow f) {
         draw_icon_layer(x, y, kIcon_data_transmit_dim, muted);
         draw_icon_layer(x, y, kIcon_data_transmit_main, active);
         break;
-    case DataFlow::Both:
-        draw_icon_layer(x, y, kIcon_data_txrx_main, active);
-        break;
+    case DataFlow::Both: draw_icon_layer(x, y, kIcon_data_txrx_main, active); break;
     }
 }
 
@@ -227,7 +223,8 @@ int pill_width(const char* txt) {
 // Channel-number badge: AA rounded square with the digit drawn on a transparent
 // background so its ink composites over the badge and never squares off the
 // rounded corners.
-[[maybe_unused]] void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col, Color behind) {
+[[maybe_unused]] void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col,
+                                 Color behind) {
     canvas_fill_round_rect_aa(x, y, side, side, 4, badge_col, behind);
     char num[8];
     std::snprintf(num, sizeof(num), "%d", number);
@@ -699,24 +696,31 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
     // bottom edge. The offset persists in s.scroll across renders, so coming
     // back up un-sticks the cursor from the last row instead of dragging the
     // whole list (mirrors viewport_first() used by the TFT/OLED paths).
-    int firstRow = static_cast<int>(s.scroll);
+    int firstRow    = static_cast<int>(s.scroll);
+    int rowOffsetPx = 0;
     if (totalRows <= kListRows) {
         firstRow = 0;
+        // Short lists (OUTPUT, PLAYBACK, an empty FSEQ, an Off channel…) centre
+        // vertically instead of hugging the header — a half-empty grid pinned
+        // to the top reads unfinished.
+        rowOffsetPx = (kListRows - totalRows) * kRowH / 2;
     } else {
         const int crow = cursor / 2;
-        if (crow < firstRow) firstRow = crow;
-        else if (crow >= firstRow + kListRows) firstRow = crow - (kListRows - 1);
+        if (crow < firstRow)
+            firstRow = crow;
+        else if (crow >= firstRow + kListRows)
+            firstRow = crow - (kListRows - 1);
         if (firstRow + kListRows > totalRows) firstRow = totalRows - kListRows;
         if (firstRow < 0) firstRow = 0;
     }
-    s.scroll = static_cast<uint8_t>(firstRow);
+    s.scroll        = static_cast<uint8_t>(firstRow);
     const int first = firstRow * 2;
     for (int p = 0; p < kMaxVis && first + p < count; ++p) {
         const int idx = first + p;
         const int col = p % 2;  // left / right
         const int row = p / 2;  // top → bottom
         const int x0  = col * kColW;
-        const int ry  = kHdrH + row * kRowH;
+        const int ry  = kHdrH + rowOffsetPx + row * kRowH;
         draw_list_item_col(items[idx], idx == cursor, x0, kColW, ry, row);
     }
     // Scrollbar (row-based): track + proportional thumb on the far right.
@@ -736,9 +740,12 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 
     const int visible = kMaxVis;
     const int first   = viewport_first(cursor, count, static_cast<uint8_t>(visible));
+    // Short lists (fewer rows than fit on screen) centre vertically instead of
+    // hugging the header, so e.g. OUTPUT/PLAYBACK don't read as half a menu.
+    const int rowOffsetPx = (count <= visible) ? (visible - count) * kItemH / 2 : 0;
     for (int i = 0; i < visible && first + i < count; ++i) {
         const int idx      = first + i;
-        const int ry       = kHdrH + i * kItemH;
+        const int ry       = kHdrH + rowOffsetPx + i * kItemH;
         const ListItem& it = items[idx];
         const bool sel     = (idx == cursor);
         // Terminal rows (back rows + bracketed actions like "[Stop]") carry no
@@ -1355,7 +1362,9 @@ uint8_t build_fseq(ListItem* items, OnClick* fns) {
     const uint8_t n     = no_card ? 0 : g_fseq_file_count;
     const char* playing = fseq::active_file();
     if (n == 0) {
-        items[0] = { no_card ? "No SD card" : "No .fseq files", "" };
+        // Bracketed like "[Stop]" so it reads as inert status text — no chevron
+        // implying a sub-menu that a null fn would then silently swallow.
+        items[0] = { no_card ? "[No SD card]" : "[No .fseq files]", "" };
         fns[0]   = nullptr;  // inert note
         items[1] = back_item();
         fns[1]   = [](uint8_t) { go_back(); };
@@ -1463,10 +1472,24 @@ void render_edit_value() {
         }
         draw_hint_bar("adjust", "apply", "cancel");
     } else if (boolf) {
-        const char* v = s.edit.current ? "ON" : "OFF";
-        const int w   = canvas_text_w(v, FontId::Mega);
-        canvas_draw_text_f((kTW - w) / 2, (kHdrH + (kTH - kFootH)) / 2 - mh / 2, v, color::EditCyan,
-                           color::Black, FontId::Mega);
+        // Big ON/OFF word + a track/knob switch below it, grouped and centred
+        // like the numeric gauge's "value + bar" — a lone word left the rest
+        // of the screen empty and gave no "this is a toggle" affordance.
+        const char* v      = s.edit.current ? "ON" : "OFF";
+        const int vw       = canvas_text_w(v, FontId::Mega);
+        constexpr int kSwW = 72;
+        constexpr int kSwH = 30;
+        const int groupH   = mh + 10 + kSwH;
+        const int top      = kHdrH + ((kTH - kFootH) - kHdrH - groupH) / 2;
+        canvas_draw_text_f((kTW - vw) / 2, top, v, color::EditCyan, color::Black, FontId::Mega);
+
+        const int sx      = (kTW - kSwW) / 2;
+        const int sy      = top + mh + 10;
+        const Color track = s.edit.current ? color::FrogLine : color::IdleGreen;
+        canvas_fill_round_rect_aa(sx, sy, kSwW, kSwH, kSwH / 2, track, color::Black);
+        const int knobD = kSwH - 6;
+        const int knobX = s.edit.current ? sx + kSwW - knobD - 3 : sx + 3;
+        canvas_fill_round_rect_aa(knobX, sy + 3, knobD, knobD, knobD / 2, color::Cream, track);
         draw_hint_bar("toggle", "apply", "cancel");
     } else {
         // Numeric gauge — value + bar centred as a group in the content area.
@@ -1605,6 +1628,17 @@ void render_edit_value() {
             canvas_draw_text(gx, gy + gh + 10, lo, color::DarkGray, color::Black, 1);
             const int hiw = static_cast<int>(std::strlen(hi)) * kFontCellWidth;
             canvas_draw_text(gx + gw - hiw, gy + gh + 10, hi, color::DarkGray, color::Black, 1);
+        } else if (s.edit.kind == ValueKind::Bool) {
+            // Track/knob switch in the gauge's slot — a lone big word otherwise
+            // left the rest of the screen empty with no toggle affordance.
+            constexpr int kSwW = 96, kSwH = 40;
+            const int sx      = (kTW - kSwW) / 2;
+            const int sy      = kHdrH + 74;
+            const Color track = s.edit.current ? color::FrogLine : color::CursorBg;
+            canvas_fill_round_rect(sx, sy, kSwW, kSwH, kSwH / 2, track);
+            const int knobD = kSwH - 8;
+            const int knobX = s.edit.current ? sx + kSwW - knobD - 4 : sx + 4;
+            canvas_fill_round_rect(knobX, sy + 4, knobD, knobD, knobD / 2, color::Cream);
         }
         if (s.edit.current != s.edit.original) {
             char orig[24];
@@ -2701,8 +2735,8 @@ void go_back() {
         // Re-entering from Home starts at the top (matches menu_on_idle_timeout).
         s.cur[static_cast<uint8_t>(NodeId::Main)] = 0;
         s.scr[static_cast<uint8_t>(NodeId::Main)] = 0;
-        s.cursor = 0;
-        s.scroll = 0;
+        s.cursor                                  = 0;
+        s.scroll                                  = 0;
         return;
     }
     const NodeId leaving = s.node;
