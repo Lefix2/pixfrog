@@ -10,7 +10,12 @@ set(srcs
 set(requires driver esp_common esp_timer esp_app_format config_store dmx_manager fpp_sync fseq_player led_output freertos web_config sacn)
 
 if(CONFIG_PIXFROG_DISPLAY_TFT)
-    list(APPEND srcs "src/tft_st7789.cpp" "src/canvas_tft.cpp")
+    list(APPEND srcs "src/canvas_tft.cpp")
+    if(CONFIG_PIXFROG_DISPLAY_NV3007)
+        list(APPEND srcs "src/tft_nv3007.cpp")
+    else()
+        list(APPEND srcs "src/tft_st7789.cpp")
+    endif()
     list(APPEND requires esp_lcd)
 else()
     list(APPEND srcs "src/oled_ssd1306.cpp" "src/canvas_oled.cpp" "src/font_oled.cpp"

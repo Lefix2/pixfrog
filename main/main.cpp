@@ -25,6 +25,13 @@
 
 #include "esp32_p4_devkit.h"
 
+// OLED builds define no TFT geometry (Kconfig `depends on`); the two InitConfig
+// fields are unused on that path.
+#ifndef CONFIG_PIXFROG_TFT_WIDTH
+#define CONFIG_PIXFROG_TFT_WIDTH 0
+#define CONFIG_PIXFROG_TFT_HEIGHT 0
+#endif
+
 #include "artnet.h"
 #include "config_store.h"
 #include "control_console.h"
@@ -327,8 +334,8 @@ extern "C" void app_main() {
         .tft_dc_gpio        = pixfrog::board::kDisplayDcGpio,
         .tft_rst_gpio       = pixfrog::board::kDisplayRstGpio,
         .spi_freq_hz        = pixfrog::board::kDisplaySpiFreqHz,
-        .tft_width          = 320,  // landscape addressing (swap_xy in tft_init)
-        .tft_height         = 240,
+        .tft_width          = CONFIG_PIXFROG_TFT_WIDTH,  // landscape logical size — the
+        .tft_height         = CONFIG_PIXFROG_TFT_HEIGHT,  // panel driver owns the rotation
         .tft_backlight_gpio = pixfrog::board::kDisplayBacklightGpio,
     };
     pixfrog::ui::start(ui_cfg);

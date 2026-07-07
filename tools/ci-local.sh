@@ -24,29 +24,40 @@ done
 ./components/fseq_player/test/build/test_fseq_parser
 ./components/fpp_sync/test/build/test_fpp_sync_parser
 
-echo "==[3/4] UI emulator build + smoke test (CI: emulator) =="
+echo "==[3/4] UI emulator builds + smoke tests (CI: emulator) =="
 cmake -S tools/emulator -B tools/emulator/build -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build tools/emulator/build --parallel >/dev/null
 ./tools/emulator/smoke.sh
+cmake -S tools/emulator -B tools/emulator/build.st7789 -DCMAKE_BUILD_TYPE=Release \
+    -DPIXFROG_EMU_PANEL=st7789 >/dev/null
+cmake --build tools/emulator/build.st7789 --parallel >/dev/null
+./tools/emulator/smoke.sh build.st7789/pixfrog_emu
 
-echo "==[4/4] IDF builds oled + tft (CI: idf-build matrix) =="
+echo "==[4/4] IDF builds oled + tft + nv3007 (CI: idf-build matrix) =="
 # Separate build dir + sdkconfig per overlay: SDKCONFIG_DEFAULTS only applies
 # when the sdkconfig file does not exist yet, so overlay builds must not
 # share the default ./sdkconfig.
+overlay_build() {  # $1 = variant name matching sdkconfig.ci.<variant>
+    if command -v idf.py >/dev/null 2>&1; then
+        idf.py -B "build.$1" \
+            -D SDKCONFIG="build.$1/sdkconfig" \
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.$1" \
+            build
+    else
+        docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
+            espressif/idf:v5.5 idf.py -B "build.$1" \
+            -D SDKCONFIG="build.$1/sdkconfig" \
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.$1" \
+            build
+    fi
+}
 if command -v idf.py >/dev/null 2>&1; then
     idf.py build
-    idf.py -B build.oled \
-        -D SDKCONFIG=build.oled/sdkconfig \
-        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.oled" \
-        build
 else
     docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
         espressif/idf:v5.5 idf.py build
-    docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
-        espressif/idf:v5.5 idf.py -B build.oled \
-        -D SDKCONFIG=build.oled/sdkconfig \
-        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.oled" \
-        build
 fi
+overlay_build oled
+overlay_build nv3007
 
 echo "ALL CI JOBS GREEN — safe to push"

@@ -87,20 +87,27 @@ Findings from the July 2026 full-project audit. Small, low-risk, one `fix/` PR.
 ## NV3007 display — finish the variant (in progress on this branch)
 
 The 428×142 landscape layout landed (menu/canvas/fonts behind
-`CONFIG_PIXFROG_DISPLAY_NV3007`), but the chain isn't closed:
+`CONFIG_PIXFROG_DISPLAY_NV3007`); the build/driver chain is now closed:
 
-- [ ] ★ **Panel driver** — `tft_st7789.cpp` has no NV3007 init sequence and
-      `main.cpp` hardcodes `320×240`; the firmware cannot drive the target
-      panel yet.
-- [ ] **Consume `CONFIG_PIXFROG_TFT_WIDTH/HEIGHT`** — defined in
-      `components/ui/Kconfig` (428/142 defaults) but read by nothing;
-      `main.cpp` should use them instead of constants.
-- [ ] **CI coverage** — add an `sdkconfig.ci.nv3007` overlay to the `ci.yml`
-      variant matrix (today only `oled` + `tft` are compiled).
-- [ ] **Emulator geometry** — `tools/emulator` now hardcodes
-      `CONFIG_PIXFROG_DISPLAY_NV3007`, so the smoke test no longer exercises
-      the default 320×240 ST7789 layout; build/smoke both geometries.
-- [ ] **Docs** — add NV3007 to README's display-backend table and AGENT.md.
+- [x] ★ **Panel driver** — `tft_nv3007.cpp`: vendor init sequence
+      ("NV3007+IVO" reference, as mirrored in lvgl's `lv_nv3007.c`), GRAM
+      column offset 0x0C, software 90° rotation (the reference code never
+      programs MADCTL), blocking per-band DMA flush.
+      `CONFIG_PIXFROG_NV3007_ROT180` flips modules mounted upside down.
+- [x] **Consume `CONFIG_PIXFROG_TFT_WIDTH/HEIGHT`** — `main.cpp` reads them;
+      Kconfig now nests the panel choice (ST7789 default / NV3007) under the
+      TFT backend so NV3007 builds define both display macros, as the shared
+      UI code expects.
+- [x] **CI coverage** — `sdkconfig.ci.nv3007` overlay + `nv3007` in the
+      `ci.yml` idf-build matrix and in `ci-local.sh`.
+- [x] **Emulator geometry** — `-DPIXFROG_EMU_PANEL=st7789|nv3007` (default
+      nv3007); CI + ci-local build and smoke both layouts.
+- [x] **Docs** — README display-backend table, AGENT.md module map,
+      emulator README.
+- [ ] ★ **Hardware bring-up** — validate on the real 2.79" module: rotation
+      direction (flip with `PIXFROG_NV3007_ROT180` if mirrored), the 0x0C
+      GRAM column offset (edge lines), colours/gamma vs the ST7789 look, and
+      SPI clock headroom (20 MHz board default; vendor demos run 40+).
 
 ## Audit 2026-07 — documentation debt
 
