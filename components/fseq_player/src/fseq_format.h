@@ -118,6 +118,18 @@ inline uint16_t channel_to_slot(uint32_t abs_ch) {
     return static_cast<uint16_t>(abs_ch % 512u);
 }
 
+// Same, but reports whether the channel actually lands inside the addressable
+// universe range instead of wrapping. `start_channel` is a 32-bit file field,
+// so a corrupt or simply oversized sparse range maps past the 15-bit Art-Net
+// Port-Address ceiling — the caller must not route those.
+inline bool channel_to_universe_checked(uint32_t abs_ch, uint16_t universe_base,
+                                        uint16_t max_universe, uint16_t* out) {
+    const uint32_t uni = static_cast<uint32_t>(universe_base) + abs_ch / 512u;
+    if (uni > max_universe) return false;
+    if (out) *out = static_cast<uint16_t>(uni);
+    return true;
+}
+
 // Number of universes needed to hold `channel_count` bytes.
 inline size_t frame_universe_count(uint32_t channel_count) {
     return (channel_count + 511u) / 512u;

@@ -19,6 +19,11 @@ namespace {
 
 constexpr const char* TAG = "DMX";
 
+// dmx_logic.h is deliberately standalone (the host suite includes it alone),
+// so it carries its own copies of these. Pin them together here.
+static_assert(logic::kUniverseSize == kUniverseSize);
+static_assert(logic::kMaxUniverseNumber == kMaxUniverseNumber);
+
 // Two universe banks, each `kNumUniverses * kUniverseSize` bytes, in PSRAM.
 uint8_t* g_uni_bank_a = nullptr;
 uint8_t* g_uni_bank_b = nullptr;
@@ -64,13 +69,11 @@ std::atomic<bool> g_fseq_active{ false };
 std::atomic<int8_t> g_identify_ch{ -1 };
 std::atomic<uint32_t> g_identify_until_ms{ 0 };
 
-// Map a universe number to a slot in the bank. For v0 we use a simple
-// flat allocation: universe N → slot (N % kNumUniverses). On boot, the
-// config_store tells us which universes are routed to which channel; we
-// keep this LUT for fast lookup.
-//
-// TODO(v1): replace with a hash map keyed by (net, subnet, universe).
-uint16_t g_universe_to_slot[32768]{};
+// Universe → slot lookup, indexed by the flat 15-bit Art-Net Port-Address.
+// Sized for the whole addressable range so routing is a single load; every
+// read goes through slot_for_universe(), which rejects the out-of-range
+// numbers sACN and FSEQ can produce.
+uint16_t g_universe_to_slot[logic::kMaxUniverseNumber + 1]{};
 bool g_universe_to_slot_valid = false;
 
 // Reverse mapping slot → channel index, populated alongside g_universe_to_slot.
@@ -89,37 +92,49 @@ int64_t g_last_activity_us[config::kNumChannels]{};
 // "Active" if last_activity within this window:
 constexpr int64_t kActivityWindowUs = 1'000'000;  // 1 second
 
-// Per-channel capacity flag (item 2). True if the channel's encoded frame
+// Per-channel capacity flag. True if the channel's encoded frame
 // fits within one refresh period. Defaults to true (assumed OK until
 // proven otherwise by validate_capacity).
 bool g_channel_capacity_ok[config::kNumChannels]{};
 
-// Event group for config change propagation (item 7).
+// Event group for config change propagation.
 EventGroupHandle_t g_remap_eg = nullptr;
 
-// Binary semaphore for ArtSync → render_task fast-path (TODO B2).
+// Binary semaphore for the ArtSync → render_task fast path.
 SemaphoreHandle_t g_sync_sem = nullptr;
 
 // Rebuild the universe → slot LUT (+ reverse slot → channel) from the
 // current contents of config_store. Called from init() and from
 // handle_pending_remaps() when the UI signals a config change.
 void rebuild_universe_lut() {
-    for (size_t i = 0; i < sizeof(g_universe_to_slot) / sizeof(g_universe_to_slot[0]); ++i) {
-        g_universe_to_slot[i] = UINT16_MAX;
+    config::ChannelConfig chans[config::kNumChannels];
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
+        chans[ch] = config::get_channel(ch);
+
+    size_t unmapped = 0;
+    g_slots_used    = logic::build_universe_map(chans, config::kNumChannels, g_universe_to_slot,
+                                                g_slot_to_channel, kNumUniverses, &unmapped);
+    // Silent truncation used to look exactly like a patching mistake on the
+    // console side, so say it out loud.
+    if (unmapped) {
+        ESP_LOGE(TAG,
+                 "%u universe(s) could not be mapped (pool %u slots, max universe %u) — "
+                 "those channels will receive nothing",
+                 static_cast<unsigned>(unmapped), static_cast<unsigned>(kNumUniverses),
+                 static_cast<unsigned>(logic::kMaxUniverseNumber));
     }
-    uint16_t slot = 0;
-    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        const auto& cc              = config::get_channel(ch);
-        const size_t universes_used = logic::channel_universes_used(cc);
-        for (size_t u = 0; u < universes_used && slot < kNumUniverses; ++u) {
-            g_universe_to_slot[cc.universe_start + u] = slot;
-            g_slot_to_channel[slot]                   = static_cast<uint8_t>(ch);
-            slot++;
-        }
-    }
-    g_slots_used = slot;
     // Slots may now mean different universes — tracked sources are stale.
     std::memset(g_merge, 0, sizeof(g_merge));
+}
+
+// Every universe number reaching the pool is caller-supplied: Art-Net masks it
+// to 15 bits, but sACN carries 1..63999 and FSEQ sparse ranges a 32-bit channel
+// offset. Bounds-check once, here, so no caller can index past the table.
+uint16_t slot_for_universe(uint16_t universe_number) {
+    if (!g_universe_to_slot_valid || !logic::universe_routable(universe_number))
+        return logic::kNoSlot;
+    const uint16_t slot = g_universe_to_slot[universe_number];
+    return slot < g_slots_used ? slot : logic::kNoSlot;
 }
 
 }  // namespace
@@ -455,9 +470,8 @@ uint64_t frame_emit_us() {
 }
 
 int channel_for_universe(uint16_t universe_number) {
-    if (!g_universe_to_slot_valid) return -1;
-    const uint16_t slot = g_universe_to_slot[universe_number];
-    if (slot == UINT16_MAX) return -1;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return -1;
     return static_cast<int>(g_slot_to_channel[slot]);
 }
 
@@ -490,17 +504,16 @@ void note_universe_terminated(uint16_t universe_number) {
 }
 
 uint8_t* universe_back_buffer_for(uint16_t universe_number) {
-    if (!g_universe_to_slot_valid) return nullptr;
-    const uint16_t slot = g_universe_to_slot[universe_number];
-    if (slot == UINT16_MAX) return nullptr;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return nullptr;
     return g_uni_back + slot * kUniverseSize;
 }
 
 bool write_universe_from_source(uint16_t universe_number, const uint8_t* data, size_t len,
                                 uint32_t source_id, int64_t timeout_us) {
-    if (!g_universe_to_slot_valid || !data || !g_merge_staging) return false;
-    const uint16_t slot = g_universe_to_slot[universe_number];
-    if (slot == UINT16_MAX) return false;
+    if (!data || !g_merge_staging) return false;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return false;
     const bool ltp = config::get_global().merge_mode == config::kMergeLtp;
     return logic::merge_ingest(g_merge[slot],
                                g_merge_staging + static_cast<size_t>(slot) * 2 * kUniverseSize,
@@ -509,16 +522,14 @@ bool write_universe_from_source(uint16_t universe_number, const uint8_t* data, s
 }
 
 void merge_drop_source(uint16_t universe_number, uint32_t source_id) {
-    if (!g_universe_to_slot_valid) return;
-    const uint16_t slot = g_universe_to_slot[universe_number];
-    if (slot == UINT16_MAX) return;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return;
     logic::merge_drop(g_merge[slot], source_id);
 }
 
 void merge_reset_universe(uint16_t universe_number) {
-    if (!g_universe_to_slot_valid) return;
-    const uint16_t slot = g_universe_to_slot[universe_number];
-    if (slot == UINT16_MAX) return;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return;
     std::memset(&g_merge[slot], 0, sizeof(g_merge[slot]));
 }
 
@@ -539,17 +550,16 @@ bool is_channel_merging(size_t channel_index) {
 }
 
 const uint8_t* universe_front_buffer_for(uint16_t universe_number) {
-    if (!g_universe_to_slot_valid) return nullptr;
-    const uint16_t slot = g_universe_to_slot[universe_number];
-    if (slot == UINT16_MAX) return nullptr;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return nullptr;
     return g_uni_front.load(std::memory_order_acquire) + slot * kUniverseSize;
 }
 
 bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* data, size_t len) {
-    if (!g_universe_to_slot_valid || !data) return false;
+    if (!data) return false;
     if (offset + len > kUniverseSize) return false;
-    const uint16_t slot = g_universe_to_slot[universe_number];
-    if (slot == UINT16_MAX) return false;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return false;
     const size_t base = static_cast<size_t>(slot) * kUniverseSize + offset;
     // Byte-level tearing against a concurrent artnet write or render read is
     // acceptable here — this is a bench/test path, not a sync-critical one.

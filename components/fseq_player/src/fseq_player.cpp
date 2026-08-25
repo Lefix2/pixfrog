@@ -149,10 +149,10 @@ static void sd_monitor_task(void* /*arg*/) {
 // Inject one flat frame (no sparse ranges) into the universe back-buffers.
 void inject_linear_frame(const uint8_t* data, uint32_t channel_count) {
     uint32_t remaining = channel_count;
-    uint16_t uni       = kUniverseBase;
-    while (remaining > 0) {
+    uint32_t uni       = kUniverseBase;
+    while (remaining > 0 && uni <= dmx::kMaxUniverseNumber) {
         const size_t chunk = remaining < 512 ? remaining : 512;
-        dmx::inject_universe(uni, 0, data, chunk);
+        dmx::inject_universe(static_cast<uint16_t>(uni), 0, data, chunk);
         data      += chunk;
         remaining -= static_cast<uint32_t>(chunk);
         ++uni;
@@ -168,10 +168,18 @@ void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges, uint8_t
         uint32_t ch_abs    = ranges[r].start_channel;
         uint32_t remaining = ranges[r].length;
         while (remaining > 0) {
-            const uint16_t uni   = channel_to_universe(ch_abs, kUniverseBase);
             const uint16_t slot  = channel_to_slot(ch_abs);
             const uint32_t avail = 512u - slot;
             const uint32_t chunk = remaining < avail ? remaining : avail;
+            uint16_t uni         = 0;
+            // A range reaching past the addressable universe range only walks
+            // further out, so drop the rest of it — but still step `p` over
+            // those bytes, or every later range would read the wrong offset.
+            if (!channel_to_universe_checked(ch_abs, kUniverseBase, dmx::kMaxUniverseNumber,
+                                             &uni)) {
+                p += remaining;
+                break;
+            }
             dmx::inject_universe(uni, slot, p, static_cast<size_t>(chunk));
             p         += chunk;
             ch_abs    += chunk;

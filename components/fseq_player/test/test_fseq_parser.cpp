@@ -168,6 +168,44 @@ static void test_channel_to_universe() {
     CHECK(channel_to_slot(513) == 1);
 }
 
+// ── Test: channel → universe with a routable-range ceiling ───────────────────
+
+// start_channel is a 32-bit file field, so a corrupt or oversized sparse range
+// maps past the 15-bit Art-Net Port-Address ceiling. The checked form must say
+// so instead of wrapping the uint16_t.
+static void test_channel_to_universe_checked() {
+    constexpr uint16_t kMax = 0x7FFF;
+    uint16_t uni            = 0xFFFF;
+
+    CHECK(channel_to_universe_checked(0, 1, kMax, &uni));
+    CHECK(uni == 1);
+
+    // Last channel that still lands on universe 32767.
+    const uint32_t last_ok = (static_cast<uint32_t>(kMax) - 1) * 512u;
+    CHECK(channel_to_universe_checked(last_ok, 1, kMax, &uni));
+    CHECK(uni == kMax);
+
+    // One universe further is out of range — and must not wrap to 0.
+    uni = 0xFFFF;
+    CHECK(!channel_to_universe_checked(last_ok + 512u, 1, kMax, &uni));
+    CHECK(uni == 0xFFFF);  // out param untouched on rejection
+
+    // What the unchecked form does instead, and why the checked one exists:
+    // just past the ceiling it hands back an unroutable universe number...
+    CHECK(channel_to_universe(last_ok + 512u, 1) == kMax + 1);
+    // ...and far enough out it silently wraps the uint16_t back to 0, which
+    // would land the data on a completely unrelated universe.
+    CHECK(channel_to_universe(65535u * 512u, 1) == 0);
+    CHECK(!channel_to_universe_checked(65535u * 512u, 1, kMax, nullptr));
+
+    // Absurd offsets are rejected too, not folded back into range.
+    CHECK(!channel_to_universe_checked(0xFFFFFFFFu, 1, kMax, &uni));
+    CHECK(!channel_to_universe_checked(16u * 1024 * 1024, 1, kMax, &uni));
+
+    // A null out param is allowed (caller only wants the verdict).
+    CHECK(channel_to_universe_checked(512, 1, kMax, nullptr));
+}
+
 // ── Test: frame_universe_count ───────────────────────────────────────────────
 
 static void test_frame_universe_count() {
@@ -205,9 +243,10 @@ int main() {
     test_sparse_frame_bytes();
     test_sparse_to_absolute();
     test_channel_to_universe();
+    test_channel_to_universe_checked();
     test_frame_universe_count();
     test_table_offsets();
 
-    printf("%d passed, %d failed\n", g_pass, g_fail);
+    printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
