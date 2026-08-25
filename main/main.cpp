@@ -274,6 +274,7 @@ void power_vdd_io5_pads() {
     esp_ldo_channel_config_t cfg = {
         .chan_id    = 4,
         .voltage_mv = 3300,
+        .flags      = {},
     };
     static esp_ldo_channel_handle_t s_chan = nullptr;
     const esp_err_t err                    = esp_ldo_acquire_channel(&cfg, &s_chan);
