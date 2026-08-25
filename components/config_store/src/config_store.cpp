@@ -56,10 +56,6 @@ ChannelConfig make_default_channel(size_t idx) {
     return c;
 }
 
-// Loads a blob from NVS into dst (size bytes). Handles forward migration: if
-// the stored blob is smaller than size (struct grew), the tail is zero-filled
-// so new fields get their safe zero default. Returns false only on hard error
-// or if the stored blob is *larger* than expected (downgrade scenario).
 // Usable starter set: 0-2 showcase each effect, the rest are named slots.
 void fill_default_scenes() {
     std::memset(g_scenes, 0, sizeof(g_scenes));
@@ -83,6 +79,10 @@ void fill_default_scenes() {
     g_scenes[2].param  = 1;
 }
 
+// Loads a blob from NVS into dst (size bytes). Handles forward migration: if
+// the stored blob is smaller than size (struct grew), the tail is zero-filled
+// so new fields get their safe zero default. Returns false only on hard error
+// or if the stored blob is *larger* than expected (downgrade scenario).
 bool nvs_load_blob(nvs_handle_t handle, const char* key, void* dst, size_t size) {
     size_t actual = 0;
     esp_err_t err = nvs_get_blob(handle, key, nullptr, &actual);

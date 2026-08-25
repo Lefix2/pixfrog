@@ -3,7 +3,7 @@
 // Boot sequence:
 //   1. NVS init + load config            (config_store)
 //   2. Universe pool + pixel buffers     (dmx_manager)
-//   3. LCD_CAM driver                    (led_output)
+//   3. LED bus output driver             (led_output)
 //   4. UI (OLED + encoder)               (ui)
 //   5. Network: Ethernet + lwIP + events (main::init_network)
 //   6. ArtNet UDP receiver               (artnet)
@@ -60,7 +60,7 @@ void publish_ip(uint32_t host_order_ip) {
                                                   : pixfrog::ui::NetState::Disconnected);
 }
 
-// Item 7: IP_EVENT_ETH_GOT_IP handler — fires after DHCP completes (or
+// IP_EVENT_ETH_GOT_IP handler — fires after DHCP completes (or
 // immediately when a static IP is configured + accepted by lwIP).
 extern "C" void on_got_ip(void* /*arg*/, esp_event_base_t /*base*/, int32_t /*id*/,
                           void* event_data) {
@@ -97,7 +97,7 @@ extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/, int32_t e
     }
 }
 
-// Items 5+6: bring up the MAC + IP101 PHY, attach to a netif, apply
+// Bring up the MAC + IP101 PHY, attach to a netif, apply
 // static IP or wait for DHCP, register event handlers, start the driver.
 // Failures are logged but never abort boot — the UI still works without
 // a network link, so the user can fix the config from the panel.
@@ -141,7 +141,7 @@ void init_network() {
 
     esp_netif_attach(g_eth_netif, esp_eth_new_netif_glue(g_eth_handle));
 
-    // Item 6: static vs DHCP. If static is requested AND the static IP is
+    // Static vs DHCP. If static is requested AND the static IP is
     // non-zero, stop DHCP and install the IP info ahead of link-up so
     // there's no transient DHCP attempt.
     const auto& g = pixfrog::config::get_global();
@@ -174,7 +174,7 @@ void init_network() {
 }
 
 void render_task(void*) {
-    // Item 3: subscribe the render task to the task watchdog. The render
+    // Subscribe the render task to the task watchdog. The render
     // task is the canary for "the system is still meeting its real-time
     // budget" — if it stops kicking the WDT, we'd rather panic-reset than
     // ship dark/garbled frames silently.
@@ -187,23 +187,23 @@ void render_task(void*) {
     // rate can't climb above the configured setting (which sizes the DMA budget).
     int64_t next_frame_us = esp_timer_get_time();
 
-    // Item 4: rolling 1-second window FPS counter.
+    // Rolling 1-second window FPS counter.
     int64_t fps_window_start_us   = esp_timer_get_time();
     uint32_t fps_frames_in_window = 0;
 
     while (true) {
-        // Item A5: recompute the period every frame so a UI commit of
+        // Recompute the period every frame so a UI commit of
         // refresh_rate_hz takes effect on the next frame without a reboot.
         const uint8_t rate_hz   = pixfrog::config::get_global().refresh_rate_hz;
         const int64_t period_us = rate_hz ? (1'000'000LL / rate_hz) : 33'333LL;
-        // Item 7: apply any config changes committed by the UI since the
+        // Apply any config changes committed by the UI since the
         // last frame. Rebuilds universe→channel LUT, clears dirty bits.
         // No-op when nothing is pending.
         pixfrog::dmx::handle_pending_remaps();
 
         pixfrog::dmx::swap_universes();
 
-        // TODO B5: when the UI has selected a calibration pattern, the
+        // When the UI has selected a calibration pattern, the
         // render loop emits that pattern instead of pixel data. This
         // makes scope debugging persistent across many frames without
         // requiring a recompile.
@@ -211,12 +211,12 @@ void render_task(void*) {
         if (cal_mode >= 0) {
             pixfrog::output::emit_calibration_pattern(static_cast<uint8_t>(cal_mode));
         } else {
-            // Item 1: decode each channel's universes into its pixel back
+            // Decode each channel's universes into its pixel back
             // buffer (DMX start offset, multi-universe spanning), then
-            // swap the front pointer so the LCD_CAM encoder sees the new
+            // swap the front pointer so the output encoder sees the new
             // pixels. Per-pixel transformations (color order, brightness,
             // grouping, invert) are applied later by led::encode_channel
-            // during the LCD_CAM render.
+            // during the frame encode.
             for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch) {
                 pixfrog::dmx::decode_pixels_for_channel(ch);
                 pixfrog::dmx::swap_pixels(ch);
@@ -224,7 +224,7 @@ void render_task(void*) {
             pixfrog::output::render_frame();
         }
 
-        // Item 4: publish FPS once per second.
+        // Publish FPS once per second.
         fps_frames_in_window++;
         const int64_t now_us = esp_timer_get_time();
         if (now_us - fps_window_start_us >= 1'000'000) {
@@ -233,7 +233,7 @@ void render_task(void*) {
             fps_window_start_us  = now_us;
         }
 
-        // Item 3: kick the WDT before sleeping. If render_frame ever blocks
+        // Kick the WDT before sleeping. If render_frame ever blocks
         // past the WDT timeout (5 s default), we want a clean panic.
         esp_task_wdt_reset();
 
@@ -310,13 +310,13 @@ extern "C" void app_main() {
         pixfrog::fseq::init(sd_cfg);
     }
 
-    pixfrog::output::InitConfig lcd_cfg{
+    pixfrog::output::InitConfig out_cfg{
         .bus_gpio_16           = pixfrog::board::kLedBusGpio,
         .pclk_hz               = pixfrog::led::kPclkHz,
         .max_samples_per_frame = pixfrog::led::kMaxSamplesPerFrame,
     };
-    if (!pixfrog::output::init(lcd_cfg)) {
-        ESP_LOGE(TAG, "lcd_cam init failed — aborting");
+    if (!pixfrog::output::init(out_cfg)) {
+        ESP_LOGE(TAG, "led_output init failed — aborting");
         return;
     }
 

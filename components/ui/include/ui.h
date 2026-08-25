@@ -41,13 +41,13 @@ struct InitConfig {
 // Must be called after config_store::init().
 bool start(const InitConfig& cfg);
 
-// ── Item 9: IP propagation ─────────────────────────────────────────────────
+// ── IP propagation ─────────────────────────────────────────────────────────
 // Called from a network event handler when Ethernet acquires (or loses)
 // an address. Pass 0 for "no link" (renders as "—" on HOME).
 void set_ip(uint32_t host_order_ip);
 uint32_t get_ip();
 
-// ── Item B4: Ethernet link state ───────────────────────────────────────────
+// ── Ethernet link state ────────────────────────────────────────────────────
 // Fed by ETH_EVENT CONNECTED/DISCONNECTED handlers. Distinct from get_ip()
 // since the link can be UP while DHCP is still pending an address.
 void set_link_up(bool up);

@@ -1,9 +1,11 @@
-// led_output — drives the ESP32-P4 LCD_CAM peripheral as a free-running
-// 16-bit parallel bus with GDMA, emitting LED data for 8 channels at once.
+// led_output — drives the ESP32-P4 16-bit parallel LED bus with GDMA,
+// emitting LED data for 8 channels at once. Two interchangeable backends
+// implement this interface, picked by Kconfig: PARLIO TX in loop mode
+// (default) or the legacy LCD_CAM RGB panel.
 //
 // Architecture (cf. docs/ARCHITECTURE.md §4):
-//   Two frame buffers live in PSRAM, owned by esp_lcd_rgb_panel, sized to the
-//   frame length the current channel config actually needs (the panel is
+//   The frame buffers live in PSRAM (three on PARLIO, two on LCD_CAM), sized
+//   to the frame length the current channel config actually needs (the unit is
 //   recreated on a config commit that changes that length).
 //   render_task encodes the full next frame into fb_back in one pass
 //   (led::encode_frame) while the previous frame is still emitting from the
@@ -28,10 +30,10 @@ struct InitConfig {
                                      // need, never to this cap
 };
 
-// Initialize the LCD_CAM driver. The esp_lcd_rgb_panel (and its two PSRAM
-// frame buffers, flags.fb_in_psram=true, num_fbs=2) is created for the frame
-// length the current channel config requires — or lazily by the first
-// rendered frame when every channel is Off at boot.
+// Initialize the active output backend. The TX unit (and its PSRAM frame
+// buffers) is created for the frame length the current channel config
+// requires — or lazily by the first rendered frame when every channel is Off
+// at boot.
 // Returns false on any IDF API failure (most often: PSRAM too small).
 bool init(const InitConfig& cfg);
 
@@ -50,9 +52,9 @@ void wait_idle();
 // Useful for boot-time diagnostics.
 size_t fb_bytes();
 
-// Log a one-line summary of LCD_CAM telemetry counters:
-//   on_color_trans_done / on_vsync fire counts (item 4),
-//   expected DMA duration vs measured inter-kick interval (item 5).
+// Log a one-line summary of the backend's telemetry counters:
+//   on_color_trans_done / on_vsync fire counts,
+//   expected DMA duration vs measured inter-kick interval.
 // Call periodically from render_task or on a 1-Hz timer to monitor
 // PSRAM→GDMA sustained throughput in production.
 void dump_stats();
@@ -87,7 +89,7 @@ DebugCounters get_debug_counters();
 // Returns false if a previous emission has not yet completed.
 bool emit_calibration_pattern(uint8_t pattern_id);
 
-// Persistent calibration mode (TODO B5). Set to -1 to resume normal LED
+// Persistent calibration mode. Set to -1 to resume normal LED
 // rendering, or to 0..2 to make render_task continuously emit the chosen
 // calibration pattern instead. The flag is sampled at the start of every
 // render iteration; switching modes takes effect on the next frame.

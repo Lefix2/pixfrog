@@ -108,7 +108,7 @@ void handle_poll(const uint8_t* /*buf*/, size_t len, const sockaddr_in& from) {
         dmx::note_packet_bad();
         return;
     }
-    // Item B1: choose broadcast (default) vs unicast back to the poller's IP.
+    // Choose broadcast (default) vs unicast back to the poller's IP.
     const auto& g         = config::get_global();
     const uint32_t target = g.artnet_poll_reply_unicast
                               ? from.sin_addr.s_addr  // already network-order
