@@ -52,6 +52,10 @@ uint16_t s_xpose[kXposeRows * kNativeH];
 // must be replayed verbatim.
 // clang-format off
 constexpr uint8_t kInitSeq[] = {
+    // 0xFF is the page-select / command-set unlock. 0xA5 opens the extended
+    // page that every 0x50..0xF9 register below lives on; without it the whole
+    // block is written into the void and the panel runs on its defaults.
+    0xff, 1, 0xa5,
     0x9a, 1, 0x08,
     0x9b, 1, 0x08,
     0x9c, 1, 0xb0,
@@ -166,6 +170,10 @@ constexpr uint8_t kInitSeq[] = {
     0x35, 1, 0x00,  // TE on
     0x44, 2, 0x00, 0x10,
     0x46, 1, 0x10,
+    // Back to page 0 before the standard DCS commands: COLMOD on the extended
+    // page would leave the controller at its 18 bit/pixel reset default (06h),
+    // which reads a 2-byte-per-pixel stream as 3-byte pixels.
+    0xff, 1, 0x00,
     0x3a, 1, 0x05,  // COLMOD: 16-bit RGB565
 };
 // clang-format on
@@ -268,7 +276,7 @@ bool tft_init(const TftConfig& cfg) {
         i += 2u + len;
     }
     esp_lcd_panel_io_tx_param(g_io, 0x11, nullptr, 0);  // SLPOUT
-    vTaskDelay(pdMS_TO_TICKS(120));
+    vTaskDelay(pdMS_TO_TICKS(220));
 
     // Paint GRAM black before enabling the display, else the panel's random
     // power-on contents flash until the first UI frame is pushed. s_xpose is
@@ -279,6 +287,7 @@ bool tft_init(const TftConfig& cfg) {
         push_colors(s_xpose, static_cast<size_t>(rows) * kNativeW);
     }
     esp_lcd_panel_io_tx_param(g_io, 0x29, nullptr, 0);  // DISPON
+    vTaskDelay(pdMS_TO_TICKS(200));
 
 #ifdef CONFIG_PIXFROG_NV3007_ROT180
     ESP_LOGI(TAG, "NV3007 %dx%d ready (landscape, rot180)", g_w, g_h);
