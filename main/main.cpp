@@ -334,7 +334,7 @@ extern "C" void app_main() {
         .tft_dc_gpio        = pixfrog::board::kDisplayDcGpio,
         .tft_rst_gpio       = pixfrog::board::kDisplayRstGpio,
         .spi_freq_hz        = pixfrog::board::kDisplaySpiFreqHz,
-        .tft_width          = CONFIG_PIXFROG_TFT_WIDTH,  // landscape logical size — the
+        .tft_width          = CONFIG_PIXFROG_TFT_WIDTH,   // landscape logical size — the
         .tft_height         = CONFIG_PIXFROG_TFT_HEIGHT,  // panel driver owns the rotation
         .tft_backlight_gpio = pixfrog::board::kDisplayBacklightGpio,
     };

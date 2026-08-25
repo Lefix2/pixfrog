@@ -179,12 +179,12 @@ bool IRAM_ATTR on_color_trans_done(esp_lcd_panel_io_handle_t /*io*/,
 
 // Native portrait window, inclusive coordinates.
 void set_window(int xs, int xe, int ys, int ye) {
-    xs += kGramXOffset;
-    xe += kGramXOffset;
-    const uint8_t ca[4] = { static_cast<uint8_t>(xs >> 8), static_cast<uint8_t>(xs),
-                            static_cast<uint8_t>(xe >> 8), static_cast<uint8_t>(xe) };
-    const uint8_t ra[4] = { static_cast<uint8_t>(ys >> 8), static_cast<uint8_t>(ys),
-                            static_cast<uint8_t>(ye >> 8), static_cast<uint8_t>(ye) };
+    xs                  += kGramXOffset;
+    xe                  += kGramXOffset;
+    const uint8_t ca[4]  = { static_cast<uint8_t>(xs >> 8), static_cast<uint8_t>(xs),
+                             static_cast<uint8_t>(xe >> 8), static_cast<uint8_t>(xe) };
+    const uint8_t ra[4]  = { static_cast<uint8_t>(ys >> 8), static_cast<uint8_t>(ys),
+                             static_cast<uint8_t>(ye >> 8), static_cast<uint8_t>(ye) };
     esp_lcd_panel_io_tx_param(g_io, 0x2A, ca, sizeof(ca));
     esp_lcd_panel_io_tx_param(g_io, 0x2B, ra, sizeof(ra));
 }
