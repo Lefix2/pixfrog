@@ -113,14 +113,22 @@ jobs:
       - name: Install SDL2
         run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
 
-      - name: Build emulator
+      - name: Build emulator (NV3007 428x142 layout, default)
         run: |
           cd tools/emulator
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
-      - name: Headless menu-FSM smoke test
-        run: ./tools/emulator/smoke.sh
+      - name: Build emulator (ST7789 320x240 layout)
+        run: |
+          cd tools/emulator
+          cmake -B build.st7789 -DCMAKE_BUILD_TYPE=Release -DPIXFROG_EMU_PANEL=st7789
+          cmake --build build.st7789 --parallel
+
+      - name: Headless menu-FSM smoke test (both layouts)
+        run: |
+          ./tools/emulator/smoke.sh
+          ./tools/emulator/smoke.sh build.st7789/pixfrog_emu
 
   idf-build:
     name: ESP-IDF build for esp32p4 (${{ matrix.variant }})
@@ -138,10 +146,11 @@ jobs:
         idf_version: ['v5.5']
         # Build every config variant so each compile path stays green:
         # tft = the default sdkconfig (PARLIO LED backend + ST7789); oled =
-        # overlay selecting the SSD1306. The legacy LCD_CAM LED backend
+        # overlay selecting the SSD1306; nv3007 = overlay selecting the NV3007
+        # bar panel inside the TFT backend. The legacy LCD_CAM LED backend
         # (overlay sdkconfig.ci.lcdcam) is no longer CI-built — kept for
         # manual debugging only.
-        variant: ['oled', 'tft']
+        variant: ['oled', 'tft', 'nv3007']
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
@@ -172,8 +181,8 @@ jobs:
         run: |
           . $IDF_PATH/export.sh
           idf.py --version
-          if [ "${{ matrix.variant }}" = "oled" ]; then
-            export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.oled"
+          if [ "${{ matrix.variant }}" != "tft" ]; then
+            export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.${{ matrix.variant }}"
           fi
           idf.py set-target esp32p4
           idf.py build

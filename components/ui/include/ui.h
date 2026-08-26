@@ -53,6 +53,19 @@ uint32_t get_ip();
 void set_link_up(bool up);
 bool is_link_up();
 
+// Coarse network state for the HOME status icon. Derived from link + IP +
+// DHCP in main.cpp, but kept as an explicit enum so the UI can render a
+// distinct icon per state (cable unplugged, DHCP acquiring, connected, error)
+// without re-deriving the logic. set_link_up()/set_ip() stay for back-compat.
+enum class NetState : uint8_t {
+    Disconnected,  // no link (cable out)
+    Acquiring,     // link up, DHCP lease pending
+    Connected,     // link up, IP acquired
+    Error,         // link up but no route / IP conflict / config failure
+};
+void set_net_state(NetState s);
+NetState get_net_state();
+
 // Per-channel activity is read directly from dmx::is_channel_active()
 // in menu.cpp — no UI-side cache needed.
 

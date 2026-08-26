@@ -31,4 +31,8 @@ void canvas_flush() {
     oled_flush();
 }
 
+// No-op on the OLED: oled_flush() already reconciles its own page buffer, and
+// the 1 bpp I2C path has never shown the stale-row behaviour this exists for.
+void canvas_invalidate() {}
+
 }  // namespace pixfrog::ui::detail

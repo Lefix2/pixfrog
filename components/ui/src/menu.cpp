@@ -17,6 +17,8 @@
 #include "dmx_manager.h"
 #include "fpp_sync.h"
 #include "fseq_player.h"
+#include "icons_net.h"
+#include "icons_status.h"
 #include "led_output.h"
 #include "led_protocols.h"
 #include "sacn.h"
@@ -37,17 +39,38 @@ constexpr uint8_t kOledCols = 21;
 // ── Canvas text helpers ───────────────────────────────────────────────────────
 // Thin wrappers that map OLED-style (row, col) coordinates to pixel coords.
 
-static void draw_row(uint8_t row, uint8_t col, const char* str) {
+[[maybe_unused]] static void draw_row(uint8_t row, uint8_t col, const char* str) {
     canvas_draw_text(col * kFontCellWidth, row * kFontHeight, str, color::White);
 }
 
 // ── TFT layout ────────────────────────────────────────────────────────────────
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+// NV3007 rotated 90° → 428×142 landscape. Pixel-exact to pixfrog-screen.jsx:
+// 22px header, 18px hint bar, two-column lists/home, native fonts (no scaling).
+constexpr int kTW       = 428;                        // TFT width  (landscape, rotated)
+constexpr int kTH       = 142;                        // TFT height (landscape, rotated)
+constexpr int kHdrH     = 22;                         // header bar height (design HDR)
+constexpr int kFootH    = 22;                         // edit-screen hint bar (design FOOT)
+constexpr int kPadX     = 12;                         // header / status side padding
+constexpr int kIndent   = 10;                         // list-row side padding
+constexpr int kCols2    = 2;                          // two side-by-side columns
+constexpr int kColW     = kTW / kCols2;               // 214px per column
+constexpr int kListRows = 4;                          // design ROWS = 4 per column
+constexpr int kMaxVis   = kCols2 * kListRows;         // 8 visible list items
+constexpr int kRowH     = (kTH - kHdrH) / kListRows;  // 30px list row
+constexpr int kChip     = 20;                         // 20×20 channel chip
+// kTxtSc/kBadge/kGutter kept for code paths still shared with the splash helpers.
+constexpr int kTxtSc = 2;
+constexpr int kTxtH  = 8 * kTxtSc;
+#else
+// ST7789 landscape 320×240 layout
 constexpr int kTW    = 320;         // TFT width  (landscape)
 constexpr int kTH    = 240;         // TFT height (landscape)
 constexpr int kHdrH  = 28;          // header bar height
 constexpr int kItemH = 24;          // list item height
 constexpr int kTxtSc = 2;           // standard text scale (12x16 per char)
+constexpr int kLstSc = 2;           // same as kTxtSc for landscape
 constexpr int kTxtH  = 8 * kTxtSc;  // 16px
 // +2: glyph ink sits in the upper ~12 of the 16px cell (descender space below),
 // so centring the full cell reads high — nudge text down to centre the ink.
@@ -58,12 +81,166 @@ constexpr int kMaxVis   = (kTH - kHdrH) / kItemH;            // 8 visible items
 constexpr int kBadge    = kItemH - 6;                        // square channel-badge side (18px)
 constexpr int kGutter   = 5 + kBadge + 6;                    // label x: clears the badge column
 constexpr int kChevW    = kFontCellWidth * kTxtSc;           // chevron glyph width (12px)
+#endif
+
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+// ── NV3007 design helpers ────────────────────────────────────────────────────
+// Vertically-centre Body-font text in an h-tall band starting at y.
+inline void text_body(int x, int y, int h, const char* s, Color fg, Color bg = color::Transparent) {
+    canvas_draw_text_f(x, y + (h - canvas_font_h(FontId::Body)) / 2, s, fg, bg, FontId::Body);
+}
+inline int body_w(const char* s) {
+    return canvas_text_w(s, FontId::Body);
+}
+inline int small_w(const char* s) {
+    return canvas_text_w(s, FontId::Small);
+}
+
+// ── Status icons (16×16, two 1bpp layers from icons_net.h) ───────────────────
+// The 'dim' layer is the muted base shape (e.g. the wired cable), the 'main'
+// layer is the active overlay (e.g. the red X, the green check). Both are
+// composited over the framebuffer so the icon sits on any backdrop.
+constexpr int kIconSize = 16;
+
+void draw_icon_layer(int x, int y, const uint8_t* alpha, Color fg) {
+    canvas_draw_mask_aa(x, y, kIconSize, kIconSize, alpha, fg);
+}
+
+// ── Status strip ─────────────────────────────────────────────────────────────
+// A dynamically-composed row of header indicators, packed left-to-right from a
+// start x inside the header band. Only active services push an item, so the
+// strip grows and shrinks with the live config. An item is either a 16×16 icon
+// mask (composited in a theme colour) or a short Body-face label — one small
+// graphical component that keeps the header self-arranging.
+struct StatusStrip {
+    int x;       // running pen position (left edge of the next item)
+    int band_h;  // header band height (items are vertically centred in it)
+
+    void icon(const uint8_t* alpha, Color fg) {
+        draw_icon_layer(x, (band_h - kIconSize) / 2, alpha, fg);
+        x += kIconSize + kGap;
+    }
+    void label(const char* s, Color fg) {
+        text_body(x, 0, band_h, s, fg);
+        x += body_w(s) + kGap;
+    }
+
+    static constexpr int kGap = 7;  // spacing between consecutive items
+};
+
+// Network-state icon: one per NetState, themed to the design palette.
+//   Disconnected → red X over a dim grey cable
+//   Acquiring     → dim grey cable + orange dots
+//   Connected     → green cable
+//   Error         → orange "?" over a dim grey cable
+void draw_net_icon(int x, int y, ui::NetState st) {
+    using ui::NetState;
+    const Color dim = color::DimGreen;  // muted base (grey-green)
+    switch (st) {
+    case NetState::Disconnected:
+        draw_icon_layer(x, y, kIcon_net_disconnected_dim, dim);
+        draw_icon_layer(x, y, kIcon_net_disconnected_main, color::BadCoral);
+        break;
+    case NetState::Acquiring:
+        draw_icon_layer(x, y, kIcon_net_acquiring_dim, dim);
+        draw_icon_layer(x, y, kIcon_net_acquiring_main, color::Orange);
+        break;
+    case NetState::Connected:
+        draw_icon_layer(x, y, kIcon_net_connected_main, color::FrogLine);
+        break;
+    case NetState::Error:
+        draw_icon_layer(x, y, kIcon_net_no_route_dim, dim);
+        draw_icon_layer(x, y, kIcon_net_no_route_main, color::Orange);
+        break;
+    }
+}
+
+// Data-flow icon: idle / receiving / transmitting / both. The 'main' layer is
+// the active arrow (bright), the 'dim' layer is the inactive one (muted).
+enum class DataFlow : uint8_t { None, Receive, Transmit, Both };
+
+void draw_data_icon(int x, int y, DataFlow f) {
+    const Color active = color::GoodBright;
+    const Color muted  = color::DimGreen;
+    switch (f) {
+    case DataFlow::None: draw_icon_layer(x, y, kIcon_data_idle_dim, muted); break;
+    case DataFlow::Receive:
+        draw_icon_layer(x, y, kIcon_data_receive_dim, muted);
+        draw_icon_layer(x, y, kIcon_data_receive_main, active);
+        break;
+    case DataFlow::Transmit:
+        draw_icon_layer(x, y, kIcon_data_transmit_dim, muted);
+        draw_icon_layer(x, y, kIcon_data_transmit_main, active);
+        break;
+    case DataFlow::Both: draw_icon_layer(x, y, kIcon_data_txrx_main, active); break;
+    }
+}
+
+// Channel-number badge: a rounded square filled with the wiring-family colour
+// when the channel is in use, or a hollow 2px ring of that colour when it is
+// Off. The digit is the homogeneous Body face — big enough to fill the square.
+// `behind` is the row tint the AA edges and the hollow centre blend into.
+//
+// Body figures don't fill their 9×16 advance cell: the ink box spans roughly
+// cols 0–6 / rows 2–11 (caps hug the baseline at row 12, the descender rows stay
+// blank), so centring on the advance drifts the digit up and to the left. Offset
+// the draw origin so the digit's *ink* box lands on the badge centre instead.
+void draw_chan_badge(int x, int y, int side, int number, Color family, bool filled, Color behind) {
+    canvas_fill_round_rect_aa(x, y, side, side, 4, family, behind);
+    if (!filled)  // carve the centre back to the row tint → a family-colour ring
+        canvas_fill_round_rect_aa(x + 2, y + 2, side - 4, side - 4, 3, behind, family);
+    char n[4];
+    std::snprintf(n, sizeof(n), "%d", number);
+    const Color ink      = filled ? color::Black : family;
+    constexpr int kInkCx = 3;  // Body digit ink centre column within the cell
+    constexpr int kInkCy = 6;  // Body digit ink centre row within the cell (≈6.5)
+    canvas_draw_text_f(x + (side - 1) / 2 - kInkCx, y + (side - 1) / 2 - kInkCy, n, ink,
+                       color::Transparent, FontId::Body);
+}
+
+// Number of DMX universes a channel occupies, derived from its pixel
+// byte-footprint (pixels × bytes/px, offset by dmx_start). DMX512 always emits
+// exactly one universe; a disabled channel none. Lets HOME show the real
+// addressing span (U1-2, U8-10) instead of only the start universe.
+int channel_universe_span(const config::ChannelConfig& cc) {
+    if (led::is_off(cc.protocol)) return 0;
+    if (led::is_dmx(cc.protocol)) return 1;
+    const uint32_t offset = (cc.dmx_start > 0) ? (cc.dmx_start - 1u) : 0u;
+    const uint32_t bytes  = static_cast<uint32_t>(cc.pixel_count) *
+                           led::bytes_per_pixel(cc.protocol);
+    const uint32_t total = offset + bytes;
+    if (total == 0) return 1;
+    return static_cast<int>((total + dmx::kUniverseSize - 1) / dmx::kUniverseSize);
+}
+
+// Edit-screen hint bar: green keycaps + dim actions, three segments (design
+// Hints "TURN · PRESS · HOLD"). Drawn flush to the bottom over a top hairline.
+void draw_hint_bar(const char* v_turn, const char* v_press, const char* v_hold) {
+    const int y = kTH - kFootH;
+    canvas_hline(0, y, kTW, color::Hair);
+    const char* keys[3] = { "TURN", "PRESS", "HOLD" };
+    const char* vals[3] = { v_turn, v_press, v_hold };
+    for (int i = 0; i < 3; ++i) {
+        const int w  = body_w(keys[i]) + 5 + body_w(vals[i]);
+        const int cx = kTW * (2 * i + 1) / 6;
+        int x        = cx - w / 2;
+        text_body(x, y, kFootH, keys[i], color::FrogLine);
+        text_body(x + body_w(keys[i]) + 5, y, kFootH, vals[i], color::DimGreen);
+    }
+}
+#endif
 
 // Shared screen header: dark bar + signature-green accent line + title.
 void draw_tft_header(const char* title, Color title_col = color::Cream) {
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    canvas_fill_rect(0, 0, kTW, kHdrH - 1, color::Black);
+    canvas_fill_rect(0, kHdrH - 1, kTW, 1, color::FrogLine);
+    text_body(kPadX, 0, kHdrH, title, title_col);
+#else
     canvas_fill_rect(0, 0, kTW, kHdrH - 2, color::HeaderBg);
     canvas_fill_rect(0, kHdrH - 2, kTW, 2, color::FrogLine);
     canvas_draw_text(kIndent, (kHdrH - kTxtH) / 2, title, title_col, color::HeaderBg, kTxtSc);
+#endif
 }
 
 // Small-font status capsule over a solid backdrop; returns the x past it.
@@ -73,7 +250,7 @@ int pill_width(const char* txt) {
     return static_cast<int>(std::strlen(txt)) * kFontCellWidth + 12;
 }
 
-int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
+[[maybe_unused]] int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
     const int w = pill_width(txt);
     canvas_fill_round_rect_aa(x, y, w, kPillH, kPillH / 2, bg, behind);
     // Small-font caps ink spans rows 0..5 of the 8px cell: +4 centres it.
@@ -83,27 +260,37 @@ int draw_pill(int x, int y, const char* txt, Color bg, Color fg, Color behind) {
 
 // Channel-number badge: AA rounded square with the digit drawn on a transparent
 // background so its ink composites over the badge and never squares off the
-// rounded corners. Digit ink sits in the upper ~13 rows of the 12×16 cell, so
-// bias the cell down a touch to centre the visible glyph in the square.
-void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col, Color behind) {
+// rounded corners.
+[[maybe_unused]] void draw_badge(int x, int y, int side, int number, Color badge_col, Color num_col,
+                                 Color behind) {
     canvas_fill_round_rect_aa(x, y, side, side, 4, badge_col, behind);
     char num[8];
     std::snprintf(num, sizeof(num), "%d", number);
-    const int cw = kFontCellWidth * kTxtSc;  // one digit = 12 px wide
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // Scale 1: a digit is 6×8 — centred in the 14px badge.
+    const int cw = kFontCellWidth;
+    const int ch = kFontHeight;
     const int tx = x + (side - cw) / 2;
-    const int ty = y + (side - kTxtH) / 2 + 2;  // +2: glyph ink is top-weighted
+    const int ty = y + (side - ch) / 2;
+    canvas_draw_text(tx, ty, num, num_col, color::Transparent, 1);
+#else
+    // Scale 2: digit ink sits in the upper ~13 rows of the 12×16 cell, bias down.
+    const int cw = kFontCellWidth * kTxtSc;  // 12 px wide
+    const int tx = x + (side - cw) / 2;
+    const int ty = y + (side - kTxtH) / 2 + 2;
     canvas_draw_text(tx, ty, num, num_col, color::Transparent, kTxtSc);
+#endif
 }
 
 // Right-aligned standard-scale text; returns the x where the text starts.
-int draw_text_r(int x_end, int y, const char* txt, Color fg, Color bg) {
+[[maybe_unused]] int draw_text_r(int x_end, int y, const char* txt, Color fg, Color bg) {
     const int x = x_end - static_cast<int>(std::strlen(txt)) * kFontCellWidth * kTxtSc;
     canvas_draw_text(x, y, txt, fg, bg, kTxtSc);
     return x;
 }
 
 // Packet counters outgrow their column fast; keep them to ≤6 glyphs.
-void fmt_count(char* out, size_t cap, uint64_t v) {
+[[maybe_unused]] void fmt_count(char* out, size_t cap, uint64_t v) {
     if (v < 1'000'000ull)
         std::snprintf(out, cap, "%llu", static_cast<unsigned long long>(v));
     else if (v < 1'000'000'000ull)
@@ -123,6 +310,7 @@ enum class Screen : uint8_t {
     Home,
     Menu,  // node engine active — the current list is s.node
     About,
+    Stats,  // "nerd stats" telemetry page
     EditValue,
     EditString,
     EditIp,
@@ -449,7 +637,7 @@ ListItem back_item(const char* label = "Back") {
 // edge. The offset persists in s.scroll across renders, so coming back up
 // un-sticks the cursor from the last row instead of dragging the whole list.
 // Returns the index of the first visible row.
-uint8_t viewport_first(uint8_t cursor, uint8_t count, uint8_t visible) {
+[[maybe_unused]] uint8_t viewport_first(uint8_t cursor, uint8_t count, uint8_t visible) {
     if (count <= visible) {
         s.scroll = 0;
         return 0;
@@ -463,7 +651,7 @@ uint8_t viewport_first(uint8_t cursor, uint8_t count, uint8_t visible) {
 }
 
 // Off-focus rows fade with their distance from the cursor (1 = nearest).
-Color fade_gray(int d) {
+[[maybe_unused]] Color fade_gray(int d) {
     static const Color g[] = { color::LightGray, Color{ 0x8C71 }, Color{ 0x5AEB },
                                color::DarkGray };
     if (d < 1) d = 1;
@@ -483,8 +671,104 @@ void draw_back_arrow(int x, int y, int h, Color c) {
 }
 #endif
 
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+// One list row inside a column (left edge x0, width colW, top ry). Matches
+// pixfrog-screen.jsx ListRow: optional chip, label, optional gold value, chevron.
+void draw_list_item_col(const ListItem& it, bool sel, int x0, int colW, int ry, int row) {
+    // Zebra bands (selection > alt-row tint > black) replace the row hairlines
+    // and the column divider — softer, and consistent with the HOME table.
+    const bool alt = (row & 1) != 0;
+    const Color bg = sel ? color::SelBg : (alt ? color::RowAlt : color::Black);
+    canvas_fill_rect(x0, ry, colW, kRowH, bg);
+    if (sel) canvas_fill_round_rect(x0, ry + 3, 3, kRowH - 6, 1, color::GoodBright);
+
+    const bool terminal = it.back || (it.label[0] == '[');
+    int x               = x0 + kIndent;
+
+    if (it.back) {
+        draw_back_arrow(x, ry, kRowH, color::FrogLine);
+        text_body(x + 13, ry, kRowH, it.label, color::FrogLine, bg);
+        return;
+    }
+    if (it.badge >= 0) {
+        // Same badge as HOME: filled when the channel is in use, hollow (a
+        // family-colour ring) when Off — a disabled channel reads as DarkGray.
+        const int cy      = ry + (kRowH - kChip) / 2;
+        const bool filled = (it.badge_col != color::DarkGray);
+        draw_chan_badge(x, cy, kChip, it.badge + 1, it.badge_col, filled, bg);
+        x += kChip + 7;
+    }
+
+    // Right edge: chevron, then value to its left.
+    int rx = x0 + colW - kIndent;
+    if (!terminal) {
+        text_body(rx - canvas_font_adv(FontId::Body), ry, kRowH, ">", color::DimGreen, bg);
+        rx -= canvas_font_adv(FontId::Body) + 4;
+    }
+    if (it.value && it.value[0]) {
+        const int vw = body_w(it.value);
+        text_body(rx - vw, ry, kRowH, it.value, it.value_col, bg);
+        rx -= vw + 6;
+    }
+    // Label fills the gap; truncate to the remaining width.
+    const Color lc = sel ? color::Cream : color::Cream;
+    char lbl[24];
+    truncate(lbl, sizeof(lbl), it.label);
+    const int maxchars = (rx - x) / canvas_font_adv(FontId::Body);
+    if (maxchars > 0 && static_cast<int>(std::strlen(lbl)) > maxchars)
+        lbl[maxchars > 0 ? maxchars : 0] = '\0';
+    text_body(x, ry, kRowH, lbl, lc, bg);
+}
+#endif
+
 void render_list(const char* title, const ListItem* items, uint8_t count, uint8_t cursor) {
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 landscape: row-major two-column list (1 2 / 3 4 / …) ────────────
+    // Cursor advances left→right then down; scrolling moves whole rows.
+    canvas_clear(color::Black);
+    draw_tft_header(title);
+
+    const int totalRows = (count + 1) / 2;
+    // Free-roaming row viewport: the cursor row moves freely within the visible
+    // window and only drags the scroll offset when it would leave the top or
+    // bottom edge. The offset persists in s.scroll across renders, so coming
+    // back up un-sticks the cursor from the last row instead of dragging the
+    // whole list (mirrors viewport_first() used by the TFT/OLED paths).
+    int firstRow = static_cast<int>(s.scroll);
+    if (totalRows <= kListRows) {
+        firstRow = 0;
+    } else {
+        const int crow = cursor / 2;
+        if (crow < firstRow)
+            firstRow = crow;
+        else if (crow >= firstRow + kListRows)
+            firstRow = crow - (kListRows - 1);
+        if (firstRow + kListRows > totalRows) firstRow = totalRows - kListRows;
+        if (firstRow < 0) firstRow = 0;
+    }
+    s.scroll        = static_cast<uint8_t>(firstRow);
+    const int first = firstRow * 2;
+    for (int p = 0; p < kMaxVis && first + p < count; ++p) {
+        const int idx = first + p;
+        const int col = p % 2;  // left / right
+        const int row = p / 2;  // top → bottom
+        const int x0  = col * kColW;
+        const int ry  = kHdrH + row * kRowH;
+        draw_list_item_col(items[idx], idx == cursor, x0, kColW, ry, row);
+    }
+    // Thin divider between the two columns (only when the right column is used).
+    if (count > 1) canvas_vline(kColW, kHdrH, kTH - kHdrH, color::Hair);
+    // Scrollbar (row-based): track + proportional thumb on the far right.
+    if (totalRows > kListRows) {
+        const int trackH = kTH - kHdrH - 6;
+        int thumbH       = trackH * kListRows / totalRows;
+        if (thumbH < 12) thumbH = 12;
+        const int travel = totalRows - kListRows;
+        const int y      = kHdrH + 3 + (travel > 0 ? (trackH - thumbH) * firstRow / travel : 0);
+        canvas_fill_round_rect(kTW - 5, kHdrH + 3, 3, trackH, 1, color::Hair);
+        canvas_fill_round_rect(kTW - 5, y, 3, thumbH, 1, color::FrogLine);
+    }
+#elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     // ── TFT: dark list with rounded cursor highlight ──────────────────────────
     canvas_clear(color::Black);
     draw_tft_header(title);
@@ -511,22 +795,31 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
         if (it.back) {
             // Back-arrow glyph in the badge column, label in the signature green.
             draw_back_arrow(kGutter, ry, kItemH, color::FrogLine);
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+            canvas_draw_text(kGutter + 10, ry + kPad, it.label, color::FrogLine, text_bg, kLstSc);
+#else
             canvas_draw_text(kGutter + 18, ry + kPad, it.label, color::FrogLine, text_bg, kTxtSc);
+#endif
             continue;
         }
         if (it.badge >= 0) {
             const Color num_col = (it.badge_col == color::DarkGray) ? color::LightGray
                                                                     : color::Black;
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+            draw_badge(kIndent, ry + (kItemH - kBadge) / 2, kBadge, it.badge + 1, it.badge_col,
+                       num_col, text_bg);
+#else
             draw_badge(5, ry + 3, kBadge, it.badge + 1, it.badge_col, num_col, text_bg);
+#endif
         }
-        canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kTxtSc);
+        canvas_draw_text(kGutter, ry + kPad, it.label, color::Cream, text_bg, kLstSc);
 
         const int chev_x = kTW - kChevW - kIndent;
-        if (!no_chevron) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kTxtSc);
+        if (!no_chevron) canvas_draw_text(chev_x, ry + kPad, ">", color::DarkGray, text_bg, kLstSc);
         if (it.value && it.value[0]) {
-            const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kTxtSc;
-            const int vend = no_chevron ? (kTW - kIndent) : (chev_x - 6);
-            canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kTxtSc);
+            const int vw   = static_cast<int>(std::strlen(it.value)) * kFontCellWidth * kLstSc;
+            const int vend = no_chevron ? (kTW - kIndent) : (chev_x - 4);
+            canvas_draw_text(vend - vw, ry + kPad, it.value, it.value_col, text_bg, kLstSc);
         }
     }
     // Scrollbar: a full-height track with a proportional thumb so the list
@@ -568,9 +861,167 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 
 // ── HOME ────────────────────────────────────────────────────────────────────
 
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+// Per-channel metric shown in HOME's rotating right-hand slot. The unit shares
+// the value's Body face (px / % / g), so the suffix alone identifies the metric
+// as the display cycles through them. DMX512 channels have no brightness/gamma/
+// order, so they always show their slot count instead of rotating.
+enum class ChMetric : uint8_t { Pixels, Bright, Gamma, Order, Count };
+
+// Advance one metric every kHomeRotateMs — slow enough to read, brisk enough to
+// feel live. Global (all LED channels show the same metric at once).
+constexpr uint32_t kHomeRotateMs = 2600;
+
+void format_ch_metric(const config::ChannelConfig& cc, ChMetric m, char* out, size_t cap) {
+    switch (m) {
+    case ChMetric::Bright:
+        std::snprintf(out, cap, "%u%%",
+                      (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
+        return;
+    case ChMetric::Gamma:
+        std::snprintf(out, cap, "%u.%ug", cc.gamma_x10 / 10, cc.gamma_x10 % 10);
+        return;
+    case ChMetric::Order: std::snprintf(out, cap, "%s", color_order_name(cc.color_order)); return;
+    case ChMetric::Pixels:
+    default: std::snprintf(out, cap, "%upx", cc.pixel_count); return;
+    }
+}
+#endif
+
 void render_home() {
     char line[48];
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 landscape 428×142 dashboard ────────────────────────────────────
+    // Single status line (22px) | green rule | 8 channels, row-major 4×2 grid.
+    constexpr int kChTop = kHdrH;               // channel grid top (22)
+    constexpr int kChH   = (kTH - kChTop) / 4;  // 30px per channel row
+    constexpr int kCellW = kTW / 2;             // 214px per channel column
+
+    canvas_clear(color::Black);
+    const auto stats = dmx::get_stats();
+    bool rx_active   = false;
+    for (int i = 0; i < 8; ++i)
+        rx_active |= dmx::is_channel_active(i);
+
+    // ── Status line: IP + live-service strip (left) · fps + icons (right) ─────
+    // Left: the address, then a self-arranging strip of active services (web
+    // globe, sACN) via StatusStrip. Right: current/cap fps + data/net icons.
+    {
+        const int h       = kHdrH;
+        const auto& g     = config::get_global();
+        const uint32_t ip = ui::get_ip();
+        int ip_end        = kPadX;
+        if (ip == 0) {
+            text_body(kPadX, 0, h, "0.0.0.0", color::DimGreen);
+            ip_end += body_w("0.0.0.0");
+        } else {
+            std::snprintf(
+                line, sizeof(line), "%u.%u.%u.%u", static_cast<unsigned>((ip >> 24) & 0xFFu),
+                static_cast<unsigned>((ip >> 16) & 0xFFu), static_cast<unsigned>((ip >> 8) & 0xFFu),
+                static_cast<unsigned>(ip & 0xFFu));
+            text_body(kPadX, 0, h, line, color::Cream);
+            ip_end += body_w(line);
+        }
+        // Active-service strip to the right of the IP: web globe, then sACN.
+        StatusStrip strip{ ip_end + 11, h };
+        if (g.web_enabled) strip.icon(kIcon_globe, color::FrogLine);
+        if (g.sacn_enabled) strip.label("sACN", color::GoodBright);
+
+        // Right group (flush right): net icon · data icon · "fps" · cur/cap.
+        const int iconY = (h - kIconSize) / 2;
+        int rx          = kTW - kPadX - kIconSize;
+        draw_net_icon(rx, iconY, ui::get_net_state());
+        rx                  -= 2 + kIconSize;
+        const DataFlow flow  = rx_active ? DataFlow::Receive : DataFlow::None;
+        draw_data_icon(rx, iconY, flow);
+        rx -= 6 + body_w("fps");
+        text_body(rx, 0, h, "fps", color::DimGreen);
+        // "/<cap>" in dim, then the live fps in gold — reads "56/60 fps".
+        std::snprintf(line, sizeof(line), "/%u", g.refresh_rate_hz);
+        rx -= 3 + body_w(line);
+        text_body(rx, 0, h, line, color::DimGreen);
+        std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
+        rx -= body_w(line);
+        text_body(rx, 0, h, line, color::Gold);
+    }
+    canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
+
+    // ── Channel grid: 8 single-line cells, row-major (1 2 / 3 4 / …) ──────────
+    // Soft zebra rows (no hairlines), one homogeneous Body cell for every value.
+    // Per cell: [badge] PROTOCOL   <universe range>   <rotating metric>  •
+    // Universe values share a common centre-x (centred among themselves, not
+    // right-aligned); the metric column rotates through pixels/brightness/gamma/
+    // order, the unit suffix (px/%/g) telling which is on screen.
+    const int dotR   = kCellW - 9;     // activity dot / "!" right edge
+    const int rotR   = dotR - 11;      // rotating-metric right edge (clears the dot)
+    const int uniCtr = kCellW - 98;    // shared centre-x of the universe column
+    const int protoX = 7 + kChip + 6;  // protocol name left edge within a cell
+    const int metric = static_cast<int>((now_ms() / kHomeRotateMs) %
+                                        static_cast<uint32_t>(ChMetric::Count));
+    for (int i = 0; i < 8; ++i) {
+        const int col      = i % 2;
+        const int row      = i / 2;
+        const int x0       = col * kCellW;
+        const int cy       = kChTop + row * kChH;
+        const Color row_bg = (row & 1) ? color::RowAlt : color::Black;
+        if (col == 0) canvas_fill_rect(0, cy, kTW, kChH, row_bg);
+
+        const auto& cc = config::get_channel(i);
+        const bool off = led::is_off(cc.protocol);
+        const bool ok  = dmx::is_channel_capacity_ok(i);
+
+        // Badge: filled in the wiring-family colour when in use, hollow when Off.
+        const int chcy = cy + (kChH - kChip) / 2;
+        draw_chan_badge(x0 + 7, chcy, kChip, i + 1, badge_color(cc.protocol), !off, row_bg);
+
+        // Protocol name.
+        const char* pname = protocol_name(cc.protocol);
+        text_body(x0 + protoX, cy, kChH, pname, off ? color::DimGreen : color::Cream, row_bg);
+
+        // Activity: live dot (or "!" over capacity).
+        if (!ok) {
+            text_body(x0 + dotR - body_w("!"), cy, kChH, "!", color::BadCoral, row_bg);
+        } else if (!off) {
+            const bool act     = dmx::is_channel_active(i);
+            const bool fsafe   = dmx::is_channel_failsafe(i);
+            const Color dotcol = fsafe ? color::Orange : act ? color::GoodBright : color::IdleGreen;
+            canvas_fill_round_rect_aa(x0 + dotR - 8, cy + (kChH - 8) / 2, 8, 8, 4, dotcol, row_bg);
+        }
+        if (!off) {
+            // Rotating metric (right-aligned): DMX512 has no bright/gamma/order,
+            // so it shows its slot count instead of cycling.
+            char mv[16];
+            if (led::is_dmx(cc.protocol))
+                std::snprintf(mv, sizeof(mv), "%u", cc.pixel_count);
+            else
+                format_ch_metric(cc, static_cast<ChMetric>(metric), mv, sizeof(mv));
+            const int mvw        = body_w(mv);
+            const int metricLeft = x0 + rotR - mvw;
+
+            // Universe range, centred on the shared column axis. When a wide
+            // range would meet a wide metric it is nudged left to keep a small
+            // gap (perfect centring holds for the common short values).
+            const int span = channel_universe_span(cc);
+            char ur[16];
+            if (span > 1)
+                std::snprintf(ur, sizeof(ur), "%u-%u", cc.universe_start,
+                              static_cast<unsigned>(cc.universe_start + span - 1));
+            else
+                std::snprintf(ur, sizeof(ur), "%u", cc.universe_start);
+            const int urw      = body_w(ur);
+            const int protoEnd = x0 + protoX + body_w(pname);
+            int uni_x          = x0 + uniCtr - urw / 2;
+            if (uni_x + urw > metricLeft - 4) uni_x = metricLeft - 4 - urw;
+            if (uni_x < protoEnd + 3) uni_x = protoEnd + 3;
+            text_body(uni_x, cy, kChH, ur, ok ? color::Gold : color::BadCoral, row_bg);
+
+            text_body(metricLeft, cy, kChH, mv, color::LightGray, row_bg);
+        }
+    }
+    // Thin divider between the two channel columns.
+    canvas_vline(kCellW, kChTop, kTH - kChTop, color::Hair);
+#else
     // ── TFT dashboard ────────────────────────────────────────────────────────
     // Header 28 | network 24 | services 18 | column header 14 | 8×19 channels.
     constexpr int kInfoH   = 24;
@@ -719,6 +1170,7 @@ void render_home() {
         canvas_fill_round_rect_aa(kColDot, cy + (kChH - kDotD) / 2, kDotD, kDotD, kDotD / 2,
                                   act_col, row_bg);
     }
+#endif  // !CONFIG_PIXFROG_DISPLAY_NV3007
 #else
     // ── OLED classic home ─────────────────────────────────────────────────────
     canvas_clear();
@@ -805,6 +1257,8 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
     fns[n++]  = [](uint8_t) { go(NodeId::Output); };
     items[n]  = { "Playback", "" };
     fns[n++]  = [](uint8_t) { go(NodeId::Playback); };
+    items[n]  = { "Nerd stats", "" };
+    fns[n++]  = [](uint8_t) { s.screen = Screen::Stats; };
     items[n]  = { "About", "" };
     fns[n++]  = [](uint8_t) { s.screen = Screen::About; };
     items[n]  = back_item("HOME");
@@ -815,7 +1269,22 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
 // ── ABOUT ───────────────────────────────────────────────────────────────────
 
 void render_about() {
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 design: rasterised frog logo + wordmark + one-liners ───────────
+    canvas_clear(color::Black);
+    draw_tft_header("ABOUT");
+    const int cy = (kHdrH + kTH) / 2;
+    // Real SVG-rasterised frog (final splash frame), not a procedural glyph.
+    const int fw = splash_anim_w(), fh = splash_anim_h();
+    const int fy = (kHdrH + kTH) / 2 - fh / 2;
+    canvas_draw_mask(kPadX, fy, fw, fh, splash_anim_frame(splash_anim_count() - 1), color::FrogLine,
+                     color::Transparent);
+    const int tx = kPadX + fw + 14;
+    canvas_draw_text_f(tx, cy - canvas_font_h(FontId::Mega) / 2 - 8, "pixfrog", color::FrogLine,
+                       color::Black, FontId::Mega);
+    text_body(tx, cy + 6, 16, "8-channel ArtNet . sACN node", color::Cream);
+    text_body(tx, cy + 24, 16, fw_build_info(), color::DimGreen);
+#elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     canvas_clear(color::Black);
     draw_tft_header("ABOUT");
 
@@ -840,6 +1309,91 @@ void render_about() {
 void dispatch_about(Event e) {
     // Return to the main menu list; the node engine restores the cursor on the
     // "About" row automatically.
+    if (e == Event::Click) s.screen = Screen::Menu;
+}
+
+// ── NERD STATS ──────────────────────────────────────────────────────────────
+// Read-only telemetry page: frame rate, packet counters, errors, and the
+// service/refresh/addressing state that used to crowd the HOME header. Any
+// click or long-press returns to the menu.
+
+void render_stats() {
+    const auto st = dmx::get_stats();
+    const auto& g = config::get_global();
+    char fps[12], hz[8];
+    std::snprintf(fps, sizeof(fps), "%lu", static_cast<unsigned long>(st.current_fps));
+    std::snprintf(hz, sizeof(hz), "%uHz", g.refresh_rate_hz);
+
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    // fmt_count + the colour-TFT helpers only exist in the TFT build.
+    char frames[16], artnet[16], sacnrx[16], errs[12], under[12];
+    fmt_count(frames, sizeof(frames), st.frames_emitted);
+    fmt_count(artnet, sizeof(artnet), st.artnet_packets_rx);
+    fmt_count(sacnrx, sizeof(sacnrx), st.sacn_packets_rx);
+    std::snprintf(errs, sizeof(errs), "%llu",
+                  static_cast<unsigned long long>(st.artnet_bad_packets));
+    std::snprintf(under, sizeof(under), "%lu", static_cast<unsigned long>(st.dma_underruns));
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    canvas_clear(color::Black);
+    draw_tft_header("NERD STATS");
+    const int colW    = kTW / 2;
+    const int rowH    = (kTH - kHdrH) / 5;
+    const Color errc  = st.artnet_bad_packets ? color::BadCoral : color::DimGreen;
+    const Color undc  = st.dma_underruns ? color::Orange : color::DimGreen;
+    const Color sacnc = g.sacn_enabled ? color::GoodBright : color::DimGreen;
+    const Color webc  = g.web_enabled ? color::GoodBright : color::DimGreen;
+    const char* lL[5] = { "FPS", "Frames", "ArtNet", "sACN rx", "Errors" };
+    const char* vL[5] = { fps, frames, artnet, sacnrx, errs };
+    const Color cL[5] = { color::Gold, color::Cream, color::Cream, color::Cream, errc };
+    const char* lR[5] = { "Refresh", "Net", "sACN", "Web", "Underrun" };
+    const char* vR[5] = { hz, g.use_dhcp ? "DHCP" : "STATIC", g.sacn_enabled ? "ON" : "OFF",
+                          g.web_enabled ? "ON" : "OFF", under };
+    const Color cR[5] = { color::Gold, color::Cream, sacnc, webc, undc };
+    for (int r = 0; r < 5; ++r) {
+        const int ry   = kHdrH + r * rowH;
+        const Color bg = (r & 1) ? color::RowAlt : color::Black;
+        if (r & 1) canvas_fill_rect(0, ry, kTW, rowH, bg);
+        text_body(kPadX, ry, rowH, lL[r], color::DimGreen, bg);
+        text_body(colW - kPadX - body_w(vL[r]), ry, rowH, vL[r], cL[r], bg);
+        text_body(colW + kPadX, ry, rowH, lR[r], color::DimGreen, bg);
+        text_body(kTW - kPadX - body_w(vR[r]), ry, rowH, vR[r], cR[r], bg);
+    }
+#else
+    canvas_clear(color::Black);
+    draw_tft_header("NERD STATS");
+    const char* l[7] = { "FPS", "Frames", "ArtNet", "sACN", "Errors", "Underrun", "Refresh" };
+    const char* v[7] = { fps, frames, artnet, sacnrx, errs, under, hz };
+    int y            = kHdrH + 6;
+    for (int i = 0; i < 7; ++i) {
+        canvas_draw_text(kIndent, y, l[i], color::DimGreen, color::Black, kTxtSc);
+        draw_text_r(kTW - kIndent, y, v[i], color::Cream, color::Black);
+        y += 28;
+    }
+#endif
+#else
+    // OLED: raw counters (no fmt_count) in the classic text rows.
+    canvas_clear();
+    draw_row(0, 0, "NERD STATS");
+    char ln[kOledCols + 1];
+    std::snprintf(ln, sizeof(ln), "FPS  :%s", fps);
+    draw_row(1, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Art  :%llu",
+                  static_cast<unsigned long long>(st.artnet_packets_rx));
+    draw_row(2, 0, ln);
+    std::snprintf(ln, sizeof(ln), "sACN :%llu",
+                  static_cast<unsigned long long>(st.sacn_packets_rx));
+    draw_row(3, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Err  :%llu",
+                  static_cast<unsigned long long>(st.artnet_bad_packets));
+    draw_row(4, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Undr :%lu", static_cast<unsigned long>(st.dma_underruns));
+    draw_row(5, 0, ln);
+    std::snprintf(ln, sizeof(ln), "Hz   :%s", hz);
+    draw_row(6, 0, ln);
+#endif
+}
+
+void dispatch_stats(Event e) {
     if (e == Event::Click) s.screen = Screen::Menu;
 }
 
@@ -907,7 +1461,9 @@ uint8_t build_fseq(ListItem* items, OnClick* fns) {
     const uint8_t n     = no_card ? 0 : g_fseq_file_count;
     const char* playing = fseq::active_file();
     if (n == 0) {
-        items[0] = { no_card ? "No SD card" : "No .fseq files", "" };
+        // Bracketed like "[Stop]" so it reads as inert status text — no chevron
+        // implying a sub-menu that a null fn would then silently swallow.
+        items[0] = { no_card ? "[No SD card]" : "[No .fseq files]", "" };
         fns[0]   = nullptr;  // inert note
         items[1] = back_item();
         fns[1]   = [](uint8_t) { go_back(); };
@@ -950,7 +1506,142 @@ void enter_edit(Field field, ValueKind kind, int32_t cur, int32_t mn, int32_t mx
 }
 
 void render_edit_value() {
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 design: EDIT · <label> with a Mega cyan value ──────────────────
+    canvas_clear(color::Black);
+    char hdr[40];
+    if (s.edit.channel != 0xFF)
+        std::snprintf(hdr, sizeof(hdr), "CH%u  %s", s.edit.channel + 1, s.edit.label);
+    else
+        std::snprintf(hdr, sizeof(hdr), "EDIT  %s", s.edit.label);
+    draw_tft_header(hdr);
+
+    const bool gauge = (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz);
+    const bool boolf = (s.edit.kind == ValueKind::Bool);
+    const bool enumf = (s.edit.kind == ValueKind::Protocol ||
+                        s.edit.kind == ValueKind::ColorOrder || s.edit.kind == ValueKind::Failsafe);
+    const int mh     = canvas_font_h(FontId::Mega);
+
+    if (enumf) {
+        // Horizontal wheel: centre option big (Mega cyan in a pill), neighbours
+        // shrink outward. Gold dot above the option equal to the original value.
+        const int cy  = (kHdrH + (kTH - kFootH)) / 2;
+        const int gap = 18;
+        struct Cell {
+            char txt[24];
+            FontId f;
+            int w;
+            int32_t v;
+        };
+        Cell cells[5];
+        int nc     = 0;
+        int center = -1;  // index of the off==0 (Mega, selected) cell within cells[]
+        for (int off = -2; off <= 2; ++off) {
+            const int32_t v = s.edit.current + off;
+            if (v < s.edit.min || v > s.edit.max) continue;
+            Cell& c = cells[nc];
+            format_value(s.edit, v, c.txt, sizeof(c.txt));
+            c.f = (off == 0)              ? FontId::Mega
+                : (off == -1 || off == 1) ? FontId::Body
+                                          : FontId::Small;
+            c.w = canvas_text_w(c.txt, c.f);
+            c.v = v;
+            if (off == 0) center = nc;
+            ++nc;
+        }
+        // Anchor the selected cell at screen-centre and flow its neighbours
+        // outward from there — summing the whole row's width and centring
+        // that shifted the big digit off-centre near either end of the range,
+        // where one side has fewer (or no) neighbours than the other.
+        int xs[5];
+        xs[center] = kTW / 2 - cells[center].w / 2;
+        for (int i = center + 1; i < nc; ++i)
+            xs[i] = xs[i - 1] + cells[i - 1].w + gap;
+        for (int i = center - 1; i >= 0; --i)
+            xs[i] = xs[i + 1] - gap - cells[i].w;
+        for (int i = 0; i < nc; ++i) {
+            Cell& c        = cells[i];
+            const int chh  = canvas_font_h(c.f);
+            const int yy   = cy - chh / 2;
+            const bool ctr = (c.f == FontId::Mega);
+            const int x    = xs[i];
+            if (ctr) {
+                canvas_fill_round_rect_aa(x - 12, yy - 5, c.w + 24, chh + 10, 8, color::SelBg,
+                                          color::Black);
+                canvas_draw_text_f(x, yy, c.txt, color::EditCyan, color::Transparent, c.f);
+            } else {
+                const Color col = (c.f == FontId::Body) ? color::Cream : color::DimGreen;
+                canvas_draw_text_f(x, yy, c.txt, col, color::Black, c.f);
+            }
+            if (c.v == s.edit.original)
+                canvas_fill_round_rect_aa(x + c.w / 2 - 3, yy - 11, 6, 6, 3, color::Gold,
+                                          color::Black);
+        }
+        draw_hint_bar("adjust", "apply", "cancel");
+    } else if (boolf) {
+        // Big ON/OFF word + a track/knob switch below it, grouped and centred
+        // like the numeric gauge's "value + bar" — a lone word left the rest
+        // of the screen empty and gave no "this is a toggle" affordance.
+        const char* v      = s.edit.current ? "ON" : "OFF";
+        const int vw       = canvas_text_w(v, FontId::Mega);
+        constexpr int kSwW = 72;
+        constexpr int kSwH = 30;
+        const int groupH   = mh + 10 + kSwH;
+        const int top      = kHdrH + ((kTH - kFootH) - kHdrH - groupH) / 2;
+        canvas_draw_text_f((kTW - vw) / 2, top, v, color::EditCyan, color::Black, FontId::Mega);
+
+        const int sx      = (kTW - kSwW) / 2;
+        const int sy      = top + mh + 10;
+        const Color track = s.edit.current ? color::FrogLine : color::IdleGreen;
+        canvas_fill_round_rect_aa(sx, sy, kSwW, kSwH, kSwH / 2, track, color::Black);
+        const int knobD = kSwH - 6;
+        const int knobX = s.edit.current ? sx + kSwW - knobD - 3 : sx + 3;
+        canvas_fill_round_rect_aa(knobX, sy + 3, knobD, knobD, knobD / 2, color::Cream, track);
+        draw_hint_bar("toggle", "apply", "cancel");
+    } else {
+        // Numeric gauge — value + bar centred as a group in the content area.
+        char val[24];
+        format_value(s.edit, s.edit.current, val, sizeof(val));
+        const int vw     = canvas_text_w(val, FontId::Mega);
+        const int sh     = canvas_font_h(FontId::Small);
+        const int gh     = 10;
+        const int groupH = mh + 6 + gh + 8 + sh;  // value, gap, bar, gap, labels
+        const int top    = kHdrH + ((kTH - kFootH) - kHdrH - groupH) / 2;
+        canvas_draw_text_f((kTW - vw) / 2, top, val, color::EditCyan, color::Black, FontId::Mega);
+        if (gauge) {
+            const int gx = 30, gw = kTW - 60, gy = top + mh + 6;
+            canvas_fill_round_rect(gx, gy, gw, gh, 5, color::IdleGreen);
+            long span = static_cast<long>(s.edit.max) - s.edit.min;
+            if (span < 1) span = 1;
+            long fw = static_cast<long>(gw) * (s.edit.current - s.edit.min) / span;
+            if (fw < 4) fw = 4;
+            if (fw > gw) fw = gw;
+            canvas_fill_round_rect(gx, gy, static_cast<int>(fw), gh, 5, color::FrogLine);
+            if (s.edit.current != s.edit.original) {
+                long ofw = static_cast<long>(gw) * (s.edit.original - s.edit.min) / span;
+                if (ofw < 0) ofw = 0;
+                if (ofw > gw) ofw = gw;
+                const int ox = gx + static_cast<int>(ofw);
+                for (int r = 0; r < 5; ++r)
+                    canvas_hline(ox - r, gy + gh + 1 + r, 2 * r + 1, color::Gold);
+            }
+            char lo[16], hi[16];
+            format_value(s.edit, s.edit.min, lo, sizeof(lo));
+            format_value(s.edit, s.edit.max, hi, sizeof(hi));
+            canvas_draw_text_f(gx, gy + gh + 8, lo, color::DimGreen, color::Black, FontId::Small);
+            canvas_draw_text_f(gx + gw - small_w(hi), gy + gh + 8, hi, color::DimGreen,
+                               color::Black, FontId::Small);
+            if (s.edit.current != s.edit.original) {
+                char orig[24], was[32];
+                format_value(s.edit, s.edit.original, orig, sizeof(orig));
+                std::snprintf(was, sizeof(was), "was: %s", orig);
+                canvas_draw_text_f((kTW - small_w(was)) / 2, gy + gh + 8, was, color::Gold,
+                                   color::Black, FontId::Small);
+            }
+        }
+        draw_hint_bar("adjust", "apply", "cancel");
+    }
+#elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     canvas_clear(color::Black);
     char hdr[32];
     if (s.edit.channel != 0xFF)
@@ -1044,6 +1735,17 @@ void render_edit_value() {
             canvas_draw_text(gx, gy + gh + 10, lo, color::DarkGray, color::Black, 1);
             const int hiw = static_cast<int>(std::strlen(hi)) * kFontCellWidth;
             canvas_draw_text(gx + gw - hiw, gy + gh + 10, hi, color::DarkGray, color::Black, 1);
+        } else if (s.edit.kind == ValueKind::Bool) {
+            // Track/knob switch in the gauge's slot — a lone big word otherwise
+            // left the rest of the screen empty with no toggle affordance.
+            constexpr int kSwW = 96, kSwH = 40;
+            const int sx      = (kTW - kSwW) / 2;
+            const int sy      = kHdrH + 74;
+            const Color track = s.edit.current ? color::FrogLine : color::CursorBg;
+            canvas_fill_round_rect(sx, sy, kSwW, kSwH, kSwH / 2, track);
+            const int knobD = kSwH - 8;
+            const int knobX = s.edit.current ? sx + kSwW - knobD - 4 : sx + 4;
+            canvas_fill_round_rect(knobX, sy + 4, knobD, knobD, knobD / 2, color::Cream);
         }
         if (s.edit.current != s.edit.original) {
             char orig[24];
@@ -1348,7 +2050,42 @@ void render_edit_string() {
     }
     const bool end_marker = (cursor < len && s.str_edit.buf[cursor] == kStrEnd);
 
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 design: cell strip, active char cyan + underline ───────────────
+    canvas_clear(color::Black);
+    draw_tft_header(title);
+    const int cy = (kHdrH + (kTH - kFootH)) / 2;
+    if (end_marker || cursor >= len) {
+        const char* msg = "ready";
+        canvas_draw_text_f((kTW - canvas_text_w(msg, FontId::Mega)) / 2,
+                           cy - canvas_font_h(FontId::Mega) / 2, msg, color::FrogLine, color::Black,
+                           FontId::Mega);
+    } else {
+        // 2× font (Mega): a tighter window of cells centred on the cursor.
+        constexpr int kVis = 13;
+        int st             = static_cast<int>(cursor) - kVis / 2;
+        if (st < 0) st = 0;
+        if (st + kVis > len) st = len - kVis;
+        if (st < 0) st = 0;
+        const int shown = (len - st < kVis) ? (len - st) : kVis;
+        const int adv   = canvas_font_adv(FontId::Mega) + 2;
+        const int mfh   = canvas_font_h(FontId::Mega);
+        int x           = (kTW - shown * adv) / 2;
+        const int ty    = cy - mfh / 2;
+        for (int i = 0; i < shown; ++i) {
+            const char raw   = s.str_edit.buf[st + i];
+            const bool act   = (st + i == cursor);
+            const bool blank = (raw == ' ');
+            char ch[2]       = { blank ? '_' : raw, 0 };
+            const Color col  = act ? color::EditCyan : blank ? color::IdleGreen : color::Cream;
+            canvas_draw_text_f(x + (adv - canvas_font_adv(FontId::Mega)) / 2, ty, ch, col,
+                               color::Black, FontId::Mega);
+            if (act) canvas_fill_rect(x + 2, ty + mfh + 1, adv - 4, 3, color::EditCyan);
+            x += adv;
+        }
+    }
+    draw_hint_bar("letter", (end_marker || cursor >= len) ? "apply" : "next", "cancel");
+#elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     canvas_clear(color::Black);
     draw_tft_header(title);
 
@@ -1491,7 +2228,39 @@ void render_edit_ip() {
         if (pos >= static_cast<int>(sizeof(ip_line)) - 1) break;
     }
 
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 design: big octets, active one cyan + bracketed ────────────────
+    canvas_clear(color::Black);
+    draw_tft_header(title);
+    {
+        const int mh   = canvas_font_h(FontId::Mega);
+        const int dotw = canvas_font_adv(FontId::Mega);
+        const int cy   = (kHdrH + (kTH - kFootH)) / 2;
+        char seg[4][8];
+        int w[4], total = 0;
+        for (int i = 0; i < 4; ++i) {
+            if (i == s.ip_edit.cursor)
+                std::snprintf(seg[i], sizeof(seg[i]), "[%u]", oct[i]);
+            else
+                std::snprintf(seg[i], sizeof(seg[i]), "%u", oct[i]);
+            w[i]   = canvas_text_w(seg[i], FontId::Mega);
+            total += w[i] + (i < 3 ? dotw : 0);
+        }
+        int x        = (kTW - total) / 2;
+        const int ty = cy - mh / 2;
+        for (int i = 0; i < 4; ++i) {
+            const bool act = (i == s.ip_edit.cursor);
+            canvas_draw_text_f(x, ty, seg[i], act ? color::EditCyan : color::Cream, color::Black,
+                               FontId::Mega);
+            x += w[i];
+            if (i < 3) {
+                canvas_draw_text_f(x, ty, ".", color::DimGreen, color::Black, FontId::Mega);
+                x += dotw;
+            }
+        }
+    }
+    draw_hint_bar("adjust", s.ip_edit.cursor >= 4 ? "apply" : "next", "cancel");
+#elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     canvas_clear(color::Black);
     draw_tft_header(title);
 
@@ -1581,7 +2350,47 @@ void render_edit_uni() {
     }
     std::snprintf(line + pos, sizeof(line) - pos, " = U%u", static_cast<unsigned>(v));
 
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // ── NV3007 design: net.sub.uni big, "= U<abs>" in green ───────────────────
+    canvas_clear(color::Black);
+    draw_tft_header(title);
+    {
+        const int mh   = canvas_font_h(FontId::Mega);
+        const int dotw = canvas_font_adv(FontId::Mega);
+        const int cy   = (kHdrH + (kTH - kFootH)) / 2 - 4;
+        char part[3][8], tail[12];
+        std::snprintf(tail, sizeof(tail), "=U%u", static_cast<unsigned>(v));
+        int w[3], total = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (i == s.uni_edit.cursor)
+                std::snprintf(part[i], sizeof(part[i]), "[%u]", seg[i]);
+            else
+                std::snprintf(part[i], sizeof(part[i]), "%u", seg[i]);
+            w[i]   = canvas_text_w(part[i], FontId::Mega);
+            total += w[i] + (i < 2 ? dotw : 0);
+        }
+        const int tw  = canvas_text_w(tail, FontId::Mega);
+        total        += dotw + tw;  // spacer + tail
+        int x         = (kTW - total) / 2;
+        const int ty  = cy - mh / 2;
+        for (int i = 0; i < 3; ++i) {
+            const bool act = (i == s.uni_edit.cursor);
+            canvas_draw_text_f(x, ty, part[i], act ? color::EditCyan : color::Cream, color::Black,
+                               FontId::Mega);
+            x += w[i];
+            if (i < 2) {
+                canvas_draw_text_f(x, ty, ".", color::DimGreen, color::Black, FontId::Mega);
+                x += dotw;
+            }
+        }
+        x += dotw;
+        canvas_draw_text_f(x, ty, tail, color::FrogLine, color::Black, FontId::Mega);
+        // net/sub/uni captions under the segments.
+        canvas_draw_text_f((kTW - total) / 2, ty + mh + 2, "net sub uni", color::DimGreen,
+                           color::Black, FontId::Small);
+    }
+    draw_hint_bar("adjust", s.uni_edit.cursor >= 3 ? "apply" : "next", "cancel");
+#elif defined(CONFIG_PIXFROG_DISPLAY_TFT)
     canvas_clear(color::Black);
     draw_tft_header(title);
     canvas_draw_text(kIndent, kHdrH + 30, line, color::Cyan, color::Black, kTxtSc);
@@ -2030,9 +2839,18 @@ void go(NodeId n) {
 void go_back() {
     if (s.node == NodeId::Main) {
         s.screen = Screen::Home;
+        // Re-entering from Home starts at the top (matches menu_on_idle_timeout).
+        s.cur[static_cast<uint8_t>(NodeId::Main)] = 0;
+        s.scr[static_cast<uint8_t>(NodeId::Main)] = 0;
+        s.cursor                                  = 0;
+        s.scroll                                  = 0;
         return;
     }
+    const NodeId leaving = s.node;
     go(cur_node().parent);
+    // A menu we back out of restarts at the top next time it's opened.
+    s.cur[static_cast<uint8_t>(leaving)] = 0;
+    s.scr[static_cast<uint8_t>(leaving)] = 0;
 }
 
 void open_channel(uint8_t idx) {
@@ -2072,6 +2890,7 @@ void dispatch_long_press() {
     case Screen::Home: break;
     case Screen::Menu: go_back(); break;
     case Screen::About: s.screen = Screen::Menu; break;
+    case Screen::Stats: s.screen = Screen::Menu; break;
     // Edit screens: cancel — discard the pending value, commit nothing.
     case Screen::EditValue:
         dmx::clear_pixel_preview();
@@ -2092,10 +2911,20 @@ void menu_init() {
 }
 
 void menu_render() {
+    // A screen change invalidates the whole panel: see canvas_invalidate().
+    static Screen s_last_rendered = Screen::Home;
+    static bool s_first           = true;
+    if (s_first || s.screen != s_last_rendered) {
+        canvas_invalidate();
+        s_last_rendered = s.screen;
+        s_first         = false;
+    }
+
     switch (s.screen) {
     case Screen::Home: render_home(); break;
     case Screen::Menu: engine_render(); break;
     case Screen::About: render_about(); break;
+    case Screen::Stats: render_stats(); break;
     case Screen::EditValue: render_edit_value(); break;
     case Screen::EditString: render_edit_string(); break;
     case Screen::EditIp: render_edit_ip(); break;
@@ -2114,6 +2943,7 @@ void menu_dispatch(Event e) {
         break;
     case Screen::Menu: engine_dispatch(e); break;
     case Screen::About: dispatch_about(e); break;
+    case Screen::Stats: dispatch_stats(e); break;
     case Screen::EditValue: dispatch_edit_value(e); break;
     case Screen::EditString: dispatch_edit_string(e); break;
     case Screen::EditIp: dispatch_edit_ip(e); break;
@@ -2149,6 +2979,7 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
         case Screen::Home: *screen_name = "Home"; break;
         case Screen::Menu: *screen_name = kNodeNames[static_cast<uint8_t>(s.node)]; break;
         case Screen::About: *screen_name = "About"; break;
+        case Screen::Stats: *screen_name = "Stats"; break;
         case Screen::EditValue: *screen_name = "EditValue"; break;
         case Screen::EditString: *screen_name = "EditString"; break;
         case Screen::EditIp: *screen_name = "EditIp"; break;

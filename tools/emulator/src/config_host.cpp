@@ -42,6 +42,7 @@ ChannelConfig make_default_channel(size_t idx) {
     c.grouping         = 1;
     c.invert_direction = false;
     c.clock_hz         = 4'000'000;
+    c.gamma_x10        = 10;  // linear — mirror device default (config_store.cpp)
     return c;
 }
 

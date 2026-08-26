@@ -30,7 +30,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/sacn`              | sACN (E1.31) receiver: multicast joins, priority gate (opt-in) |
 | `components/dmx_manager`       | Universe pool, channel mapping, capacity check, sync    |
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |
-| `components/ui`                | SSD1306 driver, seesaw encoder, menu FSM                |
+| `components/ui`                | Display drivers (SSD1306 / ST7789 / NV3007), canvas, seesaw encoder, menu FSM |
 | `components/control_console`   | UART0 command server: full config get/set, telemetry, DMX injection |
 | `main/main.cpp`                | Boot orchestration + `render_task`                      |
 | `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased TFT font) |

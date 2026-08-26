@@ -25,9 +25,14 @@ bool s_force_full  = true;  // first flush pushes everything
 
 // Per-band staging buffer (internal RAM, DMA-safe): the flush copies each
 // changed band here before tft_draw_bitmap, so the panel DMA never sources
-// from PSRAM. 320 px × up to 32 rows.
+// from PSRAM. Sized to the widest supported panel × up to 32 rows.
 constexpr int kBandRows = 32;
-static uint16_t s_band_buf[320 * kBandRows];
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+constexpr int kMaxWidth = 428;  // NV3007 rotated 90° → 428px wide
+#else
+constexpr int kMaxWidth = 320;
+#endif
+static uint16_t s_band_buf[kMaxWidth * kBandRows];
 
 // ST7789 expects big-endian RGB565; swap bytes since ESP32 is little-endian.
 inline uint16_t to_hw(Color c) {
@@ -38,7 +43,7 @@ bool ensure_fb() {
     if (s_back) return true;
     s_W = tft_width();
     s_H = tft_height();
-    if (s_W <= 0 || s_H <= 0 || s_W > 320) return false;
+    if (s_W <= 0 || s_H <= 0 || s_W > kMaxWidth) return false;
     const unsigned long n = static_cast<unsigned long>(s_W) * s_H;
     s_back                = static_cast<uint16_t*>(tft_fb_alloc(n * sizeof(uint16_t)));
     s_shadow              = static_cast<uint16_t*>(tft_fb_alloc(n * sizeof(uint16_t)));
@@ -162,6 +167,25 @@ void canvas_draw_mask(int x, int y, int w, int h, const uint8_t* mask, Color fg,
 // Forward declaration (defined below, shared with the AA shape fill).
 inline uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a);
 
+// 8bpp alpha mask (row-major, w*h bytes, 0..255 coverage). Composites fg over
+// whatever is already in the framebuffer by per-pixel coverage, so edges
+// anti-alias over any background. a==0 → skip, a==255 → opaque.
+void canvas_draw_mask_aa(int x, int y, int w, int h, const uint8_t* alpha, Color fg) {
+    if (!ensure_fb() || !alpha || w <= 0 || h <= 0) return;
+    for (int row = 0; row < h; ++row) {
+        const int py = y + row;
+        if (static_cast<unsigned>(py) >= static_cast<unsigned>(s_H)) continue;
+        for (int col = 0; col < w; ++col) {
+            const uint8_t a = alpha[row * w + col];
+            if (a == 0) continue;
+            const int px = x + col;
+            if (static_cast<unsigned>(px) >= static_cast<unsigned>(s_W)) continue;
+            uint16_t& dst = s_back[static_cast<long>(py) * s_W + px];
+            dst = __builtin_bswap16(a == 255 ? fg.v : blend565(fg.v, __builtin_bswap16(dst), a));
+        }
+    }
+}
+
 // Anti-aliased rounded rectangle (w == h == 2r gives a circle). Edge pixels are
 // blended against whatever is already in the framebuffer behind the shape, so
 // the contour stays clean over any background (no flat-colour corner fringe —
@@ -271,6 +295,73 @@ int canvas_text_xl_width(const char* str) {
     return n * kFontXLCellWidth;
 }
 
+// ── Multi-font text (native cells, no scaling) ──────────────────────────────
+namespace {
+struct FontDesc {
+    const uint8_t* (*glyph)(char);
+    int cell_w, cell_h;
+};
+FontDesc font_desc(FontId f) {
+    switch (f) {
+    case FontId::Body: return { font_body_alpha_for, kFontBodyCellWidth, kFontBodyHeight };
+    case FontId::Large: return { font_large_alpha_for, kFontLargeCellWidth, kFontLargeHeight };
+    case FontId::Mega: return { font_mega_alpha_for, kFontMegaCellWidth, kFontMegaHeight };
+    case FontId::XL: return { font_xl_alpha_for, kFontXLCellWidth, kFontXLHeight };
+    case FontId::Small:
+    default: return { font_alpha_for, kFontCellWidth, kFontHeight };
+    }
+}
+}  // namespace
+
+int canvas_font_adv(FontId f) {
+    return font_desc(f).cell_w;
+}
+int canvas_font_h(FontId f) {
+    return font_desc(f).cell_h;
+}
+int canvas_text_w(const char* str, FontId f) {
+    int n = 0;
+    if (str)
+        while (str[n])
+            ++n;
+    return n * font_desc(f).cell_w;
+}
+
+// Blit a string from one of the native cells. 1:1, no upscaling. Mirrors the
+// XL path: opaque bg fills the block first; Transparent composites over the FB.
+void canvas_draw_text_f(int x, int y, const char* str, Color fg, Color bg, FontId f) {
+    if (!ensure_fb() || !str || !*str) return;
+    const FontDesc fd = font_desc(f);
+    const int cw = fd.cell_w, ch = fd.cell_h;
+    int len = 0;
+    while (str[len])
+        ++len;
+    const bool transparent = (bg.v == 0xFFFFu);
+    const uint16_t nat_bg  = bg.v;
+    if (!transparent) {
+        const uint16_t hw_bg = to_hw(bg);
+        for (int row = 0; row < ch; ++row)
+            fb_hspan(x, y + row, len * cw, hw_bg);
+    }
+    auto put = [&](int X, int Y, uint8_t a) {
+        if (static_cast<unsigned>(X) >= static_cast<unsigned>(s_W) ||
+            static_cast<unsigned>(Y) >= static_cast<unsigned>(s_H))
+            return;
+        uint16_t& d         = s_back[static_cast<long>(Y) * s_W + X];
+        const uint16_t bgnt = transparent ? __builtin_bswap16(d) : nat_bg;
+        d                   = __builtin_bswap16(a == 255 ? fg.v : blend565(fg.v, bgnt, a));
+    };
+    for (int ci = 0; ci < len; ++ci) {
+        const uint8_t* glyph = fd.glyph(str[ci]);
+        const int gx         = ci * cw;
+        for (int col = 0; col < cw; ++col)
+            for (int row = 0; row < ch; ++row) {
+                const uint8_t a = glyph[row * cw + col];
+                if (a != 0) put(x + gx + col, y + row, a);
+            }
+    }
+}
+
 // Crisp 18×24 wordmark, rendered 1:1 from the native XL cell (no upscaling).
 void canvas_draw_text_xl(int x, int y, const char* str, Color fg, Color bg) {
     if (!ensure_fb() || !str || !*str) return;
@@ -307,6 +398,15 @@ void canvas_draw_text_xl(int x, int y, const char* str, Color fg, Color bg) {
 // Push every scan-line that differs from the last flush; identical lines (the
 // common idle case) cost nothing. Changed lines are coalesced into bands of up
 // to kBandRows and staged through the internal s_band_buf before the panel DMA.
+// Drop the row diff for the next flush: the whole panel is pushed again.
+// A screen change rewrites essentially every row anyway, and relying on the
+// diff across a transition has been observed to leave a stale row on the glass
+// (menu cursor green surviving into HOME) even though every transfer is
+// accepted and the shadow says the row is current.
+void canvas_invalidate() {
+    s_force_full = true;
+}
+
 void canvas_flush() {
     if (!ensure_fb()) return;
     const int rowbytes = s_W * static_cast<int>(sizeof(uint16_t));

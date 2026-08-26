@@ -9,12 +9,17 @@ way to drive and observe the UI.
 ## How it works
 
 The UI only touches hardware through one function — `tft_draw_bitmap()`. The
-emulator reimplements that (`src/tft_sdl.cpp`) over an in-RAM 320×240 RGB565
+emulator reimplements that (`src/tft_sdl.cpp`) over an in-RAM RGB565
 framebuffer, replaces the I2C rotary encoder with a host event queue
 (`src/encoder_host.cpp`), and stubs the neighbour components the menu reads
 (`config_store`, `dmx_manager`, `led_output`) with in-RAM versions that
 mirror the device defaults. Everything else is the device's own source,
-compiled with `-DCONFIG_PIXFROG_DISPLAY_TFT`.
+compiled with the same display macros as the firmware.
+
+Two panel layouts exist, mirroring the firmware's TFT panel choice:
+**NV3007 428×142** (the default build) and **ST7789 320×240**
+(`cmake -B build.st7789 -DPIXFROG_EMU_PANEL=st7789`). CI builds and
+smoke-tests both.
 
 The only change to shared device code is `det::menu_debug_state()` in `menu.cpp`,
 guarded by `#ifdef PIXFROG_EMULATOR` (invisible to the firmware build).
@@ -50,7 +55,7 @@ starts at HOME for deterministic runs.
 | `splash <ms> [p]`  | render the boot splash at t=`ms` and shot it       |
 | `state`            | print `{"screen":..,"cursor":..,"channel":..}`     |
 | `set ip a.b.c.d`   | set the displayed IP (HOME)                        |
-| `set link up/down` | set link state (HOME)                              |
+| `set net <state>`  | set the network icon: `disconnected`/`acquiring`/`connected`/`error` (HOME) |
 | `set fps <n>`      | inject a fake FPS counter (HOME)                   |
 | `set pkts <n>`     | inject a fake ArtNet RX packet counter (HOME)      |
 | `set active <ch>`  | mark channel `ch` (0–7) active (HOME dot)          |

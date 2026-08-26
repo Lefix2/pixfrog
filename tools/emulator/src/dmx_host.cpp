@@ -12,6 +12,7 @@ namespace pixfrog::dmx {
 namespace {
 Stats g_stats{};
 bool g_active[config::kNumChannels]      = {};
+bool g_failsafe[config::kNumChannels]    = {};
 bool g_capacity_ok[config::kNumChannels] = { true, true, true, true, true, true, true, true };
 }  // namespace
 
@@ -46,8 +47,11 @@ bool auto_patch_universes(uint16_t /*base*/, uint16_t* next_free) {
     if (next_free) *next_free = 0;
     return true;
 }
-bool is_channel_failsafe(size_t /*channel_index*/) {
-    return false;
+bool is_channel_failsafe(size_t channel_index) {
+    return channel_index < config::kNumChannels && g_failsafe[channel_index];
+}
+void emu_set_failsafe(size_t ch, bool on) {
+    if (ch < config::kNumChannels) g_failsafe[ch] = on;
 }
 namespace {
 int g_scene    = -1;
@@ -133,4 +137,7 @@ void emu_dmx_set_pkts(uint64_t pkts) {
 }
 void emu_dmx_set_active(int ch, bool on) {
     pixfrog::dmx::emu_set_active(static_cast<size_t>(ch), on);
+}
+void emu_dmx_set_failsafe(int ch, bool on) {
+    pixfrog::dmx::emu_set_failsafe(static_cast<size_t>(ch), on);
 }

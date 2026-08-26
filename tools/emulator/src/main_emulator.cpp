@@ -33,11 +33,13 @@ namespace det  = pixfrog::ui::detail;
 using clock_t_ = std::chrono::steady_clock;
 
 // ── ui:: globals normally provided by components/ui/src/ui.cpp ────────────────
-// menu.cpp reads ui::get_ip() / ui::is_link_up() for the HOME dashboard.
+// menu.cpp reads ui::get_ip() / ui::get_net_state() for the HOME dashboard.
+// set_link_up()/is_link_up() stay for the TFT/OLED backends' legacy link chip.
 namespace pixfrog::ui {
 namespace {
-uint32_t g_ip  = 0;
-bool g_link_up = false;
+uint32_t g_ip        = 0;
+bool g_link_up       = false;
+NetState g_net_state = NetState::Disconnected;
 }  // namespace
 void set_ip(uint32_t host_order_ip) {
     g_ip = host_order_ip;
@@ -51,13 +53,25 @@ void set_link_up(bool up) {
 bool is_link_up() {
     return g_link_up;
 }
+void set_net_state(NetState s) {
+    g_net_state = s;
+}
+NetState get_net_state() {
+    return g_net_state;
+}
 }  // namespace pixfrog::ui
 
 namespace {
 
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+constexpr int kFbW  = 428;  // NV3007 rotated 90° → landscape
+constexpr int kFbH  = 142;
+constexpr int kZoom = 3;  // window = 1284x426
+#else
 constexpr int kFbW  = 320;
 constexpr int kFbH  = 240;
 constexpr int kZoom = 3;  // window = 960x720
+#endif
 
 // ── stdin command queue (filled by reader thread, drained on main thread) ─────
 std::mutex g_cmd_mtx;
@@ -154,10 +168,6 @@ bool exec_cmd(const std::string& line) {
         print_state();
     } else if (line.rfind("set ip ", 0) == 0) {
         ui::set_ip(parse_ip(line.c_str() + 7));
-    } else if (line == "set link up") {
-        ui::set_link_up(true);
-    } else if (line == "set link down") {
-        ui::set_link_up(false);
     } else if (line.rfind("set fps ", 0) == 0) {
         emu_dmx_set_stats(static_cast<uint32_t>(std::strtoul(line.c_str() + 8, nullptr, 10)), 0);
     } else if (line.rfind("set pkts ", 0) == 0) {
@@ -165,6 +175,59 @@ bool exec_cmd(const std::string& line) {
     } else if (line.rfind("set active ", 0) == 0) {
         int ch = std::atoi(line.c_str() + 11);
         emu_dmx_set_active(ch, true);
+    } else if (line.rfind("set failsafe ", 0) == 0) {
+        // set failsafe <ch> — mark a channel as held in signal-loss failsafe.
+        emu_dmx_set_failsafe(std::atoi(line.c_str() + 13), true);
+    } else if (line.rfind("set chan ", 0) == 0) {
+        // set chan <idx> <proto_enum> <universe_start> <pixel_count> — seed a
+        // channel directly so HOME/MENU renders can be exercised on rich state
+        // without driving the whole editor by hand.
+        int idx = 0, proto = 0;
+        unsigned uni = 0, pix = 0;
+        if (std::sscanf(line.c_str() + 9, "%d %d %u %u", &idx, &proto, &uni, &pix) == 4 &&
+            idx >= 0 && idx < static_cast<int>(pixfrog::config::kNumChannels)) {
+            auto cc           = pixfrog::config::get_channel(static_cast<size_t>(idx));
+            cc.protocol       = static_cast<pixfrog::led::Protocol>(proto);
+            cc.universe_start = static_cast<uint16_t>(uni);
+            cc.pixel_count    = static_cast<uint16_t>(pix);
+            pixfrog::config::set_channel(static_cast<size_t>(idx), cc);
+        } else {
+            std::printf("error: usage: set chan <idx> <proto> <uni> <pix>\n");
+            std::fflush(stdout);
+        }
+    } else if (line.rfind("set net ", 0) == 0) {
+        // set net <disconnected|acquiring|connected|error>
+        const char* p = line.c_str() + 8;
+        if (std::strcmp(p, "disconnected") == 0)
+            ui::set_net_state(ui::NetState::Disconnected);
+        else if (std::strcmp(p, "acquiring") == 0)
+            ui::set_net_state(ui::NetState::Acquiring);
+        else if (std::strcmp(p, "connected") == 0)
+            ui::set_net_state(ui::NetState::Connected);
+        else if (std::strcmp(p, "error") == 0)
+            ui::set_net_state(ui::NetState::Error);
+        else
+            std::printf("error: unknown net state '%s'\n", p);
+    } else if (line.rfind("set global ", 0) == 0) {
+        // set global <web|sacn|cap> <value> — toggle opt-in services / fps cap so
+        // the HOME header status strip can be exercised.
+        char field[16] = {};
+        int val        = 0;
+        if (std::sscanf(line.c_str() + 11, "%15s %d", field, &val) == 2) {
+            auto g = pixfrog::config::get_global();
+            if (std::strcmp(field, "web") == 0)
+                g.web_enabled = (val != 0);
+            else if (std::strcmp(field, "sacn") == 0)
+                g.sacn_enabled = (val != 0);
+            else if (std::strcmp(field, "cap") == 0)
+                g.refresh_rate_hz = static_cast<uint8_t>(val);
+            else
+                std::printf("error: unknown global field '%s'\n", field);
+            pixfrog::config::set_global(g);
+        } else {
+            std::printf("error: usage: set global <web|sacn|cap> <value>\n");
+        }
+        std::fflush(stdout);
     } else if (line == "quit") {
         return false;
     } else {

@@ -10,17 +10,44 @@ menu "Display backend"
             bool "OLED SSD1306 (I2C 128x64)"
 
         config PIXFROG_DISPLAY_TFT
-            bool "TFT ST7789V / ILI9341 (SPI 320x240 landscape)"
+            bool "Colour TFT (SPI)"
     endchoice
 
-    config PIXFROG_TFT_WIDTH
-        int "TFT logical width in pixels (landscape)"
+    # NV3007 is a panel variant of the TFT backend, not a third display type:
+    # the shared canvas / fonts / menu code is gated on PIXFROG_DISPLAY_TFT and
+    # the NV3007-specific layout on PIXFROG_DISPLAY_NV3007, so an NV3007 build
+    # defines both.
+    choice PIXFROG_TFT_PANEL
+        prompt "TFT panel controller"
         depends on PIXFROG_DISPLAY_TFT
+        default PIXFROG_TFT_PANEL_ST7789
+
+        config PIXFROG_TFT_PANEL_ST7789
+            bool "ST7789V / ILI9341 (SPI 320x240 landscape)"
+
+        config PIXFROG_DISPLAY_NV3007
+            bool "NV3007 (SPI 142x428 glass, driven 428x142 landscape, 2.79\")"
+    endchoice
+
+    config PIXFROG_NV3007_ROT180
+        bool "Rotate the NV3007 panel 180 degrees"
+        depends on PIXFROG_DISPLAY_NV3007
+        default n
+        help
+            The NV3007 scan direction is the hardware default (the reference
+            code never programs MADCTL), so the landscape orientation is fixed
+            in software. Enable this if the module is mounted upside down.
+
+    config PIXFROG_TFT_WIDTH
+        int "TFT logical width in pixels"
+        depends on PIXFROG_DISPLAY_TFT
+        default 428 if PIXFROG_DISPLAY_NV3007
         default 320
 
     config PIXFROG_TFT_HEIGHT
-        int "TFT logical height in pixels (landscape)"
+        int "TFT logical height in pixels"
         depends on PIXFROG_DISPLAY_TFT
+        default 142 if PIXFROG_DISPLAY_NV3007
         default 240
 
 endmenu

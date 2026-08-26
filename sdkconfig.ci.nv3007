@@ -1,0 +1,6 @@
+# CI overlay: build the firmware with the NV3007 bar panel selected inside the
+# TFT display backend (ST7789 is the default panel). Applied on top of
+# sdkconfig.defaults via SDKCONFIG_DEFAULTS so the idf-build matrix exercises
+# every compile path.
+CONFIG_PIXFROG_TFT_PANEL_ST7789=n
+CONFIG_PIXFROG_DISPLAY_NV3007=y

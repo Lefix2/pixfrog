@@ -15,11 +15,17 @@ namespace pixfrog::ui::detail {
 
 namespace {
 
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+// NV3007 rotated 90° → 428×142 landscape: frog left, wordmark right.
+constexpr int kW     = 428;
+constexpr int kH     = 142;
+constexpr int kFrogX = 16;
+#else
 constexpr int kW = 320;
 constexpr int kH = 240;
-
 // Frog window: left of the wordmark, vertically centred.
 constexpr int kFrogX = 10;
+#endif
 
 }  // namespace
 
@@ -29,14 +35,26 @@ bool splash_render(uint32_t t_ms, bool clicked) {
     const uint32_t total    = static_cast<uint32_t>(count) * frame_ms;
     if (clicked || t_ms >= total) return true;
 
-    const int fw    = splash_anim_w();
-    const int fh    = splash_anim_h();
-    const int frogY = (kH - fh) / 2;
+    const int fw  = splash_anim_w();
+    const int fh  = splash_anim_h();
+    const int idx = static_cast<int>(t_ms / frame_ms);
 
-    // Backdrop + wordmark, then the current frog frame. Repainted whole each
-    // call, like render_home() — the UI has no back buffer.
     canvas_clear(color::FrogBg);
-    // Wordmark in the crisp native 18×24 XL cell; subtitle/version in the 6×8.
+
+    // Landscape layout: frog left, wordmark right.
+    const int frogY = (kH - fh) / 2;
+    canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    // NV3007: big native Mega wordmark + tagline + version, vertically centred.
+    const int wx       = kFrogX + fw + 16;
+    const int wordH    = canvas_font_h(FontId::Mega);
+    const int titleTop = kH / 2 - wordH / 2 - 10;
+    canvas_draw_text_f(wx, titleTop, "pixfrog", color::Cream, color::FrogBg, FontId::Mega);
+    canvas_draw_text(wx + 1, titleTop + wordH + 4, "ARTNET . LED DRIVER", color::Gold,
+                     color::FrogBg, 1);
+    canvas_draw_text(wx + 1, titleTop + wordH + 16, fw_version(), color::SplashSub, color::FrogBg,
+                     1);
+#else
     const int wx       = kFrogX + fw + 12;
     const int titleTop = kH / 2 - kFontXLHeight / 2 - 6;
     canvas_draw_text_xl(wx, titleTop, "pixfrog", color::Cream, color::FrogBg);
@@ -44,9 +62,7 @@ bool splash_render(uint32_t t_ms, bool clicked) {
                      color::FrogBg, 1);
     canvas_draw_text(wx, titleTop + kFontXLHeight + 16, fw_version(), color::SplashSub,
                      color::FrogBg, 1);
-
-    const int idx = static_cast<int>(t_ms / frame_ms);
-    canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
+#endif
 
     canvas_flush();
     return false;

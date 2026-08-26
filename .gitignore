@@ -32,3 +32,5 @@ build.oled/
 build.tft/
 build.lcdcam/
 build.parlio/
+build.nv3007/
+build.st7789/
