@@ -398,6 +398,15 @@ void canvas_draw_text_xl(int x, int y, const char* str, Color fg, Color bg) {
 // Push every scan-line that differs from the last flush; identical lines (the
 // common idle case) cost nothing. Changed lines are coalesced into bands of up
 // to kBandRows and staged through the internal s_band_buf before the panel DMA.
+// Drop the row diff for the next flush: the whole panel is pushed again.
+// A screen change rewrites essentially every row anyway, and relying on the
+// diff across a transition has been observed to leave a stale row on the glass
+// (menu cursor green surviving into HOME) even though every transfer is
+// accepted and the shadow says the row is current.
+void canvas_invalidate() {
+    s_force_full = true;
+}
+
 void canvas_flush() {
     if (!ensure_fb()) return;
     const int rowbytes = s_W * static_cast<int>(sizeof(uint16_t));

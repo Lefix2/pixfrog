@@ -122,6 +122,8 @@ int canvas_font_h(FontId f);                   // cell height
 int canvas_font_adv(FontId f);                 // per-glyph x advance
 
 void canvas_flush();
+// Force the next canvas_flush() to push every row, bypassing the diff.
+void canvas_invalidate();
 
 // ── OLED low-level (used only by oled_ssd1306.cpp + canvas_oled.cpp) ─────────
 bool oled_init(i2c_master_bus_handle_t bus, uint8_t addr);

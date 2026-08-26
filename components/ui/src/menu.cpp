@@ -2911,6 +2911,15 @@ void menu_init() {
 }
 
 void menu_render() {
+    // A screen change invalidates the whole panel: see canvas_invalidate().
+    static Screen s_last_rendered = Screen::Home;
+    static bool s_first           = true;
+    if (s_first || s.screen != s_last_rendered) {
+        canvas_invalidate();
+        s_last_rendered = s.screen;
+        s_first         = false;
+    }
+
     switch (s.screen) {
     case Screen::Home: render_home(); break;
     case Screen::Menu: engine_render(); break;
