@@ -23,7 +23,7 @@ All pin assignments in this document are exposed on the user-facing header conne
 
 External components added for pixfrog:
 
-- 1 × SSD1306 I2C OLED 128×64
+- 1 × NV3007 SPI colour bar TFT 428×142 (2.79", ER-TFT2.79-1)
 - 1 × Adafruit seesaw QT rotary encoder #4991
 - 2 × 74HCT245 level shifters (3.3 V → 5 V) — one per group of 8 GPIOs
 - 8 × strip output connectors (DATA, CLOCK, GND)
@@ -81,7 +81,7 @@ The PHY's RMII + management pins use fixed SoC GPIOs that are wired directly on 
 
 > The old MDC=29 / MDIO=30 values were carried over from the Espressif Function EV Board and never link on the Waveshare DEV-KIT — GPIO 29/30 are actually the RMII RX data lines there. Use the values above.
 
-### 2.3 I2C (OLED + encoder)
+### 2.3 I2C (encoder)
 
 | Signal | GPIO | Note                                             |
 |--------|-----:|--------------------------------------------------|
@@ -90,10 +90,11 @@ The PHY's RMII + management pins use fixed SoC GPIOs that are wired directly on 
 
 I2C addresses:
 
-- SSD1306: `0x3C` or `0x3D` (depending on module)
 - seesaw 4991: `0x36` (factory default)
+- SSD1306: `0x3C` or `0x3D` — only on the optional OLED build (§6)
 
-Bus frequency: **400 kHz** (Fast Mode). Enough for OLED refresh at ~10 Hz with diff-based flushing.
+Bus frequency: **400 kHz** (Fast Mode). The bus is initialised on every build:
+the encoder needs it whichever display is fitted.
 
 ### 2.4 Miscellaneous
 
@@ -180,12 +181,19 @@ Reference: [Adafruit Learn — I2C QT Rotary Encoder](https://learn.adafruit.com
 
 ---
 
-## 5. TFT display wiring (ST7789V / ILI9341 — default)
+## 5. TFT display wiring (NV3007 — default)
 
-The default display is a **ST7789V (or pin-compatible ILI9341) 320×240 SPI display** (`CONFIG_PIXFROG_DISPLAY_TFT`, selected by default). The TFT is driven in landscape orientation (320 wide × 240 tall) via `esp_lcd_new_panel_st7789`.
+The display is a **NV3007 428×142 SPI colour bar TFT** (ER-TFT2.79-1, 2.79"),
+selected by default — a plain `idf.py build` targets it. The glass is portrait
+142×428; the scan direction is the hardware default (the reference code never
+programs MADCTL), so firmware addresses it as landscape 428×142 and
+`PIXFROG_NV3007_ROT180` flips it when the module is mounted upside down.
+
+Wiring is identical for every SPI panel — only the controller init and the
+geometry differ:
 
 ```
-ST7789V module    ESP32-P4
+SPI panel         ESP32-P4
 ──────────────    ─────────
 VCC (3.3 V)  ───► 3.3 V
 GND          ───► GND
@@ -207,13 +215,12 @@ the panel is write-only.
 
 SPI host: `SPI2_HOST`, **20 MHz** (`kDisplaySpiFreqHz`). 40 MHz is rejected by
 the P4 SPI driver (`invalid sclk speed` — the default clock source can't derive
-it); 20 MHz is a clean divisor and ample for the 320×240 panel. The display is portrait 240×320 at
-the hardware level; firmware issues `esp_lcd_panel_swap_xy(true)` after init to
-address it as landscape 320×240.
+it); 20 MHz is a clean divisor and ample for either panel.
 
-Color format: RGB565 big-endian (ST7789 native). `canvas_tft.cpp` applies `__builtin_bswap16` to every pixel value before writing to the DMA buffer.
+Color format: RGB565 big-endian. `canvas_tft.cpp` applies `__builtin_bswap16` to
+every pixel value before writing to the DMA buffer.
 
-The TFT and OLED share the same I2C encoder wiring (§4 above). The I2C bus is still initialised regardless of display choice (encoder requires it).
+The encoder wiring (§4) is unchanged whichever panel is fitted.
 
 ### 5.1 Backlight — GPIO 45, LEDC PWM
 
@@ -267,13 +274,24 @@ If the panel is wired through its own driver or transistor instead (BL pin =
 enable), nothing changes on the firmware side; only the current the pad sources
 does.
 
+### 5.2 Other panels
+
+The same SPI backend also drives a **ST7789V / ILI9341 320×240** panel
+(`sdkconfig.ci.st7789`): portrait 240×320 glass, addressed as landscape via
+`esp_lcd_panel_swap_xy(true)` after init. Build it with the overlay — see
+[README → Display backend](https://github.com/Lefix2/pixfrog#display-backend). Picking the wrong
+panel is not a build error: it flashes, the backlight lights, and the matrix is
+driven with the other controller's init. The boot log is the check —
+`TFT: NV3007 428x142 ready (landscape)` versus `TFT: ST7789 320x240 ready`.
+
 ---
 
 ## 6. OLED display (SSD1306 — optional)
 
-The alternative display is a **SSD1306 128×64 I²C OLED** (`CONFIG_PIXFROG_DISPLAY_OLED`). It shares the I²C bus with the encoder (§2.3) — no dedicated wiring beyond that bus. Refresh is **10 Hz** via diff-based flush (only the pages whose pixels changed are pushed).
-
-![SSD1306 home screen mockup](img/oled-ui.svg)
+A **SSD1306 128×64 I²C OLED** is supported as an alternate build
+(`sdkconfig.ci.oled`, see [README → Display backend](https://github.com/Lefix2/pixfrog#display-backend)).
+It needs no wiring beyond the encoder's I²C bus (§2.3); refresh is **10 Hz** via
+diff-based flush.
 
 ---
 

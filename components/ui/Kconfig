@@ -17,10 +17,15 @@ menu "Display backend"
     # the shared canvas / fonts / menu code is gated on PIXFROG_DISPLAY_TFT and
     # the NV3007-specific layout on PIXFROG_DISPLAY_NV3007, so an NV3007 build
     # defines both.
+    #
+    # The NV3007 bar panel is what the 1U rack ships with, so it is the default:
+    # a plain `idf.py build` produces firmware for the shipping hardware. Picking
+    # the wrong one here is not a build error — it flashes and lights the
+    # backlight, then drives the matrix with the other controller's init.
     choice PIXFROG_TFT_PANEL
         prompt "TFT panel controller"
         depends on PIXFROG_DISPLAY_TFT
-        default PIXFROG_TFT_PANEL_ST7789
+        default PIXFROG_DISPLAY_NV3007
 
         config PIXFROG_TFT_PANEL_ST7789
             bool "ST7789V / ILI9341 (SPI 320x240 landscape)"

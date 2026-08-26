@@ -1,0 +1,3 @@
+# ST7789V / ILI9341 320x240 panel instead of the default NV3007 bar panel.
+# Same TFT backend, different controller init and geometry.
+CONFIG_PIXFROG_TFT_PANEL_ST7789=y

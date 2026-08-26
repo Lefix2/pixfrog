@@ -99,7 +99,9 @@ The 428×142 landscape layout landed (menu/canvas/fonts behind
       TFT backend so NV3007 builds define both display macros, as the shared
       UI code expects.
 - [x] **CI coverage** — `sdkconfig.ci.nv3007` overlay + `nv3007` in the
-      `ci.yml` idf-build matrix and in `ci-local.sh`.
+      `ci.yml` idf-build matrix and in `ci-local.sh`. *(Superseded: NV3007 is
+      now the Kconfig default, so it builds with no overlay and the ST7789
+      variant moved to `sdkconfig.ci.st7789`.)*
 - [x] **Emulator geometry** — `-DPIXFROG_EMU_PANEL=st7789|nv3007` (default
       nv3007); CI + ci-local build and smoke both layouts.
 - [x] **Docs** — README display-backend table, AGENT.md module map,
