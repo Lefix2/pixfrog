@@ -103,14 +103,14 @@ In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `
 
 | Item                              | Size       | Note                                                |
 |-----------------------------------|-----------:|-----------------------------------------------------|
-| `frame_buf[3]` (PSRAM)            | 3 × actual frame | triple-buffered (PARLIO) so encode overlaps the two FBs in the DMA loop; sized to the longest configured channel (e.g. 512 px WS2815 → 3 × ~0.5 MB); hard cap 3 × ~2.6 MB (1024 px × 32 bits × 40 samples worst-case sizing). Legacy LCD_CAM uses 2 FBs. |
+| `frame_buf[3]` (PSRAM)            | 3 × 2.6 MB | triple-buffered (PARLIO) so encode overlaps the two FBs in the DMA loop; allocated once at the worst case (1024 px × 32 bits × 40 samples), never resized. Legacy LCD_CAM uses 2 FBs sized to the longest configured channel (e.g. 512 px WS2815 → 2 × ~0.5 MB). |
 | `universe_pool[2][N]`             | 2 × 48 kB  | 48 universes × 512 bytes × 2 buffers                |
 | Circular logs                     | 64 kB      | Post-mortem debug                                   |
 | Application headroom              | ~27 MB     | Future sequencer / FX engine / ...                  |
 
 **GDMA from PSRAM** is native on ESP32-P4: the PARLIO TX unit (default) streams its frame buffers straight out of octal PSRAM, as does the legacy LCD_CAM panel (`esp_lcd_new_rgb_panel(flags.fb_in_psram=true)`). The shared DMA bus tolerates 32 MB/s sustained on 200 MHz octal PSRAM (peak ~200 MB/s, shared with cache and other masters — comfortable headroom). One `esp_cache_msync(DIR_C2M)` is required after CPU writes and before the GDMA kick.
 
-`frame_buf` (and thus the DMA emission duration) tracks the actual config: the output unit is recreated when a config commit changes the required frame length. Sizing to the worst case would pin the emission at 82 ms/frame (≈ 12 FPS) regardless of content.
+The **DMA emission duration** tracks the actual config — sizing the *emission* to the worst case would pin it at 82 ms/frame (≈ 12 FPS) regardless of content. On PARLIO the emitted length is an argument of each transmit (`payload_bits`), so it follows the config while the buffers stay put at the worst case: allocation size and emission length are independent. LCD_CAM has no such split — the frame length lives in the panel's timing registers — so it recreates the panel, frame buffers included, when a config commit changes the required length. That teardown runs inside `render_task`, which is why the LCD_CAM backend is debug-only: it allocates on the hot path (see AGENT.md, "no allocation on the hot path"), stalling emission for tens of ms per config change.
 
 ### NVS
 
@@ -201,7 +201,7 @@ Changing a channel's protocol can change:
 
 **Decision**: PCLK is **fixed at boot** to a compromise value (see `docs/PROTOCOLS.md` §3). Samples per bit are derived per channel without changing PCLK. Clocked protocols run at PCLK/N where N is computed to hit the requested CLOCK rate.
 
-Consequence: **changing protocol at runtime never changes PCLK**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffers are sized for the worst case at boot. The one exception is the frame length: a config commit that moves the required sample count to a different bucket tears down and recreates the output unit (FB realloc included) — once per commit, between frames, never in steady state.
+Consequence: **changing protocol at runtime never changes PCLK**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffers and (on PARLIO) the frame buffers are sized for the worst case at boot, so a config commit that moves the required sample count only changes the length passed to the next transmit — no allocation, no teardown, no stall. On the legacy LCD_CAM backend the same commit tears down and recreates the output unit, FB realloc included.
 
 **DMX512 output** is a fourth encoder family alongside NRZ and clocked SPI. A
 channel set to `DMX512` re-emits one Art-Net universe as a 250 kbit/s serial
