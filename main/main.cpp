@@ -51,17 +51,28 @@ constexpr const char* TAG = "MAIN";
 esp_netif_t* g_eth_netif      = nullptr;
 esp_eth_handle_t g_eth_handle = nullptr;
 
+// Static-IP mode only: the configured address, republished on every link-up.
+// lwIP raises IP_EVENT_ETH_GOT_IP for a DHCP lease only — esp_netif_up() skips
+// the event when the address is static — so nothing else would ever hand the
+// static IP to the UI/ArtNet after a cable replug.
+uint32_t g_static_ip = 0;
+
+// Single derivation point for the address the UI and ArtNet see.
+// `host_order_ip` is the address usable on the wire, 0 for none. A configured
+// static IP is not an address while the cable is out, so link state gates it:
+// callers must update ui::set_link_up() *before* calling this.
 void publish_ip(uint32_t host_order_ip) {
+    const bool link_up = pixfrog::ui::is_link_up();
+    if (!link_up) host_order_ip = 0;
     pixfrog::ui::set_ip(host_order_ip);
     pixfrog::artnet::set_local_ip(host_order_ip);
-    // IP acquired (or lost): Connected when non-zero, Disconnected when zero.
-    // The DHCP-acquiring window (link up, no IP yet) is set in on_eth_event.
-    pixfrog::ui::set_net_state(host_order_ip != 0 ? pixfrog::ui::NetState::Connected
-                                                  : pixfrog::ui::NetState::Disconnected);
+    pixfrog::ui::set_net_state(!link_up             ? pixfrog::ui::NetState::Disconnected
+                               : host_order_ip != 0 ? pixfrog::ui::NetState::Connected
+                                                    : pixfrog::ui::NetState::Acquiring);
 }
 
-// IP_EVENT_ETH_GOT_IP handler — fires after DHCP completes (or
-// immediately when a static IP is configured + accepted by lwIP).
+// IP_EVENT_ETH_GOT_IP handler — DHCP path only; lwIP never raises it for a
+// static address (see g_static_ip).
 extern "C" void on_got_ip(void* /*arg*/, esp_event_base_t /*base*/, int32_t /*id*/,
                           void* event_data) {
     auto* event            = static_cast<ip_event_got_ip_t*>(event_data);
@@ -80,12 +91,9 @@ extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/, int32_t e
     case ETHERNET_EVENT_CONNECTED: {
         ESP_LOGI(TAG, "Ethernet link UP");
         pixfrog::ui::set_link_up(true);
-        // Link is up but DHCP may still be negotiating a lease: show Acquiring
-        // until IP_EVENT_ETH_GOT_IP fires (publish_ip flips it to Connected).
-        // Static-IP mode publishes the IP synchronously in init_network(), so
-        // this only applies to the DHCP path.
-        if (pixfrog::ui::get_ip() == 0)
-            pixfrog::ui::set_net_state(pixfrog::ui::NetState::Acquiring);
+        // Static mode: the address is usable the instant the link is. DHCP mode
+        // passes 0, which lands on Acquiring until IP_EVENT_ETH_GOT_IP fires.
+        publish_ip(g_static_ip);
         break;
     }
     case ETHERNET_EVENT_DISCONNECTED:
@@ -152,8 +160,9 @@ void init_network() {
         ip_info.netmask.addr = lwip_htonl(g.static_mask ? g.static_mask : 0xFFFFFF00u);
         ip_info.gw.addr      = lwip_htonl(g.static_gateway);
         esp_netif_set_ip_info(g_eth_netif, &ip_info);
-        // No GOT_IP event fires in pure-static mode, so publish ourselves.
-        publish_ip(g.static_ip);
+        // No GOT_IP event fires in pure-static mode: on_eth_event publishes
+        // this on every link-up instead.
+        g_static_ip = g.static_ip;
         ESP_LOGI(TAG, "static IP %u.%u.%u.%u configured",
                  static_cast<unsigned>((g.static_ip >> 24) & 0xFFu),
                  static_cast<unsigned>((g.static_ip >> 16) & 0xFFu),
