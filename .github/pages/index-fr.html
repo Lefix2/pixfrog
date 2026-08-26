@@ -22,18 +22,26 @@
     <link rel="alternate" hreflang="fr" href="./index-fr.html" />
     <link rel="alternate" hreflang="en" href="./index-en.html" />
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;800&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="#top"><img class="logo-img" src="./img/logo.svg" alt="" width="30" height="30" /> pixfrog</a>
+        <a class="brand" href="#top"><span class="dot"></span> pixfrog</a>
         <nav class="nav-links">
           <a href="./flash-fr.html">Flash</a>
           <a href="#features">Fonctionnalités</a>
           <a href="./docs-fr.html">Docs</a>
           <a href="./about-fr.html">À propos</a>
-          <a class="keep lang" href="#" onclick="switchLang('en','./index-en.html');return false;" title="English version">🇬🇧</a>
+          <span class="nav-lang keep">FR ·
+            <a href="#" onclick="switchLang('en','./index-en.html');return false;" title="English version">EN</a>
+          </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>
@@ -42,76 +50,193 @@
     <main id="top">
       <!-- Hero -->
       <section class="hero">
+        <!-- Photo produit optionnelle : le dégradé ci-dessous se suffit
+             tant que docs/img/rack-closeup.jpg n'est pas publiée. -->
+        <img
+          class="hero-photo"
+          src="./img/rack-closeup.jpg"
+          alt=""
+          onerror="this.style.display='none'"
+        />
+        <div class="hero-scrim"></div>
         <div class="wrap">
-          <span class="badge">
-            <span class="dot"></span>
-            <span id="version-badge">Firmware ESP32-P4</span>
-          </span>
-          <h1>Contrôle LED haute densité<br />sur l'ESP32-P4</h1>
-          <p class="lead">
-            pixfrog est un firmware contrôleur LED Art-Net 4 / sACN : 8 sorties
-            pixels parallèles, DMX512, spectacles FSEQ depuis microSD, un tableau
-            de bord couleur embarqué et une interface web — optimisé pour un timing
-            pixel déterministe et sans jitter.
-          </p>
-          <div class="cta">
-            <a class="btn primary" href="./flash-fr.html" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
-              ⚡ Flasher votre carte
-            </a>
-            <a class="btn" href="./docs-fr.html">📖 Documentation</a>
-            <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
-              📦 Releases
-            </a>
+          <div class="hero-copy">
+            <div class="kicker" id="version-badge">Art-Net 4 / sACN · ESP32-P4</div>
+            <h1>Contrôle LED haute densité sur l'ESP32-P4</h1>
+            <p class="lead">
+              pixfrog est un firmware contrôleur LED Art-Net 4 / sACN : 8 sorties
+              pixels parallèles, DMX512, spectacles FSEQ depuis microSD, un tableau
+              de bord couleur embarqué et une interface web — optimisé pour un timing
+              pixel déterministe et sans jitter.
+            </p>
+            <div class="cta">
+              <a class="btn primary" href="./flash-fr.html">Flasher votre carte</a>
+              <a class="btn" href="./docs-fr.html">Documentation</a>
+              <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">Releases</a>
+            </div>
           </div>
-          <img
-            class="shot"
-            src="./img/board-hero.jpg"
-            alt="pixfrog sur une carte de développement ESP32-P4 avec son interface couleur"
-            loading="lazy"
-            onerror="this.style.display='none'"
-          />
+        </div>
+        <div class="statbar">
+          <div class="wrap">
+            <span><b>8</b> sorties</span>
+            <span><b>48</b> univers</span>
+            <span><b>9</b> protocoles pixel</span>
+            <span><b class="amber">FSEQ</b> microSD</span>
+            <span><b>DMX512</b> par canal</span>
+            <span><b>OTA</b> A/B</span>
+            <span>licence <b class="amber">MIT</b></span>
+          </div>
         </div>
       </section>
 
-      <!-- Features -->
-      <section class="block" id="features">
+      <!-- Le rack -->
+      <section class="band paper" id="rack">
         <div class="wrap">
-          <h2>Ce qu'il y a dedans</h2>
+          <div class="sec-head">
+            <span class="sec-num">01</span>
+            <h2>Un rack complet, ouvert et documenté.</h2>
+          </div>
+          <div class="media-pair">
+            <figure class="figure">
+              <div class="well">
+                <img
+                  src="./img/rack-open.jpg"
+                  alt="Intérieur du rack pixfrog : carte fille, alimentation et grilles de ventilation"
+                  loading="lazy"
+                  onerror="this.closest('figure').remove()"
+                />
+              </div>
+              <figcaption>
+                <b>Réparable</b>
+                <p>Carte fille sur bornier débrochable, alimentation séparée.
+                  Tout est remplaçable, tout est publié.</p>
+              </figcaption>
+            </figure>
+            <figure class="figure">
+              <div class="well">
+                <img
+                  src="./img/rack-full.jpg"
+                  alt="Rack pixfrog 1U, huit sorties XLR en face avant"
+                  loading="lazy"
+                  onerror="this.closest('figure').remove()"
+                />
+              </div>
+              <figcaption>
+                <b>8 × XLR, alimentation interne, 1U</b>
+                <p>Sorties repérées CH1 à CH8, fixation rack standard,
+                  ventilation passive. Le patch se fait en façade, sans
+                  démontage.</p>
+              </figcaption>
+            </figure>
+          </div>
+          <div class="metastrip">
+            <span><b>FAILSAFE</b> · repli par canal</span>
+            <span><b>NVS</b> · réglages persistants</span>
+            <span><b class="amber">MICROSD</b> · spectacles xLights / FPP</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tableau de bord embarqué -->
+      <section class="band" id="dashboard">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="sec-num">02</span>
+            <h2>La régie est dans la façade. Le détail est dans le navigateur.</h2>
+          </div>
           <p class="sub">
-            Construit nativement sur ESP-IDF pour l'ESP32-P4, optimisé pour un
-            timing pixel déterministe.
+            Le TFT couleur 320×240 par défaut affiche le réseau, les services
+            et l'activité par canal d'un coup d'œil — protocole, univers, pixels,
+            luminosité et un voyant de statut en direct par sortie.
           </p>
+          <div class="media-grid">
+            <figure class="figure">
+              <div class="well contain">
+                <img
+                  src="./img/web-dashboard.png"
+                  alt="Tableau de bord de l'interface web embarquée pixfrog"
+                  loading="lazy"
+                  onerror="this.closest('figure').remove()"
+                />
+              </div>
+              <figcaption>
+                <b>Interface web embarquée</b>
+                <p>Lien, FPS, trafic Art-Net et sACN, scènes et séquences —
+                  servie par le boîtier lui-même.</p>
+              </figcaption>
+            </figure>
+            <figure class="figure">
+              <div class="well pixel">
+                <img
+                  src="./img/ui-home.png"
+                  alt="Tableau de bord TFT pixfrog : IP, lien, services et le tableau des 8 canaux"
+                  width="640"
+                  height="480"
+                  loading="lazy"
+                  onerror="this.closest('figure').remove()"
+                />
+              </div>
+              <figcaption>
+                <b>Le même état, sans ordinateur</b>
+                <p>IP, protocole actif, FPS et les huit canaux d'un coup d'œil.</p>
+              </figcaption>
+            </figure>
+            <figure class="figure">
+              <div class="well contain">
+                <img
+                  src="./img/web-channels.png"
+                  alt="Page canaux de l'interface web pixfrog"
+                  loading="lazy"
+                  onerror="this.closest('figure').remove()"
+                />
+              </div>
+              <figcaption>
+                <b>Patch complet des 8 lignes</b>
+                <p>Chaque sortie, champ par champ, sauvegardée en NVS.</p>
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- Fonctionnalités -->
+      <section class="band paper" id="features">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="sec-num">03</span>
+            <h2>Natif ESP-IDF, taillé pour un timing déterministe.</h2>
+          </div>
           <div class="grid">
             <div class="card">
-              <span class="ic">🎚️</span>
+              <span class="ic">Protocoles</span>
               <h3>9 protocoles + DMX512</h3>
               <p>WS2815, WS2812B, WS2811, SK6812, WS2814, APA102, SK9822,
                 LPD8806 — ou un univers DMX512 complet par canal, avec ordre
                 de couleurs, gamma et luminosité par canal.</p>
             </div>
             <div class="card">
-              <span class="ic">🌐</span>
+              <span class="ic">Réseau</span>
               <h3>Art-Net 4 + sACN</h3>
               <p>ArtDmx, Sync, Trigger, TimeCode et configuration à distance
                 sur Ethernet ; sACN (E1.31) opt-in avec priorités et fusion
                 HTP/LTP 2 sources — jusqu'à 48 univers.</p>
             </div>
             <div class="card">
-              <span class="ic">⚡</span>
+              <span class="ic">PARLIO / DMA</span>
               <h3>Sortie DMA parallèle</h3>
               <p>Le périphérique PARLIO de l'ESP32-P4 cadence les 8 canaux en
                 parallèle depuis des doubles tampons PSRAM via DMA pour un
                 rafraîchissement stable et sans jitter.</p>
             </div>
             <div class="card">
-              <span class="ic">🖥️</span>
+              <span class="ic">Écran</span>
               <h3>Interface embarquée</h3>
               <p>Tableau de bord TFT couleur (ou OLED classique) piloté par
                 un encodeur rotatif — FPS en direct, lien, activité par canal
                 et configuration complète, sans ordinateur.</p>
             </div>
             <div class="card">
-              <span class="ic">🛰️</span>
+              <span class="ic amber">Web / OTA</span>
               <h3>Interface web &amp; OTA</h3>
               <p>Application web embarquée opt-in : configuration complète,
                 état en direct, mises à jour OTA avec rollback A/B,
@@ -119,89 +244,79 @@
                 authentification optionnelle.</p>
             </div>
             <div class="card">
-              <span class="ic">🎬</span>
+              <span class="ic">microSD</span>
               <h3>Lecteur FSEQ</h3>
               <p>Lit les spectacles xLights/FPP <code>.fseq</code> depuis
                 microSD (zstd, hot-plug), autonome ou esclave de ArtTimeCode
                 et FPP MultiSync.</p>
             </div>
             <div class="card">
-              <span class="ic">🎭</span>
+              <span class="ic amber">Scènes</span>
               <h3>Scènes &amp; failsafe</h3>
               <p>8 scènes autonomes (solide / chase / arc-en-ciel) jouables
                 au démarrage, depuis la console ou n'importe quelle interface
                 — plus un failsafe perte de signal par canal.</p>
             </div>
             <div class="card">
-              <span class="ic">💾</span>
+              <span class="ic amber">NVS</span>
               <h3>Config persistante</h3>
               <p>Chaque paramètre est stocké en NVS et survit aux
                 redémarrages, avec un avertissement visible sur l'écran
                 d'accueil si la flash est défaillante.</p>
             </div>
             <div class="card">
-              <span class="ic">🧩</span>
+              <span class="ic">PSRAM</span>
               <h3>PSRAM octal</h3>
               <p>200&nbsp;MHz de PSRAM octal contient les trames en double
                 tampon pendant que la SRAM compatible DMA maintient la
                 rapidité du chemin de sortie.</p>
             </div>
           </div>
-          <p style="text-align: center; margin-top: 2rem">
-            <a class="btn" href="./docs-fr.html#architecture">Lire l'architecture →</a>
+          <p style="margin: 28px 0 0">
+            <a class="btn" href="./docs-fr.html#architecture">Lire l'architecture ↗</a>
           </p>
         </div>
       </section>
 
-      <!-- On-device dashboard -->
-      <section class="block" id="dashboard">
+      <!-- Mise en route -->
+      <section class="band" id="get-started">
         <div class="wrap">
-          <h2>Un vrai tableau de bord, sur l'appareil</h2>
-          <p class="sub">
-            Le TFT couleur 320×240 par défaut affiche le réseau, les services
-            et l'activité par canal d'un coup d'œil — protocole, univers, pixels,
-            luminosité et un voyant de statut en direct par sortie.
-          </p>
-          <img
-            class="shot ui-shot"
-            src="./img/ui-home.png"
-            alt="Tableau de bord TFT pixfrog : IP, lien, services et le tableau des 8 canaux"
-            width="640"
-            height="480"
-            loading="lazy"
-            onerror="this.style.display='none'"
-          />
-        </div>
-      </section>
-
-      <!-- Flash CTA -->
-      <section class="block" id="get-started">
-        <div class="wrap" style="text-align: center">
-          <h2>Installez-le sur votre carte</h2>
-          <p class="sub">
-            Flashez le dernier build directement depuis Chrome ou Edge desktop
-            via USB — aucune chaîne d'outils requise.
-          </p>
-          <div class="cta">
-            <a class="btn primary" href="./flash-fr.html" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
-              ⚡ Flasher votre carte
-            </a>
-            <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
-              📦 Releases
-            </a>
+          <div class="panel split">
+            <div>
+              <div class="kicker">04 · Mise en route</div>
+              <h2>Flash en un clic, depuis le navigateur.</h2>
+              <p>
+                Branchez en USB, ouvrez la page flash dans Chrome ou Edge
+                desktop, choisissez la dernière release. Aucune chaîne d'outils
+                à installer.
+              </p>
+              <div class="cta">
+                <a class="btn primary" href="./flash-fr.html">Flasher votre carte</a>
+                <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">Releases</a>
+              </div>
+            </div>
+            <div class="term">
+              <div class="muted">$ pixfrog · flash</div>
+              <div><span class="ok">✓</span> carte détectée — ESP32-P4</div>
+              <div><span class="ok">✓</span> release latest téléchargée</div>
+              <div><span class="ok">✓</span> écriture partition A</div>
+              <div><span class="wait">…</span> redémarrage, réseau en DHCP</div>
+              <div class="muted">→ 192.168.1.200 · sACN · 60/60 fps</div>
+            </div>
           </div>
         </div>
       </section>
+
     </main>
 
     <footer>
       <div class="wrap foot-inner">
-        <span>🐸 pixfrog · <span id="version-foot">latest</span> · MIT licensed</span>
-        <span>
-          <a href="https://github.com/Lefix2/pixfrog">Source</a> ·
-          <a href="./docs-fr.html">Docs</a> ·
-          <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a> ·
-          propulsé par <a href="https://esphome.github.io/esp-web-tools/">esp-web-tools</a>
+        <span class="foot-mark"><span class="dot"></span> pixfrog · <span id="version-foot">latest</span> · MIT</span>
+        <span class="foot-links">
+          <a href="https://github.com/Lefix2/pixfrog">Source</a>
+          <a href="./docs-fr.html">Docs</a>
+          <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a>
+          <a href="./about-fr.html">À propos</a>
         </span>
       </div>
     </footer>
@@ -212,7 +327,8 @@
         .then((rel) => {
           const v = rel && rel.tag_name;
           if (!v) return;
-          document.getElementById("version-badge").textContent = "ESP32-P4 · " + v;
+          document.getElementById("version-badge").textContent =
+            "Art-Net 4 / sACN · ESP32-P4 · " + v;
           document.getElementById("version-foot").textContent = v;
         })
         .catch(() => {});
