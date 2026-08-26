@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "dmx_logic.h"
 
@@ -96,6 +97,103 @@ static void test_auto_patch_cascade() {
     EXPECT_EQ(out[6], 20);
     EXPECT_EQ(out[7], 21);
     EXPECT_EQ(next, 22);  // first free universe past the last channel
+}
+
+// ── universe → slot map ─────────────────────────────────────────────────────
+
+// The table the firmware passes in is indexed by the 15-bit Port-Address.
+// Allocating it on the heap (not the stack) keeps the 64 KiB off the test
+// thread's stack.
+struct UniMap {
+    std::vector<uint16_t> uni_to_slot;
+    std::vector<uint8_t> slot_to_chan;
+    size_t unmapped = 0;
+    uint16_t used   = 0;
+
+    explicit UniMap(size_t num_slots)
+        : uni_to_slot(kMaxUniverseNumber + 1), slot_to_chan(num_slots) {}
+
+    void build(const config::ChannelConfig* chans, size_t n) {
+        used = build_universe_map(chans, n, uni_to_slot.data(), slot_to_chan.data(),
+                                  slot_to_chan.size(), &unmapped);
+    }
+};
+
+static void fill_channels(config::ChannelConfig* chans, size_t n, led::Protocol proto,
+                          uint16_t pixels, uint16_t first_universe, uint16_t stride) {
+    for (size_t i = 0; i < n; ++i) {
+        chans[i]                = config::ChannelConfig{};
+        chans[i].protocol       = proto;
+        chans[i].pixel_count    = pixels;
+        chans[i].universe_start = static_cast<uint16_t>(first_universe + i * stride);
+    }
+}
+
+static void test_universe_map_basic() {
+    config::ChannelConfig chans[8];
+    fill_channels(chans, 8, led::Protocol::WS2815, 50, 1, 1);  // 1 universe each
+
+    UniMap m(64);
+    m.build(chans, 8);
+    EXPECT_EQ(m.used, 8);
+    EXPECT_EQ(m.unmapped, 0);
+    EXPECT_EQ(m.uni_to_slot[1], 0);
+    EXPECT_EQ(m.uni_to_slot[8], 7);
+    EXPECT_EQ(m.slot_to_chan[7], 7);
+    // Everything else stays unmapped.
+    EXPECT_EQ(m.uni_to_slot[0], kNoSlot);
+    EXPECT_EQ(m.uni_to_slot[9], kNoSlot);
+    EXPECT_EQ(m.uni_to_slot[kMaxUniverseNumber], kNoSlot);
+}
+
+// 1024 px RGBW = 4096 B = 8 universes per channel; 8 channels need all 64
+// slots. This is the configuration that used to overflow a 48-slot pool.
+static void test_universe_map_rgbw_fills_pool() {
+    config::ChannelConfig chans[8];
+    fill_channels(chans, 8, led::Protocol::SK6812, 1024, 1, 8);
+    EXPECT_EQ(channel_universes_used(chans[0]), 8);
+
+    UniMap m(64);
+    m.build(chans, 8);
+    EXPECT_EQ(m.used, 64);
+    EXPECT_EQ(m.unmapped, 0);
+    EXPECT_EQ(m.uni_to_slot[1], 0);
+    EXPECT_EQ(m.uni_to_slot[64], 63);
+    EXPECT_EQ(m.slot_to_chan[63], 7);
+}
+
+// A pool too small must report the shortfall rather than truncate silently,
+// and must not write past slot_to_chan.
+static void test_universe_map_pool_exhaustion_is_reported() {
+    config::ChannelConfig chans[8];
+    fill_channels(chans, 8, led::Protocol::SK6812, 1024, 1, 8);
+
+    UniMap m(48);
+    m.build(chans, 8);
+    EXPECT_EQ(m.used, 48);
+    EXPECT_EQ(m.unmapped, 16);  // 64 wanted, 48 available
+}
+
+// A channel patched at the top of the address space must not map (nor write)
+// past kMaxUniverseNumber.
+static void test_universe_map_clamps_at_top_of_range() {
+    config::ChannelConfig chans[1];
+    fill_channels(chans, 1, led::Protocol::SK6812, 1024, kMaxUniverseNumber, 0);
+    EXPECT_EQ(channel_universes_used(chans[0]), 8);
+
+    UniMap m(64);
+    m.build(chans, 1);
+    EXPECT_EQ(m.used, 1);      // only universe 32767 itself fits
+    EXPECT_EQ(m.unmapped, 7);  // the other 7 fall off the end
+    EXPECT_EQ(m.uni_to_slot[kMaxUniverseNumber], 0);
+}
+
+static void test_universe_routable_range() {
+    EXPECT_EQ(universe_routable(0), 1);
+    EXPECT_EQ(universe_routable(kMaxUniverseNumber), 1);
+    EXPECT_EQ(universe_routable(kMaxUniverseNumber + 1), 0);
+    EXPECT_EQ(universe_routable(63999), 0);  // top of the sACN range
+    EXPECT_EQ(universe_routable(65535), 0);
 }
 
 // ── t_dma + capacity ────────────────────────────────────────────────────────
@@ -740,6 +838,11 @@ int main() {
     test_merge_drop_and_claim_refresh();
     test_merge_zero_id_coerced();
     test_merge_htp_full_universe();
+    test_universe_map_basic();
+    test_universe_map_rgbw_fills_pool();
+    test_universe_map_pool_exhaustion_is_reported();
+    test_universe_map_clamps_at_top_of_range();
+    test_universe_routable_range();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

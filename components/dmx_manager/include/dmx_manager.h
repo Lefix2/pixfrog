@@ -15,8 +15,19 @@
 
 namespace pixfrog::dmx {
 
-constexpr size_t kUniverseSize     = 512;  // bytes per DMX universe
-constexpr size_t kNumUniverses     = 48;   // 8 channels × 6 max
+constexpr size_t kUniverseSize = 512;  // bytes per DMX universe
+// 8 channels × 8 universes: a 1024-pixel RGBW channel spans 4096 B = 8
+// universes, so anything less silently leaves the last channels unmapped.
+constexpr size_t kNumUniverses = 64;
+// Highest routable universe: the Art-Net Port-Address is 15-bit. sACN carries
+// 1..63999 on the wire and FSEQ sparse ranges a 32-bit channel offset, so both
+// must filter on universe_routable() before handing a number to this module.
+constexpr uint16_t kMaxUniverseNumber = 0x7FFF;
+
+inline bool universe_routable(uint32_t universe_number) {
+    return universe_number <= kMaxUniverseNumber;
+}
+
 constexpr size_t kMaxPixelsPerChan = 1024;
 constexpr size_t kMaxBytesPerChan  = kMaxPixelsPerChan * 4;  // RGBW worst case
 
@@ -102,7 +113,7 @@ bool is_channel_failsafe(size_t channel_index);
 // the failsafe timeout. No-op for unmapped or never-active channels.
 void note_universe_terminated(uint16_t universe_number);
 
-// ── Configuration change propagation (item 7) ──────────────────────────────
+// ── Configuration change propagation ───────────────────────────────────────
 // The UI commits config changes from `ui_task` (core 0) but the actual
 // runtime state lives in render_task (core 1). To bridge them safely we
 // use a FreeRTOS event group:

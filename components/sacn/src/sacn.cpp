@@ -59,7 +59,7 @@ size_t wanted_universes(uint16_t out[kMaxJoined]) {
         const size_t used = (total + dmx::kUniverseSize - 1) / dmx::kUniverseSize;
         for (size_t u = 0; u < used && n < kMaxJoined; ++u) {
             const uint32_t uni = static_cast<uint32_t>(cc.universe_start) + u;
-            if (uni < 1 || uni > 63999) continue;
+            if (uni < 1 || !dmx::universe_routable(uni)) continue;
             bool dup = false;
             for (size_t i = 0; i < n; ++i)
                 if (out[i] == uni) dup = true;
@@ -114,6 +114,11 @@ void handle_data(const uint8_t* buf, size_t len) {
         return;
     }
     if (f.options & parser::kOptPreview) return;  // visualizer-only data
+    // E1.31 allows universes up to 63999; the pool is keyed on the 15-bit
+    // Art-Net Port-Address and can never map anything above that. Drop those
+    // here, before the number reaches any lookup. Not a malformed packet —
+    // just one addressed to a universe this node cannot own.
+    if (!dmx::universe_routable(f.universe)) return;
 
     const uint32_t source_id = parser::source_id_from_cid(f.cid);
     const bool terminated    = (f.options & parser::kOptTerminated) != 0;

@@ -37,7 +37,8 @@ namespace {
 constexpr uint8_t kOledCols = 21;
 
 // ── Canvas text helpers ───────────────────────────────────────────────────────
-// Thin wrappers that map OLED-style (row, col) coordinates to pixel coords.
+// Thin wrapper mapping OLED-style (row, col) coordinates to pixel coords. Every
+// call site is in an OLED branch, so the TFT build has no use for it.
 
 [[maybe_unused]] static void draw_row(uint8_t row, uint8_t col, const char* str) {
     canvas_draw_text(col * kFontCellWidth, row * kFontHeight, str, color::White);
@@ -1175,7 +1176,7 @@ void render_home() {
     // ── OLED classic home ─────────────────────────────────────────────────────
     canvas_clear();
 
-    // Item B6: warn loudly when NVS is broken (config does NOT persist).
+    // Warn loudly when NVS is broken (config does NOT persist).
     if (!config::is_persistence_ok()) {
         draw_row(0, 0, "pixfrog       [!NVS]");
     } else {
@@ -1193,7 +1194,7 @@ void render_home() {
         draw_row(1, 0, line);
     }
 
-    // Item B4: link state, distinct from IP since DHCP can be pending.
+    // Link state, distinct from IP since DHCP can be pending.
     draw_row(2, 0, ui::is_link_up() ? "LINK : UP" : "LINK : DOWN");
 
     const auto stats = dmx::get_stats();
@@ -1397,7 +1398,7 @@ void dispatch_stats(Event e) {
     if (e == Event::Click) s.screen = Screen::Menu;
 }
 
-// ── TEST PATTERN NODE (TODO B5) ─────────────────────────────────────────────
+// ── TEST PATTERN NODE ───────────────────────────────────────────────────────
 
 constexpr const char* kTestPatternLabels[3] = {
     "Pat 0 sq 1kHz",
@@ -1778,7 +1779,7 @@ void render_edit_value() {
     std::snprintf(line, sizeof(line), "  %s", val);
     draw_row(3, 0, line);
 
-    // Item B3: show the original (pre-edit) value when the user has moved
+    // Show the original (pre-edit) value when the user has moved
     // away from it, so it's clear the change is not yet committed.
     if (s.edit.current != s.edit.original) {
         char orig[kOledCols + 1];

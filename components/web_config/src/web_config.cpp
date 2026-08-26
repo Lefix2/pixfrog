@@ -1,5 +1,6 @@
 #include "web_config.h"
 
+#include <atomic>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -194,8 +195,39 @@ static bool authorized(httpd_req_t* req) {
     return config::check_web_password(colon + 1);
 }
 
-// Returns true when the request may proceed; otherwise the 401 has been sent.
+// ── Cross-origin write gate ─────────────────────────────────────────────────
+// Every mutation here is a CORS "simple request": a browser will send it
+// cross-origin with no preflight, so any page a LAN user visits could POST to
+// this device. Basic auth does not stop that on its own — it is off until an
+// admin password is set, which is not the default.
+//
+// Browsers always attach `Origin` to a cross-origin write, so requiring it to
+// match our own `Host` closes the class outright. Non-browser clients (curl,
+// uartctl, the OTA uploader) send no Origin at all and are unaffected; the
+// aggregated multi-node dashboard only ever reads cross-origin, and GETs do
+// not come through here.
+static bool same_origin(httpd_req_t* req) {
+    char origin[128];
+    if (httpd_req_get_hdr_value_str(req, "Origin", origin, sizeof(origin)) != ESP_OK)
+        return true;  // no Origin: not a browser-initiated cross-site write
+
+    char host[64];
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) return false;
+
+    // Origin is "scheme://host[:port]"; compare the authority against Host.
+    const char* sep = strstr(origin, "://");
+    if (!sep) return false;
+    return strcmp(sep + 3, host) == 0;
+}
+
+// Returns true when the request may proceed; otherwise the error has been sent.
 static bool require_auth(httpd_req_t* req) {
+    if (!same_origin(req)) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"error\":\"cross-origin write rejected\"}");
+        return false;
+    }
     if (authorized(req)) return true;
     vTaskDelay(pdMS_TO_TICKS(500));  // flat anti-brute-force cost
     httpd_resp_set_status(req, "401 Unauthorized");
@@ -983,20 +1015,31 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
 // back to the current slot — a power cut mid-flash is also safe (the running
 // slot is never touched).
 
-static bool g_ota_in_progress = false;
+// Exchanged, not just read: one flight at a time, whatever the httpd task
+// count is configured to be.
+static std::atomic<bool> g_ota_in_progress{ false };
 
 static esp_err_t handle_ota(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    if (g_ota_in_progress) return send_err(req, 500, "OTA already in progress");
+    if (g_ota_in_progress.exchange(true)) return send_err(req, 500, "OTA already in progress");
 
+    // Claimed above — every exit from here on must hand the flag back.
     const esp_partition_t* update = esp_ota_get_next_update_partition(nullptr);
-    if (!update) return send_err(req, 500, "no OTA partition (single-app table?)");
+    if (!update) {
+        g_ota_in_progress = false;
+        return send_err(req, 500, "no OTA partition (single-app table?)");
+    }
 
     const int total = req->content_len;
-    if (total <= 0) return send_err(req, 400, "empty body");
-    if (static_cast<size_t>(total) > update->size) return send_err(req, 400, "image too large");
+    if (total <= 0) {
+        g_ota_in_progress = false;
+        return send_err(req, 400, "empty body");
+    }
+    if (static_cast<size_t>(total) > update->size) {
+        g_ota_in_progress = false;
+        return send_err(req, 400, "image too large");
+    }
 
-    g_ota_in_progress = true;
     ESP_LOGI(TAG, "OTA: %d bytes -> %s", total, update->label);
 
     esp_ota_handle_t ota = 0;
@@ -1180,7 +1223,7 @@ static esp_err_t handle_fseq_stop(httpd_req_t* req) {
 // first and is renamed on success, so an interrupted upload never leaves a
 // truncated .fseq visible to the player.
 
-static bool g_fseq_upload_in_progress = false;
+static std::atomic<bool> g_fseq_upload_in_progress{ false };
 
 // Decode %XX sequences in-place (httpd_query_key_value does not URL-decode).
 static void url_decode(char* s) {
@@ -1200,24 +1243,31 @@ static void url_decode(char* s) {
 
 static esp_err_t handle_fseq_upload(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    if (g_fseq_upload_in_progress) return send_err(req, 500, "upload already in progress");
-    if (fseq::sd_state() != fseq::SdState::Mounted) return send_err(req, 500, "no SD card");
+    if (g_fseq_upload_in_progress.exchange(true))
+        return send_err(req, 500, "upload already in progress");
+    // Claimed above — every exit from here on must hand the flag back.
+    const auto reject = [req](int code, const char* msg) {
+        g_fseq_upload_in_progress = false;
+        return send_err(req, code, msg);
+    };
+
+    if (fseq::sd_state() != fseq::SdState::Mounted) return reject(500, "no SD card");
 
     char query[fseq::kMaxNameLen * 3 + 16] = {};
     char name[fseq::kMaxNameLen]           = {};
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
         httpd_query_key_value(query, "name", name, sizeof(name)) != ESP_OK || !name[0])
-        return send_err(req, 400, "missing ?name=<file.fseq>");
+        return reject(400, "missing ?name=<file.fseq>");
     url_decode(name);
 
     if (strchr(name, '/') || strchr(name, '\\') || name[0] == '.')
-        return send_err(req, 400, "bad filename");
+        return reject(400, "bad filename");
     const size_t nl = strlen(name);
     if (nl < 6 || strcasecmp(name + nl - 5, ".fseq") != 0)
-        return send_err(req, 400, "filename must end in .fseq");
+        return reject(400, "filename must end in .fseq");
 
     const int total = req->content_len;
-    if (total <= 0) return send_err(req, 400, "empty body");
+    if (total <= 0) return reject(400, "empty body");
 
     // Overwriting the file currently playing: stop playback to release it.
     const char* active = fseq::active_file();
@@ -1229,8 +1279,7 @@ static esp_err_t handle_fseq_upload(httpd_req_t* req) {
     snprintf(path, sizeof(path), "%s/%s", fseq::kMountPath, name);
 
     FILE* fp = fopen(tmp_path, "wb");
-    if (!fp) return send_err(req, 500, "cannot create file on SD");
-    g_fseq_upload_in_progress = true;
+    if (!fp) return reject(500, "cannot create file on SD");
     ESP_LOGI(TAG, "FSEQ upload: %d bytes -> %s", total, name);
 
     // Static buffer: the httpd task stack is small and only one upload can

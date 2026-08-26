@@ -59,7 +59,7 @@ i2c_master_dev_handle_t g_dev = nullptr;
 int32_t g_last_pos            = 0;
 bool g_last_btn               = false;
 
-// Item A3: debounce for the push button. Any transition closer than this
+// Debounce for the push button. Any transition closer than this
 // to the previous one is silently ignored, suppressing the multi-click
 // echoes the seesaw can emit on a noisy mechanical switch contact.
 constexpr int64_t kBtnDebounceUs = 20'000;  // 20 ms

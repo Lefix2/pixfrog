@@ -65,10 +65,10 @@ size_t g_written[2]            = { 0, 0 };  // samples encoded into each FB sinc
 
 SemaphoreHandle_t g_done_sem = nullptr;
 
-// Persistent calibration mode (TODO B5). -1 = normal pixel rendering.
+// Persistent calibration mode. -1 = normal pixel rendering.
 volatile int8_t g_cal_mode = -1;
 
-// ── Item 1: HSYNC pulse width and porches ────────────────────────────────────
+// ── HSYNC pulse width and porches ────────────────────────────────────────────
 // The HSYNC pin is never routed externally (hsync_gpio_num = -1), but the
 // blanking region it defines is load-bearing: with zero porches the P4 LCD
 // engine emits exactly one line and never re-arms the next (measured on a
@@ -79,7 +79,7 @@ constexpr int kHsyncPulseWidth = 1;
 constexpr int kHsyncBackPorch  = 1;
 constexpr int kHsyncFrontPorch = 1;
 
-// ── Item 2: thresholds for swap latency warning ──────────────────────────────
+// ── Thresholds for swap latency warning ──────────────────────────────────────
 // A no-copy FB swap inside esp_lcd_panel_draw_bitmap should return in
 // well under 100 µs (just pointer juggling + cache barrier). If it's
 // slower, either the IDF is doing a copy (config mistake) or we're
@@ -104,7 +104,7 @@ constexpr size_t kCacheLineBytes = 128;
 // invisible at scope timescales).
 constexpr size_t kCalFrameSamples = 262144;
 
-// ── Item 4: emission pacing ──────────────────────────────────────────────────
+// ── Emission pacing ──────────────────────────────────────────────────────────
 // Only on_vsync (the VSYNC_END interrupt = LCD engine finished clocking the
 // frame out) may give done_sem. on_color_trans_done is NOT an emission
 // signal: in refresh_on_demand mode without bounce buffers, the IDF driver
@@ -115,7 +115,7 @@ constexpr size_t kCalFrameSamples = 262144;
 volatile uint32_t g_trans_done_count = 0;
 volatile uint32_t g_vsync_count      = 0;
 
-// ── Item 5: bandwidth / emission timing telemetry ────────────────────────────
+// ── Bandwidth / emission timing telemetry ────────────────────────────────────
 // Tracks the wall-clock duration between consecutive draw_bitmap kicks.
 // At steady state, this should match the expected DMA duration
 // (= h_res / pclk_hz) within a small margin. Larger deviation = PSRAM
@@ -137,7 +137,8 @@ void checked_msync(void* addr, size_t bytes) {
 
 bool IRAM_ATTR on_trans_done(esp_lcd_panel_handle_t /*panel*/,
                              const esp_lcd_rgb_panel_event_data_t* /*edata*/, void* /*user_ctx*/) {
-    // Telemetry only — see Item 4. Plain read-modify-write: C++20 deprecates
+    // Telemetry only — see the emission pacing note above. Plain
+    // read-modify-write: C++20 deprecates
     // ++ on a volatile lvalue.
     g_trans_done_count = g_trans_done_count + 1;
     return false;
@@ -198,7 +199,7 @@ bool create_panel(size_t h_res, size_t v_res) {
     g_fb_samples = h_res * v_res;
     g_fb_bytes   = g_fb_samples * sizeof(uint16_t);
 
-    // ── Item 3: PSRAM sanity check ───────────────────────────────────────────
+    // ── PSRAM sanity check ───────────────────────────────────────────────────
     // We need 2 × fb_bytes plus a comfortable headroom for cache lines, the
     // universe pool, and unforeseen allocations. Refuse if the largest
     // contiguous PSRAM block can't host one FB (IDF will internally request
@@ -245,7 +246,7 @@ bool create_panel(size_t h_res, size_t v_res) {
         return false;
     }
 
-    // Item 4: register BOTH callbacks. On most ESP32-P4 IDF builds in
+    // Register BOTH callbacks. On most ESP32-P4 IDF builds in
     // refresh_on_demand mode, on_color_trans_done is the canonical signal
     // of "DMA emission complete". Some builds only fire on_vsync. We
     // register both; whichever arrives first releases done_sem (second
@@ -401,7 +402,7 @@ bool render_frame(uint32_t timeout_ms) {
         return false;
     }
 
-    // Item 2: measure swap latency to confirm IDF is doing a no-copy swap.
+    // Measure swap latency to confirm IDF is doing a no-copy swap.
     const int64_t t_kick_pre = esp_timer_get_time();
 
     // Hand the back FB to the panel as the next frame to emit. With num_fbs=2
@@ -437,7 +438,7 @@ bool render_frame(uint32_t timeout_ms) {
         return false;
     }
 
-    // Item 5: track inter-kick interval. At steady-state this equals the
+    // Track inter-kick interval. At steady-state this equals the
     // wall-clock period of the render task, which itself is bounded below
     // by the DMA emission duration.
     if (g_last_kick_us != 0) {

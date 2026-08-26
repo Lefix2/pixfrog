@@ -95,7 +95,9 @@ constexpr uint32_t kPclkHz = 16'000'000;
 
 // Worst-case sample count for one frame, used to size the PSRAM frame buffer.
 // 1024 px × 32 bits (RGBW) × 40 samples (WS2811-slow) + 4480 (TRESET).
-// At 2 bytes per sample, this gives ~2.6 MB per FB → ~5.2 MB total for 2 FBs.
+// At 2 bytes per sample, this gives ~2.6 MB per FB (PARLIO keeps three,
+// the legacy LCD_CAM backend two). Buffers are sized to the frame actually
+// configured, so this is a ceiling, not the steady-state footprint.
 constexpr uint32_t kMaxPixelsPerChannel = 1024;
 constexpr uint32_t kMaxBitsPerPixel     = 32;
 constexpr uint32_t kMaxSamplesPerBit    = 40;

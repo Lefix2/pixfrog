@@ -17,6 +17,20 @@ namespace pixfrog::dmx::logic {
 
 constexpr size_t kUniverseSize = 512;
 
+// Highest addressable universe number. Art-Net encodes the Port-Address on 15
+// bits (Net<<8 | SubUni), so no universe above this can ever be routed — the
+// universe→slot table is sized for exactly this range. sACN allows 1..63999 on
+// the wire and FSEQ sparse ranges carry a 32-bit channel offset, so both must
+// be filtered against this ceiling before they index anything.
+constexpr uint16_t kMaxUniverseNumber = 0x7FFF;
+
+inline bool universe_routable(uint32_t universe_number) {
+    return universe_number <= kMaxUniverseNumber;
+}
+
+// Sentinel stored in the universe → slot table for "not mapped to any channel".
+constexpr uint16_t kNoSlot = UINT16_MAX;
+
 // ── Sizing helpers ──────────────────────────────────────────────────────────
 
 inline size_t channel_total_bytes(const config::ChannelConfig& cc) {
@@ -46,6 +60,45 @@ inline uint16_t compute_auto_patch(uint16_t base, const config::ChannelConfig* c
         cursor += channel_universes_used(chans[i]);
     }
     return static_cast<uint16_t>(cursor & 0x7FFF);
+}
+
+// ── Universe → slot map ─────────────────────────────────────────────────────
+//
+// Assign every channel's universe span a slot in the pool, and record the
+// reverse slot → channel mapping. `uni_to_slot` must hold
+// kMaxUniverseNumber + 1 entries and is filled with kNoSlot first;
+// `slot_to_chan` must hold `num_slots` entries.
+//
+// Two ways a channel's span can fail to map, both reported through
+// `out_unmapped` (number of universes that got no slot) rather than silently
+// dropped: the pool runs out of slots, or the span would run past
+// kMaxUniverseNumber (a channel patched near the top of the address space).
+// Neither is allowed to write outside either array.
+//
+// Returns the number of slots used.
+inline uint16_t build_universe_map(const config::ChannelConfig* chans, size_t n,
+                                   uint16_t* uni_to_slot, uint8_t* slot_to_chan, size_t num_slots,
+                                   size_t* out_unmapped) {
+    for (size_t i = 0; i <= kMaxUniverseNumber; ++i)
+        uni_to_slot[i] = kNoSlot;
+
+    uint16_t slot   = 0;
+    size_t unmapped = 0;
+    for (size_t ch = 0; ch < n; ++ch) {
+        const size_t universes_used = channel_universes_used(chans[ch]);
+        for (size_t u = 0; u < universes_used; ++u) {
+            const uint32_t uni = static_cast<uint32_t>(chans[ch].universe_start) + u;
+            if (!universe_routable(uni) || slot >= num_slots) {
+                unmapped++;
+                continue;
+            }
+            uni_to_slot[uni]   = slot;
+            slot_to_chan[slot] = static_cast<uint8_t>(ch);
+            slot++;
+        }
+    }
+    if (out_unmapped) *out_unmapped = unmapped;
+    return slot;
 }
 
 // ── Capacity check ──────────────────────────────────────────────────────────
