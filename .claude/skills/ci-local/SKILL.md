@@ -1,6 +1,6 @@
 ---
 name: ci-local
-description: Replay every CI job locally (format, host tests, oled+tft IDF builds) — mandatory green before any push
+description: Replay every CI job locally (format, host tests, nv3007+st7789+oled IDF builds) — mandatory green before any push
 ---
 
 ```bash

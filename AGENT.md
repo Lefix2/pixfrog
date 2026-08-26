@@ -33,7 +33,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/fseq_player`       | `.fseq` playback from microSD (SDMMC + FATFS, zstd)     |
 | `components/fpp_sync`          | FPP MultiSync receiver: slaves FSEQ playback to a master |
 | `components/web_config`        | Opt-in HTTP server: config SPA, REST API, OTA (see below) |
-| `components/ui`                | Display drivers (SSD1306 / ST7789 / NV3007), canvas, seesaw encoder, menu FSM, backlight PWM |
+| `components/ui`                | Display drivers (NV3007 default; ST7789 / SSD1306 alternates), canvas, seesaw encoder, menu FSM, backlight PWM |
 | `components/control_console`   | UART0 command server: full config get/set, telemetry, DMX injection |
 | `main/main.cpp`                | Boot orchestration + `render_task`                      |
 | `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased TFT font) |
@@ -49,7 +49,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 
 | Skill | Operation |
 |---|---|
-| [build](.claude/skills/build/SKILL.md) | IDF build (docker or devcontainer), oled + tft variants, sdkconfig traps |
+| [build](.claude/skills/build/SKILL.md) | IDF build (docker or devcontainer), nv3007 default + st7789/oled overlays, sdkconfig traps |
 | [flash](.claude/skills/flash/SKILL.md) | Flash over `/dev/ttyACM0`, boot-log capture, WSL2 replug |
 | [host-tests](.claude/skills/host-tests/SKILL.md) | The three pure-host unit suites |
 | [ci-local](.claude/skills/ci-local/SKILL.md) | Replay all CI jobs locally |
@@ -97,7 +97,7 @@ applies to *always-on* listeners; this one is opt-in and user-controlled.
   through a pull request once CI is green.
 - **CI must pass locally before any push**: `./tools/ci-local.sh` replays every
   `ci.yml` job (format check, seven host suites, emulator build + smoke test,
-  oled + tft IDF builds). Never push and "let CI find out".
+  nv3007 + st7789 + oled IDF builds). Never push and "let CI find out".
 - A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
   host suite green.
 - The canonical proof for IDF-bound refactors is `idf.py build` — natively in

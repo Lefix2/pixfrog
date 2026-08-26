@@ -14,7 +14,7 @@
 - **Standalone scenes**: 8 parametric slots (solid / chase / rainbow, per-channel mask), playable at boot, from the desk (ArtTrigger), or any UI
 - **Signal-loss failsafe** per channel: hold / blackout / solid colour / scene after a configurable timeout
 - **Per-channel gamma + white balance**, baked into encode-time LUTs (validated bit-exact on a logic analyzer)
-- Local UI: **compile-time selectable** — ST7789V TFT 320×240 colour (SPI, default) or NV3007 428×142 bar TFT (SPI, 2.79") with a live status dashboard (per-channel activity, link/services state) and natively rasterised anti-aliased fonts, **or** SSD1306 OLED 128×64; shared canvas API and menu FSM; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning
+- Local UI: **NV3007 428×142 colour bar TFT** (SPI, 2.79") with a live status dashboard (per-channel activity, link/services state) and natively rasterised anti-aliased fonts; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning. Two other panels are supported as build-time alternates — see [Display backend](#display-backend)
 - **Web UI** (opt-in, port 80): full configuration SPA + REST API, live `/api/status` telemetry, **OTA firmware update** (A/B slots with boot-failure rollback), config **backup/restore** as JSON, crash **coredump download**, mDNS discovery while enabled, optional HTTP Basic auth on every mutation
 - **UART control console**: every config field, telemetry, DMX injection, buffer readback (`tools/uartctl.sh`)
 - All configuration **persisted** in NVS with forward migration; network surfaces beyond ArtNet are **strictly opt-in** (no socket while disabled)
@@ -28,30 +28,54 @@ Pinout, schematic, datasheet, and PHY wiring are documented by Waveshare:
 
 Any other ESP32-P4 board with octal PSRAM and an MII/RMII PHY works; just clone `boards/esp32_p4_devkit.h` and adjust the GPIO map.
 
-## Build
+## Build & flash
 
-ESP-IDF v5.5+ with ESP32-P4 support (`idf.py set-target esp32p4`). Both
-`led_output` backends (PARLIO TX default, legacy LCD_CAM RGB panel) need
-drivers that only ship from v5.5.
+ESP-IDF v5.5+ with ESP32-P4 support. `sdkconfig.defaults` already pins the
+target, so no `set-target` is needed. Both `led_output` backends (PARLIO TX
+default, legacy LCD_CAM RGB panel) need drivers that only ship from v5.5.
 
 ```bash
-idf.py set-target esp32p4
-idf.py menuconfig          # optional — sdkconfig.defaults is sane
-idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+idf.py build                              # default: NV3007 bar panel
+idf.py -p /dev/ttyACM0 flash              # write it to the board
+idf.py -p /dev/ttyACM0 monitor            # boot log (Ctrl-] to leave)
+idf.py menuconfig                         # optional — sdkconfig.defaults is sane
 ```
+
+Without a local IDF, build and flash in the official container:
+
+```bash
+docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
+    espressif/idf:v5.5 idf.py build
+docker run --rm --device /dev/ttyACM0 -v "$PWD":/project -w /project \
+    espressif/idf:v5.5 idf.py -p /dev/ttyACM0 flash
+```
+
+> `sdkconfig` is generated and git-ignored. It is only seeded from
+> `sdkconfig.defaults` **when it does not exist**, so after changing the defaults
+> or switching variant, `rm -f sdkconfig` first — otherwise the old selection
+> silently survives.
 
 ### Display backend
 
-Select at `idf.py menuconfig` → **Display backend** (or export `SDKCONFIG_DEFAULTS`):
+The default is the **NV3007 428×142 bar panel** the 1U rack ships with — a plain
+`idf.py build` targets it, and the boot log confirms with
+`TFT: NV3007 428x142 ready (landscape)`.
 
-| Kconfig selection             | Display                      | Notes                          |
-|-------------------------------|------------------------------|--------------------------------|
-| `CONFIG_PIXFROG_TFT_PANEL_ST7789` | ST7789V 320×240 SPI landscape *(default)* | 16-bit colour, animated splash |
-| `CONFIG_PIXFROG_DISPLAY_NV3007` | NV3007 428×142 SPI bar (2.79") | portrait glass rotated in software; `PIXFROG_NV3007_ROT180` flips it |
-| `CONFIG_PIXFROG_DISPLAY_OLED` | SSD1306 128×64 I2C            | monochrome, diff-based flush  |
+Two alternates are supported for other builds of the hardware. Each needs its own
+build directory and sdkconfig, or the overlay is silently ignored:
 
-TFT SPI GPIOs are configured in `boards/esp32_p4_devkit.h` (CLK=13, MOSI=11, CS=12, DC=10, RST=9, 40 MHz).
+| Panel | Overlay | Build |
+|---|---|---|
+| **NV3007** 428×142 SPI bar (2.79") | *(default)* | `idf.py build` |
+| ST7789V / ILI9341 320×240 SPI | `sdkconfig.ci.st7789` | `idf.py -B build.st7789 -D SDKCONFIG=build.st7789/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.st7789" build` |
+| SSD1306 128×64 I²C OLED | `sdkconfig.ci.oled` | `idf.py -B build.oled -D SDKCONFIG=build.oled/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.oled" build` |
+
+Flash a variant from its own directory, e.g. `idf.py -B build.oled -p /dev/ttyACM0 flash`.
+`PIXFROG_NV3007_ROT180` flips the bar panel when the module is mounted upside down.
+
+TFT SPI GPIOs live in `boards/esp32_p4_devkit.h` — CLK=0, MOSI=6, CS=20, DC=21,
+RST=27 on the shield's J13 header, backlight on GPIO 45, SPI2 at 20 MHz. See
+[docs/HARDWARE.md §5](docs/HARDWARE.md).
 
 ## Host unit tests
 
@@ -92,7 +116,7 @@ targeting `main`:
 
 - the seven host suites above
 - the SDL2 emulator build + headless menu-FSM smoke test
-- `idf.py build` for `esp32p4` × **two display backends** (oled + tft) in the `espressif/idf:v5.5` container
+- `idf.py build` for `esp32p4` × **three display variants** (nv3007 default, st7789, oled) in the `espressif/idf:v5.5` container
 - `clang-format --dry-run` against `.clang-format` on every tracked C/C++ file
 
 `./tools/ci-local.sh` replays all of it locally and must be green before any push.
@@ -124,7 +148,7 @@ workflow also attempts to enable it automatically).
 Rendered online (with the browser flasher) at **<https://lefix2.github.io/pixfrog/>**:
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — task topology, frame lifecycle, memory budget
-- [docs/HARDWARE.md](docs/HARDWARE.md) — pinout, PHY, level shifters, encoder + OLED wiring
+- [docs/HARDWARE.md](docs/HARDWARE.md) — pinout, PHY, level shifters, encoder + display wiring
 - [docs/PROTOCOLS.md](docs/PROTOCOLS.md) — per-protocol timings, PCLK formula, DMA encoding
 - [AGENT.md](AGENT.md) — conventions, module map, hard rules (humans and agents)
 - [TODO.md](TODO.md) — the living roadmap; features land only from this list

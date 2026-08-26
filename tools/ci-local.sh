@@ -33,7 +33,7 @@ cmake -S tools/emulator -B tools/emulator/build.st7789 -DCMAKE_BUILD_TYPE=Releas
 cmake --build tools/emulator/build.st7789 --parallel >/dev/null
 ./tools/emulator/smoke.sh build.st7789/pixfrog_emu
 
-echo "==[4/4] IDF builds oled + tft + nv3007 (CI: idf-build matrix) =="
+echo "==[4/4] IDF builds nv3007 (default) + st7789 + oled (CI: idf-build matrix) =="
 # Separate build dir + sdkconfig per overlay: SDKCONFIG_DEFAULTS only applies
 # when the sdkconfig file does not exist yet, so overlay builds must not
 # share the default ./sdkconfig.
@@ -57,7 +57,7 @@ else
     docker run --rm -v "$PWD":/project -w /project -u "$(id -u):$(id -g)" -e HOME=/tmp \
         espressif/idf:v5.5 idf.py build
 fi
+overlay_build st7789
 overlay_build oled
-overlay_build nv3007
 
 echo "ALL CI JOBS GREEN — safe to push"
