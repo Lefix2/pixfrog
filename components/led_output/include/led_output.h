@@ -4,9 +4,11 @@
 // (default) or the legacy LCD_CAM RGB panel.
 //
 // Architecture (cf. docs/ARCHITECTURE.md §4):
-//   The frame buffers live in PSRAM (three on PARLIO, two on LCD_CAM), sized
-//   to the frame length the current channel config actually needs (the unit is
-//   recreated on a config commit that changes that length).
+//   The frame buffers live in PSRAM (three on PARLIO, two on LCD_CAM). PARLIO
+//   allocates them once at `max_samples_per_frame` and varies only the emitted
+//   length per transmit; LCD_CAM carries the length in the panel's timing
+//   registers, so it sizes them to the current config and recreates the panel
+//   on a config commit that changes that length.
 //   render_task encodes the full next frame into fb_back in one pass
 //   (led::encode_frame) while the previous frame is still emitting from the
 //   other FB, calls esp_cache_msync(DIR_C2M) on the written region, waits on
@@ -25,15 +27,15 @@ namespace pixfrog::output {
 struct InitConfig {
     const int* bus_gpio_16;          // bit k of the bus → GPIO bus_gpio_16[k]
     uint32_t pclk_hz;                // PCLK frequency; must match led_protocols::kPclkHz
-    uint32_t max_samples_per_frame;  // hard upper cap on the frame length; the PSRAM
-                                     // frame buffers are sized to the config's actual
-                                     // need, never to this cap
+    uint32_t max_samples_per_frame;  // hard upper cap on the frame length; PARLIO sizes
+                                     // its frame buffers to exactly this, LCD_CAM only
+                                     // validates against it
 };
 
-// Initialize the active output backend. The TX unit (and its PSRAM frame
-// buffers) is created for the frame length the current channel config
-// requires — or lazily by the first rendered frame when every channel is Off
-// at boot.
+// Initialize the active output backend, allocating everything the render path
+// will ever touch: on PARLIO the TX unit and three frame buffers at the cap,
+// on LCD_CAM a panel sized to the current config (or none, if every channel is
+// Off at boot — LCD_CAM creates it lazily).
 // Returns false on any IDF API failure (most often: PSRAM too small).
 bool init(const InitConfig& cfg);
 
