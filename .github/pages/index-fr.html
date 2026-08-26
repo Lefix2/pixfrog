@@ -29,27 +29,30 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./style.css" />
+    <script src="./hero.js" defer></script>
   </head>
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="#top"><span class="dot"></span> pixfrog</a>
+        <a class="brand" href="./index-fr.html"><span class="dot"></span> pixfrog</a>
         <nav class="nav-links">
+          <a class="active" href="./index-fr.html">Accueil</a>
           <a href="./flash-fr.html">Flash</a>
-          <a href="#features">Fonctionnalités</a>
           <a href="./docs-fr.html">Docs</a>
           <a href="./about-fr.html">À propos</a>
-          <span class="nav-lang keep">FR ·
+        </nav>
+        <div class="nav-util">
+          <span class="nav-lang">FR ·
             <a href="#" onclick="switchLang('en','./index-en.html');return false;" title="English version">EN</a>
           </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
-        </nav>
+        </div>
       </div>
     </header>
 
     <main id="top">
       <!-- Hero -->
-      <section class="hero">
+      <section class="hero has-statbar">
         <!-- Photo produit optionnelle : le dégradé ci-dessous se suffit
              tant que docs/img/rack-closeup.jpg n'est pas publiée. -->
         <img
@@ -87,6 +90,12 @@
             <span>licence <b class="amber">MIT</b></span>
           </div>
         </div>
+        <a class="hero-chevron" href="#rack" aria-label="Aller à la section suivante">
+          <svg width="44" height="14" viewBox="0 0 44 14" fill="none" aria-hidden="true">
+            <path d="M2 2 L22 12 L42 2" stroke="currentColor" stroke-width="1.4"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
       </section>
 
       <!-- Le rack -->
@@ -145,7 +154,7 @@
             <h2>La régie est dans la façade. Le détail est dans le navigateur.</h2>
           </div>
           <p class="sub">
-            Le TFT couleur 320×240 par défaut affiche le réseau, les services
+            L'écran embarqué affiche le réseau, les services
             et l'activité par canal d'un coup d'œil — protocole, univers, pixels,
             luminosité et un voyant de statut en direct par sortie.
           </p>
@@ -169,9 +178,9 @@
               <div class="well pixel">
                 <img
                   src="./img/ui-home.png"
-                  alt="Tableau de bord TFT pixfrog : IP, lien, services et le tableau des 8 canaux"
-                  width="640"
-                  height="480"
+                  alt="Écran embarqué pixfrog : IP, services, fps et les huit canaux"
+                  width="428"
+                  height="142"
                   loading="lazy"
                   onerror="this.closest('figure').remove()"
                 />
