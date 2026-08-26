@@ -13,34 +13,48 @@
     <link rel="alternate" hreflang="en" href="./docs-en.html" />
     <link rel="alternate" hreflang="fr" href="./docs-fr.html" />
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;800&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./style.css" />
-    <!-- Syntax highlighting themes (light / dark). -->
+    <!-- The docs viewer is a paper page in both themes, so the light
+         syntax theme is pinned rather than following prefers-color-scheme. -->
     <link
       rel="stylesheet"
-      media="(prefers-color-scheme: light)"
       href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github.min.css"
     />
-    <link
-      rel="stylesheet"
-      media="(prefers-color-scheme: dark)"
-      href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark.min.css"
-    />
   </head>
-  <body>
+  <body class="docs-page">
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="./index-en.html"><img class="logo-img" src="./img/logo.svg" alt="" width="30" height="30" /> pixfrog</a>
+        <a class="brand" href="./index-en.html"><span class="dot"></span> pixfrog</a>
         <nav class="nav-links">
           <a class="keep" href="./flash-en.html">Flash</a>
           <a class="keep active" href="./docs-en.html">Docs</a>
           <a class="keep" href="./about-en.html">About</a>
-          <a class="keep lang" href="#" onclick="switchLang('fr','./docs-fr.html');return false;" title="Version française">🇫🇷</a>
+          <span class="nav-lang keep">EN ·
+            <a href="#" onclick="switchLang('fr','./docs-fr.html');return false;" title="Version française">FR</a>
+          </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>
     </header>
 
-    <main class="wrap docs">
+    <section class="docs-head">
+      <div class="wrap">
+        <div class="kicker" id="version-badge">Documentation · latest</div>
+        <h1>Architecture, hardware and LED protocols.</h1>
+        <p>
+          Rendered straight from the <code>docs/</code> folder of the
+          repository, so the page always matches the published source.
+        </p>
+      </div>
+    </section>
+
+    <main class="docs">
       <aside class="sidebar">
         <h4>Documentation</h4>
         <nav id="doc-nav">
@@ -59,10 +73,12 @@
 
     <footer>
       <div class="wrap foot-inner">
-        <span>🐸 pixfrog · <span id="version-foot">docs</span> · MIT licensed</span>
-        <span>
-          <a href="./index-en.html">Flasher</a> ·
+        <span class="foot-mark"><span class="dot"></span> pixfrog · <span id="version-foot">docs</span> · MIT</span>
+        <span class="foot-links">
+          <a href="./index-en.html">Home</a>
+          <a href="./flash-en.html">Flash</a>
           <a href="https://github.com/Lefix2/pixfrog">Source</a>
+          <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a>
         </span>
       </div>
     </footer>
@@ -152,12 +168,14 @@
       window.addEventListener("hashchange", () => render(currentKey()));
       render(currentKey());
 
-      // Live version in the footer — from the latest GitHub Release.
+      // Live version in the header + footer — from the latest GitHub Release.
       fetch("https://api.github.com/repos/Lefix2/pixfrog/releases/latest")
         .then((r) => (r.ok ? r.json() : null))
         .then((rel) => {
-          if (rel && rel.tag_name)
-            document.getElementById("version-foot").textContent = rel.tag_name;
+          if (!rel || !rel.tag_name) return;
+          document.getElementById("version-badge").textContent =
+            "Documentation · " + rel.tag_name;
+          document.getElementById("version-foot").textContent = rel.tag_name;
         })
         .catch(() => {});
     </script>

@@ -20,107 +20,122 @@
     <link rel="alternate" hreflang="fr" href="./about-fr.html" />
     <link rel="alternate" hreflang="en" href="./about-en.html" />
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;800&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./style.css" />
-    <style>
-      /* ── Logo hero (animation lives in img/frog-anim.svg) ──────────── */
-      :root {
-        --frog-bg: #1d3a2c;
-      }
-
-      .logo-hero {
-        background: radial-gradient(
-          120% 95% at 50% 40%,
-          color-mix(in srgb, var(--frog-bg), #ffffff 6%) 0%,
-          var(--frog-bg) 55%,
-          #0c1d15 100%
-        );
-        color: #fff;
-        padding: 4rem 0 3.5rem;
-        text-align: center;
-        overflow: hidden;
-      }
-      .logo-hero .wrap {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1.5rem;
-      }
-      .scene {
-        position: relative;
-        width: min(70vw, 420px);
-        aspect-ratio: 1 / 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .scene img {
-        width: 100%;
-        height: 100%;
-        display: block;
-      }
-
-      /* ── About copy + CTA ─────────────────────────────────────────── */
-      .about-copy {
-        max-width: 36rem;
-        margin: 0 auto;
-        text-align: center;
-        font-size: 1.08rem;
-        color: var(--fg);
-      }
-      .about-copy p { margin: 0 0 1.2rem; }
-    </style>
   </head>
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="./index-en.html">
-          <img class="logo-img" src="./img/logo.svg" alt="" width="30" height="30" />
-          pixfrog
-        </a>
+        <a class="brand" href="./index-en.html"><span class="dot"></span> pixfrog</a>
         <nav class="nav-links">
           <a class="keep" href="./flash-en.html">Flash</a>
           <a class="keep" href="./docs-en.html">Docs</a>
           <a class="keep active" href="./about-en.html">About</a>
-          <a class="keep lang" href="#" onclick="switchLang('fr','./about-fr.html');return false;" title="Version française">🇫🇷</a>
+          <span class="nav-lang keep">EN ·
+            <a href="#" onclick="switchLang('fr','./about-fr.html');return false;" title="Version française">FR</a>
+          </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>
     </header>
 
     <main>
-      <section class="logo-hero">
+      <!-- Hero -->
+      <section class="hero compact">
         <div class="wrap">
-          <div class="scene">
-            <img
-              class="logo-frog"
-              src="./img/frog-anim.svg"
-              alt="Collecti'Frog animated logo"
-            />
+          <div class="split">
+            <div>
+              <div class="kicker">A Collecti'Frog project</div>
+              <h1>The collective builds its own stage tools.</h1>
+              <p class="lead">
+                Founded in 2025, the association <strong>Collecti'Frog</strong> is a
+                joyful collective born somewhere between two lily pads, croaking
+                with creative ideas. Scenography, VJing, lighting and other hybrid
+                techniques — we put our paws to work crafting events and support
+                other organisations in their artistic and technical adventures,
+                with enthusiasm and a touch of freshness.
+              </p>
+              <div class="cta">
+                <a class="btn primary" href="https://collecti-frog.fr" rel="noopener">
+                  Visit collecti-frog.fr ↗
+                </a>
+                <a class="btn" href="./flash-en.html">Back to flasher</a>
+              </div>
+            </div>
+            <div class="logo-hero">
+              <img src="./img/frog-anim.svg" alt="Collecti'Frog animated logo" />
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="block">
+      <!-- Principles -->
+      <section class="band paper">
         <div class="wrap">
-          <h2>About the collective</h2>
-          <div class="about-copy">
-            <p>
-              Founded in 2025, the association <strong>Collecti'Frog</strong> is a
-              joyful collective born somewhere between two lily pads, croaking
-              with creative ideas.
-            </p>
-            <p>
-              Scenography, VJing, lighting and other hybrid techniques — we put
-              our paws to work crafting events and support other organisations
-              in their artistic and technical adventures, with enthusiasm and a
-              touch of freshness.
-            </p>
+          <div class="sec-head">
+            <span class="sec-num">01</span>
+            <h2>What the collective puts into its tools.</h2>
           </div>
-          <div class="cta" style="margin-top: 2.2rem">
-            <a class="btn primary" href="https://collecti-frog.fr" rel="noopener">
-              Visit collecti-frog.fr →
-            </a>
-            <a class="btn" href="./flash-en.html">Back to flasher</a>
+          <div class="grid">
+            <div class="card">
+              <span class="ic">Reliability</span>
+              <h3>Timing first</h3>
+              <p>DMA output, frame buffers in PSRAM, the critical path in SRAM.
+                A steady refresh beats one more feature.</p>
+            </div>
+            <div class="card">
+              <span class="ic">Autonomy</span>
+              <h3>No laptop needed</h3>
+              <p>Display, encoder, standby scenes and microSD playback: the
+                device can run the show on its own, with the network down.</p>
+            </div>
+            <div class="card">
+              <span class="ic amber">Openness</span>
+              <h3>Everything is published</h3>
+              <p>MIT-licensed code, documented hardware, standard parts.
+                Repairable by any workshop.</p>
+            </div>
+          </div>
+          <div class="callout" style="margin-top: 18px">
+            Creations, residencies, services and gear — everything the collective
+            does lives on its own site,
+            <a href="https://collecti-frog.fr" rel="noopener">collecti-frog.fr</a>.
+          </div>
+        </div>
+      </section>
+
+      <!-- Contributing -->
+      <section class="band">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="sec-num">02</span>
+            <h2>How to contribute.</h2>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <span class="ic">Contribute</span>
+              <h3>Open a ticket</h3>
+              <p>Issues, notes from the road, tests on other pixel families —
+                it all happens on the
+                <a href="https://github.com/Lefix2/pixfrog/issues">repository</a>.</p>
+            </div>
+            <div class="card">
+              <span class="ic amber">Thanks</span>
+              <h3>Standing on open work</h3>
+              <p>Built on ESP-IDF and esp-web-tools, and on the open formats of
+                Art-Net, sACN, xLights and FPP.</p>
+            </div>
+            <div class="card">
+              <span class="ic">Licence</span>
+              <h3>MIT</h3>
+              <p>Firmware, host tools and the KiCad shield are published in the
+                same repository, under the same terms.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -128,14 +143,15 @@
 
     <footer>
       <div class="wrap foot-inner">
-        <span>🐸 pixfrog · by Collecti'Frog · MIT licensed</span>
-        <span>
-          <a href="./index-en.html">Flasher</a> ·
-          <a href="./docs-en.html">Docs</a> ·
+        <span class="foot-mark"><span class="dot"></span> pixfrog · by Collecti'Frog · MIT</span>
+        <span class="foot-links">
+          <a href="./index-en.html">Home</a>
+          <a href="./flash-en.html">Flash</a>
+          <a href="./docs-en.html">Docs</a>
           <a href="https://github.com/Lefix2/pixfrog">Source</a>
+          <a href="https://collecti-frog.fr" rel="noopener">collecti-frog.fr ↗</a>
         </span>
       </div>
     </footer>
-
   </body>
 </html>

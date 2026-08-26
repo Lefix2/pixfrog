@@ -22,6 +22,12 @@
     <link rel="alternate" hreflang="en" href="./flash-en.html" />
     <link rel="alternate" hreflang="fr" href="./flash-fr.html" />
     <link rel="icon" type="image/svg+xml" href="./img/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;800&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./style.css" />
     <!-- esp-web-tools: Web Serial flasher (desktop Chrome / Edge). -->
     <script
@@ -32,13 +38,15 @@
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="./index-en.html"><img class="logo-img" src="./img/logo.svg" alt="" width="30" height="30" /> pixfrog</a>
+        <a class="brand" href="./index-en.html"><span class="dot"></span> pixfrog</a>
         <nav class="nav-links">
           <a class="keep active" href="./flash-en.html">Flash</a>
           <a href="./index-en.html#features">Features</a>
           <a href="./docs-en.html">Docs</a>
           <a href="./about-en.html">About</a>
-          <a class="keep lang" href="#" onclick="switchLang('fr','./flash-fr.html');return false;" title="Version française">🇫🇷</a>
+          <span class="nav-lang keep">EN ·
+            <a href="#" onclick="switchLang('fr','./flash-fr.html');return false;" title="Version française">FR</a>
+          </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </nav>
       </div>
@@ -46,49 +54,58 @@
 
     <main id="top">
       <!-- Hero -->
-      <section class="hero" id="flash">
+      <section class="hero compact" id="flash">
         <div class="wrap">
-          <span class="badge">
-            <span class="dot"></span>
-            <span id="version-badge">ESP32-P4 firmware</span>
-          </span>
-          <h1>Flash your ESP32-P4<br />right from the browser</h1>
-          <p class="lead">
-            Plug the board in over USB and install the latest pixfrog build in
-            seconds — no IDE, no toolchain, no command line.
-          </p>
-          <div class="cta">
-            <esp-web-install-button manifest="./manifest.json">
-              <button slot="activate" class="btn primary" style="font-size: 1.05rem; padding: 0.9rem 1.6rem">
-                ⚡ Connect &amp; Install
-              </button>
-              <span slot="unsupported">
-                <span class="btn" style="cursor: not-allowed; opacity: 0.7">
-                  Use desktop Chrome or Edge to flash
-                </span>
-              </span>
-              <span slot="not-allowed">
-                <span class="btn" style="cursor: not-allowed; opacity: 0.7">
-                  Open over HTTPS to flash
-                </span>
-              </span>
-            </esp-web-install-button>
-            <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">
-              📦 Releases
-            </a>
-            <a class="btn" href="./docs-en.html">📖 Documentation</a>
+          <div class="split">
+            <div>
+              <div class="kicker" id="version-badge">Install · esp-web-tools</div>
+              <h1>Flash your ESP32-P4 right from the browser</h1>
+              <p class="lead">
+                Plug the board in over USB and install the latest pixfrog build in
+                seconds — no IDE, no toolchain, no command line.
+              </p>
+              <div class="cta">
+                <esp-web-install-button manifest="./manifest.json">
+                  <button slot="activate" class="btn primary">
+                    Connect &amp; Install
+                  </button>
+                  <span slot="unsupported">
+                    <span class="btn" style="cursor: not-allowed; opacity: 0.7">
+                      Use desktop Chrome or Edge to flash
+                    </span>
+                  </span>
+                  <span slot="not-allowed">
+                    <span class="btn" style="cursor: not-allowed; opacity: 0.7">
+                      Open over HTTPS to flash
+                    </span>
+                  </span>
+                </esp-web-install-button>
+                <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">Releases</a>
+                <a class="btn" href="./docs-en.html">Documentation</a>
+              </div>
+              <p class="hint">
+                Works in desktop Chrome &amp; Edge (Web Serial). The chip is erased
+                and reflashed — settings stored in NVS are reset.
+              </p>
+            </div>
+            <div class="slab term">
+              <div class="muted">$ pixfrog · flash</div>
+              <div><span class="ok">✓</span> serial port authorised</div>
+              <div><span class="ok">✓</span> erase, writing partition A</div>
+              <div><span class="wait">…</span> reboot, network over DHCP</div>
+              <div class="muted">→ 192.168.1.200 · sACN · 60/60 fps</div>
+            </div>
           </div>
-          <p class="hint">
-            Works in desktop Chrome &amp; Edge (Web Serial). The chip is erased
-            and reflashed — settings stored in NVS are reset.
-          </p>
         </div>
       </section>
 
       <!-- Steps -->
-      <section class="block">
+      <section class="band paper">
         <div class="wrap">
-          <h2>Three steps to blinking pixels</h2>
+          <div class="sec-head">
+            <span class="sec-num">01</span>
+            <h2>Three steps to blinking pixels.</h2>
+          </div>
           <p class="sub">
             From a bare board to running firmware without installing anything.
           </p>
@@ -113,23 +130,53 @@
         </div>
       </section>
 
-      <!-- CLI / advanced -->
-      <section class="block" id="cli">
+      <!-- Troubleshooting -->
+      <section class="band" id="troubleshooting">
         <div class="wrap">
-          <h2>Prefer the command line?</h2>
+          <div class="sec-head">
+            <span class="sec-num">02</span>
+            <h2>If it doesn't start.</h2>
+          </div>
+          <div class="rows">
+            <div class="row">
+              <div class="k">No port offered</div>
+              <p>Unsupported browser (Safari, Firefox, mobile) or a cable with
+                no data lines. Use desktop Chrome or Edge.</p>
+            </div>
+            <div class="row">
+              <div class="k">The flash stops midway</div>
+              <p>Unplug the LED outputs during the write, then start again. A
+                shared supply drags the voltage down.</p>
+            </div>
+            <div class="row">
+              <div class="k">No network afterwards</div>
+              <p>The display shows the link state. With no DHCP server, set a
+                static IP from the network menu on the encoder.</p>
+            </div>
+          </div>
+          <p class="hint">
+            Something else? <a href="https://github.com/Lefix2/pixfrog/issues">Open a ticket on GitHub ↗</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- CLI / advanced -->
+      <section class="band" id="cli">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="sec-num">03</span>
+            <h2>Prefer the command line?</h2>
+          </div>
           <p class="sub">
             Every release ships raw binaries you can flash with esptool or
             <code>idf.py</code>.
           </p>
           <div class="callout">
-            <span style="font-size: 1.4rem">💡</span>
-            <div>
-              Flash <strong>pixfrog-merged.bin</strong> at offset
-              <code>0x0</code>, or write the individual parts at their offsets:
-              bootloader <code>0x2000</code>, partition table
-              <code>0x8000</code>, app <code>0x10000</code>. Grab them from the
-              <a href="https://github.com/Lefix2/pixfrog/releases/latest">latest release</a>.
-            </div>
+            Flash <strong>pixfrog-merged.bin</strong> at offset
+            <code>0x0</code>, or write the individual parts at their offsets:
+            bootloader <code>0x2000</code>, partition table
+            <code>0x8000</code>, app <code>0x10000</code>. Grab them from the
+            <a href="https://github.com/Lefix2/pixfrog/releases/latest">latest release</a>.
           </div>
         </div>
       </section>
@@ -137,12 +184,12 @@
 
     <footer>
       <div class="wrap foot-inner">
-        <span>🐸 pixfrog · <span id="version-foot">latest</span> · MIT licensed</span>
-        <span>
-          <a href="https://github.com/Lefix2/pixfrog">Source</a> ·
-          <a href="./docs-en.html">Docs</a> ·
-          <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a> ·
-          built with <a href="https://esphome.github.io/esp-web-tools/">esp-web-tools</a>
+        <span class="foot-mark"><span class="dot"></span> pixfrog · <span id="version-foot">latest</span> · MIT</span>
+        <span class="foot-links">
+          <a href="https://github.com/Lefix2/pixfrog">Source</a>
+          <a href="./docs-en.html">Docs</a>
+          <a href="https://github.com/Lefix2/pixfrog/releases">Releases</a>
+          <a href="https://esphome.github.io/esp-web-tools/">esp-web-tools</a>
         </span>
       </div>
     </footer>
@@ -155,7 +202,7 @@
           const v = rel && rel.tag_name;
           if (!v) return;
           document.getElementById("version-badge").textContent =
-            "ESP32-P4 · " + v;
+            "Install · esp-web-tools · " + v;
           document.getElementById("version-foot").textContent = v;
         })
         .catch(() => {});
