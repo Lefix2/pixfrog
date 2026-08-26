@@ -285,6 +285,9 @@ static cJSON* build_global_json() {
     cJSON_AddBoolToObject(jg, "reply_unicast", g.artnet_poll_reply_unicast);
     cJSON_AddNumberToObject(jg, "refresh_hz", g.refresh_rate_hz);
     cJSON_AddNumberToObject(jg, "home_timeout_s", g.home_timeout_s);
+    cJSON_AddNumberToObject(jg, "tft_brightness", config::tft_brightness_pct(g));
+    cJSON_AddNumberToObject(jg, "tft_idle_dim", config::tft_idle_dim_pct(g));
+    cJSON_AddNumberToObject(jg, "tft_dim_delay_s", config::tft_dim_delay_s(g));
     cJSON_AddBoolToObject(jg, "web_enabled", g.web_enabled);
     cJSON_AddBoolToObject(jg, "sacn_enabled", g.sacn_enabled);
     cJSON_AddBoolToObject(jg, "fpp_remote", g.fpp_remote);
@@ -630,6 +633,11 @@ static void restore_global(cJSON* jg) {
     if (num("refresh_hz", 30, 60, &v) && (v == 30 || v == 60))
         g.refresh_rate_hz = static_cast<uint8_t>(v);
     if (num("home_timeout_s", 0, 65535, &v)) g.home_timeout_s = static_cast<uint16_t>(v);
+    if (num("tft_brightness", config::kTftBrightnessMin, 100, &v))
+        g.tft_brightness = static_cast<uint8_t>(v);
+    if (num("tft_idle_dim", 0, 100, &v)) g.tft_idle_dim = static_cast<uint8_t>(v);
+    if (num("tft_dim_delay_s", 0, config::kTftDimDelayMaxS, &v))
+        g.tft_dim_delay_s = static_cast<uint16_t>(v);
     if (getb("web_enabled", &bv)) g.web_enabled = bv;
     if (getb("sacn_enabled", &bv)) g.sacn_enabled = bv;
     if (num("failsafe_mode", 0, 3, &v)) g.failsafe_mode = static_cast<uint8_t>(v);
@@ -849,6 +857,11 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
         }
     }
     if (get_u32("home_timeout_s", 0, 65535, u)) g.home_timeout_s = static_cast<uint16_t>(u);
+    if (get_u32("tft_brightness", config::kTftBrightnessMin, 100, u))
+        g.tft_brightness = static_cast<uint8_t>(u);
+    if (get_u32("tft_idle_dim", 0, 100, u)) g.tft_idle_dim = static_cast<uint8_t>(u);
+    if (get_u32("tft_dim_delay_s", 0, config::kTftDimDelayMaxS, u))
+        g.tft_dim_delay_s = static_cast<uint16_t>(u);
     if (get_bool("web_enabled", b)) g.web_enabled = b;
     if (get_u32("failsafe_mode", 0, 3, u)) g.failsafe_mode = static_cast<uint8_t>(u);
     if (get_u32("failsafe_scene", 0, config::kNumScenes - 1, u))

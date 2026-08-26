@@ -28,6 +28,9 @@ GlobalConfig make_default_global() {
     g.artnet_poll_reply_unicast = false;
     g.refresh_rate_hz           = 60;
     g.home_timeout_s            = 30;
+    g.tft_brightness            = 100;
+    g.tft_idle_dim              = 60;
+    g.tft_dim_delay_s           = 30;
     return g;
 }
 

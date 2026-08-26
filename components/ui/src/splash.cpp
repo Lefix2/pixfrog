@@ -1,5 +1,7 @@
 #include "ui_internal.h"
 
+#include <cstring>
+
 // TFT-only animated splash screen.
 //
 // Replays the Collecti'Frog logo animation from .github/pages/about.html: the
@@ -15,17 +17,25 @@ namespace pixfrog::ui::detail {
 
 namespace {
 
+// Frog left, text right, the pair centred as one block — see splash_render().
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-// NV3007 rotated 90° → 428×142 landscape: frog left, wordmark right.
+// NV3007 rotated 90° → 428×142 landscape.
 constexpr int kW     = 428;
 constexpr int kH     = 142;
-constexpr int kFrogX = 16;
+constexpr int kGap   = 16;  // frog window → text column
+constexpr int kNudge = 1;   // the small lines sit a pixel in, past the Mega bearing
 #else
-constexpr int kW = 320;
-constexpr int kH = 240;
-// Frog window: left of the wordmark, vertically centred.
-constexpr int kFrogX = 10;
+constexpr int kW     = 320;
+constexpr int kH     = 240;
+constexpr int kGap   = 12;
+constexpr int kNudge = 0;
 #endif
+
+constexpr const char* kTagline = "ARTNET . LED DRIVER";
+
+int text_width(const char* s) {
+    return static_cast<int>(std::strlen(s)) * kFontCellWidth;
+}
 
 }  // namespace
 
@@ -41,25 +51,37 @@ bool splash_render(uint32_t t_ms, bool clicked) {
 
     canvas_clear(color::FrogBg);
 
-    // Landscape layout: frog left, wordmark right.
+    // Landscape layout: frog left, text right. Centred as one block rather than
+    // pinned to a fixed left margin — the text column is as wide as its widest
+    // line, and the version string's width is only known at runtime.
+#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
+    int textW = canvas_text_w("pixfrog", FontId::Mega);
+#else
+    int textW = canvas_text_xl_width("pixfrog");
+#endif
+    const int taglineW = kNudge + text_width(kTagline);
+    const int versionW = kNudge + text_width(fw_version());
+    if (taglineW > textW) textW = taglineW;
+    if (versionW > textW) textW = versionW;
+    int frogX = (kW - (fw + kGap + textW)) / 2;
+    if (frogX < 0) frogX = 0;  // a long git-describe must not push the frog off-screen
+
     const int frogY = (kH - fh) / 2;
-    canvas_draw_mask(kFrogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
+    canvas_draw_mask(frogX, frogY, fw, fh, splash_anim_frame(idx), color::FrogLine, color::FrogBg);
+    const int wx = frogX + fw + kGap;
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
     // NV3007: big native Mega wordmark + tagline + version, vertically centred.
-    const int wx       = kFrogX + fw + 16;
     const int wordH    = canvas_font_h(FontId::Mega);
     const int titleTop = kH / 2 - wordH / 2 - 10;
     canvas_draw_text_f(wx, titleTop, "pixfrog", color::Cream, color::FrogBg, FontId::Mega);
-    canvas_draw_text(wx + 1, titleTop + wordH + 4, "ARTNET . LED DRIVER", color::Gold,
+    canvas_draw_text(wx + kNudge, titleTop + wordH + 4, kTagline, color::Gold, color::FrogBg, 1);
+    canvas_draw_text(wx + kNudge, titleTop + wordH + 16, fw_version(), color::SplashSub,
                      color::FrogBg, 1);
-    canvas_draw_text(wx + 1, titleTop + wordH + 16, fw_version(), color::SplashSub, color::FrogBg,
-                     1);
 #else
-    const int wx       = kFrogX + fw + 12;
     const int titleTop = kH / 2 - kFontXLHeight / 2 - 6;
     canvas_draw_text_xl(wx, titleTop, "pixfrog", color::Cream, color::FrogBg);
-    canvas_draw_text(wx, titleTop + kFontXLHeight + 4, "ARTNET . LED DRIVER", color::SplashSub,
-                     color::FrogBg, 1);
+    canvas_draw_text(wx, titleTop + kFontXLHeight + 4, kTagline, color::SplashSub, color::FrogBg,
+                     1);
     canvas_draw_text(wx, titleTop + kFontXLHeight + 16, fw_version(), color::SplashSub,
                      color::FrogBg, 1);
 #endif

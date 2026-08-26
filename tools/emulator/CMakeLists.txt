@@ -32,6 +32,7 @@ add_executable(pixfrog_emu
     ${REPO}/components/ui/src/splash.cpp
     ${REPO}/components/ui/src/splash_anim.cpp
     ${REPO}/components/ui/src/font_data.cpp
+    ${REPO}/components/ui/src/backlight.cpp
     # (led_protocols: only header constexprs/enums are used — no .cpp needed)
     # emulator backends + stubs
     src/tft_sdl.cpp

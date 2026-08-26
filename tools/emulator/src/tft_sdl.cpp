@@ -27,13 +27,15 @@ constexpr int kW = 320;  // landscape width
 constexpr int kH = 240;  // landscape height
 #endif
 
-uint16_t s_fb[kW * kH];  // native-endian RGB565
+uint16_t s_fb[kW * kH];   // native-endian RGB565
+uint8_t s_backlight = 0;  // 0..100 %, applied as a colour-mod in main_emulator
 
 }  // namespace
 
-bool tft_init(const TftConfig& /*cfg*/) {
+bool tft_init(const TftConfig& cfg) {
     for (int i = 0; i < kW * kH; ++i)
         s_fb[i] = 0;
+    backlight_backend_init(cfg.backlight_gpio);
     return true;
 }
 
@@ -60,7 +62,16 @@ int tft_height() {
     return kH;
 }
 
-void tft_backlight(bool /*on*/) {}  // no backlight on the host
+// Backlight backend: there is no PWM on the host, so the level is just
+// recorded and main_emulator.cpp tints the texture with it. Fades are ignored —
+// the emulator shows the destination level immediately.
+void backlight_backend_init(int /*gpio*/) {
+    s_backlight = 0;
+}
+
+void backlight_backend_set(uint8_t pct, bool /*fade*/) {
+    s_backlight = pct > 100 ? 100 : pct;
+}
 
 void* tft_fb_alloc(unsigned long bytes) {
     return std::malloc(bytes);
@@ -77,4 +88,7 @@ int emu_fb_width() {
 }
 int emu_fb_height() {
     return pixfrog::ui::detail::tft_height();
+}
+int emu_backlight_pct() {
+    return pixfrog::ui::detail::s_backlight;
 }

@@ -202,8 +202,8 @@ pins — those are **not** exposed on the connector/shield. All five chosen GPIO
 are free, 3.3 V-direct and non-strapping; every signal routes through the GPIO
 matrix, so the assignment is arbitrary among the free pins. J13 also exposes
 GPIO 36 (a boot strapping pin — must read HIGH at reset) and GPIO 45 (VDD_IO_5 /
-LDO-VO4 domain), both left as spares. There is no MISO (write-only panel) and no
-backlight control pin.
+LDO-VO4 domain), used as the backlight control pin (§5.1). There is no MISO —
+the panel is write-only.
 
 SPI host: `SPI2_HOST`, **20 MHz** (`kDisplaySpiFreqHz`). 40 MHz is rejected by
 the P4 SPI driver (`invalid sclk speed` — the default clock source can't derive
@@ -214,6 +214,58 @@ address it as landscape 320×240.
 Color format: RGB565 big-endian (ST7789 native). `canvas_tft.cpp` applies `__builtin_bswap16` to every pixel value before writing to the DMA buffer.
 
 The TFT and OLED share the same I2C encoder wiring (§4 above). The I2C bus is still initialised regardless of display choice (encoder requires it).
+
+### 5.1 Backlight — GPIO 45, LEDC PWM
+
+```
+Panel LEDA ───► GPIO 45          LEDK ───► GND
+```
+
+The ER-TFT2.79-1 (NV3007 variant) brings out the **bare LED string**: 5 chips in
+parallel, **Vf ≈ 3.0 V, If typ 75 mA / max 100 mA** (datasheet §4.4). The pad
+sources that current directly, out of the **VDD_IO_5 domain fed by internal LDO
+VO4** — the same domain as the SDMMC pads (GPIO 39-44, §2.5). Three consequences
+the firmware is built around:
+
+- **Full brightness = 100 % duty**, i.e. the pad statically high, exactly how the
+  pre-dimming firmware drove it. Dimming can only ever *lower* the average
+  current, never raise it.
+- **The pad's drive strength is left at its default** — on this panel it is what
+  sets the LED current, so changing it would move what "100 %" means.
+- **20 kHz PWM** (`LEDC_TIMER_0` / `LEDC_CHANNEL_0`, 10-bit, low-speed mode —
+  the P4 has no high-speed one): above the audio band, and above any camera
+  shutter, so the panel never bands on video. 10 bits × 20 kHz = 20.5 MHz, well
+  inside the 80 MHz source.
+
+Perceived brightness is not linear in duty, so `tft_backlight_pwm.cpp` squares
+the level (gamma ≈ 2), and floors the duty at 1 % so a non-zero level never
+rounds down to a dark panel. Boot and idle transitions use the LEDC hardware fade
+(400 ms); a level edited on the encoder is applied instantly so the panel tracks
+the detents.
+
+Three settings, all in `GlobalConfig` (menu **DISPLAY**, `global tft_brightness`
+/ `tft_idle_dim` / `tft_dim_delay_s` on the console, System card in the web UI):
+
+| Field | Range | Meaning |
+|---|---|---|
+| `tft_brightness` | 10..100 % | Backlight level. 0 = written by a pre-dimming firmware = 100 %. |
+| `tft_idle_dim` | 0..100 % | How much dimmer once idle. 0 = never dim, 100 = backlight off. |
+| `tft_dim_delay_s` | 0..3600 s | Inactivity before dimming. 0 = never dim. |
+
+The delay is the backlight's own — `home_timeout_s` only decides when the menu
+walks back to HOME, so the panel can dim long before (or after) that. It is read
+on every UI tick, so a change from the menu, the console or the web UI applies
+without a reboot. Dimming needs *both* halves: either field at 0 keeps the panel
+at its steady level.
+
+Fresh installs default to 100 % / −60 % after 30 s; a config migrated from a
+firmware that predates dimming zero-fills all three and stays always-bright. The
+first encoder event after the panel has dimmed only wakes it — it is not
+dispatched to the menu, so a click on a dark screen never acts blind.
+
+If the panel is wired through its own driver or transistor instead (BL pin =
+enable), nothing changes on the firmware side; only the current the pad sources
+does.
 
 ---
 

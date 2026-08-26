@@ -10,3 +10,4 @@
 const uint16_t* emu_fb_ptr();  // native-endian RGB565, width*height entries
 int emu_fb_width();
 int emu_fb_height();
+int emu_backlight_pct();  // effective backlight level, 0..100 %

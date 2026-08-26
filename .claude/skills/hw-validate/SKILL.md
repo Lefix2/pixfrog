@@ -8,7 +8,8 @@ cd tools/hw_validate && ./run_all.py              # all but OTA (~3 min)
 ./run_all.py --with-ota                            # + OTA round-trip
 ./run_all.py scenes auth                           # subset
 ```
-Validators: artnet, sacn, failsafe, scenes, identify_gamma, auth, ota.
+Validators: artnet, sacn, failsafe, scenes, identify_gamma, fseq, display, webops,
+auth, ota.
 Env: `PORT` (default /dev/ttyACM0), `BOARD_IP` (default 192.168.1.200),
 `PIXFROG_BIN` for the OTA image (default `build/pixfrog.bin`).
 

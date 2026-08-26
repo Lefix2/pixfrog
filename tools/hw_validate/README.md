@@ -19,6 +19,7 @@ PORT=/dev/ttyACM1 BOARD_IP=10.0.0.5 ./run_all.py
 | `failsafe` | never-active rule, colour fill, recovery, blackout, hold |
 | `scenes` | generators, channel mask, network priority, ArtTrigger, boot scene |
 | `identify_gamma` | identify blink, gamma/wb readback, backup/restore round-trip |
+| `display` | backlight level + idle dim + dim delay: console ranges, NVS persistence, web round-trip |
 | `auth` | open-by-default, 401s, flat brute-force delay, UART recovery |
 | `ota` | upload → slot swap → rollback-confirmation log (needs `build/pixfrog.bin`) |
 

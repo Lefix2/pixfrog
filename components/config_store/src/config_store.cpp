@@ -34,6 +34,12 @@ GlobalConfig make_default_global() {
     g.artnet_poll_reply_unicast = false;
     g.refresh_rate_hz           = 60;
     g.home_timeout_s            = 30;
+    // Fresh installs dim the panel once idle — the ER-TFT2.79-1 backlight is
+    // rated 30 000 h at its typical current. A config migrated from a
+    // pre-dimming firmware zero-fills instead, keeping its always-bright look.
+    g.tft_brightness  = 100;
+    g.tft_idle_dim    = 60;
+    g.tft_dim_delay_s = 30;
     return g;
 }
 

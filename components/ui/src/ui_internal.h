@@ -141,9 +141,6 @@ struct TftConfig {
     int backlight_gpio;  // -1 = no backlight control
 };
 bool tft_init(const TftConfig& cfg);
-// Turn the panel backlight on/off (no-op when no backlight GPIO is configured).
-// Raised on only after the first frame is flushed, so boot shows no white.
-void tft_backlight(bool on);
 void tft_draw_bitmap(int x1, int y1, int x2, int y2, const uint16_t* data);
 int tft_width();
 int tft_height();
@@ -151,6 +148,32 @@ int tft_height();
 // deps): PSRAM on the device, malloc on the host emulator. Returns nullptr on
 // failure. Never freed (lives for the process).
 void* tft_fb_alloc(unsigned long bytes);
+
+// ── Backlight ───────────────────────────────────────────────────────────────
+//
+// Two layers: a platform backend (LEDC PWM in tft_backlight_pwm.cpp, an SDL
+// colour-mod in the emulator's tft_sdl.cpp) driven by a shared policy layer
+// (backlight.cpp) that turns GlobalConfig into a level.
+
+// Backend — level is 0..100 % of full brightness; `fade` asks for a smooth
+// ramp (boot, idle transitions) instead of an immediate jump.
+void backlight_backend_init(int gpio);
+void backlight_backend_set(uint8_t pct, bool fade);
+
+// Policy. backlight_on() is called once the first frame is on the panel (the
+// backlight stays off through boot so the panel's white power-on state never
+// shows). backlight_tick() runs once per UI loop with the time since the last
+// user input — it owns the dim delay — and picks up level changes made from
+// the menu, the web UI or the console.
+void backlight_on();
+void backlight_tick(uint32_t idle_ms);
+bool backlight_is_dimmed();
+
+// Live preview while the brightness is being edited: the panel follows the
+// encoder without touching the stored config. backlight_preview_end() hands
+// control back to backlight_tick() (commit → the new level, cancel → the old).
+void backlight_preview(uint8_t pct);
+void backlight_preview_end();
 
 // ── Encoder driver ────────────────────────────────────────────────────────────
 

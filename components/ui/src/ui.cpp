@@ -64,7 +64,7 @@ void task_main(void*) {
             // First frame is now on the panel — safe to light the backlight
             // (kept off through boot so the white power-on state never shows).
             if (!bl_on) {
-                detail::tft_backlight(true);
+                detail::backlight_on();
                 bl_on = true;
             }
 #endif
@@ -79,6 +79,7 @@ void task_main(void*) {
     const uint32_t idle_ms        = config::get_global().home_timeout_s * 1000u;
     const TickType_t idle_ticks   = pdMS_TO_TICKS(idle_ms ? idle_ms : 30000u);
     TickType_t last_event         = xTaskGetTickCount();
+    bool idle                     = false;
 
     while (true) {
         // Time-based polling at ~30 Hz: the loop runs at this rate anyway for
@@ -87,18 +88,35 @@ void task_main(void*) {
         vTaskDelay(home_refresh);
         detail::Event e;
         while ((e = detail::encoder_poll()) != detail::Event::None) {
-            detail::menu_dispatch(e);
             last_event = xTaskGetTickCount();
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+            // Screen dimmed: the first event only wakes it. Otherwise a click
+            // meant to see the display again would also act on the menu — and
+            // with idle_dim at 100 % the user would be acting on a dark panel.
+            if (detail::backlight_is_dimmed()) {
+                detail::backlight_tick(0);
+                continue;
+            }
+#endif
+            idle = false;
+            detail::menu_dispatch(e);
             // LED mode follows the screen: breathe on HOME, full green + yellow
             // action-blips in config. set_active() before flash() so the blip on
             // the click that opens config registers.
             detail::encoder_led_set_active(!detail::menu_is_home());
             detail::encoder_led_flash();
         }
-        if ((xTaskGetTickCount() - last_event) > idle_ticks) {
+        const TickType_t since_event = xTaskGetTickCount() - last_event;
+        if (!idle && since_event > idle_ticks) {
             detail::menu_on_idle_timeout();
-            last_event = xTaskGetTickCount();
+            idle = true;
         }
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+        // Dims on its own schedule (tft_dim_delay_s), independent of the return
+        // to HOME above. Also picks up a level changed from the web UI or the
+        // console.
+        detail::backlight_tick(static_cast<uint32_t>(since_event) * portTICK_PERIOD_MS);
+#endif
         detail::encoder_led_set_active(!detail::menu_is_home());
         detail::encoder_led_tick();
         // Always re-render + flush; oled_flush is diff-based and writes

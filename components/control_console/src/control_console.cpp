@@ -218,6 +218,9 @@ void print_global(const config::GlobalConfig& g) {
     printf("reply_unicast=%d\n", g.artnet_poll_reply_unicast ? 1 : 0);
     printf("refresh_hz=%u\n", g.refresh_rate_hz);
     printf("home_timeout_s=%u\n", g.home_timeout_s);
+    printf("tft_brightness=%u\n", config::tft_brightness_pct(g));
+    printf("tft_idle_dim=%u\n", config::tft_idle_dim_pct(g));
+    printf("tft_dim_delay_s=%u\n", config::tft_dim_delay_s(g));
     printf("web_enabled=%d\n", g.web_enabled ? 1 : 0);
     printf("sacn_enabled=%d\n", g.sacn_enabled ? 1 : 0);
     printf("fpp_remote=%d\n", g.fpp_remote ? 1 : 0);
@@ -274,6 +277,17 @@ int cmd_global(int argc, char** argv) {
     } else if (strcmp(key, "home_timeout_s") == 0) {
         if (!parse_u32_in(val, 0, 65535, u)) return err("home_timeout_s: 0..65535");
         g.home_timeout_s = static_cast<uint16_t>(u);
+    } else if (strcmp(key, "tft_brightness") == 0) {
+        if (!parse_u32_in(val, config::kTftBrightnessMin, 100, u))
+            return err("tft_brightness: 10..100 (%)");
+        g.tft_brightness = static_cast<uint8_t>(u);
+    } else if (strcmp(key, "tft_idle_dim") == 0) {
+        if (!parse_u32_in(val, 0, 100, u)) return err("tft_idle_dim: 0..100 (0=never dim)");
+        g.tft_idle_dim = static_cast<uint8_t>(u);
+    } else if (strcmp(key, "tft_dim_delay_s") == 0) {
+        if (!parse_u32_in(val, 0, config::kTftDimDelayMaxS, u))
+            return err("tft_dim_delay_s: 0..3600 (0=never dim)");
+        g.tft_dim_delay_s = static_cast<uint16_t>(u);
     } else if (strcmp(key, "web_enabled") == 0) {
         if (!parse_bool(val, g.web_enabled)) return err("web_enabled: 0|1");
     } else if (strcmp(key, "sacn_enabled") == 0) {
@@ -314,7 +328,9 @@ int cmd_global(int argc, char** argv) {
         return ok();
     } else {
         return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
-                   "refresh_hz home_timeout_s web_enabled sacn_enabled fpp_remote web_password "
+                   "refresh_hz home_timeout_s tft_brightness tft_idle_dim tft_dim_delay_s "
+                   "web_enabled "
+                   "sacn_enabled fpp_remote web_password "
                    "failsafe_mode failsafe_timeout_s failsafe_color failsafe_scene boot_scene "
                    "merge_mode)");
     }

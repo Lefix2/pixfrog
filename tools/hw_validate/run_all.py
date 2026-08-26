@@ -14,7 +14,8 @@ import sys
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ORDER = ["artnet", "sacn", "failsafe", "scenes", "identify_gamma", "fseq", "webops", "auth", "ota"]
+ORDER = ["artnet", "sacn", "failsafe", "scenes", "identify_gamma", "fseq", "display", "webops",
+         "auth", "ota"]
 
 
 def main():

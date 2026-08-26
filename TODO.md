@@ -104,10 +104,20 @@ The 428×142 landscape layout landed (menu/canvas/fonts behind
       nv3007); CI + ci-local build and smoke both layouts.
 - [x] **Docs** — README display-backend table, AGENT.md module map,
       emulator README.
+- [x] **Backlight dimming** — GPIO 45 driven by LEDC (10-bit @ 20 kHz,
+      gamma ≈ 2, hardware fade) instead of a static level. `tft_brightness`
+      (10..100 %), `tft_idle_dim` (attenuation once idle, 0 = never) and
+      `tft_dim_delay_s` (inactivity before dimming, 0 = never, independent of
+      `home_timeout_s`) on the encoder DISPLAY node, the console and the web
+      System card; the first event after a dim only wakes the screen.
+      `docs/HARDWARE.md` §5.1 has the electrical background.
 - [ ] ★ **Hardware bring-up** — validate on the real 2.79" module: rotation
       direction (flip with `PIXFROG_NV3007_ROT180` if mirrored), the 0x0C
       GRAM column offset (edge lines), colours/gamma vs the ST7789 look, and
-      SPI clock headroom (20 MHz board default; vendor demos run 40+).
+      SPI clock headroom (20 MHz board default; vendor demos run 40+). With
+      dimming in: check the 20 kHz backlight PWM does not disturb the SDMMC
+      pads sharing VDD_IO_5 (FSEQ playback from SD at a low duty) and that
+      low levels stay even across the panel.
 
 ## Audit 2026-07 — documentation debt
 

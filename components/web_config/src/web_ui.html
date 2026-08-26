@@ -358,6 +358,11 @@
                 <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px" data-i18n="Boot scene">Boot scene</label><select id="s-boot" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'"><option value="0" data-i18n="None">None</option><option value="1">Scene 1</option><option value="2">Scene 2</option><option value="3">Scene 3</option><option value="4">Scene 4</option><option value="5">Scene 5</option><option value="6">Scene 6</option><option value="7">Scene 7</option><option value="8">Scene 8</option></select></div>
                 <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px" data-i18n="Language">Language</label><select id="s-lang" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Sans'"><option value="en">English</option><option value="fr">Français</option></select></div>
               </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px">
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px" data-i18n="Screen brightness (%)">Screen brightness (%)</label><input id="s-bright" type="number" min="10" max="100" step="5" value="100" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/></div>
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px" data-i18n="Dim when idle (%)">Dim when idle (%)</label><input id="s-dim" type="number" min="0" max="100" step="5" value="0" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/></div>
+                <div><label style="display:block;font:600 11px 'IBM Plex Mono';color:#9fb0a5;margin-bottom:7px" data-i18n="Dim after (s)">Dim after (s)</label><input id="s-dimdelay" type="number" min="0" max="3600" step="5" value="0" style="width:100%;background:#0f1812;border:1px solid #2d3d31;color:#eaf3ee;border-radius:9px;padding:10px 12px;font:500 13px 'IBM Plex Mono'"/></div>
+              </div>
             </div>
             <div style="background:#16221b;border:1px solid #243228;border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
               <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.13em;color:#6b7a70" data-i18n="INTERFACE SECURITY">INTERFACE SECURITY</span>
@@ -653,6 +658,7 @@ var FR={
   'Run auto-patch':'Lancer l’auto-patch','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
   'Universes used':'Univers consommés','no overlap detected':'aucun chevauchement détecté',
   'GENERAL':'GÉNÉRAL','Frame rate (Hz)':'Cadence (Hz)','Return to home (s)':'Retour accueil (s)',
+  'Screen brightness (%)':'Luminosité écran (%)','Dim when idle (%)':'Atténuation en veille (%)','Dim after (s)':'Atténuer après (s)',
   'Boot scene':'Scène au démarrage','None':'Aucune',
   'INTERFACE SECURITY':'SÉCURITÉ DE L’INTERFACE','Protect with a password':'Protéger par mot de passe',
   'HTTP Basic auth on writes':'Authentification HTTP Basic sur les écritures','User':'Utilisateur','New password':'Nouveau mot de passe',
@@ -1179,6 +1185,9 @@ function reloadConfig(){
     if(el('a-fsdelay')){ el('a-fsdelay').value=g.failsafe_timeout_s||0; var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(g.failsafe_timeout_s||0); }
     if(el('s-refresh')) el('s-refresh').value=String(g.refresh_hz||60);
     if(el('s-home')) el('s-home').value=g.home_timeout_s||0;
+    if(el('s-bright')) el('s-bright').value=g.tft_brightness||100;
+    if(el('s-dim')) el('s-dim').value=g.tft_idle_dim||0;
+    if(el('s-dimdelay')) el('s-dimdelay').value=g.tft_dim_delay_s||0;
     if(el('s-boot')) el('s-boot').value=String(g.boot_scene||0);
     if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
     setLive('fw-name','pixfrog '+(d.version||'')); setLive('fw-sub','esp32-p4 · partition '+(d.ota_partition||'?'));
@@ -1210,7 +1219,7 @@ function buildGlobalBody(){
   var b={};
   if(dirty.has('network')){ b.dhcp=netDhcp; if(!netDhcp){ b.ip=el('n-ip').value; b.mask=el('n-mask').value; b.gw=el('n-gw').value; } b.short_name=el('n-host').value; b.long_name=el('n-long').value; }
   if(dirty.has('artnet')){ b.net=parseInt(el('a-net').value,10)||0; b.subnet=parseInt(el('a-subnet').value,10)||0; b.sacn_enabled=el('a-sacn').checked; b.fpp_remote=el('a-fpp').checked; b.merge_mode=el('a-merge').checked?1:0; b.failsafe_mode=parseInt(el('a-fsmode').value,10)||0; b.failsafe_timeout_s=parseInt(el('a-fsdelay').value,10)||0; }
-  if(dirty.has('sysgen')){ b.refresh_hz=parseInt(el('s-refresh').value,10)||60; b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; }
+  if(dirty.has('sysgen')){ b.refresh_hz=parseInt(el('s-refresh').value,10)||60; b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; b.tft_brightness=parseInt(el('s-bright').value,10)||100; b.tft_idle_dim=parseInt(el('s-dim').value,10)||0; b.tft_dim_delay_s=parseInt(el('s-dimdelay').value,10)||0; }
   if(dirty.has('sysauth')){ if(!el('s-auth').checked) b.web_password=''; else if(el('s-pwd').value) b.web_password=el('s-pwd').value; }
   if(dirty.has('syslang')){ b.lang=(LANG==='fr'?1:0); }
   return b;
@@ -1410,7 +1419,7 @@ function onInput(e){
   if(['n-ip','n-mask','n-gw','n-host','n-long'].indexOf(t.id)>=0){ markDirty('network'); return; }
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode'].indexOf(t.id)>=0){ markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }
-  if(['s-refresh','s-home','s-boot'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
+  if(['s-refresh','s-home','s-boot','s-bright','s-dim','s-dimdelay'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
   if(t.id==='s-auth'){ setAuthUI(); markDirty('sysauth'); return; }
   if(t.id==='s-pwd'){ markDirty('sysauth'); return; }
   if(t.id==='s-lang'){ langDirty=true; setLang(t.value); markDirty('syslang'); return; }

@@ -79,10 +79,47 @@ struct GlobalConfig {
 
     // Web UI display language. Zero-fill migration = 0 = English (the default).
     uint8_t language;  // 0 = English, 1 = French
+
+    // TFT backlight (ignored on OLED builds). All three zero-fill to the
+    // behaviour that predates dimming: full brightness, never dimmed.
+    uint8_t tft_brightness;    // 10..100 % of full backlight; 0 = unset = 100
+    uint8_t tft_idle_dim;      // % dimmer once idle; 0 = never dim
+    uint16_t tft_dim_delay_s;  // inactivity before dimming; 0 = never dim
 };
 
 constexpr uint8_t kLangEnglish = 0;
 constexpr uint8_t kLangFrench  = 1;
+
+// Below ~10 % the panel is barely readable, so that is the floor the UI, the
+// web form and the console all clamp to — dimming should never cost the screen.
+constexpr uint8_t kTftBrightnessMin = 10;
+
+// Effective backlight level, in percent of full brightness. 0 (a config written
+// by a pre-dimming firmware, zero-filled on migration) means "unset" = 100 %.
+inline uint8_t tft_brightness_pct(const GlobalConfig& g) {
+    if (g.tft_brightness == 0) return 100;
+    if (g.tft_brightness < kTftBrightnessMin) return kTftBrightnessMin;
+    return g.tft_brightness > 100 ? 100 : g.tft_brightness;
+}
+
+// Idle attenuation, in percent. 100 = backlight fully off once idle.
+inline uint8_t tft_idle_dim_pct(const GlobalConfig& g) {
+    return g.tft_idle_dim > 100 ? 100 : g.tft_idle_dim;
+}
+
+// Longest inactivity the UI accepts before dimming — an hour is already well
+// past any "did it crash?" doubt, and it keeps the menu's step count sane.
+constexpr uint16_t kTftDimDelayMaxS = 3600;
+
+inline uint16_t tft_dim_delay_s(const GlobalConfig& g) {
+    return g.tft_dim_delay_s > kTftDimDelayMaxS ? kTftDimDelayMaxS : g.tft_dim_delay_s;
+}
+
+// Idle dimming is armed only when both halves are set: a delay to wait for and
+// an attenuation to apply. Either at 0 keeps the panel at its steady level.
+inline bool tft_dim_enabled(const GlobalConfig& g) {
+    return tft_dim_delay_s(g) != 0 && tft_idle_dim_pct(g) != 0;
+}
 
 constexpr uint8_t kFailsafeHold     = 0;
 constexpr uint8_t kFailsafeBlackout = 1;
