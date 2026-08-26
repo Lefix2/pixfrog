@@ -27,26 +27,30 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./style.css" />
+    <script src="./hero.js" defer></script>
   </head>
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
         <a class="brand" href="./index-fr.html"><span class="dot"></span> pixfrog</a>
         <nav class="nav-links">
-          <a class="keep" href="./flash-fr.html">Flash</a>
-          <a class="keep" href="./docs-fr.html">Docs</a>
-          <a class="keep active" href="./about-fr.html">À propos</a>
-          <span class="nav-lang keep">FR ·
+          <a href="./index-fr.html">Accueil</a>
+          <a href="./flash-fr.html">Flash</a>
+          <a href="./docs-fr.html">Docs</a>
+          <a class="active" href="./about-fr.html">À propos</a>
+        </nav>
+        <div class="nav-util">
+          <span class="nav-lang">FR ·
             <a href="#" onclick="switchLang('en','./about-en.html');return false;" title="English version">EN</a>
           </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
-        </nav>
+        </div>
       </div>
     </header>
 
     <main>
       <!-- Hero -->
-      <section class="hero compact">
+      <section class="hero">
         <div class="wrap">
           <div class="split">
             <div>
@@ -73,10 +77,16 @@
             </div>
           </div>
         </div>
+        <a class="hero-chevron" href="#principles" aria-label="Aller à la section suivante">
+          <svg width="44" height="14" viewBox="0 0 44 14" fill="none" aria-hidden="true">
+            <path d="M2 2 L22 12 L42 2" stroke="currentColor" stroke-width="1.4"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
       </section>
 
       <!-- Principes -->
-      <section class="band paper">
+      <section class="band paper" id="principles">
         <div class="wrap">
           <div class="sec-head">
             <span class="sec-num">01</span>

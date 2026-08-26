@@ -29,27 +29,30 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./style.css" />
+    <script src="./hero.js" defer></script>
   </head>
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href="#top"><span class="dot"></span> pixfrog</a>
+        <a class="brand" href="./index-en.html"><span class="dot"></span> pixfrog</a>
         <nav class="nav-links">
+          <a class="active" href="./index-en.html">Home</a>
           <a href="./flash-en.html">Flash</a>
-          <a href="#features">Features</a>
           <a href="./docs-en.html">Docs</a>
           <a href="./about-en.html">About</a>
-          <span class="nav-lang keep">EN ·
+        </nav>
+        <div class="nav-util">
+          <span class="nav-lang">EN ·
             <a href="#" onclick="switchLang('fr','./index-fr.html');return false;" title="Version française">FR</a>
           </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
-        </nav>
+        </div>
       </div>
     </header>
 
     <main id="top">
       <!-- Hero -->
-      <section class="hero">
+      <section class="hero has-statbar">
         <!-- Optional product shot; the gradient below stands on its own
              until docs/img/rack-closeup.jpg is published. -->
         <img
@@ -87,6 +90,12 @@
             <span><b class="amber">MIT</b> licensed</span>
           </div>
         </div>
+        <a class="hero-chevron" href="#rack" aria-label="Skip to the next section">
+          <svg width="44" height="14" viewBox="0 0 44 14" fill="none" aria-hidden="true">
+            <path d="M2 2 L22 12 L42 2" stroke="currentColor" stroke-width="1.4"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
       </section>
 
       <!-- The rack -->
@@ -145,7 +154,7 @@
             <h2>The desk is on the front panel. The detail is in the browser.</h2>
           </div>
           <p class="sub">
-            The default 320×240 colour TFT shows network, services and
+            The on-device display shows network, services and
             per-channel activity at a glance — protocol, universe, pixels,
             brightness and a live status LED per output.
           </p>
@@ -169,9 +178,9 @@
               <div class="well pixel">
                 <img
                   src="./img/ui-home.png"
-                  alt="pixfrog TFT status dashboard: IP, link, services and the 8-channel table"
-                  width="640"
-                  height="480"
+                  alt="pixfrog on-device display: IP, services, FPS and the eight channels"
+                  width="428"
+                  height="142"
                   loading="lazy"
                   onerror="this.closest('figure').remove()"
                 />
