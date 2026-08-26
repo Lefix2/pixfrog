@@ -126,7 +126,8 @@ void print_state() {
 #ifdef PIXFROG_EMULATOR
     det::menu_debug_state(&name, &cursor, &channel);
 #endif
-    std::printf("{\"screen\":\"%s\",\"cursor\":%d,\"channel\":%d}\n", name, cursor, channel);
+    std::printf("{\"screen\":\"%s\",\"cursor\":%d,\"channel\":%d,\"backlight\":%d}\n", name, cursor,
+                channel, emu_backlight_pct());
     std::fflush(stdout);
 }
 
@@ -285,6 +286,10 @@ int main(int argc, char** argv) {
 
     auto present = [&]() {
         if (headless) return;
+        // Backlight level as a whole-texture tint — the framebuffer (and so
+        // `shot`) stays at full brightness, exactly like the panel's GRAM.
+        const Uint8 bl = static_cast<Uint8>(emu_backlight_pct() * 255 / 100);
+        SDL_SetTextureColorMod(tex, bl, bl, bl);
         SDL_UpdateTexture(tex, nullptr, emu_fb_ptr(), kFbW * 2);
         SDL_RenderClear(ren);
         SDL_RenderCopy(ren, tex, nullptr, nullptr);
@@ -313,6 +318,7 @@ int main(int argc, char** argv) {
                 std::chrono::duration_cast<std::chrono::milliseconds>(clock_t_::now() - t0)
                     .count());
             done = det::splash_render(t_ms, clicked);
+            det::backlight_on();
             present();
             std::this_thread::sleep_for(std::chrono::milliseconds(headless ? 1 : 16));
         }
@@ -321,6 +327,8 @@ int main(int argc, char** argv) {
     // ── Main menu loop ─────────────────────────────────────────────────────────
     const uint32_t idle_ms = pixfrog::config::get_global().home_timeout_s * 1000u;
     auto last_event        = clock_t_::now();
+    bool idle              = false;
+    det::backlight_on();  // headless skips the splash phase above
 
     while (g_running.load()) {
         SDL_Event ev;
@@ -341,16 +349,23 @@ int main(int argc, char** argv) {
 
         det::Event e;
         while ((e = det::encoder_poll()) != det::Event::None) {
-            det::menu_dispatch(e);
             last_event = clock_t_::now();
+            if (det::backlight_is_dimmed()) {  // first event only wakes the screen
+                det::backlight_tick(0);
+                continue;
+            }
+            idle = false;
+            det::menu_dispatch(e);
         }
 
-        if (idle_ms &&
+        const uint32_t since_event = static_cast<uint32_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(clock_t_::now() - last_event)
-                    .count() > idle_ms) {
+                .count());
+        if (!idle && idle_ms && since_event > idle_ms) {
             det::menu_on_idle_timeout();
-            last_event = clock_t_::now();
+            idle = true;
         }
+        det::backlight_tick(since_event);  // own delay: tft_dim_delay_s
 
         det::menu_render();
         det::canvas_flush();

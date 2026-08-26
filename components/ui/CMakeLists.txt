@@ -10,7 +10,9 @@ set(srcs
 set(requires driver esp_common esp_timer esp_app_format config_store dmx_manager fpp_sync fseq_player led_output freertos web_config sacn)
 
 if(CONFIG_PIXFROG_DISPLAY_TFT)
-    list(APPEND srcs "src/canvas_tft.cpp")
+    # backlight.cpp (policy) + tft_backlight_pwm.cpp (LEDC backend): TFT only —
+    # the OLED has no backlight.
+    list(APPEND srcs "src/canvas_tft.cpp" "src/backlight.cpp" "src/tft_backlight_pwm.cpp")
     if(CONFIG_PIXFROG_DISPLAY_NV3007)
         list(APPEND srcs "src/tft_nv3007.cpp")
     else()

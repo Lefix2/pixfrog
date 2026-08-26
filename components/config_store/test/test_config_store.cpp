@@ -129,6 +129,47 @@ static void test_migrate_from_pre_web_new_field_is_false() {
     EXPECT_EQ(loaded.web_enabled, false);
 }
 
+// Backlight fields appended after `language`: a config written by a
+// pre-dimming firmware zero-fills them, and the accessors must read that back
+// as "full brightness, never dimmed" — the behaviour that firmware had.
+static void test_migrate_backlight_defaults_to_full_brightness() {
+    GlobalConfigPreWeb old{};
+    old.use_dhcp = true;
+
+    GlobalConfig loaded{};
+    EXPECT_TRUE(migrate_blob(&old, sizeof(old), loaded));
+
+    EXPECT_EQ(loaded.tft_brightness, 0);  // unset
+    EXPECT_EQ(loaded.tft_idle_dim, 0);
+    EXPECT_EQ(loaded.tft_dim_delay_s, 0);
+    EXPECT_EQ(tft_brightness_pct(loaded), 100);
+    EXPECT_EQ(tft_idle_dim_pct(loaded), 0);
+    EXPECT_EQ(tft_dim_delay_s(loaded), 0);
+    EXPECT_TRUE(!tft_dim_enabled(loaded));  // no delay, no attenuation
+
+    // An explicitly stored level is returned as-is; out-of-range values clamp.
+    loaded.tft_brightness = 45;
+    EXPECT_EQ(tft_brightness_pct(loaded), 45);
+    loaded.tft_brightness = 3;
+    EXPECT_EQ(tft_brightness_pct(loaded), kTftBrightnessMin);
+    loaded.tft_brightness = 200;
+    EXPECT_EQ(tft_brightness_pct(loaded), 100);
+    loaded.tft_idle_dim = 200;
+    EXPECT_EQ(tft_idle_dim_pct(loaded), 100);
+    loaded.tft_dim_delay_s = 9'000;
+    EXPECT_EQ(tft_dim_delay_s(loaded), kTftDimDelayMaxS);
+
+    // Dimming needs both halves — either one at 0 leaves the panel alone.
+    loaded.tft_idle_dim    = 60;
+    loaded.tft_dim_delay_s = 30;
+    EXPECT_TRUE(tft_dim_enabled(loaded));
+    loaded.tft_dim_delay_s = 0;
+    EXPECT_TRUE(!tft_dim_enabled(loaded));
+    loaded.tft_dim_delay_s = 30;
+    loaded.tft_idle_dim    = 0;
+    EXPECT_TRUE(!tft_dim_enabled(loaded));
+}
+
 static void test_migrate_exact_size_ok() {
     // Exact-size load (no migration needed): all fields should come through.
     GlobalConfig src{};
@@ -239,6 +280,7 @@ static void test_channel_migration_sanitizes_to_identity() {
 int main() {
     test_migrate_from_pre_web_fields_preserved();
     test_migrate_from_pre_web_new_field_is_false();
+    test_migrate_backlight_defaults_to_full_brightness();
     test_migrate_exact_size_ok();
     test_migrate_rejects_downgrade();
     test_migrate_zero_size_blob_all_zero();

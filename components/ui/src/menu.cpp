@@ -328,6 +328,9 @@ enum class NodeId : uint8_t {
     Network,
     Output,
     Playback,
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    Display,
+#endif
     Channel,
     Scenes,
     Fseq,
@@ -351,6 +354,11 @@ enum class Field : uint8_t {
     ArtnetFailsafeMode,
     ArtnetFailsafeTimeout,
     GlobalRefresh,
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    DisplayBrightness,
+    DisplayIdleDim,
+    DisplayDimDelay,
+#endif
     NetworkDhcp,
     NetworkWebEnabled,
     ChProtocol,
@@ -619,8 +627,9 @@ struct ListItem {
 // index within the node (used by the dynamic lists: channels, scenes, files).
 using OnClick = void (*)(uint8_t idx);
 
-// Widest node: the main menu (8 channels + 6 entries). Build buffers size to it.
-constexpr uint8_t kMaxRows = 16;
+// Widest node: the main menu (8 channels + up to 7 entries + back). Build
+// buffers size to it.
+constexpr uint8_t kMaxRows = 18;
 
 // A "return to the parent menu" row. Rendered with a left back-arrow glyph
 // instead of bracketed text; `label` lets Main say "HOME" and the test-pattern
@@ -1258,12 +1267,16 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
     fns[n++]  = [](uint8_t) { go(NodeId::Output); };
     items[n]  = { "Playback", "" };
     fns[n++]  = [](uint8_t) { go(NodeId::Playback); };
-    items[n]  = { "Nerd stats", "" };
-    fns[n++]  = [](uint8_t) { s.screen = Screen::Stats; };
-    items[n]  = { "About", "" };
-    fns[n++]  = [](uint8_t) { s.screen = Screen::About; };
-    items[n]  = back_item("HOME");
-    fns[n++]  = [](uint8_t) { go_back(); };
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    items[n] = { "Display", "" };
+    fns[n++] = [](uint8_t) { go(NodeId::Display); };
+#endif
+    items[n] = { "Nerd stats", "" };
+    fns[n++] = [](uint8_t) { s.screen = Screen::Stats; };
+    items[n] = { "About", "" };
+    fns[n++] = [](uint8_t) { s.screen = Screen::About; };
+    items[n] = back_item("HOME");
+    fns[n++] = [](uint8_t) { go_back(); };
     return n;
 }
 
@@ -1881,6 +1894,26 @@ void commit_edit() {
         dmx::mark_global_dirty();
         break;
     }
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    case Field::DisplayBrightness: {
+        auto g           = config::get_global();
+        g.tft_brightness = static_cast<uint8_t>(v);
+        config::set_global(g);
+        break;
+    }
+    case Field::DisplayIdleDim: {
+        auto g         = config::get_global();
+        g.tft_idle_dim = static_cast<uint8_t>(v);
+        config::set_global(g);
+        break;
+    }
+    case Field::DisplayDimDelay: {
+        auto g            = config::get_global();
+        g.tft_dim_delay_s = static_cast<uint16_t>(v);
+        config::set_global(g);
+        break;
+    }
+#endif
     case Field::NetworkDhcp: {
         auto g     = config::get_global();
         g.use_dhcp = (v != 0);
@@ -2000,10 +2033,18 @@ void dispatch_edit_value(Event e) {
         if (s.edit.field == Field::ChPixels && dmx::pixel_preview_channel() == s.edit.channel) {
             dmx::set_pixel_preview(s.edit.channel, static_cast<uint16_t>(s.edit.current));
         }
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+        // Live backlight preview: the panel follows the encoder, nothing stored.
+        if (s.edit.field == Field::DisplayBrightness)
+            backlight_preview(static_cast<uint8_t>(s.edit.current));
+#endif
     }
     if (e == Event::Click) {
         dmx::clear_pixel_preview();
         commit_edit();
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+        backlight_preview_end();  // after commit_edit: hands over to the stored level
+#endif
         s.screen = s.edit.return_screen;
     }
 }
@@ -2535,6 +2576,51 @@ uint8_t build_output(ListItem* items, OnClick* fns) {
     return 4;
 }
 
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+// ── DISPLAY NODE ─────────────────────────────────────────────────────────────
+// Backlight level, how far it drops once the UI goes idle, and after how long.
+// The dim delay is the backlight's own — unrelated to `home_timeout_s`, which
+// only decides when the menu walks back to HOME.
+
+uint8_t build_display(ListItem* items, OnClick* fns) {
+    static char vbright[8], vdim[8], vdelay[8];
+    const auto& g = config::get_global();
+    std::snprintf(vbright, sizeof(vbright), "%u%%", config::tft_brightness_pct(g));
+    const uint8_t dim = config::tft_idle_dim_pct(g);
+    if (dim == 0)
+        std::snprintf(vdim, sizeof(vdim), "Off");
+    else
+        std::snprintf(vdim, sizeof(vdim), "-%u%%", dim);
+    const uint16_t delay = config::tft_dim_delay_s(g);
+    if (delay == 0)
+        std::snprintf(vdelay, sizeof(vdelay), "Off");
+    else
+        std::snprintf(vdelay, sizeof(vdelay), "%us", delay);
+
+    items[0] = { "Bright", vbright };
+    fns[0]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::DisplayBrightness, ValueKind::Int, config::tft_brightness_pct(g),
+                     config::kTftBrightnessMin, 100, 5, "Bright", Screen::Menu);
+    };
+    items[1] = { "Idle dim", vdim };
+    fns[1]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::DisplayIdleDim, ValueKind::Int, config::tft_idle_dim_pct(g), 0, 100, 5,
+                     "Idle dim", Screen::Menu);
+    };
+    items[2] = { "Dim after", vdelay };
+    fns[2]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::DisplayDimDelay, ValueKind::Int, config::tft_dim_delay_s(g), 0,
+                     config::kTftDimDelayMaxS, 5, "Dim after", Screen::Menu);
+    };
+    items[3] = back_item();
+    fns[3]   = [](uint8_t) { go_back(); };
+    return 4;
+}
+#endif  // CONFIG_PIXFROG_DISPLAY_TFT
+
 // ── PLAYBACK NODE ────────────────────────────────────────────────────────────
 // Output sources that aren't live DMX-over-IP: stored scenes, SD-card FSEQ
 // sequences, and the built-in test patterns.
@@ -2816,6 +2902,9 @@ const Node kNodes[static_cast<uint8_t>(NodeId::Count)] = {
     { "NETWORK", NodeId::Main, build_network },
     { "OUTPUT", NodeId::Main, build_output },
     { "PLAYBACK", NodeId::Main, build_playback },
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    { "DISPLAY", NodeId::Main, build_display },
+#endif
     { g_channel_title, NodeId::Main, build_channel },
     { "SCENES", NodeId::Playback, build_scenes },
     { "FSEQ", NodeId::Playback, build_fseq },
@@ -2893,10 +2982,14 @@ void dispatch_long_press() {
     case Screen::About: s.screen = Screen::Menu; break;
     case Screen::Stats: s.screen = Screen::Menu; break;
     // Edit screens: cancel — discard the pending value, commit nothing.
-    case Screen::EditValue:
+    case Screen::EditValue: {
         dmx::clear_pixel_preview();
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+        backlight_preview_end();  // cancel → back to the stored level
+#endif
         s.screen = s.edit.return_screen;
         break;
+    }
     case Screen::EditString: s.screen = s.str_edit.return_screen; break;
     case Screen::EditIp: s.screen = s.ip_edit.return_screen; break;
     case Screen::EditUni: s.screen = s.uni_edit.return_screen; break;
@@ -2973,6 +3066,9 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     // existing navigation scripts keep matching.
     static const char* const kNodeNames[static_cast<uint8_t>(NodeId::Count)] = {
         "MainMenu",    "InputsMenu", "NetworkMenu", "OutputMenu",      "PlaybackMenu",
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+        "DisplayMenu",  // keep aligned with NodeId — a missing entry reads as nullptr
+#endif
         "ChannelMenu", "ScenesMenu", "FSeqMenu",    "TestPatternMenu",
     };
     if (screen_name) {

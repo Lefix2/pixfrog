@@ -31,7 +31,6 @@ esp_lcd_panel_io_handle_t g_io = nullptr;
 SemaphoreHandle_t g_tx_done    = nullptr;
 int g_w                        = 0;  // landscape canvas size (428×142)
 int g_h                        = 0;
-int g_bl_gpio                  = -1;
 
 constexpr int kNativeW = 142;  // panel columns (sources)
 constexpr int kNativeH = 428;  // panel rows (gates)
@@ -214,15 +213,8 @@ bool tft_init(const TftConfig& cfg) {
     g_w = cfg.width;
     g_h = cfg.height;
 
-    // Backlight: configure off now, raised on after the first frame (ui.cpp).
-    g_bl_gpio = cfg.backlight_gpio;
-    if (g_bl_gpio >= 0) {
-        gpio_config_t bl{};
-        bl.pin_bit_mask = 1ULL << g_bl_gpio;
-        bl.mode         = GPIO_MODE_OUTPUT;
-        gpio_config(&bl);
-        gpio_set_level(static_cast<gpio_num_t>(g_bl_gpio), 0);
-    }
+    // Backlight: dark now, raised on after the first frame (ui.cpp).
+    backlight_backend_init(cfg.backlight_gpio);
 
     g_tx_done = xSemaphoreCreateBinary();
     if (!g_tx_done) return false;
@@ -337,10 +329,6 @@ int tft_width() {
 }
 int tft_height() {
     return g_h;
-}
-
-void tft_backlight(bool on) {
-    if (g_bl_gpio >= 0) gpio_set_level(static_cast<gpio_num_t>(g_bl_gpio), on ? 1 : 0);
 }
 
 void* tft_fb_alloc(unsigned long bytes) {
