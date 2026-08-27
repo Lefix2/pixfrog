@@ -125,11 +125,15 @@ CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
 CONFIG_PIXFROG_LED_OUTPUT_PARLIO=y
 
 #
-# Display backend — ST7789 TFT (also the Kconfig default; stated here
-# explicitly so the choice is visible). The OLED SSD1306 backend stays
-# buildable via the sdkconfig.ci.oled overlay.
+# Display backend — TFT, with the NV3007 bar panel as the Kconfig default
+# (stated here explicitly so the choice is visible). The ST7789 320x240 and
+# OLED SSD1306 backends stay buildable via the sdkconfig.ci.* overlays.
 #
 CONFIG_PIXFROG_DISPLAY_TFT=y
+# The NV3007 is mounted upside down in the rack, and its scan direction is the
+# hardware default (the vendor code never programs MADCTL), so the 180 deg turn
+# happens in the software transpose. See components/ui/Kconfig.
+CONFIG_PIXFROG_NV3007_ROT180=y
 
 #
 # microSD / FATFS — used by the FSEQ player.
