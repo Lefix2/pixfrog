@@ -316,6 +316,7 @@ enum class Screen : uint8_t {
     EditString,
     EditIp,
     EditUni,
+    PixelRefresh,  // full-screen RGBW flash, see render_pixel_refresh()
 };
 
 // ── Menu tree nodes ─────────────────────────────────────────────────────────
@@ -358,6 +359,7 @@ enum class Field : uint8_t {
     DisplayBrightness,
     DisplayIdleDim,
     DisplayDimDelay,
+    DisplayPixelRefresh,
 #endif
     NetworkDhcp,
     NetworkWebEnabled,
@@ -447,6 +449,7 @@ struct State {
     EditStringCtx str_edit;
     EditIpCtx ip_edit;
     EditUniCtx uni_edit;
+    uint32_t refresh_until_ms = 0;  // Screen::PixelRefresh deadline, 0 = not running
 };
 
 State s;
@@ -1280,6 +1283,50 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
     return n;
 }
 
+// ── PIXEL REFRESH ───────────────────────────────────────────────────────────
+// Drives every pixel through the full RGBW set for a chosen number of seconds.
+// Two jobs: exercise sub-pixels that have been holding one value for a long
+// time, and repaint rows the incremental flush may have left stale (the panel
+// occasionally keeps a row that every layer above believes it already sent —
+// see 9cf7ced). This is the manual recovery for that, which is why menu_render
+// no longer forces a full repaint on every screen change.
+
+constexpr uint32_t kPixelRefreshStepMs = 250;  // per-colour dwell
+
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+constexpr int32_t kPixelRefreshMinS = 5;
+constexpr int32_t kPixelRefreshMaxS = 300;
+constexpr int32_t kPixelRefreshDefS = 30;
+
+// Last duration picked, so reopening the item offers it again. Deliberately not
+// in GlobalConfig: this is a bench tool, not a setting worth an NVS write.
+int32_t g_pixel_refresh_s = kPixelRefreshDefS;
+#endif
+
+void render_pixel_refresh() {
+    const uint32_t now = now_ms();
+    if (now >= s.refresh_until_ms) {
+        s.refresh_until_ms = 0;
+        s.screen           = Screen::Menu;
+        canvas_invalidate();  // hand the panel back fully repainted
+        return;
+    }
+    static const Color kSeq[] = { color::Red, color::Green, color::Blue, color::White };
+    canvas_clear(kSeq[(now / kPixelRefreshStepMs) % 4]);
+    // The whole point is that every row physically reaches the glass, so never
+    // let the row diff decide this one.
+    canvas_invalidate();
+}
+
+void dispatch_pixel_refresh(Event e) {
+    // Any input aborts early — no one should have to wait out 300 s.
+    if (e == Event::Click || e == Event::RotateLeft || e == Event::RotateRight) {
+        s.refresh_until_ms = 0;
+        s.screen           = Screen::Menu;
+        canvas_invalidate();
+    }
+}
+
 // ── ABOUT ───────────────────────────────────────────────────────────────────
 
 void render_about() {
@@ -1913,6 +1960,12 @@ void commit_edit() {
         config::set_global(g);
         break;
     }
+    case Field::DisplayPixelRefresh:
+        // Not persisted — the click that commits the duration starts the run,
+        // and edit.return_screen (Screen::PixelRefresh) takes us there.
+        g_pixel_refresh_s  = v;
+        s.refresh_until_ms = now_ms() + static_cast<uint32_t>(v) * 1000u;
+        break;
 #endif
     case Field::NetworkDhcp: {
         auto g     = config::get_global();
@@ -2615,9 +2668,16 @@ uint8_t build_display(ListItem* items, OnClick* fns) {
         enter_edit(Field::DisplayDimDelay, ValueKind::Int, config::tft_dim_delay_s(g), 0,
                      config::kTftDimDelayMaxS, 5, "Dim after", Screen::Menu);
     };
-    items[3] = back_item();
-    fns[3]   = [](uint8_t) { go_back(); };
-    return 4;
+    static char vrefresh[8];
+    std::snprintf(vrefresh, sizeof(vrefresh), "%ds", static_cast<int>(g_pixel_refresh_s));
+    items[3] = { "Refresh px", vrefresh };
+    fns[3]   = [](uint8_t) {
+        enter_edit(Field::DisplayPixelRefresh, ValueKind::Int, g_pixel_refresh_s, kPixelRefreshMinS,
+                     kPixelRefreshMaxS, 5, "Refresh px", Screen::PixelRefresh);
+    };
+    items[4] = back_item();
+    fns[4]   = [](uint8_t) { go_back(); };
+    return 5;
 }
 #endif  // CONFIG_PIXFROG_DISPLAY_TFT
 
@@ -2993,6 +3053,7 @@ void dispatch_long_press() {
     case Screen::EditString: s.screen = s.str_edit.return_screen; break;
     case Screen::EditIp: s.screen = s.ip_edit.return_screen; break;
     case Screen::EditUni: s.screen = s.uni_edit.return_screen; break;
+    case Screen::PixelRefresh: dispatch_pixel_refresh(Event::Click); break;
     }
 }
 
@@ -3005,15 +3066,6 @@ void menu_init() {
 }
 
 void menu_render() {
-    // A screen change invalidates the whole panel: see canvas_invalidate().
-    static Screen s_last_rendered = Screen::Home;
-    static bool s_first           = true;
-    if (s_first || s.screen != s_last_rendered) {
-        canvas_invalidate();
-        s_last_rendered = s.screen;
-        s_first         = false;
-    }
-
     switch (s.screen) {
     case Screen::Home: render_home(); break;
     case Screen::Menu: engine_render(); break;
@@ -3023,6 +3075,7 @@ void menu_render() {
     case Screen::EditString: render_edit_string(); break;
     case Screen::EditIp: render_edit_ip(); break;
     case Screen::EditUni: render_edit_uni(); break;
+    case Screen::PixelRefresh: render_pixel_refresh(); break;
     }
 }
 
@@ -3042,6 +3095,7 @@ void menu_dispatch(Event e) {
     case Screen::EditString: dispatch_edit_string(e); break;
     case Screen::EditIp: dispatch_edit_ip(e); break;
     case Screen::EditUni: dispatch_edit_uni(e); break;
+    case Screen::PixelRefresh: dispatch_pixel_refresh(e); break;
     }
 }
 
@@ -3081,6 +3135,7 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
         case Screen::EditString: *screen_name = "EditString"; break;
         case Screen::EditIp: *screen_name = "EditIp"; break;
         case Screen::EditUni: *screen_name = "EditUni"; break;
+        case Screen::PixelRefresh: *screen_name = "PixelRefresh"; break;
         }
     }
     if (cursor) *cursor = s.cursor;

@@ -34,6 +34,7 @@ constexpr Color Black{ 0x0000 };
 constexpr Color White{ 0xFFFF };
 constexpr Color Green{ 0x07E0 };
 constexpr Color Red{ 0xF800 };
+constexpr Color Blue{ 0x001F };
 constexpr Color Yellow{ 0xFFE0 };
 constexpr Color Cyan{ 0x07FF };
 constexpr Color Orange{ 0xFD20 };
