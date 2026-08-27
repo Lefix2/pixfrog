@@ -21,16 +21,6 @@
 // duration after the swap was submitted — render_frame() enforces that wait
 // before encoding into it.
 //
-// Buffer lifetime: the three frame buffers and the TX unit are allocated once,
-// in init(), sized to the hard cap on the frame length — never resized. The
-// emitted frame length is an argument of each transmit (payload_bits), so a
-// config change that shortens or lengthens the frame costs nothing but a
-// different number in the next submit. This is what keeps render_task free of
-// allocation (AGENT.md): sizing the buffers to the config of the moment would
-// mean freeing and re-callocing megabytes of PSRAM from the render loop every
-// time a pixel count moves — and the pixel-count preview moves it on every
-// encoder detent.
-//
 // Clock: PLL_F160M / 10 = 16 MHz exactly (led_protocols::kPclkHz).
 
 #include "sdkconfig.h"
@@ -83,17 +73,12 @@ constexpr size_t kCalFrameSamples = 262144;
 // at 1/(frame + encode). Three buffers give a full frame of drain slack.
 constexpr size_t kNumFb = 3;
 
-// The calibration fill writes whole buffers, so it must already sit on a
-// quantum boundary — nothing pads it.
-static_assert(kCalFrameSamples % kFrameQuantumSamples == 0, "cal frame must be quantum-aligned");
-
 InitConfig g_cfg{};
 parlio_tx_unit_handle_t g_unit = nullptr;
-bool g_unit_enabled            = false;
 uint16_t* g_fb[kNumFb]         = {};
-size_t g_fb_capacity           = 0;   // samples per FB — fixed at init, never resized
+size_t g_fb_samples            = 0;   // capacity of each FB, quantum-rounded
 uint8_t g_back_idx             = 0;   // FB the next encode writes into
-size_t g_emitted[kNumFb]       = {};  // samples the loop scans out of each FB
+size_t g_written[kNumFb]       = {};  // samples encoded into each FB since creation
 // Wall-clock µs after which each FB is safe to encode into again. A transmit
 // retires the *previously* submitted buffer: the hardware keeps scanning it
 // until the current pass ends, at most one frame later.
@@ -108,17 +93,13 @@ volatile uint32_t g_submit_us = 0;
 
 volatile int8_t g_cal_mode = -1;
 
-int64_t frame_duration_us(size_t samples) {
-    return static_cast<int64_t>(samples) * 1'000'000LL / g_cfg.pclk_hz;
+int64_t frame_duration_us() {
+    return static_cast<int64_t>(g_fb_samples) * 1'000'000LL / g_cfg.pclk_hz;
 }
 
 void destroy_unit() {
     if (g_unit) {
-        // parlio_del_tx_unit() requires the unit back in its INIT state; on an
-        // enabled unit it fails and the handle would leak — and the P4 has
-        // exactly one TX unit, so a leak means no LED output until reboot.
-        if (g_unit_enabled) parlio_tx_unit_disable(g_unit);
-        g_unit_enabled = false;
+        if (g_prev_submit_idx >= 0) parlio_tx_unit_disable(g_unit);
         parlio_del_tx_unit(g_unit);
         g_unit = nullptr;
     }
@@ -128,16 +109,12 @@ void destroy_unit() {
     }
     for (auto& f : g_free_at)
         f = 0;
-    g_fb_capacity     = 0;
+    g_fb_samples      = 0;
     g_prev_submit_idx = -1;
 }
 
-// Allocates the frame buffers and the TX unit at their final size. Called once
-// from init() and never again: render_task must not allocate, so the buffers
-// are sized to the hard cap on the frame length rather than to the config of
-// the moment. The unit is left disabled — the first submit starts the loop.
-bool create_unit(size_t capacity_samples) {
-    const size_t bytes = capacity_samples * sizeof(uint16_t);
+bool create_unit(size_t samples) {
+    const size_t bytes = samples * sizeof(uint16_t);
     for (auto& fb : g_fb) {
         fb = static_cast<uint16_t*>(
             heap_caps_aligned_calloc(kFbAlignBytes, 1, bytes, MALLOC_CAP_SPIRAM));
@@ -169,49 +146,38 @@ bool create_unit(size_t capacity_samples) {
         destroy_unit();
         return false;
     }
-    g_fb_capacity     = capacity_samples;
+    if ((err = parlio_tx_unit_enable(g_unit)) != ESP_OK) {
+        ESP_LOGE(TAG, "parlio_tx_unit_enable: %s", esp_err_to_name(err));
+        destroy_unit();
+        return false;
+    }
+
+    g_fb_samples      = samples;
     g_back_idx        = 0;
     g_prev_submit_idx = -1;
     for (size_t i = 0; i < kNumFb; ++i) {
-        g_emitted[i] = 0;
+        g_written[i] = 0;
         g_free_at[i] = 0;
     }
 
-    ESP_LOGI(TAG, "tx unit up: %zu buffers, %zu bytes each, %zu samples capacity @ %lu Hz (loop)",
-             kNumFb, bytes, capacity_samples, static_cast<unsigned long>(g_cfg.pclk_hz));
+    ESP_LOGI(TAG,
+             "tx unit up: %zu buffers, %zu bytes each, %zu samples @ %lu Hz "
+             "(%lld µs/frame, loop)",
+             kNumFb, bytes, samples, static_cast<unsigned long>(g_cfg.pclk_hz),
+             frame_duration_us());
     return true;
 }
 
-// The frame length is a per-transmit argument, so a config change only moves
-// how much of each buffer the loop scans — there is nothing to resize.
-bool frame_fits(size_t needed_samples) {
-    if (round_up(needed_samples, kFrameQuantumSamples) <= g_fb_capacity) return true;
-    ESP_LOGE(TAG, "frame needs %zu samples > capacity %zu — config should not have validated",
-             needed_samples, g_fb_capacity);
-    return false;
-}
-
-// Every channel Off: stop the loop so the bus goes quiet. The unit and its
-// buffers stay allocated — only the emission stops.
-void stop_loop() {
-    if (!g_unit || !g_unit_enabled) return;
-    parlio_tx_unit_disable(g_unit);
-    g_unit_enabled    = false;
-    g_prev_submit_idx = -1;
-    for (auto& f : g_free_at)
-        f = 0;
-}
-
-bool start_loop() {
-    if (!g_unit) return false;
-    if (g_unit_enabled) return true;
-    const esp_err_t err = parlio_tx_unit_enable(g_unit);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "parlio_tx_unit_enable: %s", esp_err_to_name(err));
+bool ensure_frame_capacity(size_t needed_samples) {
+    if (needed_samples > g_cfg.max_samples_per_frame) {
+        ESP_LOGE(TAG, "frame needs %zu samples > cap %lu — config should not have validated",
+                 needed_samples, static_cast<unsigned long>(g_cfg.max_samples_per_frame));
         return false;
     }
-    g_unit_enabled = true;
-    return true;
+    const size_t samples = round_up(needed_samples, kFrameQuantumSamples);
+    if (g_unit && samples == g_fb_samples) return true;
+    destroy_unit();
+    return create_unit(samples);
 }
 
 // Buffer `idx` may still be scanned out by the running loop until the
@@ -227,32 +193,26 @@ void wait_back_buffer_free(uint8_t idx) {
     }
 }
 
-// Submit the first `samples` of g_fb[idx] as the (new) looping frame. First
-// call starts the loop; later calls swap the mounted buffer at the next frame
-// boundary, gapless. The driver write-backs the payload cache itself.
-//
-// `samples` is what makes a fixed-capacity buffer viable: the emission length
-// is a property of the transmit, not of the allocation, so a short frame still
-// emits short (and fast) out of a buffer sized for the worst case.
-bool submit_loop_frame(uint8_t idx, size_t samples) {
-    if (!start_loop()) return false;
+// Submit g_fb[idx] as the (new) looping frame. First call starts the loop;
+// later calls swap the mounted buffer at the next frame boundary, gapless. The
+// driver write-backs the payload cache itself.
+bool submit_loop_frame(uint8_t idx) {
     parlio_transmit_config_t tx{};
     tx.idle_value              = 0;
     tx.flags.loop_transmission = 1;
-    const esp_err_t err        = parlio_tx_unit_transmit(g_unit, g_fb[idx], samples * 16, &tx);
+    const size_t payload_bits  = g_fb_samples * 16;
+    const esp_err_t err        = parlio_tx_unit_transmit(g_unit, g_fb[idx], payload_bits, &tx);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "transmit: %s", esp_err_to_name(err));
         return false;
     }
     // This transmit concatenates idx after the previously submitted buffer,
     // which the hardware keeps scanning until its current pass ends — at most
-    // one pass of *that* buffer's length from now. Mark it safe to reuse only
-    // after that.
+    // one frame from now. Mark it safe to reuse only after that.
     const int64_t now = esp_timer_get_time();
     if (g_prev_submit_idx >= 0) {
-        g_free_at[g_prev_submit_idx] = now + frame_duration_us(g_emitted[g_prev_submit_idx]);
+        g_free_at[g_prev_submit_idx] = now + frame_duration_us();
     }
-    g_emitted[idx]    = samples;
     g_prev_submit_idx = static_cast<int8_t>(idx);
     g_submits         = g_submits + 1;
     return true;
@@ -272,13 +232,12 @@ bool init(const InitConfig& cfg) {
         return false;
     }
 
-    // Allocate for the longest frame the validator will ever accept, once. The
-    // buffers then outlive every config change, so render_task never allocates
-    // (AGENT.md) — the cost is PSRAM that a short config does not use, not
-    // emission time: the loop only ever scans the current frame's length.
-    if (!create_unit(round_up(cfg.max_samples_per_frame, kFrameQuantumSamples))) return false;
+    // All channels Off at boot is legal: the unit is created lazily by the
+    // first frame that has something to emit.
+    const size_t needed = required_frame_samples();
+    if (needed > 0 && !ensure_frame_capacity(needed)) return false;
 
-    ESP_LOGI(TAG, "init OK");
+    ESP_LOGI(TAG, "init OK (%s)", needed > 0 ? "tx unit created" : "all channels off, unit lazy");
     return true;
 }
 
@@ -286,10 +245,11 @@ bool render_frame(uint32_t timeout_ms) {
     (void)timeout_ms;  // pacing is wait_back_buffer_free(), bounded by one frame
     const size_t needed = required_frame_samples();
     if (needed == 0) {
-        stop_loop();
+        // Every channel Off: stop the loop so the bus goes quiet.
+        if (g_unit) destroy_unit();
         return true;
     }
-    if (!frame_fits(needed)) return false;
+    if (!ensure_frame_capacity(needed)) return false;
 
     const uint8_t idx = g_back_idx;
     const int64_t t0  = esp_timer_get_time();
@@ -305,23 +265,22 @@ bool render_frame(uint32_t timeout_ms) {
     }
 
     const size_t written = led::encode_frame(descs, pixels, config::kNumChannels, samples,
-                                             g_fb_capacity);
+                                             g_fb_samples);
     if (written == 0) {
-        ESP_LOGE(TAG, "encode_frame wrote nothing (needed=%zu capacity=%zu)", needed,
-                 g_fb_capacity);
+        ESP_LOGE(TAG, "encode_frame wrote nothing (needed=%zu capacity=%zu)", needed, g_fb_samples);
         return false;
     }
 
-    // DMA wants the payload length on the quantum; the pad between the encoded
-    // end and that boundary must read LOW, which is reset-tail either way.
-    // Samples past `emit` are stale but never scanned — the loop stops there.
-    const size_t emit = round_up(written, kFrameQuantumSamples);
-    if (emit > written) {
-        std::memset(samples + written, 0, (emit - written) * sizeof(uint16_t));
+    // The loop always scans the full quantum-rounded buffer; everything past
+    // `written` must be LOW (reset-tail). calloc zeroed it at creation, but a
+    // shrinking frame within the same capacity leaves stale samples behind.
+    if (g_written[idx] > written) {
+        std::memset(samples + written, 0, (g_written[idx] - written) * sizeof(uint16_t));
     }
+    g_written[idx] = written;
 
     const int64_t t2 = esp_timer_get_time();
-    if (!submit_loop_frame(idx, emit)) return false;
+    if (!submit_loop_frame(idx)) return false;
     const int64_t t3 = esp_timer_get_time();
 
     g_wait_us   = static_cast<uint32_t>(t1 - t0);
@@ -339,22 +298,22 @@ bool emit_calibration_pattern(uint8_t pattern_id) {
         return true;
     }
 
-    if (!frame_fits(kCalFrameSamples)) return false;
+    if (!ensure_frame_capacity(kCalFrameSamples)) return false;
 
     const uint8_t idx = g_back_idx;
     wait_back_buffer_free(idx);
     uint16_t* samples = g_fb[idx];
-    common::fill_calibration_pattern(samples, kCalFrameSamples, pattern_id, g_cfg.pclk_hz);
+    common::fill_calibration_pattern(samples, g_fb_samples, pattern_id, g_cfg.pclk_hz);
+    g_written[idx] = g_fb_samples;
 
-    if (!submit_loop_frame(idx, kCalFrameSamples)) return false;
+    if (!submit_loop_frame(idx)) return false;
     g_back_idx = static_cast<uint8_t>((g_back_idx + 1) % kNumFb);
     return true;
 }
 
 void dump_stats() {
-    const size_t emitted = g_prev_submit_idx >= 0 ? g_emitted[g_prev_submit_idx] : 0;
-    ESP_LOGI(TAG, "stats: submits=%lu, frame=%zu samples/%lld µs, wait=%lu enc=%lu sub=%lu µs",
-             static_cast<unsigned long>(g_submits), emitted, frame_duration_us(emitted),
+    ESP_LOGI(TAG, "stats: submits=%lu, frame=%lld µs, wait=%lu enc=%lu sub=%lu µs",
+             static_cast<unsigned long>(g_submits), frame_duration_us(),
              static_cast<unsigned long>(g_wait_us), static_cast<unsigned long>(g_encode_us),
              static_cast<unsigned long>(g_submit_us));
 }
@@ -379,7 +338,7 @@ void wait_idle() {
 }
 
 size_t fb_bytes() {
-    return g_fb_capacity * sizeof(uint16_t);
+    return g_fb_samples * sizeof(uint16_t);
 }
 
 void set_calibration_mode(int8_t pattern_id) {
