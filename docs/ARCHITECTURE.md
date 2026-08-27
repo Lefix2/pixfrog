@@ -103,14 +103,21 @@ In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `
 
 | Item                              | Size       | Note                                                |
 |-----------------------------------|-----------:|-----------------------------------------------------|
-| `frame_buf[3]` (PSRAM)            | 3 × actual frame | triple-buffered (PARLIO) so encode overlaps the two FBs in the DMA loop; sized to the longest configured channel (e.g. 512 px WS2815 → 3 × ~0.5 MB); hard cap 3 × ~2.6 MB (1024 px × 32 bits × 40 samples worst-case sizing). Legacy LCD_CAM uses 2 FBs. |
+| `frame_buf[3]` (PSRAM)            | 3 × 2.6 MB | triple-buffered (PARLIO) so encode overlaps the two FBs in the DMA loop; allocated once at the cap (1024 px × 32 bits × 40 samples) and never resized, so nothing on the render path allocates. Legacy LCD_CAM sizes 2 FBs to the longest configured channel instead. |
 | `universe_pool[2][N]`             | 2 × 48 kB  | 48 universes × 512 bytes × 2 buffers                |
 | Circular logs                     | 64 kB      | Post-mortem debug                                   |
 | Application headroom              | ~27 MB     | Future sequencer / FX engine / ...                  |
 
 **GDMA from PSRAM** is native on ESP32-P4: the PARLIO TX unit (default) streams its frame buffers straight out of octal PSRAM, as does the legacy LCD_CAM panel (`esp_lcd_new_rgb_panel(flags.fb_in_psram=true)`). The shared DMA bus tolerates 32 MB/s sustained on 200 MHz octal PSRAM (peak ~200 MB/s, shared with cache and other masters — comfortable headroom). One `esp_cache_msync(DIR_C2M)` is required after CPU writes and before the GDMA kick.
 
-`frame_buf` (and thus the DMA emission duration) tracks the actual config: the output unit is recreated when a config commit changes the required frame length. Sizing to the worst case would pin the emission at 82 ms/frame (≈ 12 FPS) regardless of content.
+The **DMA emission duration** tracks the actual config — pinning it at the worst case would mean 82 ms/frame (≈ 12 FPS) regardless of content. On PARLIO the buffers and the emission length have separate lifetimes:
+
+- the three frame buffers are allocated **once at the cap** and never resized, so `render_task` never allocates (AGENT.md);
+- the **TX unit** is recreated whenever the frame length changes, which is what actually sets the emitted length.
+
+The unit has to be rebuilt because IDF's loop transmission wraps its DMA chain with `gdma_link_concat(link, -1, …)`, and a negative index resolves modulo `num_items` — the last *allocated* descriptor, not the last mounted one. `num_items` comes from `max_transfer_size` at unit creation, so a link list longer than the payload wraps from a descriptor the DMA never reaches: the chain ends and the FIFO starves, with `ESP_OK` returned throughout and every counter still reporting healthy frames. Recreating the unit costs a few KB of internal descriptors, against the megabytes of PSRAM that resizing the buffers used to churn on every pixel-count detent.
+
+LCD_CAM has no such split — the frame length lives in the panel's timing registers — so it recreates the panel, frame buffers included, from inside `render_task`. That is one reason it is debug-only.
 
 ### NVS
 
