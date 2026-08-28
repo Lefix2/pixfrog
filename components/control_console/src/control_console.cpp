@@ -433,8 +433,8 @@ int cmd_ch(int argc, char** argv) {
         c.wb_g = rgb[1] ? rgb[1] : 255;
         c.wb_b = rgb[2] ? rgb[2] : 255;
     } else if (strcmp(key, "clock_hz") == 0) {
-        if (!parse_u32_in(val, 100'000, led::kPclkHz / 2, u))
-            return err("clock_hz: 100000..8000000");
+        if (!parse_u32_in(val, led::kMinClockHz, led::kMaxClockHz, u))
+            return err("clock_hz: 500000..8000000");
         c.clock_hz = u;
     } else {
         return err("unknown key (protocol order universe dmx_start pixels brightness grouping "

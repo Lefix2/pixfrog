@@ -275,6 +275,34 @@ static void test_channel_migration_sanitizes_to_identity() {
     EXPECT_EQ(loaded.pixel_count, 144);
 }
 
+// A clock below kMinClockHz inflates a clocked frame past
+// kMaxSamplesPerFrame; the output backend then refuses every frame and the
+// channel goes dark. sanitize_channel is the last line of defence for values
+// that reached NVS before the write paths were bounded.
+static void test_sanitize_clamps_clock_hz() {
+    ChannelConfig c{};
+
+    // 0 is a pre-clock blob, not a slow request: it takes the default, not the
+    // floor, or a legacy channel silently drops from 4 MHz to 500 kHz.
+    c.clock_hz = 0;
+    sanitize_channel(c);
+    EXPECT_EQ(c.clock_hz, kDefaultClockHz);
+
+    // The value that used to reach the encoder from the console and web API.
+    c.clock_hz = 100'000;
+    sanitize_channel(c);
+    EXPECT_EQ(c.clock_hz, kMinClockHz);
+
+    c.clock_hz = kMaxClockHz + 1;
+    sanitize_channel(c);
+    EXPECT_EQ(c.clock_hz, kMaxClockHz);
+
+    // In-range values are left alone.
+    c.clock_hz = 4'000'000;
+    sanitize_channel(c);
+    EXPECT_EQ(c.clock_hz, 4'000'000u);
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -285,6 +313,7 @@ int main() {
     test_migrate_rejects_downgrade();
     test_migrate_zero_size_blob_all_zero();
     test_channel_migration_sanitizes_to_identity();
+    test_sanitize_clamps_clock_hz();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
