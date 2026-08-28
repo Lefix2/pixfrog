@@ -154,6 +154,10 @@ struct Scene {
 // Per-channel configuration
 // ────────────────────────────────────────────────────────────────────────────
 
+// Bit clock a fresh channel starts on, and what a zero (pre-clock NVS blob)
+// migrates to. Bounds live in led_protocols: they follow from the frame cap.
+constexpr uint32_t kDefaultClockHz = 4'000'000;
+
 struct ChannelConfig {
     led::Protocol protocol;
     led::ColorOrder color_order;
@@ -176,6 +180,17 @@ struct ChannelConfig {
 // Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
 // 0 would silently black a colour out. Called after every NVS load.
 inline void sanitize_channel(ChannelConfig& c) {
+    // A clock under led::kMinClockHz inflates a clocked frame past
+    // kMaxSamplesPerFrame, and the output backend then refuses every frame —
+    // the channel goes dark. 0 means a pre-clock NVS blob rather than a slow
+    // request, so it takes the default; clamping it to the floor would quietly
+    // drop a legacy channel from 4 MHz to 500 kHz.
+    if (c.clock_hz == 0)
+        c.clock_hz = kDefaultClockHz;
+    else if (c.clock_hz < led::kMinClockHz)
+        c.clock_hz = led::kMinClockHz;
+    else if (c.clock_hz > led::kMaxClockHz)
+        c.clock_hz = led::kMaxClockHz;
     if (c.gamma_x10 < 10 || c.gamma_x10 > 40) c.gamma_x10 = 10;
     if (c.wb_r == 0) c.wb_r = 255;
     if (c.wb_g == 0) c.wb_g = 255;

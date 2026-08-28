@@ -254,6 +254,35 @@ static void test_nrz_or_into_buffer() {
     }
 }
 
+// ── Clock floor vs frame cap ────────────────────────────────────────────────
+
+// kMinClockHz exists so a slow clocked channel cannot inflate its frame past
+// kMaxSamplesPerFrame — the output backend refuses such a frame and the channel
+// goes dark, which is a rotten failure mode for a config value. Pin the two
+// together: whichever moves, this catches it.
+static void test_min_clock_fits_frame_cap() {
+    const Protocol clocked[] = { Protocol::APA102, Protocol::SK9822, Protocol::LPD8806 };
+    for (Protocol p : clocked) {
+        ChannelDesc d{};
+        d.protocol      = p;
+        d.color_order   = ColorOrder::BGR;
+        d.pixel_count   = static_cast<uint16_t>(kMaxPixelsPerChannel);
+        d.brightness    = 255;
+        d.grouping      = 1;
+        d.bus_bit_data  = 0;
+        d.bus_bit_clock = 1;
+        d.clock_hz      = kMinClockHz;
+        EXPECT_TRUE(encoded_size_samples(d) <= kMaxSamplesPerFrame);
+    }
+
+    // The floor sits above the true breaking point (~410 kHz for APA102 at
+    // 1024 px) on purpose, for margin and a round number. It must stay at or
+    // below the slowest rate the menu offers, though, or the UI would present a
+    // clock the config layer then refuses.
+    EXPECT_TRUE(kMinClockHz <= 1'000'000);
+    EXPECT_TRUE(kMinClockHz < kMaxClockHz);
+}
+
 // ── SPI encoder size ────────────────────────────────────────────────────────
 
 static void test_spi_size() {
@@ -695,6 +724,7 @@ int main() {
     test_lut_gamma22();
     test_lut_white_balance();
     test_lut_applied_by_nrz_encoder();
+    test_min_clock_fits_frame_cap();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

@@ -106,6 +106,20 @@ constexpr uint32_t kMaxSamplesPerFrame  = kMaxPixelsPerChannel * kMaxBitsPerPixe
                                              kMaxSamplesPerBit +
                                          kMaxResetSamples;
 
+// Bounds on a clocked-SPI channel's requested bit clock.
+//
+// The floor is not a matter of taste. timing_for() turns the request into
+// kPclkHz/clock samples per bit-clock, so a slow clock inflates the frame
+// instead of shortening it: at kMaxPixelsPerChannel an APA102 frame is
+// 4 + 4×1024 + 65 = 4165 bytes, i.e. 33320 samples per sample-per-clock. Below
+// roughly 410 kHz that crosses kMaxSamplesPerFrame, the output backend refuses
+// the frame, and the channel goes dark while logging once per frame — a config
+// value that silently disables an output. 500 kHz keeps the worst case at
+// 1066240 samples, well under the cap, and is already far slower than any
+// APA102/LPD8806 strip needs. test_led_protocols pins this.
+constexpr uint32_t kMinClockHz = 500'000;
+constexpr uint32_t kMaxClockHz = kPclkHz / 2;
+
 // Samples per logical "thing" — varies by protocol family.
 struct Timing {
     // For 1-wire NRZ: samples high to encode '0' and '1', total samples per bit.

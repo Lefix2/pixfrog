@@ -54,7 +54,7 @@ ChannelConfig make_default_channel(size_t idx) {
     c.brightness       = 255;
     c.grouping         = 1;
     c.invert_direction = false;
-    c.clock_hz         = 4'000'000;
+    c.clock_hz         = kDefaultClockHz;
     c.gamma_x10        = 10;   // linear
     c.wb_r             = 255;  // unity
     c.wb_g             = 255;

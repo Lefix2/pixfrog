@@ -690,7 +690,8 @@ static void restore_channel(size_t i, cJSON* jc) {
     if (num("grouping", 1, 8, &v)) c.grouping = static_cast<uint8_t>(v);
     it = cJSON_GetObjectItemCaseSensitive(jc, "invert");
     if (cJSON_IsBool(it)) c.invert_direction = cJSON_IsTrue(it);
-    if (num("clock_hz", 100'000, led::kPclkHz / 2, &v)) c.clock_hz = static_cast<uint32_t>(v);
+    if (num("clock_hz", led::kMinClockHz, led::kMaxClockHz, &v))
+        c.clock_hz = static_cast<uint32_t>(v);
     if (num("gamma_x10", 10, 40, &v)) c.gamma_x10 = static_cast<uint8_t>(v);
     it = cJSON_GetObjectItemCaseSensitive(jc, "wb");
     if (cJSON_IsString(it)) {
@@ -1002,7 +1003,7 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
     if (get_u32("brightness", 0, 255, u)) c.brightness = static_cast<uint8_t>(u);
     if (get_u32("grouping", 1, 8, u)) c.grouping = static_cast<uint8_t>(u);
     if (get_bool("invert", b)) c.invert_direction = b;
-    if (get_u32("clock_hz", 100'000, led::kPclkHz / 2, u)) c.clock_hz = u;
+    if (get_u32("clock_hz", led::kMinClockHz, led::kMaxClockHz, u)) c.clock_hz = u;
     if (get_u32("gamma_x10", 10, 40, u)) c.gamma_x10 = static_cast<uint8_t>(u);
     if ((s = get_str("wb"))) {
         unsigned wr, wg, wbv;
