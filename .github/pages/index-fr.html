@@ -29,13 +29,14 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./style.css" />
+    <script src="./nav.js" defer></script>
     <script src="./hero.js" defer></script>
   </head>
   <body>
     <header class="nav">
       <div class="wrap nav-inner">
         <a class="brand" href="./index-fr.html"><span class="dot"></span> pixfrog</a>
-        <nav class="nav-links">
+        <nav class="nav-links" id="nav-links">
           <a class="active" href="./index-fr.html">Accueil</a>
           <a href="./flash-fr.html">Flash</a>
           <a href="./docs-fr.html">Docs</a>
@@ -47,6 +48,10 @@
           </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </div>
+        <button class="nav-toggle" type="button" aria-label="Menu"
+                aria-expanded="false" aria-controls="nav-links">
+          <span></span><span></span><span></span>
+        </button>
       </div>
     </header>
 
@@ -278,36 +283,6 @@
           <p style="margin: 28px 0 0">
             <a class="btn" href="./docs-fr.html#architecture">Lire l'architecture ↗</a>
           </p>
-        </div>
-      </section>
-
-      <!-- Mise en route -->
-      <section class="band" id="get-started">
-        <div class="wrap">
-          <div class="panel split">
-            <div>
-              <div class="kicker">04 · Mise en route</div>
-              <h2>Flash en un clic, depuis le navigateur.</h2>
-              <p>
-                Branchez en USB, ouvrez la page flash dans Chrome ou Edge
-                desktop, choisissez la dernière release. Aucune chaîne d'outils
-                à installer. Le build cible la carte pixfrog — un Waveshare
-                ESP32-P4 Module DEV-KIT avec le shield pixfrog par-dessus.
-              </p>
-              <div class="cta">
-                <a class="btn primary" href="./flash-fr.html">Flasher votre carte</a>
-                <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">Releases</a>
-              </div>
-            </div>
-            <div class="term">
-              <div class="muted">$ pixfrog · flash</div>
-              <div><span class="ok">✓</span> carte détectée — ESP32-P4</div>
-              <div><span class="ok">✓</span> release latest téléchargée</div>
-              <div><span class="ok">✓</span> écriture partition A</div>
-              <div><span class="wait">…</span> redémarrage, réseau en DHCP</div>
-              <div class="muted">→ 192.168.1.200 · sACN · 60/60 fps</div>
-            </div>
-          </div>
         </div>
       </section>
 

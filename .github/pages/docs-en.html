@@ -20,6 +20,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./style.css" />
+    <script src="./nav.js" defer></script>
     <!-- The docs viewer is a paper page in both themes, so the light
          syntax theme is pinned rather than following prefers-color-scheme. -->
     <link
@@ -31,7 +32,7 @@
     <header class="nav">
       <div class="wrap nav-inner">
         <a class="brand" href="./index-en.html"><span class="dot"></span> pixfrog</a>
-        <nav class="nav-links">
+        <nav class="nav-links" id="nav-links">
           <a href="./index-en.html">Home</a>
           <a href="./flash-en.html">Flash</a>
           <a class="active" href="./docs-en.html">Docs</a>
@@ -43,6 +44,10 @@
           </span>
           <a class="gh" href="https://github.com/Lefix2/pixfrog">GitHub ↗</a>
         </div>
+        <button class="nav-toggle" type="button" aria-label="Menu"
+                aria-expanded="false" aria-controls="nav-links">
+          <span></span><span></span><span></span>
+        </button>
       </div>
     </header>
 
