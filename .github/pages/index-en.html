@@ -8,13 +8,13 @@
     <title>pixfrog — ESP32-P4 Art-Net / sACN LED firmware</title>
     <meta
       name="description"
-      content="pixfrog is a high-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, DMX512, FSEQ shows, web UI and OTA."
+      content="pixfrog is a high-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, FSEQ shows, web UI and OTA."
     />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="pixfrog — ESP32-P4 Art-Net / sACN LED firmware" />
     <meta
       property="og:description"
-      content="High-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, DMX512, FSEQ shows, web UI and OTA."
+      content="High-density Art-Net / sACN LED controller firmware for the ESP32-P4: 8 parallel pixel outputs, FSEQ shows, web UI and OTA."
     />
     <meta property="og:url" content="https://lefix2.github.io/pixfrog/index-en.html" />
     <meta property="og:image" content="https://lefix2.github.io/pixfrog/img/og-cover.png" />
@@ -68,15 +68,10 @@
             <h1>High-density LED control on the ESP32-P4</h1>
             <p class="lead">
               pixfrog is an Art-Net 4 / sACN LED controller firmware: 8 parallel
-              pixel outputs, DMX512, FSEQ shows from microSD, a colour on-device
+              pixel outputs, FSEQ shows from microSD, a colour on-device
               dashboard and an embedded web UI — tuned for deterministic,
               jitter-free pixel timing.
             </p>
-            <div class="cta">
-              <a class="btn primary" href="./flash-en.html">Flash your board</a>
-              <a class="btn" href="./docs-en.html">Documentation</a>
-              <a class="btn" href="https://github.com/Lefix2/pixfrog/releases/latest">Releases</a>
-            </div>
           </div>
         </div>
         <div class="statbar">
@@ -85,7 +80,6 @@
             <span><b>48</b> universes</span>
             <span><b>9</b> pixel protocols</span>
             <span><b class="amber">FSEQ</b> microSD</span>
-            <span><b>DMX512</b> per channel</span>
             <span><b>OTA</b> A/B</span>
             <span><b class="amber">MIT</b> licensed</span>
           </div>
@@ -218,10 +212,10 @@
           <div class="grid">
             <div class="card">
               <span class="ic">Protocols</span>
-              <h3>9 protocols + DMX512</h3>
+              <h3>9 pixel protocols</h3>
               <p>WS2815, WS2812B, WS2811, SK6812, WS2814, APA102, SK9822,
-                LPD8806 — or a full DMX512 universe out per channel, with
-                per-channel color order, gamma and brightness.</p>
+                LPD8806 — with per-channel color order, gamma and
+                brightness.</p>
             </div>
             <div class="card">
               <span class="ic">Network</span>
@@ -293,7 +287,9 @@
               <h2>Flash it in one click, from the browser.</h2>
               <p>
                 Plug in over USB, open the flasher in desktop Chrome or Edge,
-                pick the latest release. No toolchain to install.
+                pick the latest release. No toolchain to install. The build
+                targets the pixfrog board — a Waveshare ESP32-P4 Module DEV-KIT
+                with the pixfrog shield on top.
               </p>
               <div class="cta">
                 <a class="btn primary" href="./flash-en.html">Flash your board</a>
