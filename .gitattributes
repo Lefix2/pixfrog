@@ -1,0 +1,2 @@
+# Fusion archives are opaque binaries; keep them out of the git object store.
+*.f3z filter=lfs diff=lfs merge=lfs -text
