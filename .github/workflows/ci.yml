@@ -145,19 +145,13 @@ jobs:
         # initializers that g++ rejects (fixed in v5.5).
         idf_version: ['v5.5']
         # Build every config variant so each compile path stays green:
-        # tft = the default sdkconfig, no overlay (PARLIO LED backend + the
+        # nv3007 = the default sdkconfig, no overlay (PARLIO LED backend + the
         # NV3007 bar panel the rack ships with); st7789 = overlay selecting the
         # 320x240 panel inside the same TFT backend; oled = overlay selecting
         # the SSD1306. The legacy LCD_CAM LED backend (overlay
         # sdkconfig.ci.lcdcam) is no longer CI-built — kept for manual
         # debugging only.
-        #
-        # `tft` names the *default display build*, not a specific panel — the
-        # panel behind it is whatever PIXFROG_TFT_PANEL defaults to. Keep the
-        # name: the branch ruleset requires the status check by its rendered
-        # job name ("ESP-IDF build for esp32p4 (tft)"), so renaming a variant
-        # blocks every merge until a repo admin edits the ruleset by hand.
-        variant: ['oled', 'tft', 'st7789']
+        variant: ['oled', 'nv3007', 'st7789']
     container:
       # Image ships IDF preinstalled at $IDF_PATH; we source export.sh below.
       image: espressif/idf:${{ matrix.idf_version }}
@@ -188,7 +182,7 @@ jobs:
         run: |
           . $IDF_PATH/export.sh
           idf.py --version
-          if [ "${{ matrix.variant }}" != "tft" ]; then
+          if [ "${{ matrix.variant }}" != "nv3007" ]; then
             export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.${{ matrix.variant }}"
           fi
           idf.py set-target esp32p4
