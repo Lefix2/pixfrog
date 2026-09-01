@@ -167,6 +167,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Root in the container vs runner-owned workspace: without this git
+      # refuses the repo and `git describe` yields nothing, so the build silently
+      # carries the fallback version. Same fix as release.yml.
+      - name: Trust the workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Cache ccache objects
         uses: actions/cache@v5
         with:

@@ -22,7 +22,18 @@ jobs:
       IDF_CCACHE_ENABLE: '1'
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
+      # Full history + tags: the firmware version is `git describe --tags`
+      # evaluated at CMake configure time (see top-level CMakeLists.txt).
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # The job runs as root inside the IDF container while the workspace
+      # belongs to the runner user, so git refuses it as "dubious ownership",
+      # `git describe` fails, and CMakeLists silently falls back to
+      # project(VERSION 0.1.0). That is how v1.2.0 shipped announcing 0.1.0.
+      - name: Trust the workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Cache ccache objects
         uses: actions/cache@v5
@@ -52,6 +63,26 @@ jobs:
           cp build/bootloader/bootloader.bin           dist/
           cp build/partition_table/partition-table.bin dist/
           cp build/pixfrog.bin                         dist/
+
+      # A version mismatch is invisible once published — the image boots and
+      # runs, it just lies about what it is, in the UI, the console and OTA.
+      # Fail the build instead of shipping it.
+      - name: Verify the embedded version matches the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          embedded=$(python3 -c "
+          import struct, sys
+          d = open('dist/pixfrog.bin', 'rb').read()
+          if struct.unpack('<I', d[32:36])[0] != 0xABCD5432:
+              sys.exit('not an esp_app_desc_t')
+          print(d[48:80].split(b'\0')[0].decode())
+          ")
+          echo "embedded=$embedded tag=$GITHUB_REF_NAME"
+          if [ "$embedded" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::firmware reports '$embedded' but the tag is '$GITHUB_REF_NAME'"
+            exit 1
+          fi
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
