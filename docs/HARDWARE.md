@@ -187,7 +187,9 @@ The display is a **NV3007 428×142 SPI colour bar TFT** (ER-TFT2.79-1, 2.79"),
 selected by default — a plain `idf.py build` targets it. The glass is portrait
 142×428; the scan direction is the hardware default (the reference code never
 programs MADCTL), so firmware addresses it as landscape 428×142 and
-`PIXFROG_NV3007_ROT180` flips it when the module is mounted upside down.
+`PIXFROG_NV3007_ROT180` flips it. It is **on by default**, because the panel sits
+upside down in the 1U rack; clear it in `sdkconfig.defaults` for a right-way-up
+mounting.
 
 Wiring is identical for every SPI panel — only the controller init and the
 geometry differ:
@@ -308,7 +310,9 @@ diff-based flush.
 Two KiCad 10 projects under [`hardware/`](https://github.com/Lefix2/pixfrog/tree/main/hardware) take the LED bus from the
 3.3 V SoC out to the strips. They are independent and complementary — the shield
 conditions the bus at the controller; add a satellite at the far end of a long
-run to keep the signal and the strip voltage clean over distance:
+run to keep the signal and the strip voltage clean over distance. A third
+directory, [`hardware/pixfrog_rack/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_rack),
+holds the Fusion 360 design of the 1U enclosure that houses the lot:
 
 ```
 controller / devkit ──2×20 header──► pixfrog shield ──long cable──► pixfrog satellite ──► LED strip
@@ -334,6 +338,18 @@ see fresh edges and full voltage regardless of cable length. The 249 Ω / 39 Ω
 series-impedance select (header J4) mirrors the shield's SW1.
 
 ![pixfrog satellite](img/pixfrog-sat.png)
+
+### pixfrog rack — 1U enclosure
+
+[`hardware/pixfrog_rack/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_rack) —
+Fusion 360, not KiCad: a `.f3z` archive holding the 1U 200 mm chassis, the
+front-panel UI holder that carries the NV3007 bar panel and the seesaw encoder,
+the devkit + shield stack, the Neutrik XLR output and the 5 V / 15 W supply. The
+panel is mounted upside down in this design, which is why
+`PIXFROG_NV3007_ROT180` defaults to on (§5). Component list in
+[its README](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_rack).
+
+![pixfrog rack, open](img/rack-open.jpg)
 
 ---
 

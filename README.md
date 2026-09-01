@@ -71,7 +71,8 @@ build directory and sdkconfig, or the overlay is silently ignored:
 | SSD1306 128×64 I²C OLED | `sdkconfig.ci.oled` | `idf.py -B build.oled -D SDKCONFIG=build.oled/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.ci.oled" build` |
 
 Flash a variant from its own directory, e.g. `idf.py -B build.oled -p /dev/ttyACM0 flash`.
-`PIXFROG_NV3007_ROT180` flips the bar panel when the module is mounted upside down.
+`PIXFROG_NV3007_ROT180` flips the bar panel; it is **on by default** (the panel is
+mounted upside down in the 1U rack).
 
 TFT SPI GPIOs live in `boards/esp32_p4_devkit.h` — CLK=0, MOSI=6, CS=20, DC=21,
 RST=27 on the shield's J13 header, backlight on GPIO 45, SPI2 at 20 MHz. See
@@ -155,10 +156,17 @@ Rendered online (with the browser flasher) at **<https://lefix2.github.io/pixfro
 
 ## Hardware companion
 
-`hardware/pixfrog_shield/` holds the KiCad project + JLCPCB production files of
-the **pixfrog shield**: 2× 74HCT245 re-drive the 16 bus lines at 5 V,
-DIP-selectable series termination, one TVS clamp per output, 8× JST-XH.
-See [its README](hardware/pixfrog_shield/README.md).
+Three designs live under `hardware/`:
+
+- **[pixfrog shield](hardware/pixfrog_shield/README.md)** — KiCad project + JLCPCB
+  production files. 2× 74HCT245 re-drive the 16 bus lines at 5 V,
+  DIP-selectable series termination, one TVS clamp per output, 8× JST-XH.
+- **[pixfrog satellite](hardware/pixfrog_satellite/README.md)** — remote repeater
+  for the far end of a long run: Schmitt buffer re-squares one channel, local
+  regulator injects strip power.
+- **[pixfrog rack](hardware/pixfrog_rack/README.md)** — Fusion 360 design of the
+  1U enclosure: chassis, front-panel UI holder, devkit + shield stack, XLR
+  output, 5 V supply.
 
 ## Status
 
