@@ -1,9 +1,13 @@
 name: Pages
 
 # Deploy the static site (browser flasher + docs viewer) to GitHub Pages.
-# Decoupled from firmware releases: the site ships no binaries — its
-# manifest points at the "latest" GitHub Release asset, so a copy/CSS edit
-# goes live on a plain push to main, with no firmware version bump.
+#
+# The site ships the firmware image itself. It used to point the flasher at the
+# "latest" Release asset so a new firmware needed no redeploy — but GitHub
+# serves release assets without any Access-Control-Allow-Origin header, so the
+# browser refused the cross-origin fetch from lefix2.github.io and esp-web-tools
+# reported "Failed to fetch". Same-origin is the only reliable fix, so the build
+# copies the asset in and the site redeploys on every release.
 on:
   push:
     branches: [main]
@@ -11,6 +15,12 @@ on:
       - '.github/pages/**'
       - 'docs/**'
       - '.github/workflows/pages.yml'
+  # Chained off the Release workflow rather than `on: release`, because events
+  # raised by GITHUB_TOKEN (which is how release.yml publishes) do not trigger
+  # further workflows.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -24,6 +34,8 @@ concurrency:
 jobs:
   build:
     name: Assemble static site
+    # A failed release build must not publish a site around a stale binary.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -47,6 +59,28 @@ jobs:
           cp docs/PROTOCOLS.md    site/docs/protocols.md
           # Diagrams / screenshots (optional; pages hide any that are absent).
           if [ -d docs/img ]; then mkdir -p site/img && cp -r docs/img/. site/img/; fi
+
+      # Same-origin firmware: see the CORS note at the top of this file.
+      - name: Bundle the latest firmware next to the manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          echo "Bundling firmware from $tag"
+          mkdir -p site/firmware
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+             -p 'pixfrog-merged.bin' -D site/firmware
+          # The bundled image is frozen until the next deploy, so the manifest
+          # must name the version it actually carries rather than claim "latest".
+          python3 - "$tag" <<'PY'
+          import json, sys
+          m = json.load(open("site/manifest.json"))
+          m["version"] = sys.argv[1]
+          json.dump(m, open("site/manifest.json", "w"), indent=2)
+          PY
+          cat site/manifest.json
+          ls -l site/firmware
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
