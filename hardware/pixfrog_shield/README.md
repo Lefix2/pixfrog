@@ -1,5 +1,8 @@
 # pixfrog shield — LED bus signal conditioning
 
+The **board** half of pixfrog_rack; the *meca* half is the
+[1U enclosure](../pixfrog_rack/README.md) it stacks into.
+
 KiCad 10 project for the signal-adaptation shield that plugs onto the
 ESP32-P4 Module DEV-KIT's 2×20 header (J1). It closes the gap identified in
 the TODO ("output buffers"): the devkit drives the LED bus straight from
@@ -21,6 +24,12 @@ and leaves the SoC exposed to field wiring.
 
 The channel→GPIO mapping mirrors `boards/esp32_p4_devkit.h` exactly
 (CH1 DATA=GPIO2/CLK=GPIO3 … CH8 DATA=GPIO53/CLK=GPIO54).
+
+J2–J9 are internal: the loom takes each one to a panel XLR, whose pin order is
+**not** the JST's ([`docs/HARDWARE.md`](../../docs/HARDWARE.md) §8) —
+JST 1 (DATA) → XLR 2, JST 2 (CLOCK) → XLR 3, JST 3 (GND) → XLR 1. Pin 4 of an
+XLR4 panel carries strip VCC and comes from the injection point, never from the
+shield.
 
 The SPI TFT display is wired to J13: **CLK=GPIO0, MOSI=GPIO6, CS=GPIO20,
 DC=GPIO21, RST=GPIO27** (+3V3/GND). GPIO36 (boot strapping, must read HIGH at

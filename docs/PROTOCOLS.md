@@ -324,7 +324,9 @@ extended BREAK before the next MAB, which is spec-tolerant.
 
 The firmware drives the framed waveform on `DATA+` (bit `ch×2`) and its inverse
 on `DATA−` (bit `ch×2+1`); both pass through the existing 74HCT245 3.3 V → 5 V
-buffers (`HARDWARE.md` §6). Two wiring options:
+buffers (`HARDWARE.md` §3). They leave the box on the channel's XLR, where the
+standard DMX pin order already applies — 1 = common, 2 = `DATA+`, 3 = `DATA−`
+(`HARDWARE.md` §8) — so a DMX-mode channel needs no adapter. Two wiring options:
 
 ```
 A) Complementary pair (no extra parts, §7.3):
