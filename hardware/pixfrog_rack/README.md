@@ -27,6 +27,24 @@ into a project. Exported at design version 40.
 | `S-15-5 power` | 5 V / 15 W enclosed PSU |
 | `captive_CFBSOAM3-6`, `captive_CFBSOAM3-10` | Captive panel screws, M3 |
 
+## Front-panel outputs
+
+The eight channels reach the front panel on XLR connectors, wired from the
+shield's JST-XH outputs. The pin order is the project-wide convention
+([`docs/HARDWARE.md`](../../docs/HARDWARE.md) §8):
+
+| Pin | Signal | Carries |
+|----:|--------|---------|
+| 1 | GND | signal + power return |
+| 2 | DATA+ | DATA (NRZ and clocked strips), DATA+ (DMX512) |
+| 3 | DATA− | CLOCK (clocked strips), DATA− (DMX512), unused on WS281x |
+| 4 | VCC | strip supply — XLR4 shells only |
+
+Pins 1-3 match the DMX512 standard pinout, so a plain 3-pin DMX cable carries a
+pixfrog channel and a DMX-mode channel drives a fixture directly. The XLR4 shell
+adds strip power on pin 4; it cannot mate with a 3-pin one, which is what keeps
+powered runs and signal-only runs apart.
+
 The pin assignments the UI and shield depend on are in
 [`boards/esp32_p4_devkit.h`](../../boards/esp32_p4_devkit.h) — the single source
 of truth. Panel geometry for the display is in
