@@ -59,11 +59,6 @@ bool init();
 // ArtNet ingest side (artnet_task on core 0)
 // ────────────────────────────────────────────────────────────────────────────
 
-// Resolve a universe number (net+subnet+universe combined into 0..32767)
-// into a pool slot. Returns nullptr if the universe is not configured for any
-// channel. The returned pointer is valid until the next swap_universes().
-uint8_t* universe_back_buffer_for(uint16_t universe_number);
-
 // ── 2-source merge (HTP/LTP) ────────────────────────────────────────────────
 // Route one network frame into the universe pool, tracking up to two
 // concurrent senders keyed by a nonzero `source_id` (IPv4 for ArtDmx, CID
