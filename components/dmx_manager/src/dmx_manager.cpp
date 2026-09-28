@@ -25,10 +25,37 @@ static_assert(logic::kUniverseSize == kUniverseSize);
 static_assert(logic::kMaxUniverseNumber == kMaxUniverseNumber);
 
 // Two universe banks, each `kNumUniverses * kUniverseSize` bytes, in PSRAM.
+// Both pointers are set once in init() and never move afterwards, so "the back
+// bank" is just the one `g_uni_front` is not currently on. Deriving it that way
+// (rather than keeping a second `g_uni_back` pointer that the render task
+// rewrites on every swap) means there is no non-atomic shared pointer for the
+// receiver task to catch mid-swap.
 uint8_t* g_uni_bank_a = nullptr;
 uint8_t* g_uni_bank_b = nullptr;
 std::atomic<uint8_t*> g_uni_front{ nullptr };
-uint8_t* g_uni_back = nullptr;
+
+// Serialises the front/back flip in swap_universes() (render task) against a
+// receiver-task write. Without it the receiver can resolve the back bank, get
+// pre-empted by a swap, and finish its write into the bank the decode is now
+// reading — a torn frame, and a dirty bit the swap has already consumed. Held
+// only across one universe-sized memcpy, so the render task's worst-case wait
+// here is microseconds.
+SemaphoreHandle_t g_uni_swap_mux = nullptr;
+
+// One bit per pool slot, set once the receiver has written that slot into the
+// CURRENT back bank and cleared by swap_universes(). It does two jobs:
+//   - `mask == 0` means nothing arrived since the last swap, so swap_universes()
+//     must NOT swap. Swapping unconditionally re-presents the bank that is one
+//     source frame behind, so any source slower than the refresh rate alternates
+//     between its last two frames instead of holding the newest — a 10 Hz source
+//     against a 61 Hz refresh flickers at ~30 Hz.
+//   - the first write to a slot after a swap seeds that slot from the front bank,
+//     so a packet shorter than the universe cannot leave a tail from two source
+//     frames ago.
+// Seeding on the receiver task rather than inside the swap is what keeps it
+// race-free: only the receiver ever writes the back bank.
+static_assert(kNumUniverses <= 64, "the dirty mask is a single uint64_t");
+std::atomic<uint64_t> g_uni_dirty{ 0 };
 
 // Per-channel pixel buffers in internal SRAM, double-buffered.
 struct ChanBufs {
@@ -148,7 +175,13 @@ bool init() {
         return false;
     }
     g_uni_front.store(g_uni_bank_a, std::memory_order_release);
-    g_uni_back = g_uni_bank_b;
+    g_uni_dirty.store(0, std::memory_order_relaxed);
+
+    g_uni_swap_mux = xSemaphoreCreateMutex();
+    if (!g_uni_swap_mux) {
+        ESP_LOGE(TAG, "universe swap mutex alloc failed");
+        return false;
+    }
 
     g_merge_staging = static_cast<uint8_t*>(
         heap_caps_calloc(1, kNumUniverses * 2 * kUniverseSize, MALLOC_CAP_SPIRAM));
@@ -503,22 +536,45 @@ void note_universe_terminated(uint16_t universe_number) {
     if (g_last_activity_us[ch] != 0) g_last_activity_us[ch] = 1;
 }
 
-uint8_t* universe_back_buffer_for(uint16_t universe_number) {
-    const uint16_t slot = slot_for_universe(universe_number);
-    if (slot == logic::kNoSlot) return nullptr;
-    return g_uni_back + slot * kUniverseSize;
+// Seed a pool slot in the back bank from the front bank the first time it is
+// written after a swap, and mark it dirty so the next swap actually happens.
+// The back bank is whichever one the front pointer is not on. Call with
+// g_uni_swap_mux held, so the answer cannot go stale before it is used.
+uint8_t* back_bank_locked() {
+    return g_uni_front.load(std::memory_order_relaxed) == g_uni_bank_a ? g_uni_bank_b
+                                                                       : g_uni_bank_a;
+}
+
+// Seed a pool slot in the back bank from the front bank the first time it is
+// written after a swap, and mark it dirty so the next swap actually happens.
+// Call with g_uni_swap_mux held.
+void prepare_back_slot(uint16_t slot, uint8_t* back) {
+    const uint64_t bit = 1ull << slot;
+    if (g_uni_dirty.fetch_or(bit, std::memory_order_acq_rel) & bit) return;
+    const uint8_t* front = g_uni_front.load(std::memory_order_relaxed);
+    const size_t base    = static_cast<size_t>(slot) * kUniverseSize;
+    memcpy(back + base, front + base, kUniverseSize);
 }
 
 bool write_universe_from_source(uint16_t universe_number, const uint8_t* data, size_t len,
                                 uint32_t source_id, int64_t timeout_us) {
-    if (!data || !g_merge_staging) return false;
+    if (!data || !g_merge_staging || !g_uni_swap_mux) return false;
     const uint16_t slot = slot_for_universe(universe_number);
     if (slot == logic::kNoSlot) return false;
     const bool ltp = config::get_global().merge_mode == config::kMergeLtp;
-    return logic::merge_ingest(g_merge[slot],
-                               g_merge_staging + static_cast<size_t>(slot) * 2 * kUniverseSize,
-                               g_uni_back + static_cast<size_t>(slot) * kUniverseSize, data, len,
-                               source_id, ltp, esp_timer_get_time(), timeout_us);
+
+    // Seed + ingest under the swap lock: a swap landing between resolving the
+    // back bank and finishing the write would put this frame into the bank the
+    // decode is reading.
+    xSemaphoreTake(g_uni_swap_mux, portMAX_DELAY);
+    uint8_t* back = back_bank_locked();
+    prepare_back_slot(slot, back);
+    const bool ok = logic::merge_ingest(
+        g_merge[slot], g_merge_staging + static_cast<size_t>(slot) * 2 * kUniverseSize,
+        back + static_cast<size_t>(slot) * kUniverseSize, data, len, source_id, ltp,
+        esp_timer_get_time(), timeout_us);
+    xSemaphoreGive(g_uni_swap_mux);
+    return ok;
 }
 
 void merge_drop_source(uint16_t universe_number, uint32_t source_id) {
@@ -595,11 +651,17 @@ bool wait_for_sync_or_period(uint32_t period_ticks) {
 }
 
 void swap_universes() {
-    uint8_t* new_front = g_uni_back;
-    g_uni_back         = g_uni_front.exchange(new_front, std::memory_order_acq_rel);
-    // After swap, copy the now-back into a clean state? No: we keep stale data
-    // around so a channel that has not received an update keeps its previous
-    // value. This matches stage-lighting conventions.
+    // Nothing arrived since the last swap: keep presenting the current front.
+    // Swapping here would re-present the other bank, one source frame behind,
+    // which is what made a 10 Hz source flicker between its last two frames.
+    // Hold-last-value is the stage-lighting convention, and now it really holds:
+    // a channel that has not received an update keeps its previous value because
+    // the front bank is left alone, not because the banks take turns.
+    if (g_uni_dirty.load(std::memory_order_acquire) == 0 || !g_uni_swap_mux) return;
+    xSemaphoreTake(g_uni_swap_mux, portMAX_DELAY);
+    g_uni_front.store(back_bank_locked(), std::memory_order_release);
+    g_uni_dirty.store(0, std::memory_order_relaxed);
+    xSemaphoreGive(g_uni_swap_mux);
 }
 
 uint8_t* pixel_back_buffer(size_t ch) {
