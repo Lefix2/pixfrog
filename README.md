@@ -156,17 +156,27 @@ Rendered online (with the browser flasher) at **<https://lefix2.github.io/pixfro
 
 ## Hardware companion
 
-Three designs live under `hardware/`:
+Two products live under `hardware/`, each with a board and a mechanical design.
 
-- **[pixfrog shield](hardware/pixfrog_shield/README.md)** — KiCad project + JLCPCB
-  production files. 2× 74HCT245 re-drive the 16 bus lines at 5 V,
-  DIP-selectable series termination, one TVS clamp per output, 8× JST-XH.
-- **[pixfrog satellite](hardware/pixfrog_satellite/README.md)** — remote repeater
-  for the far end of a long run: Schmitt buffer re-squares one channel, local
-  regulator injects strip power.
-- **[pixfrog rack](hardware/pixfrog_rack/README.md)** — Fusion 360 design of the
-  1U enclosure: chassis, front-panel UI holder, devkit + shield stack, XLR
-  output, 5 V supply.
+**pixfrog_rack** — the controller end:
+
+- *board* — **[pixfrog shield](hardware/pixfrog_shield/README.md)**: KiCad project
+  + JLCPCB production files. 2× 74HCT245 re-drive the 16 bus lines at 5 V,
+  DIP-selectable series termination, one TVS clamp per output, 8× JST-XH to the
+  panel connectors.
+- *meca* — **[1U enclosure](hardware/pixfrog_rack/README.md)**: Fusion 360 design
+  of the chassis, front-panel UI holder, devkit + shield stack, XLR outputs and
+  5 V supply.
+
+**pixfrog_satellite** — the far end of a long run:
+
+- *board* — **[satellite](hardware/pixfrog_satellite/README.md)**: Schmitt buffer
+  re-squares one channel, local regulator injects strip power.
+- *meca* — **WIP**, no enclosure design yet.
+
+Every channel leaves on an XLR: **1 = GND, 2 = DATA+ (DATA), 3 = DATA− (CLOCK),
+4 = VCC** on the XLR4 variant — DMX-compatible by design, see
+[docs/HARDWARE.md §8](docs/HARDWARE.md).
 
 ## Status
 

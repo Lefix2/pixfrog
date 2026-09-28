@@ -1,5 +1,9 @@
 # pixfrog satellite — LED signal repeater + power injection
 
+The **board** half of pixfrog_satellite; its mechanical design (enclosure) is
+**WIP** — the board mounts bare for now, H1/H2 tying its GND to the chassis or
+heatsink that carries it.
+
 KiCad 10 project for the remote node that sits at the **far end of a long LED
 cable run**. The controller (or `pixfrog_shield`) sends one channel's two signal
 lines down the cable; over distance the edges degrade and the strip voltage
@@ -40,6 +44,14 @@ the strip supply on `VCC`; the on-board LDO derives 5 V for the buffer from eith
 | J2 | 4-pin screw | `VCC`, `Data1_out`, `Data2_out`, `GND` | **Out** to the LED strip — regenerated data + injected power |
 | J5 | 2-pin JST-XH (`fan_out`) | `VCC`, `GND` | Power fan-out — chain to the strip's other end or a downstream node |
 | J4 | 4-pin JST-XH | pre-/post-249 Ω taps | Optional impedance-select header (see table above); leave open for 249 Ω only |
+
+Screw terminals, not panel connectors — the XLR lives at the cable end. The
+incoming cable follows the project-wide pin order
+([`docs/HARDWARE.md`](../../docs/HARDWARE.md) §8): **1 = GND, 2 = DATA+ (DATA),
+3 = DATA− (CLOCK), 4 = VCC**, so XLR pins 1/2/3 land on J3's `GND` /
+`Data1_in` / `Data2_in`. An XLR4 run brings strip power on pin 4 to J1 `VCC`;
+with an XLR3 run the strip supply is local and J1 is fed from the node's own
+PSU.
 
 ## Signal + power flow (per line)
 

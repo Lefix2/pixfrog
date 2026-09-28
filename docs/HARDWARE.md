@@ -26,7 +26,8 @@ External components added for pixfrog:
 - 1 × NV3007 SPI colour bar TFT 428×142 (2.79", ER-TFT2.79-1)
 - 1 × Adafruit seesaw QT rotary encoder #4991
 - 2 × 74HCT245 level shifters (3.3 V → 5 V) — one per group of 8 GPIOs
-- 8 × strip output connectors (DATA, CLOCK, GND)
+- 8 × XLR strip output connectors (GND, DATA, CLOCK — plus VCC on the XLR4
+  variant, §8)
 
 ---
 
@@ -141,7 +142,7 @@ The SoC drives **3.3 V CMOS**. 5 V strips have variable thresholds:
 
 ![3.3 V → 5 V level shifting with a 74HCT245 buffer, series resistor and TVS clamp on each output](img/level-shifter.svg)
 
-Realised as the **pixfrog shield** (see §8, *Hardware boards*, below).
+Realised as the **pixfrog shield** (see §9.1, *pixfrog_rack — board*, below).
 
 ---
 
@@ -300,51 +301,75 @@ diff-based flush.
 ## 7. Power
 
 - ESP32-P4 + 3.3 V logic: LDO or DC-DC on the DEV-KIT (already done).
-- Signal ground must be common between the board and the strips — each shield
-  output carries a GND pin alongside its DATA/CLOCK pair.
+- Signal ground must be common between the board and the strips — every output
+  carries GND on pin 1 of its XLR alongside the DATA/CLOCK pair (§8).
 
 ---
 
-## 8. Hardware boards
+## 8. Output connectors — XLR3 / XLR4
 
-Two KiCad 10 projects under [`hardware/`](https://github.com/Lefix2/pixfrog/tree/main/hardware) take the LED bus from the
-3.3 V SoC out to the strips. They are independent and complementary — the shield
-conditions the bus at the controller; add a satellite at the far end of a long
-run to keep the signal and the strip voltage clean over distance. A third
-directory, [`hardware/pixfrog_rack/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_rack),
-holds the Fusion 360 design of the 1U enclosure that houses the lot:
+A pixfrog channel always leaves the enclosure on an **XLR** connector, and every
+board that emits, repeats or consumes a channel uses the same pin order:
+
+| Pin | Signal      | WS281x (NRZ)          | Clocked (APA102 / SK9822 / LPD8806) | DMX512     |
+|----:|-------------|-----------------------|-------------------------------------|------------|
+| 1   | GND         | signal + power return | signal + power return               | common / shield |
+| 2   | DATA+       | DATA                  | DATA                                | DATA+      |
+| 3   | DATA−       | unused                | CLOCK                               | DATA−      |
+| 4   | VCC         | strip supply (XLR4 only) | strip supply (XLR4 only)         | unused     |
+
+Pins 2 and 3 are the same physical pair in every mode — only the firmware's
+interpretation changes (`docs/PROTOCOLS.md` §3 and §7): the second line of the
+bus is the CLOCK of a clocked strip, the inverted DATA− of a DMX512 universe, or
+nothing at all on a WS281x run.
+
+Two shells, one convention:
+
+- **XLR3** — pins 1-3, signal only. The assignment is deliberately the DMX512
+  standard one (1 = common, 2 = data+, 3 = data−), so an off-the-shelf DMX cable
+  carries a pixfrog channel as-is, and a channel switched to DMX512 output plugs
+  straight into a fixture with no adapter. The strip takes its power from a local
+  PSU.
+- **XLR4** — the same three pins plus **pin 4 = VCC**, the strip supply (12 V or
+  24 V per build) travelling down the same cable as its data.
+
+Splitting the two across two shells is the point of the choice: XLR3 and XLR4
+do not mate, so a cable carrying strip voltage on pin 4 cannot be plugged into a
+signal-only line, nor the reverse.
+
+Pin 1 returns both the data pair and, on XLR4, the full strip current, so the
+conductor and the crimp must be sized for the injected current — not for a
+signal ground (§7).
+
+---
+
+## 9. pixfrog_rack
+
+The controller end: the devkit and its conditioning board in a 1U chassis, the
+eight channels on the front panel.
 
 ```
-controller / devkit ──2×20 header──► pixfrog shield ──long cable──► pixfrog satellite ──► LED strip
-      3.3 V GPIOs                     level-shift + protect          repeat + power inject
+devkit ──2×20 header──► pixfrog shield ──loom──► 8× XLR front panel ──► strip / satellite
+ 3.3 V GPIOs            level-shift + protect       §8 pinout
 ```
 
-### pixfrog shield — bus conditioning at the controller
+### 9.1 Board — pixfrog shield
 
-[`hardware/pixfrog_shield/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_shield) — plugs onto
-the devkit's 2×20 header and re-drives all 16 bus lines at 5 V through 2× 74HCT245
-(the level shifter of §3 realised), with DIP-selectable series termination, a 5 V
-TVS clamp per output and 8× JST-XH (DATA/CLOCK/GND). It also breaks out the TFT
-display and the spare GPIOs on its J13 header (§5).
+[`hardware/pixfrog_shield/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_shield) — KiCad 10.
+Plugs onto the devkit's 2×20 header and re-drives all 16 bus lines at 5 V through
+2× 74HCT245 (the level shifter of §3 realised), with DIP-selectable series
+termination, a 5 V TVS clamp per output and 8× JST-XH (DATA/CLOCK/GND) feeding
+the panel connectors. It also breaks out the TFT display and the spare GPIOs on
+its J13 header (§5).
 
 ![pixfrog shield](img/pixfrog-shield.png)
 
-### pixfrog satellite — remote repeater + power injection
-
-[`hardware/pixfrog_satellite/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_satellite) — sits at
-the **far end of a long run**. A 74LVC2G17 Schmitt buffer re-squares one channel's
-two lines and a local LD1117 (12 V or 24 V build) injects strip power, so the LEDs
-see fresh edges and full voltage regardless of cable length. The 249 Ω / 39 Ω
-series-impedance select (header J4) mirrors the shield's SW1.
-
-![pixfrog satellite](img/pixfrog-sat.png)
-
-### pixfrog rack — 1U enclosure
+### 9.2 Meca — 1U enclosure
 
 [`hardware/pixfrog_rack/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_rack) —
 Fusion 360, not KiCad: a `.f3z` archive holding the 1U 200 mm chassis, the
 front-panel UI holder that carries the NV3007 bar panel and the seesaw encoder,
-the devkit + shield stack, the Neutrik XLR output and the 5 V / 15 W supply. The
+the devkit + shield stack, the Neutrik XLR outputs and the 5 V / 15 W supply. The
 panel is mounted upside down in this design, which is why
 `PIXFROG_NV3007_ROT180` defaults to on (§5). Component list in
 [its README](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_rack).
@@ -353,13 +378,31 @@ panel is mounted upside down in this design, which is why
 
 ---
 
-## 9. Future hardware (v1, custom PCB)
+## 10. pixfrog_satellite
 
-An all-in-one board folding the shield's conditioning onto the SoC carrier:
+The far end of a long run. Independent of, and complementary to, the rack: the
+shield conditions the bus at the controller, a satellite keeps the signal and the
+strip voltage clean over distance.
 
-- 2-layer PCB minimum, continuous ground plane
-- Dedicated 1 A LDO for the 3.3 V rail
-- Isolated DC-DC for the level shifters if the run to the strips exceeds ~30 cm
-- 8 × JST-XH 3-pin connectors per channel (DATA, CLOCK, GND)
-- Front-panel Ethernet jack
-- Passive aluminium heatsink — octal PSRAM dissipates at full throughput
+```
+pixfrog rack ──long cable──► pixfrog satellite ──► LED strip
+   §8 pinout                 repeat + power inject
+```
+
+### 10.1 Board — repeater + power injection
+
+[`hardware/pixfrog_satellite/`](https://github.com/Lefix2/pixfrog/tree/main/hardware/pixfrog_satellite) — KiCad 10.
+A 74LVC2G17 Schmitt buffer re-squares one channel's two lines and a local LD1117
+(12 V or 24 V build) injects strip power, so the LEDs see fresh edges and full
+voltage regardless of cable length. The 249 Ω / 39 Ω series-impedance select
+(header J4) mirrors the shield's SW1. Its screw terminals follow §8: J3 in =
+GND / DATA+ / DATA−, J2 out = VCC / DATA+ / DATA− / GND.
+
+![pixfrog satellite](img/pixfrog-sat.png)
+
+### 10.2 Meca — WIP
+
+**Work in progress** — no enclosure design is committed yet. The board currently
+mounts bare, its H1/H2 GND pads tying it to whatever chassis or heatsink carries
+it. The housing, once designed, lands next to the rack's under
+[`hardware/`](https://github.com/Lefix2/pixfrog/tree/main/hardware).
