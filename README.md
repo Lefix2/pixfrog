@@ -12,6 +12,7 @@
 - **2-source merge** (HTP/LTP) when ArtNet and sACN feed the same universe
 - **FSEQ player**: `.fseq` sequences (xLights/FPP, zstd-compressed) from microSD with hot-plug, uploaded over the web UI, free-running or slaved to ArtTimeCode / **FPP MultiSync**
 - **Standalone scenes**: up to 30 (create / rename / reorder / delete), 11 effects (solid + strobe, chase, rainbow, blobs, gradient, fade, twinkle, fire, scanner, wave, stripes), up to 4 colours each, per-channel mask; playable at boot, from the desk (ArtTrigger), or any UI
+- **Per-line tuning**: gamma, white balance, grouping, invert, and up to 8 dead-pixel gaps anywhere on the line (sacrificial pixel, repeater chip); any refresh rate 20–120 Hz with a non-destructive pixel budget
 - **Signal-loss failsafe** per channel: hold / blackout / solid colour / scene after a configurable timeout
 - **Per-channel gamma + white balance**, baked into encode-time LUTs (validated bit-exact on a logic analyzer)
 - Local UI: **NV3007 428×142 colour bar TFT** (SPI, 2.79") with a live status dashboard (per-channel activity, link/services state) and natively rasterised anti-aliased fonts; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning. Two other panels are supported as build-time alternates — see [Display backend](#display-backend)

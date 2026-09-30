@@ -156,10 +156,93 @@ struct PixelLut {
 // wb_*: 255 = unity gain, 0 is treated as 255 (zero-fill migration safety).
 void build_pixel_lut(PixelLut& lut, uint8_t gamma_x10, uint8_t wb_r, uint8_t wb_g, uint8_t wb_b);
 
+// ────────────────────────────────────────────────────────────────────────────
+// Pixel gaps — dead physical pixels inside a line
+// ────────────────────────────────────────────────────────────────────────────
+
+// A run of physical LEDs that carry no data: a sacrificial level-shift pixel at
+// the head of a line, or a repeater / injector with an LED chip mid-line. Gaps
+// are wiring, so they are indexed in physical (controller-side) order and never
+// move with invert or grouping. Live pixels fill the positions around them.
+constexpr size_t kMaxPixelGaps = 8;
+
+struct PixelGap {
+    uint16_t pos;  // first dead physical pixel, 0-based
+    uint16_t len;  // 0 = unused slot
+};
+
+// Sorts by position, merges overlapping/adjacent runs and packs the used gaps
+// first (unused slots zeroed). Returns the number of gaps in use.
+inline size_t normalize_gaps(PixelGap* g, size_t n) {
+    size_t used = 0;
+    for (size_t i = 0; i < n; ++i)
+        if (g[i].len) g[used++] = g[i];
+    for (size_t i = 1; i < used; ++i)
+        for (size_t j = i; j > 0 && g[j].pos < g[j - 1].pos; --j) {
+            const PixelGap t = g[j];
+            g[j]             = g[j - 1];
+            g[j - 1]         = t;
+        }
+    size_t out = 0;
+    for (size_t i = 0; i < used; ++i) {
+        const uint32_t end = static_cast<uint32_t>(g[i].pos) + g[i].len;
+        if (out && g[i].pos <= static_cast<uint32_t>(g[out - 1].pos) + g[out - 1].len) {
+            const uint32_t prev_end = static_cast<uint32_t>(g[out - 1].pos) + g[out - 1].len;
+            if (end > prev_end) g[out - 1].len = static_cast<uint16_t>(end - g[out - 1].pos);
+        } else {
+            g[out++] = g[i];
+        }
+    }
+    for (size_t i = out; i < n; ++i)
+        g[i] = PixelGap{ 0, 0 };
+    return out;
+}
+
+// Number of gaps in use in a normalized array (they are packed first).
+inline size_t gap_count(const PixelGap* g, size_t n) {
+    size_t k = 0;
+    while (k < n && g[k].len)
+        ++k;
+    return k;
+}
+
+// Physical pixels a line of `live` live pixels spans: every gap that starts
+// before the end of the line (as extended by the gaps before it) is inside it.
+inline uint32_t physical_count(uint32_t live, const PixelGap* g, size_t n) {
+    uint32_t phys = live;
+    for (size_t i = 0; i < n && g[i].len; ++i) {
+        if (g[i].pos >= phys) break;
+        phys += g[i].len;
+    }
+    return phys;
+}
+
+// Live pixels among the first `phys` physical positions.
+inline uint32_t live_within(uint32_t phys, const PixelGap* g, size_t n) {
+    uint32_t dead = 0;
+    for (size_t i = 0; i < n && g[i].len; ++i) {
+        if (g[i].pos >= phys) break;
+        const uint32_t end  = static_cast<uint32_t>(g[i].pos) + g[i].len;
+        dead               += (end < phys ? end : phys) - g[i].pos;
+    }
+    return phys - dead;
+}
+
+// Live index of physical position `p`, or -1 when it falls in a gap.
+inline int32_t live_index(uint32_t p, const PixelGap* g, size_t n) {
+    uint32_t dead_before = 0;
+    for (size_t i = 0; i < n && g[i].len; ++i) {
+        if (p < g[i].pos) break;
+        if (p < static_cast<uint32_t>(g[i].pos) + g[i].len) return -1;
+        dead_before += g[i].len;
+    }
+    return static_cast<int32_t>(p - dead_before);
+}
+
 struct ChannelDesc {
     Protocol protocol;
     ColorOrder color_order;
-    uint16_t pixel_count;  // logical pixels in the source buffer
+    uint16_t pixel_count;  // physical pixels on the wire (live + dead, see gaps)
     uint8_t brightness;    // 0..255, applied at encode time
     uint8_t grouping;      // 1..8; N source pixels share one output pixel
     bool invert_direction;
@@ -167,6 +250,10 @@ struct ChannelDesc {
     uint8_t bus_bit_clock;          // which bit carries CLOCK (clocked protocols only)
     uint32_t clock_hz;              // requested CLOCK rate (clocked only)
     const PixelLut* lut = nullptr;  // optional gamma/white-balance LUT
+    // Normalized dead-pixel runs (null = none). The source buffer then holds
+    // live_within(pixel_count) pixels; dead positions are emitted black.
+    const PixelGap* gaps = nullptr;
+    uint8_t gap_count    = 0;
 };
 
 // ────────────────────────────────────────────────────────────────────────────

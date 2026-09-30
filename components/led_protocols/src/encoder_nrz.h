@@ -39,11 +39,19 @@ inline uint8_t apply_brightness(uint8_t component, uint8_t brightness) {
 
 // Source byte pointer for output pixel `out_pi`, honouring direction inversion
 // and grouping. `bytes_per_px` is the SOURCE stride (3 for RGB, 4 for RGBW).
+// Returns null for a dead physical position (see ChannelDesc::gaps): invert and
+// grouping act on the live pixels only, gaps stay where they are wired.
 inline const uint8_t* source_pixel(const ChannelDesc& desc, const uint8_t* pixels, uint16_t out_pi,
                                    size_t bytes_per_px) {
-    const uint16_t src_pi = desc.invert_direction
-                              ? static_cast<uint16_t>(desc.pixel_count - 1 - out_pi)
-                              : out_pi;
+    uint32_t live_pi = out_pi;
+    uint32_t live_n  = desc.pixel_count;
+    if (desc.gap_count) {
+        const int32_t li = live_index(out_pi, desc.gaps, desc.gap_count);
+        if (li < 0) return nullptr;
+        live_pi = static_cast<uint32_t>(li);
+        live_n  = live_within(desc.pixel_count, desc.gaps, desc.gap_count);
+    }
+    const uint32_t src_pi = desc.invert_direction ? live_n - 1 - live_pi : live_pi;
     const uint16_t group  = desc.grouping ? desc.grouping : 1;
     return pixels + static_cast<size_t>(src_pi / group) * bytes_per_px;
 }
@@ -62,9 +70,13 @@ inline uint8_t corrected(const ChannelDesc& desc, const uint8_t* lut_table, uint
 inline void transformed_rgb(const ChannelDesc& desc, const uint8_t* pixels, uint16_t out_pi,
                             uint8_t out3[3]) {
     const uint8_t* p = source_pixel(desc, pixels, out_pi, 3);
-    out3[0]          = corrected(desc, desc.lut ? desc.lut->r : nullptr, p[0]);
-    out3[1]          = corrected(desc, desc.lut ? desc.lut->g : nullptr, p[1]);
-    out3[2]          = corrected(desc, desc.lut ? desc.lut->b : nullptr, p[2]);
+    if (!p) {
+        out3[0] = out3[1] = out3[2] = 0;
+        return;
+    }
+    out3[0] = corrected(desc, desc.lut ? desc.lut->r : nullptr, p[0]);
+    out3[1] = corrected(desc, desc.lut ? desc.lut->g : nullptr, p[1]);
+    out3[2] = corrected(desc, desc.lut ? desc.lut->b : nullptr, p[2]);
 }
 
 // Resolve output pixel `out_pi` to its wire-order, brightness-scaled bytes,
@@ -74,6 +86,10 @@ inline void transformed_pixel_bytes(const ChannelDesc& desc, const uint8_t* pixe
                                     uint8_t out_bytes[4]) {
     const size_t bytes_per_px = bytes_per_pixel(desc.protocol);
     const uint8_t* p          = source_pixel(desc, pixels, out_pi, bytes_per_px);
+    if (!p) {
+        out_bytes[0] = out_bytes[1] = out_bytes[2] = out_bytes[3] = 0;
+        return;
+    }
 
     // LUT + brightness up front, then the colour-order permutation. Brightness
     // is a per-component scale, so applying it before the permutation is

@@ -315,6 +315,7 @@ bool set_global(const GlobalConfig& cfg) {
 bool set_channel(size_t i, const ChannelConfig& cfg) {
     if (i >= kNumChannels) return false;
     g_channels[i] = cfg;
+    sanitize_channel(g_channels[i]);
     if (!g_nvs_ok) return false;
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;

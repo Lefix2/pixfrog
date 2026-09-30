@@ -82,6 +82,10 @@ std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
 // physical LED count that frame emits (= max(count, erase)), published by
 // decode for the output stage to read back.
 std::atomic<uint16_t> g_preview_erase{ 0 };
+// Gap-edit override for the ruler (set from ui_task, read by render_task; a
+// torn copy costs one oddly-marked preview frame).
+led::PixelGap g_preview_gaps[led::kMaxPixelGaps]{};
+std::atomic<bool> g_preview_gaps_on{ false };
 std::atomic<uint16_t> g_preview_emit{ 0 };
 
 // Active standalone scene (-1 = none).
@@ -288,7 +292,17 @@ void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
                           std::memory_order_relaxed);
 }
 
+void set_preview_gaps(const led::PixelGap* gaps, size_t n) {
+    led::PixelGap tmp[led::kMaxPixelGaps]{};
+    for (size_t k = 0; k < n && k < led::kMaxPixelGaps; ++k)
+        tmp[k] = gaps[k];
+    led::normalize_gaps(tmp, led::kMaxPixelGaps);
+    std::memcpy(g_preview_gaps, tmp, sizeof(tmp));
+    g_preview_gaps_on.store(true, std::memory_order_release);
+}
+
 void clear_pixel_preview() {
+    g_preview_gaps_on.store(false, std::memory_order_relaxed);
     g_pixel_preview.store(kPreviewOff, std::memory_order_relaxed);
     g_preview_erase.store(0, std::memory_order_relaxed);
 }
@@ -380,11 +394,19 @@ bool decode_pixels_for_channel(size_t ch) {
         // Consume any owed shrink-erase here so exactly this frame carries the
         // black tail; the emit count is published for the output stage to size
         // the emission so the dropped LEDs are actually clocked out once.
-        const uint16_t erase = g_preview_erase.exchange(0, std::memory_order_relaxed);
-        const uint16_t emit  = erase > count ? erase : count;
-        g_preview_emit.store(emit, std::memory_order_relaxed);
+        const uint16_t erase     = g_preview_erase.exchange(0, std::memory_order_relaxed);
+        const uint16_t emit      = erase > count ? erase : count;
+        const bool edit          = g_preview_gaps_on.load(std::memory_order_acquire);
+        const led::PixelGap* gps = edit ? g_preview_gaps : cc.gaps;
+        const size_t ngaps = led::is_dmx(cc.protocol) ? 0 : led::gap_count(gps, led::kMaxPixelGaps);
+        // The ruler is written in physical order (gaps painted in place), so
+        // the output stage emits the physical count with no gap mapping.
+        const uint32_t phys = led::physical_count(emit, gps, ngaps);
+        g_preview_emit.store(
+            static_cast<uint16_t>(phys < kMaxPixelsPerChan ? phys : kMaxPixelsPerChan),
+            std::memory_order_relaxed);
         logic::fill_preview_pattern(dst, kMaxBytesPerChan, count, emit,
-                                    led::bytes_per_pixel(cc.protocol));
+                                    led::bytes_per_pixel(cc.protocol), gps, ngaps);
         return true;
     }
 
@@ -460,8 +482,17 @@ void validate_capacity() {
 uint16_t channel_max_pixels(size_t ch) {
     if (ch >= config::kNumChannels) return 0;
     const uint8_t refresh = config::get_global().refresh_rate_hz;
-    return logic::max_pixels_for(config::get_channel(ch), led::kPclkHz, refresh,
-                                 led::kMaxSamplesPerFrame);
+    return logic::max_live_pixels_for(config::get_channel(ch), led::kPclkHz, refresh,
+                                      led::kMaxSamplesPerFrame);
+}
+
+uint32_t physical_pixels(const config::ChannelConfig& cc) {
+    return logic::channel_physical_pixels(cc);
+}
+
+size_t channel_gap_count(size_t ch) {
+    if (ch >= config::kNumChannels) return 0;
+    return logic::channel_gap_count(config::get_channel(ch));
 }
 
 config::ChannelConfig effective_channel(size_t ch) {

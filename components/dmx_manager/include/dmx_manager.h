@@ -154,6 +154,10 @@ bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* dat
 // A shrink emits one extra black-tail frame so dropped LEDs (which latch their
 // last value) are turned off.
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count);
+// While a gap is being edited, the ruler uses these runs instead of the stored
+// ones so the dead LED follows the encoder before anything is committed.
+// Cleared by clear_pixel_preview(). `n` ≤ led::kMaxPixelGaps, any order.
+void set_preview_gaps(const led::PixelGap* gaps, size_t n);
 void clear_pixel_preview();
 // Returns the previewed channel (-1 if inactive) and its count.
 int pixel_preview_channel();
@@ -249,6 +253,11 @@ uint16_t channel_max_pixels(size_t ch);
 // channel_max_pixels(). Every consumer that sizes or fills the output (decode,
 // effects, encoder, pacing) goes through this; the stored count stays as set.
 config::ChannelConfig effective_channel(size_t ch);
+
+// Pixels on the wire for `cc`'s (live) pixel_count: live + dead (gaps).
+uint32_t physical_pixels(const config::ChannelConfig& cc);
+// Dead-pixel runs in use on channel `ch` (0 for DMX512 / Off channels).
+size_t channel_gap_count(size_t ch);
 
 // Physical emission time (µs) of the current frame: the longest configured
 // channel's wire time (all channels emit in parallel on the shared bus). The

@@ -270,7 +270,7 @@ From the September 2026 functional/technical review.
 
 ## Review 2026-09 — touring / events
 
-- [ ] ★ **Pixel gaps anywhere (null / dead pixels)** — up to 8 physical gaps
+- [x] ★ **Pixel gaps anywhere (null / dead pixels)** — up to 8 physical gaps
       per channel (position, length): leading null pixels (sacrificial
       level-shift LED — our bench strip needs one), and dead pixels mid-line
       (a repeater or injector carrying an LED chip). DMX data fills the live

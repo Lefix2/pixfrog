@@ -242,6 +242,10 @@
                   <input id="cd-pix" type="number" value="300" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'"/>
                   <div id="cd-pixwarn" style="display:none;margin-top:6px;font:500 11.5px 'DM Mono';color:#e8b23a"></div>
                 </div>
+                <div id="cd-row-gaps">
+                  <label style="display:block;font:500 11px 'DM Mono';letter-spacing:.06em;color:#a9aca4;margin-bottom:7px"><span data-i18n="Dead pixels">Dead pixels</span> <span style="color:#80837c" data-i18n="first LED · count">first LED · count</span></label>
+                  <div id="cd-gaps" style="display:flex;flex-direction:column;gap:6px"></div>
+                </div>
                 <div id="cd-row-order">
                   <label style="display:block;font:500 11px 'DM Mono';letter-spacing:.06em;color:#a9aca4;margin-bottom:7px" data-i18n="Color order">Color order</label>
                   <select id="cd-order" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'Figtree'"><option>RGB</option><option>GRB</option><option>BGR</option><option>RGBW</option><option>GRBW</option></select>
@@ -671,6 +675,7 @@ var FR={
   'No .fseq file on the microSD card.':'Aucun fichier .fseq sur la carte microSD.',
   'Channel':'Canal','Active':'Actif','Failsafe':'Failsafe','Off':'Désactivé',
   'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
+  'Dead pixels':'Pixels morts','first LED · count':'première LED · nombre','Add dead pixels':'Ajouter des pixels morts','Remove':'Retirer',
   'LED / DMX PROTOCOL':'PROTOCOLE LED / DMX','Pixels':'Pixels','DMX slots':'Slots DMX','Color order':'Ordre des couleurs',
   'Art-Net address':'Adresse Art-Net','= absolute universe':'= univers absolu','DMX start address':'Adresse DMX de départ',
   'Max brightness':'Luminosité max','Pixel grouping':'Groupement de pixels','Gamma ×10':'Gamma ×10',
@@ -1068,7 +1073,7 @@ function selectChan(i){
   function k(id,val){ var e=el(id); if(e) e.checked=!!val; }
   v('cd-proto',c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
   var pe=el('cd-pix'); if(pe){ pe.max=c.protoRaw==='DMX512'?512:1024; pe.min=1; }
-  updatePixWarn();
+  renderGaps(); updatePixWarn();
   v('cd-order',c.order); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
   v('cd-clk',snapClk(c.clk)); v('cd-gam',c.gam); v('cd-wb',c.wb);
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
@@ -1096,7 +1101,7 @@ function updateChanVis(){
   // the label and broke alignment.
   function show(id,vis){ var e=el(id); if(e) e.style.display=vis?(id==='cd-row-inv'?'flex':'block'):'none'; }
   show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
-  show('cd-row-inv',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
+  show('cd-row-inv',!dmx); show('cd-row-gaps',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
   var lbl=el('cd-pixlabel'); if(lbl){ var cc=CHANS[curChan]; var mx=cc&&cc.maxpx?cc.maxpx:1024;
     lbl.textContent=(dmx?t('DMX slots'):t('Pixels'))+' (max '+mx+' @ '+REFRESH+' Hz)'; }
   updatePixWarn();
@@ -1108,6 +1113,20 @@ function updatePixWarn(){
   var over=c.protoRaw!=='Off' && c.pixels>c.maxpx;
   w.style.display=over?'block':'none';
   if(over) w.textContent=t('Only {n} driven at {hz} Hz — lower the frame rate to drive them all').replace('{n}',c.maxpx).replace('{hz}',REFRESH);
+}
+var MAX_GAPS=8;
+function renderGaps(){
+  var m=el('cd-gaps'), c=CHANS[curChan]; if(!m||!c) return;
+  var inp='background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:8px 10px;font:500 13px \'DM Mono\'';
+  var rows=(c.gaps||[]).map(function(g,k){
+    return '<div style="display:flex;align-items:center;gap:8px"><span style="font:500 11px \'DM Mono\';color:#80837c;width:34px">LED</span>'
+      +'<input id="cd-gap-p-'+k+'" type="number" min="1" max="1024" value="'+g[0]+'" style="width:96px;'+inp+'"/>'
+      +'<span style="font:500 12px \'DM Mono\';color:#80837c">×</span>'
+      +'<input id="cd-gap-l-'+k+'" type="number" min="1" max="1024" value="'+g[1]+'" style="width:76px;'+inp+'"/>'
+      +sqBtn('data-gap-del="'+k+'"','x','Remove')+'</div>';
+  }).join('');
+  if((c.gaps||[]).length<MAX_GAPS) rows+='<div>'+sqBtn('data-gap-add','plus','Add dead pixels')+'</div>';
+  m.innerHTML=rows; createIcons(m);
 }
 function pxLabel(c){
   if(c.protoRaw==='Off') return 'Off';
@@ -1122,6 +1141,7 @@ function readChanEditor(){
   c.pixels=Math.max(1,Math.min(nv('cd-pix'),c.protoRaw==='DMX512'?512:1024));
   c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
   c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
+  (c.gaps||[]).forEach(function(g,k){ var p=nv('cd-gap-p-'+k), l=nv('cd-gap-l-'+k); if(p>=1) g[0]=Math.min(p,1024); if(l>=1) g[1]=Math.min(l,1024); });
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
   c.px=pxLabel(c); updatePixWarn();
   c.uni=c.protoRaw==='Off'?'—':'U'+c.universe;
@@ -1386,7 +1406,7 @@ function buildChrome(){
 function buildChan(c,i){
   var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
   return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
-    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,
+    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),
     state:'off',px:pxLabel({protoRaw:c.protocol,pixels:c.pixel_count,maxpx:c.max_pixels||1024}),uni:off?'—':'U'+c.universe_start,
     dot:ST.off.dot,txt:ST.off.txt,label:ST.off.label,chip:ST.off.chip,bd:ST.off.bd};
 }
@@ -1454,7 +1474,7 @@ function buildGlobalBody(){
   if(dirty.has('syslang')){ b.lang=(LANG==='fr'?1:0); }
   return b;
 }
-function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:c.pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb}; }
+function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:c.pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:c.gaps||[]}; }
 function sceneBody(s){ return {name:s.name,effect:s.effectIdx,colors:s.colors,speed:s.speed,param:s.param,mask:s.mask}; }
 function saveAll(){
   if(dirty.size===0) return;
@@ -1650,6 +1670,8 @@ function onClick(e){
   var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
   var dev=e.target.closest('[data-dev]'); if(dev){ selectDevice(dev.getAttribute('data-dev'), dev.getAttribute('data-dev-self')==='1'); return; }
   var nav=e.target.closest('[data-nav]'); if(nav){ go(nav.getAttribute('data-nav')); return; }
+  var gadd=e.target.closest('[data-gap-add]'); if(gadd){ var cg=CHANS[curChan]; if(cg){ cg.gaps=cg.gaps||[]; if(cg.gaps.length<MAX_GAPS){ cg.gaps.push([1,1]); markDirty('ch'+curChan); renderGaps(); } } return; }
+  var gdel=e.target.closest('[data-gap-del]'); if(gdel){ var cd=CHANS[curChan]; if(cd&&cd.gaps){ cd.gaps.splice(+gdel.getAttribute('data-gap-del'),1); markDirty('ch'+curChan); renderGaps(); } return; }
   var srow=e.target.closest('[data-scene-row]'); if(srow && !e.target.closest('[data-srow-grip]') && !e.target.closest('[data-sc-play]')){ selectScene(+srow.getAttribute('data-scene-row')); return; }
   var tile=e.target.closest('[data-nav-chan]'); if(tile){ go('channels'); selectChan(+tile.getAttribute('data-nav-chan')); return; }
   var row=e.target.closest('[data-chan]'); if(row){ selectChan(+row.getAttribute('data-chan')); return; }
