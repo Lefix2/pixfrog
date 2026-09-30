@@ -363,6 +363,15 @@ From the September 2026 functional/technical review.
 
 ## Review 2026-09 — refactors & tests
 
+- [ ] **Spike: IDF `linux` target for integration tests** — IDF v5.5 builds
+      FreeRTOS (POSIX port), real NVS on emulated flash, esp_timer, esp_event,
+      lwIP (host sockets), mbedtls, log for the host. The portable components
+      (dmx_manager, config_store, artnet, sacn, web_config) could then run on
+      the real IDF implementations with a real UDP/TCP stack. Unknown:
+      `esp_http_server` declares no linux support. Cost: slower docker builds,
+      no fake clock. Evaluate after the hand-written shim harness (QEMU is not
+      an option: Espressif's QEMU has no ESP32-P4 model).
+
 - [ ] **Split `menu.cpp` (3.1 k lines)** per menu node, and
       **`web_config.cpp` (1.7 k lines)** per resource (global, channel,
       scenes, fseq, system/OTA); finish sharing the JSON field parsers between

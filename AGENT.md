@@ -53,7 +53,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 |---|---|
 | [build](.claude/skills/build/SKILL.md) | IDF build (docker or devcontainer), nv3007 default + st7789/oled overlays, sdkconfig traps |
 | [flash](.claude/skills/flash/SKILL.md) | Flash over `/dev/ttyACM0`, boot-log capture, WSL2 replug |
-| [host-tests](.claude/skills/host-tests/SKILL.md) | The three pure-host unit suites |
+| [host-tests](.claude/skills/host-tests/SKILL.md) | Every host suite via ctest (`tests/`), ASan/UBSan, whole-firmware coverage (`tools/coverage.py`, Codecov) |
 | [ci-local](.claude/skills/ci-local/SKILL.md) | Replay all CI jobs locally |
 | [format](.claude/skills/format/SKILL.md) | clang-format (style: `.clang-format`, don't bypass) |
 | [emulator](.claude/skills/emulator/SKILL.md) | SDL2 UI emulator, headless stdin protocol |
@@ -99,7 +99,7 @@ applies to *always-on* listeners; this one is opt-in and user-controlled.
   goes on a feature branch (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and lands
   through a pull request once CI is green.
 - **CI must pass locally before any push**: `./tools/ci-local.sh` replays every
-  `ci.yml` job (format check, seven host suites, emulator build + smoke test,
+  `ci.yml` job (format check, host suites plain + ASan/UBSan + coverage, emulator build + smoke test,
   nv3007 + st7789 + oled IDF builds). Never push and "let CI find out".
 - A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
   host suite green.

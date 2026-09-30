@@ -11,18 +11,18 @@ cd "$(dirname "$0")/.."
 echo "==[1/4] clang-format (CI: format-check) =="
 git ls-files '*.cpp' '*.h' | xargs clang-format --dry-run -Werror --style=file
 
-echo "==[2/4] host unit tests (CI: host-tests) =="
-for t in components/led_protocols/test components/dmx_manager/test components/artnet/test components/config_store/test components/sacn/test components/fseq_player/test components/fpp_sync/test; do
-    cmake -S "$t" -B "$t/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
-    cmake --build "$t/build" --parallel >/dev/null
-done
-./components/led_protocols/test/build/test_led_protocols
-./components/dmx_manager/test/build/test_dmx_logic
-./components/artnet/test/build/test_artnet_parser
-./components/config_store/test/build/test_config_store
-./components/sacn/test/build/test_sacn_parser
-./components/fseq_player/test/build/test_fseq_parser
-./components/fpp_sync/test/build/test_fpp_sync_parser
+echo "==[2/4] host unit tests (CI: host-tests, sanitizers, coverage) =="
+cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build build/tests --parallel >/dev/null
+ctest --test-dir build/tests --output-on-failure
+cmake -S tests -B build/tests-san -DPIXFROG_SANITIZE=ON >/dev/null
+cmake --build build/tests-san --parallel >/dev/null
+ctest --test-dir build/tests-san --output-on-failure
+if python3 -c "import gcovr" 2>/dev/null; then
+    python3 tools/coverage.py >/dev/null && cat build/coverage/summary.txt
+else
+    echo "(coverage skipped: pip install gcovr to replay the coverage job)"
+fi
 
 echo "==[3/4] UI emulator builds + smoke tests (CI: emulator) =="
 cmake -S tools/emulator -B tools/emulator/build -DCMAKE_BUILD_TYPE=Release >/dev/null

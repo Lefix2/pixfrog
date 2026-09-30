@@ -52,55 +52,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      - name: led_protocols (timings, encoders, perf)
+      # Every suite in one CMake project (tests/CMakeLists.txt), driven by ctest.
+      - name: Build + run every host suite
         run: |
-          cd components/led_protocols/test
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          ./build/test_led_protocols
+          cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/tests --parallel
+          ctest --test-dir build/tests --output-on-failure
 
-      - name: dmx_logic (sizing, capacity, decoder)
+  sanitizers:
+    name: Host tests (ASan + UBSan)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build + run every host suite under ASan + UBSan
         run: |
-          cd components/dmx_manager/test
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          ./build/test_dmx_logic
+          cmake -S tests -B build/tests-san -DPIXFROG_SANITIZE=ON
+          cmake --build build/tests-san --parallel
+          ctest --test-dir build/tests-san --output-on-failure
 
-      - name: artnet_parser (header, dmx, filter, PollReply, Address, IpProg, Nzs)
+  coverage:
+    name: Coverage (host suites + emulator)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install SDL2 + gcovr
         run: |
-          cd components/artnet/test
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          ./build/test_artnet_parser
-
-      - name: config_store (struct layout, NVS migration)
-        run: |
-          cd components/config_store/test
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          ./build/test_config_store
-
-      - name: sacn_parser (root/framing/DMP, sync, source gate)
-        run: |
-          cd components/sacn/test
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          ./build/test_sacn_parser
-
-      - name: fseq_parser (header, offsets, sparse ranges, channel mapping)
-        run: |
-          cd components/fseq_player/test
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          ./build/test_fseq_parser
-
-      - name: fpp_sync_parser (MultiSync wire format)
-        run: |
-          cd components/fpp_sync/test
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          ./build/test_fpp_sync_parser
+          sudo apt-get update && sudo apt-get install -y libsdl2-dev
+          python -m pip install gcovr
+      - name: Build, run, report
+        run: python tools/coverage.py
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/coverage/html/
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: build/coverage/coverage.lcov
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
 
   emulator:
     name: UI emulator (SDL2 host build + smoke test)
@@ -210,7 +208,7 @@ jobs:
   ci-gate:
     name: CI gate
     if: always()
-    needs: [changes, format-check, host-tests, emulator, idf-build]
+    needs: [changes, format-check, host-tests, sanitizers, coverage, emulator, idf-build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed
