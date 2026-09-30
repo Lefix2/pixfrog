@@ -71,12 +71,16 @@ Controlled by `GlobalConfig::web_enabled` (NVS-backed, default **off**). No TCP 
 opened while the flag is off — opt-in only. Toggle from the Network submenu, via
 `global web_enabled 0|1` in the UART console, or via POST `/api/global`.
 
-REST endpoints: `GET /` (SPA), `GET /api/config`, `GET /api/status`, `GET /api/peers`,
-`GET /api/backup`, `POST /api/restore`, `POST /api/global`,
-`POST /api/channel/{0..7}[/identify]`, `POST /api/scene/{n}[/play|/delete]`,
-`POST /api/scenes/add`, `POST /api/scenes/move`, `POST /api/scenes/stop`,
-`POST /api/rollback/ack`, `POST /api/ota` (raw .bin body), `POST /api/reboot`,
-`POST /api/factory-reset`. All JSON.
+REST endpoints (all JSON; every POST/DELETE behind the optional password):
+- config: `GET /api/config`, `POST /api/global`, `POST /api/channel/{0..7}[/identify]`,
+  `POST /api/autopatch`, `GET /api/backup`, `POST /api/restore`
+- scenes: `POST /api/scene/{n}[/play|/stop|/delete]` (play takes `{"outputs":mask}`),
+  `POST /api/scenes/add|move|stop`
+- show control: `POST /api/show`, `POST /api/control`, `GET /api/control/fixture` (OFL profile)
+- FSEQ: `GET /api/fseq/files`, `POST /api/fseq/play|stop|upload`
+- system: `GET /api/status`, `GET /api/diag`, `GET /api/logs`, `POST /api/loglevel`,
+  `GET|DELETE /api/coredump`, `POST /api/rollback/ack`, `POST /api/ota` (raw .bin body),
+  `POST /api/reboot`, `POST /api/factory-reset`, `GET /api/peers`, `GET /` (SPA)
 
 Multi-node: `GET /api/peers` browses mDNS for sibling pixfrogs (filtered on the
 `product=pixfrog` TXT record, self listed first). With several boxes the SPA
