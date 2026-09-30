@@ -341,6 +341,42 @@ From the September 2026 functional/technical review.
 - [ ] **FSEQ → banks → render integration test** on the host (fake SD file,
       assert decoded pixels), covering the tearing fix above.
 
+## Documentation & website refresh
+
+The site (`.github/pages`, published by `pages.yml` from `docs/img`) and the
+docs still show the pre-September UI, hardware and feature set. Items marked
+*(owner)* need the hardware or the CAD files; the rest can be generated.
+
+- [ ] ★ **Reproducible web UI screenshots** — commit the mock API + headless
+      Chrome harness used for PR #87/#88 as `tools/screenshots/` (mock
+      `/api/*` with a realistic demo config, one command → PNGs), so every UI
+      change can refresh the visuals instead of hand-made captures.
+- [ ] ★ **New web UI visuals** — regenerate `web-dashboard.png` and
+      `web-channels.png` in the site-aligned theme (PR #87) and add the scenes
+      screen (list + editor, effect dropdown, palette chips — PR #88); used by
+      the site home (`index-*.html` media grid) and README.
+- [ ] **TFT visuals** — refresh `ui-home.png` from the emulator (headless
+      stdin protocol) and add the scene list / playback screens.
+- [ ] **Effects gallery** — one space-time strip per scene effect (x = pixel,
+      y = time), rendered on the host from `fill_scene_pattern` (the harness
+      used to tune fire in PR #88), for the README and a site section on
+      standalone scenes.
+- [ ] *(owner)* **Up-to-date mechanical renders** — pixfrog_rack 1U enclosure
+      (Fusion 360: chassis, UI holder, PSU, XLR) and the pixfrog_satellite
+      mechanics once out of WIP; replace the renders in `docs/HARDWARE.md` and
+      on the site.
+- [ ] *(owner)* **Board renders** — re-export `pixfrog-shield.png` and
+      `pixfrog-sat.png` from the current KiCad revisions.
+- [ ] *(owner)* **Photos** — assembled rack (`rack-full/open/closeup.jpg`),
+      the site hero photo and the `og-cover.png` social card, plus in-use
+      shots (lit strips running scenes/FSEQ, satellite on a long run).
+- [ ] **Content pass** — README feature list, site home/about/docs pages and
+      `docs/*.md` for what shipped since the last refresh: 30 scenes / 11
+      effects / palettes / strobe, the new web UI, scene REST endpoints,
+      NVS scene bank (ARCHITECTURE §5 memory budget), then each Review 2026-09
+      feature as it lands (refresh rates, pixel gaps, control universe, ...).
+      FR and EN pages together.
+
 ## Protocol / network
 
 - [ ] **sACN multicast test on a real LAN** — IGMP joins are untestable from
