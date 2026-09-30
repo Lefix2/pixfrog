@@ -22,6 +22,7 @@ PORT=/dev/ttyACM1 BOARD_IP=10.0.0.5 ./run_all.py
 | `show` | grand master / blackout / strobe (console + ArtTrigger KeyMacro), scene zones and crossfade, the DMX control universe over Art-Net (master, blackout, scene band, local stop holds, release when the desk goes silent), fixture profile |
 | `output` | refresh bounds 20..120 Hz and the rate actually held, pixels above the budget kept, dead-pixel gaps (merge, persistence, logical pixels untouched) |
 | `identify_gamma` | identify blink, gamma/wb readback, backup/restore round-trip |
+| `fseq` | upload to SD, playback position/duration, console seek, ArtTimeCode seek, FPP MultiSync start/sync/stop/hot-join (needs a microSD in the board) |
 | `display` | backlight level + idle dim + dim delay: console ranges, NVS persistence, web round-trip |
 | `auth` | open-by-default, 401s, flat brute-force delay, UART recovery |
 | `webops` | `/api/status` fields, gzipped SPA + ETag/304, mDNS announce, coredump cycle |
