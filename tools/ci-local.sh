@@ -32,6 +32,18 @@ cmake -S tools/emulator -B tools/emulator/build.st7789 -DCMAKE_BUILD_TYPE=Releas
     -DPIXFROG_EMU_PANEL=st7789 >/dev/null
 cmake --build tools/emulator/build.st7789 --parallel >/dev/null
 ./tools/emulator/smoke.sh build.st7789/pixfrog_emu
+if python3 -c "import PIL" 2>/dev/null; then
+    python3 tools/emulator/crawl.py tools/emulator/build/pixfrog_emu
+    python3 tools/emulator/crawl.py tools/emulator/build.st7789/pixfrog_emu --panel st7789
+else
+    echo "(menu crawl skipped: pip install pillow)"
+fi
+if python3 -c "import playwright, pytest" 2>/dev/null; then
+    echo "== web UI browser tests (CI: web-ui) =="
+    python3 -m pytest tests/web -q
+else
+    echo "(web UI tests skipped: pip install pytest playwright && python3 -m playwright install chromium)"
+fi
 
 echo "==[4/4] IDF builds nv3007 (default) + st7789 + oled (CI: idf-build matrix) =="
 # Separate build dir + sdkconfig per overlay: SDKCONFIG_DEFAULTS only applies

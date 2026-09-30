@@ -90,6 +90,7 @@ bool set_channel(size_t channel_index, const ChannelConfig& cfg) {
     ensure_init();
     if (channel_index >= kNumChannels) return false;
     g_channels[channel_index] = cfg;
+    sanitize_channel(g_channels[channel_index]);  // as the NVS store: normalizes gaps
     return true;
 }
 

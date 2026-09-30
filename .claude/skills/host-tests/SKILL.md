@@ -29,5 +29,16 @@ whole code base. Needs `pip install gcovr` (+ `libsdl2-dev` for the emulator):
 python3 tools/coverage.py          # → build/coverage/{summary.txt,coverage.lcov,html/}
 ```
 
+SPA in Chromium against the host API server (CI job `web-ui`):
+
+```bash
+pip install pytest playwright && python3 -m playwright install chromium
+python3 -m pytest tests/web -q      # needs build/tests/harness/pixfrog_api_host
+```
+
+UI menu crawl + golden screenshots (CI job `emulator`, `pip install pillow`):
+`python3 tools/emulator/crawl.py tools/emulator/build/pixfrog_emu` (see the
+emulator skill; `--update-golden` after an intended UI change).
+
 Each suite prints `PASS=<n> FAIL=0`. A new suite is registered in
 `tests/CMakeLists.txt` only — CI and `tools/ci-local.sh` pick it up.

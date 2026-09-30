@@ -1,5 +1,7 @@
 // esp_console / app description / OTA / restart shims.
+#include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -64,6 +66,47 @@ esp_reset_reason_t esp_reset_reason() {
 void esp_log_level_set(const char* tag, esp_log_level_t level) {
     if (tag && std::strcmp(tag, "*") == 0) g_log_level = level;
 }
+esp_log_level_t esp_log_level_get(const char*) {
+    return static_cast<esp_log_level_t>(g_log_level);
+}
+
+namespace {
+vprintf_like_t g_vprintf = nullptr;
+int call_hook(const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    const int n = g_vprintf(fmt, ap);
+    va_end(ap);
+    return n;
+}
+}  // namespace
+
+vprintf_like_t esp_log_set_vprintf(vprintf_like_t func) {
+    vprintf_like_t prev = g_vprintf;
+    g_vprintf           = func;
+    return prev;
+}
+
+namespace shim {
+// Like esp_log: level-filtered, "L (ms) TAG: msg" through the vprintf hook
+// (the web log ring taps it); on stderr only when PIXFROG_TEST_LOG is set.
+void log_write(char level, const char* tag, const char* fmt, ...) {
+    static const char kOrder[] = "EWIDV";
+    const char* at             = std::strchr(kOrder, level);
+    if (at && (at - kOrder) + 1 > g_log_level) return;
+    char msg[256];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+    char line[320];
+    std::snprintf(line, sizeof(line), "%c (%lld) %s: %s\n", level,
+                  static_cast<long long>(shim::now_us() / 1000), tag, msg);
+    if (g_vprintf) call_hook("%s", line);
+    static const bool echo = std::getenv("PIXFROG_TEST_LOG") != nullptr;
+    if (echo) std::fputs(line, stderr);
+}
+}  // namespace shim
 
 namespace shim {
 int restarts() {

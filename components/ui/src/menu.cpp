@@ -3227,13 +3227,15 @@ bool menu_is_home() {
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     // Node names mirror the old per-screen names so the emulator agent API and
     // existing navigation scripts keep matching.
-    static const char* const kNodeNames[static_cast<uint8_t>(NodeId::Count)] = {
+    static const char* const kNodeNames[] = {
         "MainMenu",    "InputsMenu", "NetworkMenu", "OutputMenu",      "PlaybackMenu",
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
         "DisplayMenu",  // keep aligned with NodeId — a missing entry reads as nullptr
 #endif
-        "ChannelMenu", "ScenesMenu", "FSeqMenu",    "TestPatternMenu",
+        "ChannelMenu", "ScenesMenu", "FSeqMenu",    "TestPatternMenu", "GapsMenu",
     };
+    static_assert(sizeof(kNodeNames) / sizeof(kNodeNames[0]) == static_cast<size_t>(NodeId::Count),
+                  "one emulator name per menu node");
     if (screen_name) {
         switch (s.screen) {
         case Screen::Home: *screen_name = "Home"; break;

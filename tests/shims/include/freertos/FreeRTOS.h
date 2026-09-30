@@ -18,3 +18,9 @@ typedef struct shim_sem* SemaphoreHandle_t;
 typedef struct shim_eg* EventGroupHandle_t;
 typedef void* TaskHandle_t;
 typedef void (*TaskFunction_t)(void*);
+typedef struct {
+    int unused;
+} portMUX_TYPE;
+#define portMUX_INITIALIZER_UNLOCKED { 0 }
+#define portENTER_CRITICAL(m) ((void)(m))
+#define portEXIT_CRITICAL(m) ((void)(m))

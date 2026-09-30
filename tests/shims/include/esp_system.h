@@ -15,3 +15,7 @@ typedef enum {
 } esp_reset_reason_t;
 void esp_restart();
 esp_reset_reason_t esp_reset_reason();
+#include <cstdint>
+uint32_t esp_get_free_heap_size();
+uint32_t esp_get_minimum_free_heap_size();
+const char* esp_get_idf_version();  // IDF declares it in esp_system.h too

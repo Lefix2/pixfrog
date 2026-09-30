@@ -15,4 +15,10 @@ printf 'right\nclick\nshot /tmp/ui.png\nstate\nquit\n' | ./build/pixfrog_emu --h
 
 `splash <ms> [path]` screenshots the boot splash at time *ms* (the headless loop otherwise starts at HOME and repaints every frame). Needs `libsdl2-dev`.
 
+Menu crawler + golden screenshots (CI; fails if a node is unreachable or a screen changed):
+```bash
+python3 tools/emulator/crawl.py build/pixfrog_emu [--panel st7789] [--update-golden]
+```
+A new menu node needs its name in `kNodeNames` (a `static_assert` checks the count) and in `REQUIRED` of `crawl.py`. `set chan`/`set gaps` seed state (README).
+
 The only shared-code hook is `menu_debug_state()` in `menu.cpp`, guarded by `#ifdef PIXFROG_EMULATOR` — the firmware build never defines it. When adding a device call to `menu.cpp`, extend the matching `tools/emulator/src/*_host.cpp` stub. See tools/emulator/README.md.

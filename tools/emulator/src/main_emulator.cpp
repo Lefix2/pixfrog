@@ -196,6 +196,26 @@ bool exec_cmd(const std::string& line) {
             std::printf("error: usage: set chan <idx> <proto> <uni> <pix>\n");
             std::fflush(stdout);
         }
+    } else if (line.rfind("set gaps ", 0) == 0) {
+        // set gaps <idx> [<pos0>:<len> ...] — replace a channel's dead-pixel gaps
+        // (0-based physical positions); no pairs clears them.
+        char* p  = nullptr;
+        long idx = std::strtol(line.c_str() + 9, &p, 10);
+        if (idx >= 0 && idx < static_cast<long>(pixfrog::config::kNumChannels)) {
+            auto cc = pixfrog::config::get_channel(static_cast<size_t>(idx));
+            for (auto& g : cc.gaps)
+                g = {};
+            unsigned pos = 0, len = 0;
+            int used = 0;
+            for (size_t k = 0; k < pixfrog::led::kMaxPixelGaps &&
+                               std::sscanf(p, " %u:%u%n", &pos, &len, &used) == 2;
+                 ++k, p += used)
+                cc.gaps[k] = { static_cast<uint16_t>(pos), static_cast<uint16_t>(len) };
+            pixfrog::config::set_channel(static_cast<size_t>(idx), cc);
+        } else {
+            std::printf("error: usage: set gaps <idx> [<pos0>:<len> ...]\n");
+            std::fflush(stdout);
+        }
     } else if (line.rfind("set net ", 0) == 0) {
         // set net <disconnected|acquiring|connected|error>
         const char* p = line.c_str() + 8;
