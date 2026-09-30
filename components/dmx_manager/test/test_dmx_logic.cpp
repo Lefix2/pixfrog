@@ -230,33 +230,6 @@ static void test_capacity_check() {
     EXPECT_TRUE(channel_fits_budget(cc, led::kPclkHz, emission_budget_us(30)));
 }
 
-// A DMX channel is judged at min(refresh, 44 Hz), not the LED refresh: a full
-// 512-slot universe (~22.68 ms) is OK at any refresh, never flagged at 60 Hz.
-static void test_capacity_dmx_ignores_led_refresh() {
-    config::ChannelConfig cc{};
-    cc.protocol = led::Protocol::DMX512;
-
-    // 512 slots: 1536 + 192 + 513 × 704 = 362 880 samples / 16 MHz = 22 680 µs.
-    cc.pixel_count = 512;
-    EXPECT_EQ(channel_t_dma_us(cc, led::kPclkHz), 22680);
-    // 22 680 ≤ 1e6/44 (22 727) → OK at 60 Hz (would FAIL the 15 666 LED budget).
-    EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 60));
-    EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 30));
-    // The old LED-budget check is what used to (wrongly) reject it at 60 Hz.
-    EXPECT_TRUE(!channel_fits_budget(cc, led::kPclkHz, emission_budget_us(60)));
-
-    // An oversized DMX frame (600 slots ≈ 26 552 µs) genuinely can't hold 44 Hz.
-    cc.pixel_count = 600;
-    EXPECT_TRUE(!channel_fits_refresh(cc, led::kPclkHz, 60));
-
-    // A normal LED channel still goes through the emission-budget path.
-    cc.protocol    = led::Protocol::WS2815;
-    cc.pixel_count = 555;  // ~16 930 µs > 15 666 → FAIL at 60 Hz
-    EXPECT_TRUE(!channel_fits_refresh(cc, led::kPclkHz, 60));
-    cc.pixel_count = 300;  // OK at 60 Hz
-    EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 60));
-}
-
 // ── max_pixels_for: inverse of the capacity check ───────────────────────────
 
 static void test_max_pixels_ws2815() {
@@ -274,14 +247,6 @@ static void test_max_pixels_ws2815() {
     EXPECT_TRUE(channel_fits_refresh(cc, led::kPclkHz, 60));
     cc.pixel_count = static_cast<uint16_t>(cc.pixel_count + 1);
     EXPECT_TRUE(!channel_fits_refresh(cc, led::kPclkHz, 60));
-}
-
-static void test_max_pixels_dmx() {
-    config::ChannelConfig cc{};
-    cc.protocol = led::Protocol::DMX512;
-    // DMX is one universe regardless of refresh (judged at its own ≤44 Hz rate).
-    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 60, led::kMaxSamplesPerFrame), 512);
-    EXPECT_EQ(max_pixels_for(cc, led::kPclkHz, 30, led::kMaxSamplesPerFrame), 512);
 }
 
 static void test_max_pixels_off_and_zero_refresh() {
@@ -607,10 +572,8 @@ static void test_effective_pixel_count_non_destructive() {
     EXPECT_EQ(effective_pixel_count(cc, pclk, 20, buf), 1024);  // buffer cap
     cc.pixel_count = 100;
     EXPECT_EQ(effective_pixel_count(cc, pclk, 120, buf), 100);  // under budget: as set
-    cc.protocol    = pixfrog::led::Protocol::DMX512;
     cc.pixel_count = 600;
-    EXPECT_EQ(effective_pixel_count(cc, pclk, 30, buf), 512);  // one universe
-    cc.protocol = pixfrog::led::Protocol::Off;
+    cc.protocol    = pixfrog::led::Protocol::Off;
     EXPECT_EQ(effective_pixel_count(cc, pclk, 60, buf), 600);
 }
 
@@ -630,11 +593,9 @@ static void test_gaps_budget_and_physical_count() {
     EXPECT_EQ(channel_physical_pixels(cc), 303);
     cc.pixel_count = 150;  // line ends before the mid gap
     EXPECT_EQ(channel_physical_pixels(cc), 151);
-    // Gaps mean nothing on a DMX universe.
-    cc.protocol    = pixfrog::led::Protocol::DMX512;
-    cc.pixel_count = 512;
-    EXPECT_EQ(channel_physical_pixels(cc), 512);
-    EXPECT_EQ(effective_pixel_count(cc, pclk, 30, buf), 512);
+    // Gaps mean nothing on a disabled channel.
+    cc.protocol = pixfrog::led::Protocol::Off;
+    EXPECT_EQ(channel_gap_count(cc), 0u);
 }
 
 // The ruler is written in physical order: dead pixels in their own colour,
@@ -1018,9 +979,7 @@ int main() {
     test_t_dma_ws2815();
     test_emission_budget();
     test_capacity_check();
-    test_capacity_dmx_ignores_led_refresh();
     test_max_pixels_ws2815();
-    test_max_pixels_dmx();
     test_max_pixels_off_and_zero_refresh();
     test_decode_single_universe();
     test_decode_dmx_start_offset();

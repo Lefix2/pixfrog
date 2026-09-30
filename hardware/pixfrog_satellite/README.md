@@ -18,7 +18,7 @@ they carry follows the protocol set on the controller:
 
 - **WS281x (NRZ)** — `Data1` = DATA (`Data2` unused),
 - **clocked (APA102 / SK9822 / LPD8806)** — `Data1` = DATA, `Data2` = CLOCK,
-- **DMX512** — `Data1`/`Data2` = the differential pair.
+- **DMX512** (DMX node firmware) — `Data1`/`Data2` = the differential pair.
 
 Two voltage builds exist — **12 V** (WS2815-class) and **24 V** — chosen to match
 the strip supply on `VCC`; the on-board LDO derives 5 V for the buffer from either.

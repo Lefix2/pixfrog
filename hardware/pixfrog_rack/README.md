@@ -36,12 +36,12 @@ shield's JST-XH outputs. The pin order is the project-wide convention
 | Pin | Signal | Carries |
 |----:|--------|---------|
 | 1 | GND | signal + power return |
-| 2 | DATA+ | DATA (NRZ and clocked strips), DATA+ (DMX512) |
-| 3 | DATA− | CLOCK (clocked strips), DATA− (DMX512), unused on WS281x |
+| 2 | DATA+ | DATA (NRZ and clocked strips); DATA+ under the DMX node firmware |
+| 3 | DATA− | CLOCK (clocked strips), unused on WS281x; DATA− under the DMX node firmware |
 | 4 | VCC | strip supply — XLR4 shells only |
 
 Pins 1-3 match the DMX512 standard pinout, so a plain 3-pin DMX cable carries a
-pixfrog channel and a DMX-mode channel drives a fixture directly. The XLR4 shell
+pixfrog channel, and the DMX node firmware drives a fixture directly. The XLR4 shell
 adds strip power on pin 4; it cannot mate with a 3-pin one, which is what keeps
 powered runs and signal-only runs apart.
 

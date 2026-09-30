@@ -257,14 +257,14 @@ TEST(pixel_budget_is_not_destructive) {
     EXPECT_TRUE(dmx::is_channel_capacity_ok(0));
 }
 
-TEST(a_full_dmx_universe_paces_the_frame) {
+TEST(frame_emit_time_is_the_longest_channel) {
+    one_channel(4);
     auto c        = config::get_channel(1);
-    c.protocol    = led::Protocol::DMX512;
-    c.pixel_count = 512;
+    c.protocol    = led::Protocol::WS2815;
+    c.pixel_count = 300;  // 300 × 480 + 4480 reset samples at 16 MHz = 9 280 µs
     config::set_channel(1, c);
     apply_channels();
-    const uint64_t us = dmx::frame_emit_us();
-    EXPECT_TRUE(us > 22000 && us < 23500);  // ~22.7 ms: DMX's own 44 Hz
+    EXPECT_EQ(dmx::frame_emit_us(), 9280u);
 }
 
 TEST(pixel_preview_ruler_and_erase_tail) {

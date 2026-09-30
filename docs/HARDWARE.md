@@ -311,25 +311,25 @@ diff-based flush.
 A pixfrog channel always leaves the enclosure on an **XLR** connector, and every
 board that emits, repeats or consumes a channel uses the same pin order:
 
-| Pin | Signal      | WS281x (NRZ)          | Clocked (APA102 / SK9822 / LPD8806) | DMX512     |
-|----:|-------------|-----------------------|-------------------------------------|------------|
-| 1   | GND         | signal + power return | signal + power return               | common / shield |
-| 2   | DATA+       | DATA                  | DATA                                | DATA+      |
-| 3   | DATA−       | unused                | CLOCK                               | DATA−      |
-| 4   | VCC         | strip supply (XLR4 only) | strip supply (XLR4 only)         | unused     |
+| Pin | Signal      | WS281x (NRZ)          | Clocked (APA102 / SK9822 / LPD8806) |
+|----:|-------------|-----------------------|-------------------------------------|
+| 1   | GND         | signal + power return | signal + power return               |
+| 2   | DATA+       | DATA                  | DATA                                |
+| 3   | DATA−       | unused                | CLOCK                               |
+| 4   | VCC         | strip supply (XLR4 only) | strip supply (XLR4 only)         |
 
 Pins 2 and 3 are the same physical pair in every mode — only the firmware's
-interpretation changes (`docs/PROTOCOLS.md` §3 and §7): the second line of the
-bus is the CLOCK of a clocked strip, the inverted DATA− of a DMX512 universe, or
-nothing at all on a WS281x run.
+interpretation changes (`docs/PROTOCOLS.md` §3): the second line of the bus is
+the CLOCK of a clocked strip, or nothing at all on a WS281x run. (The DMX node
+firmware drives the same pair as DATA+/DATA− of a DMX512 universe.)
 
 Two shells, one convention:
 
 - **XLR3** — pins 1-3, signal only. The assignment is deliberately the DMX512
   standard one (1 = common, 2 = data+, 3 = data−), so an off-the-shelf DMX cable
-  carries a pixfrog channel as-is, and a channel switched to DMX512 output plugs
-  straight into a fixture with no adapter. The strip takes its power from a local
-  PSU.
+  carries a pixfrog channel as-is (and the DMX node firmware, on the same
+  hardware, plugs straight into a fixture). The strip takes its power from a
+  local PSU.
 - **XLR4** — the same three pins plus **pin 4 = VCC**, the strip supply (12 V or
   24 V per build) travelling down the same cable as its data.
 

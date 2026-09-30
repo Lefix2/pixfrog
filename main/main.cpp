@@ -256,9 +256,9 @@ void render_task(void*) {
         // refresh_rate_hz (the hard ceiling that protects the DMA budget).
         //
         // Never pace faster than the frame physically emits, either: a channel
-        // whose wire time exceeds the period (a DMX universe at 60 Hz sits at
-        // its ~44 Hz, ~22.7 ms ceiling) must emit intact at its own rate rather
-        // than be over-submitted. The interval is max(period, longest channel).
+        // whose wire time exceeds the period (a long strip at a high refresh)
+        // must emit intact at its own rate rather than be over-submitted. The interval is
+        // max(period, longest channel).
         const int64_t emit_us      = static_cast<int64_t>(pixfrog::dmx::frame_emit_us());
         const int64_t interval_us  = period_us > emit_us ? period_us : emit_us;
         next_frame_us             += interval_us;

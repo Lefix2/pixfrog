@@ -112,6 +112,19 @@ TEST(zero_filled_tails_read_as_defaults) {
     EXPECT_EQ(get_channel(2).gaps[0].len, 0);   // no gap
 }
 
+// Protocol 9 was DMX512 output (moved to the DMX node firmware): a channel
+// stored with it must load disabled, not emit its slot count as LED pixels.
+TEST(retired_dmx512_protocol_loads_as_off) {
+    fresh_boot();
+    ChannelConfig c = get_channel(4);
+    c.protocol      = static_cast<pixfrog::led::Protocol>(9);
+    c.pixel_count   = 512;
+    shim::nvs_put_raw(kNs, "ch4", &c, sizeof(c));
+    init();
+    EXPECT_TRUE(get_channel(4).protocol == pixfrog::led::Protocol::Off);
+    EXPECT_EQ(get_channel(4).pixel_count, 512);  // the rest is kept
+}
+
 TEST(larger_global_blob_is_rejected_for_defaults) {
     fresh_boot();
     std::vector<uint8_t> big(sizeof(GlobalConfig) + 16, 0xAB);

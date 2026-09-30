@@ -39,7 +39,7 @@ SEED = [
     "set chan 1 2 3 150",    # WS2812B
     "set chan 2 4 5 60",     # SK6812 (RGBW)
     "set chan 3 6 9 144",    # APA102 (clocked → Clock row)
-    "set chan 4 9 11 512",   # DMX512 (no LED rows)
+    "set chan 4 8 11 64",    # LPD8806
     "set chan 5 7 13 100",   # SK9822
     "set chan 6 5 15 80",    # WS2814
     "set chan 7 0 17 10",    # Off

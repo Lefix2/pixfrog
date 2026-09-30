@@ -402,7 +402,7 @@ bool decode_pixels_for_channel(size_t ch) {
         const uint16_t emit      = erase > count ? erase : count;
         const bool edit          = g_preview_gaps_on.load(std::memory_order_acquire);
         const led::PixelGap* gps = edit ? g_preview_gaps : cc.gaps;
-        const size_t ngaps = led::is_dmx(cc.protocol) ? 0 : led::gap_count(gps, led::kMaxPixelGaps);
+        const size_t ngaps       = led::gap_count(gps, led::kMaxPixelGaps);
         // The ruler is written in physical order (gaps painted in place), so
         // the output stage emits the physical count with no gap mapping.
         const uint32_t phys = led::physical_count(emit, gps, ngaps);
@@ -416,14 +416,13 @@ bool decode_pixels_for_channel(size_t ch) {
 
     // Signal-loss failsafe: a channel silent past the timeout stops decoding
     // (stale) universes and emits the fallback instead. Hold mode never gets
-    // here — stale decode IS the hold. DMX512 outputs degrade colour→blackout
-    // (an RGB fill has no meaning on a generic universe).
+    // here — stale decode IS the hold.
     // Standalone scene: manual override — masked channels render the effect,
-    // incoming traffic is ignored until scene_stop(). LED protocols only.
+    // incoming traffic is ignored until scene_stop().
     const int sc = g_active_scene.load(std::memory_order_relaxed);
     if (sc >= 0) {
         const auto& scene = config::get_scene(static_cast<size_t>(sc));
-        if (((scene.channel_mask >> ch) & 1) && !led::is_dmx(cc.protocol)) {
+        if ((scene.channel_mask >> ch) & 1) {
             logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
                                       led::bytes_per_pixel(cc.protocol), scene,
                                       static_cast<uint32_t>(esp_timer_get_time() / 1000));
@@ -446,15 +445,14 @@ bool decode_pixels_for_channel(size_t ch) {
         // only on the channels the scene targets; the others black out.
         const auto& scene  = config::get_scene(g.failsafe_scene);
         const bool in_mask = (scene.channel_mask >> ch) & 1;
-        if (g.failsafe_mode == config::kFailsafeScene && in_mask && !led::is_dmx(cc.protocol)) {
+        if (g.failsafe_mode == config::kFailsafeScene && in_mask) {
             logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
                                       led::bytes_per_pixel(cc.protocol), scene,
                                       static_cast<uint32_t>(esp_timer_get_time() / 1000));
             return true;
         }
-        const uint8_t mode = (led::is_dmx(cc.protocol) || g.failsafe_mode == config::kFailsafeScene)
-                               ? config::kFailsafeBlackout
-                               : g.failsafe_mode;
+        const uint8_t mode = g.failsafe_mode == config::kFailsafeScene ? config::kFailsafeBlackout
+                                                                       : g.failsafe_mode;
         logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
                                      led::bytes_per_pixel(cc.protocol), mode, g.failsafe_r,
                                      g.failsafe_g, g.failsafe_b);

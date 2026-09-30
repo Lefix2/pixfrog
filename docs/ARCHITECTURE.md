@@ -211,15 +211,8 @@ Changing a channel's protocol can change:
 
 Consequence: **changing protocol at runtime never changes PCLK**. `render_task` swaps the channel's encoder descriptor between frames; the pixel buffers are sized for the worst case at boot. The one exception is the frame length: a config commit that moves the required sample count to a different bucket tears down and recreates the output unit (FB realloc included) — once per commit, between frames, never in steady state.
 
-**DMX512 output** is a fourth encoder family alongside NRZ and clocked SPI. A
-channel set to `DMX512` re-emits one Art-Net universe as a 250 kbit/s serial
-stream (BREAK + MAB + 8N2 slots) on its DATA bit — see `docs/PROTOCOLS.md` §7.
-It shares the same ingest path; only `bytes_per_pixel` (= 1) and the encoder
-dispatch differ, so hot reconfiguration to/from DMX needs no special handling.
-The channel's otherwise-unused CLOCK bit is driven as the complement of DATA to
-form a `DATA+/DATA−` pair (a poor-man's differential link); a real RS-485
-transceiver is still preferable for long or terminated runs — see
-`docs/PROTOCOLS.md` §7.
+DMX512 output (formerly a fourth encoder family) was removed: it lives in
+the DMX node firmware (a separate project forked from this one).
 
 ---
 
@@ -228,7 +221,7 @@ transceiver is still preferable for long or terminated runs — see
 | Component            | Responsibility                                      | Depends on              |
 |----------------------|-----------------------------------------------------|-------------------------|
 | `led_output`     | 16-bit bus output: PARLIO TX loop (default) or legacy LCD_CAM; PSRAM FBs, gamma-LUT cache | IDF HAL, `led_protocols`, `dmx_manager` |
-| `led_protocols`      | Per-protocol encoders (NRZ, SPI-like, DMX512) + gamma/WB LUT builder | (free)        |
+| `led_protocols`      | Per-protocol encoders (NRZ, SPI-like) + gamma/WB LUT builder         | (free)        |
 | `artnet`             | UDP parser, Dmx/Poll/Sync/Address/IpProg/Trigger, replies | `lwip`, `dmx_manager` |
 | `sacn`               | E1.31 receiver: multicast joins, priority gate, sync | `lwip`, `dmx_manager`  |
 | `dmx_manager`        | Universe pool, 2-source HTP/LTP merge, channel mapping, capacity check, scenes/failsafe/identify state | `config_store` |

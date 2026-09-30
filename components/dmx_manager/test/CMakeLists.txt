@@ -15,7 +15,6 @@ add_executable(test_dmx_logic
     ../../led_protocols/src/led_protocols.cpp
     ../../led_protocols/src/encoder_nrz.cpp
     ../../led_protocols/src/encoder_spi.cpp
-    ../../led_protocols/src/encoder_dmx.cpp
 )
 target_include_directories(test_dmx_logic PRIVATE
     ../include

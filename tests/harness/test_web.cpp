@@ -237,6 +237,15 @@ TEST(backup_then_restore_round_trips) {
     EXPECT_TRUE(cJSON_Compare(a["scenes"], b["scenes"], true));
     EXPECT_STREQ(config::get_global().short_name, "before");
     EXPECT_EQ(post("/api/restore", "garbage").status, 400);
+
+    // A backup from the DMX512-output era: that channel comes back disabled.
+    std::string old = backup.body;
+    const size_t at = old.find("\"protocol\":\"APA102\"");
+    EXPECT_TRUE(at != std::string::npos);
+    old.replace(at, std::strlen("\"protocol\":\"APA102\""), "\"protocol\":\"DMX512\"");
+    EXPECT_EQ(post("/api/restore", old).status, 200);
+    EXPECT_TRUE(config::get_channel(3).protocol == led::Protocol::Off);
+    EXPECT_EQ(post("/api/channel/3", "{\"protocol\":\"DMX512\"}").status, 400);
 }
 
 TEST(ota_rejects_a_bad_image_and_boots_a_good_one) {

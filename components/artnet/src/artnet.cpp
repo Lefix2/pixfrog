@@ -243,8 +243,7 @@ void handle_ip_prog(const uint8_t* buf, size_t len, const sockaddr_in& from) {
 }
 
 // ArtNzs — non-zero-start-code DMX. Validated and counted; the payload is
-// NOT routed: the universe pool stores start-code-0 levels only, and the
-// DMX512 encoder emits SC=0 frames (alternate-SC interleaving is future work).
+// NOT routed: the universe pool stores start-code-0 levels only.
 void handle_nzs(const uint8_t* buf, size_t len) {
     parser::NzsFields f{};
     if (!parser::parse_nzs(buf, len, &f)) {
