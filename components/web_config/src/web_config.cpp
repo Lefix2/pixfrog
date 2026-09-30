@@ -314,6 +314,13 @@ static cJSON* build_scenes_json() {
         char col[8];
         snprintf(col, sizeof(col), "#%02x%02x%02x", sc.r, sc.g, sc.b);
         cJSON_AddStringToObject(js, "color", col);
+        cJSON* jcols = cJSON_AddArrayToObject(js, "colors");
+        for (size_t k = 0; k < config::scene_num_colors(sc); ++k) {
+            uint8_t rgb[3];
+            config::scene_color(sc, k, rgb);
+            snprintf(col, sizeof(col), "#%02x%02x%02x", rgb[0], rgb[1], rgb[2]);
+            cJSON_AddItemToArray(jcols, cJSON_CreateString(col));
+        }
         cJSON_AddNumberToObject(js, "speed", sc.speed);
         cJSON_AddNumberToObject(js, "param", sc.param);
         cJSON_AddNumberToObject(js, "mask", sc.channel_mask);
@@ -708,36 +715,57 @@ static void restore_channel(size_t i, cJSON* jc) {
     dmx::mark_channel_dirty(i);
 }
 
-static void restore_scene(size_t i, cJSON* js) {
-    auto sc   = config::get_scene(i);
-    cJSON* it = cJSON_GetObjectItemCaseSensitive(js, "name");
+static bool parse_hex_color(const cJSON* it, uint8_t rgb[3]) {
+    if (!cJSON_IsString(it)) return false;
+    const char* cs = it->valuestring[0] == '#' ? it->valuestring + 1 : it->valuestring;
+    unsigned r, g, b;
+    if (sscanf(cs, "%02x%02x%02x", &r, &g, &b) != 3) return false;
+    rgb[0] = static_cast<uint8_t>(r);
+    rgb[1] = static_cast<uint8_t>(g);
+    rgb[2] = static_cast<uint8_t>(b);
+    return true;
+}
+
+// Partial update: absent or out-of-range fields keep their current value.
+// "colors" (1..kSceneColorsMax) wins over the single legacy "color".
+static void apply_scene_json(const cJSON* js, config::Scene& sc) {
+    const cJSON* it = cJSON_GetObjectItemCaseSensitive(js, "name");
     if (cJSON_IsString(it)) {
         memset(sc.name, 0, sizeof(sc.name));
         strncpy(sc.name, it->valuestring, sizeof(sc.name) - 1);
     }
-    auto num = [&](const char* k, double lo, double hi, double* out) {
-        it = cJSON_GetObjectItemCaseSensitive(js, k);
-        if (cJSON_IsNumber(it) && it->valuedouble >= lo && it->valuedouble <= hi) {
-            *out = it->valuedouble;
-            return true;
-        }
-        return false;
+    auto num = [&](const char* k, double hi, uint8_t* out) {
+        const cJSON* n = cJSON_GetObjectItemCaseSensitive(js, k);
+        if (cJSON_IsNumber(n) && n->valuedouble >= 0 && n->valuedouble <= hi)
+            *out = static_cast<uint8_t>(n->valuedouble);
     };
-    double v;
-    if (num("effect", 0, 2, &v)) sc.effect = static_cast<uint8_t>(v);
-    if (num("speed", 0, 255, &v)) sc.speed = static_cast<uint8_t>(v);
-    if (num("param", 0, 255, &v)) sc.param = static_cast<uint8_t>(v);
-    if (num("mask", 0, 255, &v)) sc.channel_mask = static_cast<uint8_t>(v);
-    it = cJSON_GetObjectItemCaseSensitive(js, "color");
-    if (cJSON_IsString(it)) {
-        unsigned cr, cg, cb;
-        if (sscanf(it->valuestring[0] == '#' ? it->valuestring + 1 : it->valuestring,
-                   "%02x%02x%02x", &cr, &cg, &cb) == 3) {
-            sc.r = static_cast<uint8_t>(cr);
-            sc.g = static_cast<uint8_t>(cg);
-            sc.b = static_cast<uint8_t>(cb);
+    num("effect", config::kSceneFxCount - 1, &sc.effect);
+    num("speed", 255, &sc.speed);
+    num("param", 255, &sc.param);
+    num("mask", 255, &sc.channel_mask);
+
+    uint8_t rgb[3];
+    const cJSON* cols = cJSON_GetObjectItemCaseSensitive(js, "colors");
+    const int ncols   = cJSON_IsArray(cols) ? cJSON_GetArraySize(cols) : 0;
+    if (ncols >= 1 && static_cast<size_t>(ncols) <= config::kSceneColorsMax) {
+        uint8_t parsed[config::kSceneColorsMax][3];
+        bool ok = true;
+        for (int k = 0; k < ncols && ok; ++k)
+            ok = parse_hex_color(cJSON_GetArrayItem(cols, k), parsed[k]);
+        if (ok) {
+            for (int k = 0; k < ncols; ++k)
+                config::set_scene_color(sc, static_cast<size_t>(k), parsed[k][0], parsed[k][1],
+                                        parsed[k][2]);
+            sc.num_colors = static_cast<uint8_t>(ncols);
         }
+    } else if (parse_hex_color(cJSON_GetObjectItemCaseSensitive(js, "color"), rgb)) {
+        config::set_scene_color(sc, 0, rgb[0], rgb[1], rgb[2]);
     }
+}
+
+static void restore_scene(size_t i, cJSON* js) {
+    auto sc = config::get_scene(i);
+    apply_scene_json(js, sc);
     config::set_scene(i, sc);
 }
 
@@ -1128,41 +1156,13 @@ static esp_err_t handle_post_scene(httpd_req_t* req) {
         return send_ok(req);
     }
 
-    char buf[256];
+    char buf[384];  // name + 4 colours + numbers
     if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
     cJSON* j = cJSON_Parse(buf);
     if (!j) return send_err(req, 400, "invalid JSON");
 
     auto sc = config::get_scene(static_cast<size_t>(idx));
-
-    cJSON* item = cJSON_GetObjectItemCaseSensitive(j, "name");
-    if (cJSON_IsString(item)) {
-        memset(sc.name, 0, sizeof(sc.name));
-        strncpy(sc.name, item->valuestring, sizeof(sc.name) - 1);
-    }
-    item = cJSON_GetObjectItemCaseSensitive(j, "effect");
-    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 2)
-        sc.effect = static_cast<uint8_t>(item->valuedouble);
-    item = cJSON_GetObjectItemCaseSensitive(j, "color");
-    if (cJSON_IsString(item)) {
-        const char* cs = item->valuestring;
-        unsigned r, gg, b;
-        if (sscanf(cs[0] == '#' ? cs + 1 : cs, "%02x%02x%02x", &r, &gg, &b) == 3) {
-            sc.r = static_cast<uint8_t>(r);
-            sc.g = static_cast<uint8_t>(gg);
-            sc.b = static_cast<uint8_t>(b);
-        }
-    }
-    item = cJSON_GetObjectItemCaseSensitive(j, "speed");
-    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 255)
-        sc.speed = static_cast<uint8_t>(item->valuedouble);
-    item = cJSON_GetObjectItemCaseSensitive(j, "param");
-    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 255)
-        sc.param = static_cast<uint8_t>(item->valuedouble);
-    item = cJSON_GetObjectItemCaseSensitive(j, "mask");
-    if (cJSON_IsNumber(item) && item->valuedouble >= 0 && item->valuedouble <= 255)
-        sc.channel_mask = static_cast<uint8_t>(item->valuedouble);
-
+    apply_scene_json(j, sc);
     cJSON_Delete(j);
     config::set_scene(static_cast<size_t>(idx), sc);
     return send_ok(req);

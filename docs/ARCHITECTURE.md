@@ -69,7 +69,8 @@ When `render_task` wakes (t = 0), it runs, in order:
    in a fixed priority chain, then `swap_pixels(ch)`:
    1. **Identify** — 2 Hz white blink (commissioning, auto-expires)
    2. **Pixel-count preview** — live ruler while the count is edited
-   3. **Standalone scene** — parametric generator (solid/chase/rainbow) on the
+   3. **Standalone scene** — stateless parametric generator (11 effects, 1–4
+      colour palette, `dmx_logic.h` `fill_scene_pattern`) on the
       scene's masked channels; overrides network until stopped
    4. **Failsafe** — channel silent past the timeout: blackout / solid colour
       / scene (hold = fall through to a normal decode of the stale data)

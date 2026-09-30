@@ -398,8 +398,7 @@ bool decode_pixels_for_channel(size_t ch) {
         const auto& cc    = config::get_channel(ch);
         if (((scene.channel_mask >> ch) & 1) && !led::is_dmx(cc.protocol)) {
             logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
-                                      led::bytes_per_pixel(cc.protocol), scene.effect, scene.r,
-                                      scene.g, scene.b, scene.speed, scene.param,
+                                      led::bytes_per_pixel(cc.protocol), scene,
                                       static_cast<uint32_t>(esp_timer_get_time() / 1000));
             return true;
         }
@@ -421,8 +420,7 @@ bool decode_pixels_for_channel(size_t ch) {
         if (g.failsafe_mode == config::kFailsafeScene && !led::is_dmx(cc.protocol)) {
             const auto& scene = config::get_scene(g.failsafe_scene);
             logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
-                                      led::bytes_per_pixel(cc.protocol), scene.effect, scene.r,
-                                      scene.g, scene.b, scene.speed, scene.param,
+                                      led::bytes_per_pixel(cc.protocol), scene,
                                       static_cast<uint32_t>(esp_timer_get_time() / 1000));
             return true;
         }

@@ -62,27 +62,41 @@ ChannelConfig make_default_channel(size_t idx) {
     return c;
 }
 
-// Usable starter set: 0-2 showcase each effect, the rest are named slots.
+// Usable starter set: one slot per showcase effect.
 void fill_default_scenes() {
     std::memset(g_scenes, 0, sizeof(g_scenes));
+    struct Def {
+        const char* name;
+        uint8_t effect, speed, param, n;
+        uint8_t rgb[kSceneColorsMax][3];
+    };
+    static const Def kDefs[kNumScenes] = {
+        { "Warm white", kSceneFxSolid, 0, 0, 1, { { 255, 180, 110 } } },
+        { "Chase", kSceneFxChase, 60, 3, 2, { { 255, 255, 255 }, { 255, 120, 0 } } },
+        { "Rainbow", kSceneFxRainbow, 50, 1, 1, { { 255, 255, 255 } } },
+        { "Blobs", kSceneFxBlobs, 40, 4, 3, { { 0, 90, 255 }, { 255, 0, 140 }, { 0, 255, 160 } } },
+        { "Fire",
+          kSceneFxFire,
+          60,
+          0,
+          4,
+          { { 180, 16, 0 }, { 255, 80, 0 }, { 255, 170, 20 }, { 255, 240, 150 } } },
+        { "Twinkle", kSceneFxTwinkle, 60, 60, 2, { { 255, 200, 120 }, { 160, 200, 255 } } },
+        { "Scanner", kSceneFxScanner, 80, 0, 1, { { 255, 0, 0 } } },
+        { "Strobe", kSceneFxSolid, 0, 0, 2, { { 0, 0, 0 }, { 255, 255, 255 } } },
+    };
     for (size_t i = 0; i < kNumScenes; ++i) {
-        std::snprintf(g_scenes[i].name, kSceneNameMax, "Scene %u", static_cast<unsigned>(i + 1));
-        g_scenes[i].channel_mask = 0xFF;
-        g_scenes[i].effect       = kSceneFxSolid;
+        Scene& sc    = g_scenes[i];
+        const Def& d = kDefs[i];
+        std::strncpy(sc.name, d.name, kSceneNameMax - 1);
+        sc.channel_mask = 0xFF;
+        sc.effect       = d.effect;
+        sc.speed        = d.speed;
+        sc.param        = d.param;
+        sc.num_colors   = d.n;
+        for (size_t k = 0; k < d.n; ++k)
+            set_scene_color(sc, k, d.rgb[k][0], d.rgb[k][1], d.rgb[k][2]);
     }
-    std::strncpy(g_scenes[0].name, "Warm white", kSceneNameMax - 1);
-    g_scenes[0].r = 255;
-    g_scenes[0].g = 180;
-    g_scenes[0].b = 110;
-    std::strncpy(g_scenes[1].name, "Chase", kSceneNameMax - 1);
-    g_scenes[1].effect = kSceneFxChase;
-    g_scenes[1].r = g_scenes[1].g = g_scenes[1].b = 255;
-    g_scenes[1].speed                             = 60;  // px/s
-    g_scenes[1].param                             = 3;   // head width
-    std::strncpy(g_scenes[2].name, "Rainbow", kSceneNameMax - 1);
-    g_scenes[2].effect = kSceneFxRainbow;
-    g_scenes[2].speed  = 50;
-    g_scenes[2].param  = 1;
 }
 
 // Loads a blob from NVS into dst (size bytes). Handles forward migration: if
@@ -202,10 +216,26 @@ void init() {
         sanitize_channel(g_channels[i]);
     }
 
-    if (!nvs_load_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes))) {
+    size_t scenes_size      = 0;
+    const bool scenes_exist = nvs_get_blob(h, kKeyScenes, nullptr, &scenes_size) == ESP_OK;
+    if (scenes_exist && scenes_size == kNumScenes * kSceneV1Size) {
+        uint8_t v1[kNumScenes * kSceneV1Size];
+        size_t n = sizeof(v1);
+        if (nvs_get_blob(h, kKeyScenes, v1, &n) == ESP_OK && migrate_scenes_v1(v1, n, g_scenes)) {
+            ESP_LOGI(TAG, "scenes migrated to the %u-colour layout",
+                     static_cast<unsigned>(kSceneColorsMax));
+        } else {
+            fill_default_scenes();
+        }
+        nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
+    } else if (!scenes_exist || scenes_size != sizeof(g_scenes) ||
+               !nvs_load_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes))) {
+        // Any other size is not a record array this firmware can line up.
         fill_default_scenes();
         nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
     }
+    for (auto& sc : g_scenes)
+        if (sc.effect >= kSceneFxCount) sc.effect = kSceneFxSolid;
 
     nvs_commit(h);
     nvs_close(h);
@@ -308,6 +338,8 @@ bool set_scene(size_t i, const Scene& scene) {
     if (i >= kNumScenes) return false;
     g_scenes[i]                         = scene;
     g_scenes[i].name[kSceneNameMax - 1] = '\0';
+    g_scenes[i].num_colors              = scene_num_colors(scene);
+    if (g_scenes[i].effect >= kSceneFxCount) g_scenes[i].effect = kSceneFxSolid;
     if (!g_nvs_ok) return false;
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;

@@ -11,6 +11,8 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstring>
 #include <stdint.h>
 
 #include "led_protocols.h"
@@ -136,19 +138,89 @@ constexpr uint8_t kMergeLtp = 1;
 constexpr size_t kNumScenes    = 8;
 constexpr size_t kSceneNameMax = 16;
 
-constexpr uint8_t kSceneFxSolid   = 0;
-constexpr uint8_t kSceneFxChase   = 1;
-constexpr uint8_t kSceneFxRainbow = 2;
+// Effect ids are persisted: append only, never renumber.
+constexpr uint8_t kSceneFxSolid    = 0;
+constexpr uint8_t kSceneFxChase    = 1;
+constexpr uint8_t kSceneFxRainbow  = 2;
+constexpr uint8_t kSceneFxBlobs    = 3;
+constexpr uint8_t kSceneFxGradient = 4;
+constexpr uint8_t kSceneFxFade     = 5;
+constexpr uint8_t kSceneFxTwinkle  = 6;
+constexpr uint8_t kSceneFxFire     = 7;
+constexpr uint8_t kSceneFxScanner  = 8;
+constexpr uint8_t kSceneFxWave     = 9;
+constexpr uint8_t kSceneFxStripes  = 10;
+constexpr uint8_t kSceneFxCount    = 11;
 
+constexpr size_t kSceneColorsMax = 4;
+
+// The first 25 bytes are the pre-palette layout, unchanged (see
+// migrate_scenes_v1): colour 1 stays in r/g/b, colours 2.. are appended.
 struct Scene {
     char name[kSceneNameMax];  // null-padded
     uint8_t channel_mask;      // bit n = channel n participates
     uint8_t effect;            // kSceneFx*
-    uint8_t r, g, b;           // solid / chase colour
-    uint8_t speed;             // solid: unused; chase: px/s; rainbow: rotation
-    uint8_t param;             // chase: head width px; rainbow: wheel repeats
-    uint8_t reserved[2];
+    uint8_t r, g, b;           // colour 1
+    uint8_t speed;             // per effect — see fill_scene_pattern
+    uint8_t param;             // per effect; 0 = the effect's default
+    uint8_t num_colors;        // 1..kSceneColorsMax; 0 (pre-palette blob) reads as 1
+    uint8_t reserved;
+    uint8_t extra[kSceneColorsMax - 1][3];  // colours 2..kSceneColorsMax, RGB
 };
+
+constexpr size_t kSceneV1Size = 25;
+static_assert(offsetof(Scene, num_colors) == 23, "pre-palette Scene layout moved");
+static_assert(sizeof(Scene) == kSceneV1Size + 9, "Scene layout changed");
+
+inline uint8_t scene_num_colors(const Scene& s) {
+    if (s.num_colors == 0) return 1;
+    return s.num_colors > kSceneColorsMax ? static_cast<uint8_t>(kSceneColorsMax) : s.num_colors;
+}
+
+// Colour k (0-based) as RGB; k past the configured count reads as black.
+inline void scene_color(const Scene& s, size_t k, uint8_t rgb[3]) {
+    if (k == 0) {
+        rgb[0] = s.r;
+        rgb[1] = s.g;
+        rgb[2] = s.b;
+    } else if (k < scene_num_colors(s)) {
+        rgb[0] = s.extra[k - 1][0];
+        rgb[1] = s.extra[k - 1][1];
+        rgb[2] = s.extra[k - 1][2];
+    } else {
+        rgb[0] = rgb[1] = rgb[2] = 0;
+    }
+}
+
+inline void set_scene_color(Scene& s, size_t k, uint8_t r, uint8_t g, uint8_t b) {
+    if (k == 0) {
+        s.r = r;
+        s.g = g;
+        s.b = b;
+    } else if (k < kSceneColorsMax) {
+        s.extra[k - 1][0] = r;
+        s.extra[k - 1][1] = g;
+        s.extra[k - 1][2] = b;
+    }
+}
+
+// The scene array was one NVS blob of kNumScenes × 25-byte records; the grown
+// record no longer lines up with it, so it is re-packed record by record.
+// Solid used to ignore speed, which now drives its strobe: an upgraded solid
+// scene must stay static. Returns false unless old_size is that exact layout.
+inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* dst) {
+    if (old_size != kNumScenes * kSceneV1Size) return false;
+    for (size_t i = 0; i < kNumScenes; ++i) {
+        std::memset(&dst[i], 0, sizeof(Scene));
+        std::memcpy(&dst[i], old_data + i * kSceneV1Size, kSceneV1Size);
+        dst[i].name[kSceneNameMax - 1] = '\0';
+        dst[i].num_colors              = 1;
+        dst[i].reserved                = 0;
+        if (dst[i].effect >= kSceneFxCount) dst[i].effect = kSceneFxSolid;
+        if (dst[i].effect == kSceneFxSolid) dst[i].speed = 0;
+    }
+    return true;
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Per-channel configuration

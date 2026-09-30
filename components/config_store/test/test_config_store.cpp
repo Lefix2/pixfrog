@@ -305,6 +305,72 @@ static void test_sanitize_clamps_clock_hz() {
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
+// Pre-palette scene record: the scene array was stored as one NVS blob of
+// kNumScenes of these, so a grown record needs re-packing, not a tail fill.
+struct SceneV1 {
+    char name[kSceneNameMax];
+    uint8_t channel_mask;
+    uint8_t effect;
+    uint8_t r, g, b;
+    uint8_t speed;
+    uint8_t param;
+    uint8_t reserved[2];
+};
+static_assert(sizeof(SceneV1) == kSceneV1Size, "v1 scene record is 25 bytes");
+static_assert(offsetof(Scene, param) == offsetof(SceneV1, param), "v1 prefix must not move");
+
+static void test_scene_v1_migration() {
+    SceneV1 old[kNumScenes]{};
+    for (size_t i = 0; i < kNumScenes; ++i) {
+        std::snprintf(old[i].name, kSceneNameMax, "Old %u", static_cast<unsigned>(i));
+        old[i].channel_mask = static_cast<uint8_t>(1u << i);
+        old[i].r            = static_cast<uint8_t>(10 + i);
+        old[i].speed        = 77;
+        old[i].param        = 5;
+    }
+    old[1].effect = kSceneFxChase;
+    old[2].effect = kSceneFxRainbow;
+
+    Scene loaded[kNumScenes];
+    EXPECT_TRUE(migrate_scenes_v1(reinterpret_cast<const uint8_t*>(old), sizeof(old), loaded));
+    for (size_t i = 0; i < kNumScenes; ++i) {
+        EXPECT_TRUE(std::strcmp(loaded[i].name, old[i].name) == 0);
+        EXPECT_EQ(loaded[i].channel_mask, old[i].channel_mask);
+        EXPECT_EQ(loaded[i].r, 10 + i);
+        EXPECT_EQ(loaded[i].param, 5);
+        EXPECT_EQ(scene_num_colors(loaded[i]), 1);
+        uint8_t rgb[3];
+        scene_color(loaded[i], 1, rgb);
+        EXPECT_EQ(rgb[0] | rgb[1] | rgb[2], 0);
+    }
+    // Solid ignored speed before; it is the strobe rate now — must not start flashing.
+    EXPECT_EQ(loaded[0].speed, 0);
+    EXPECT_EQ(loaded[1].effect, kSceneFxChase);
+    EXPECT_EQ(loaded[1].speed, 77);
+    EXPECT_EQ(loaded[2].speed, 77);
+
+    // Any other size is not the v1 array.
+    EXPECT_TRUE(!migrate_scenes_v1(reinterpret_cast<const uint8_t*>(old), sizeof(old) - 1, loaded));
+}
+
+static void test_scene_colour_accessors() {
+    Scene s{};
+    EXPECT_EQ(scene_num_colors(s), 1);  // zero reads as one colour
+    set_scene_color(s, 0, 1, 2, 3);
+    set_scene_color(s, 3, 7, 8, 9);
+    s.num_colors = 4;
+    uint8_t rgb[3];
+    scene_color(s, 0, rgb);
+    EXPECT_EQ(rgb[2], 3);
+    scene_color(s, 3, rgb);
+    EXPECT_EQ(rgb[0], 7);
+    s.num_colors = 2;  // colour 4 still stored, but past the count
+    scene_color(s, 3, rgb);
+    EXPECT_EQ(rgb[0], 0);
+    s.num_colors = 200;
+    EXPECT_EQ(scene_num_colors(s), kSceneColorsMax);
+}
+
 int main() {
     test_migrate_from_pre_web_fields_preserved();
     test_migrate_from_pre_web_new_field_is_false();
@@ -314,6 +380,8 @@ int main() {
     test_migrate_zero_size_blob_all_zero();
     test_channel_migration_sanitizes_to_identity();
     test_sanitize_clamps_clock_hz();
+    test_scene_v1_migration();
+    test_scene_colour_accessors();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
