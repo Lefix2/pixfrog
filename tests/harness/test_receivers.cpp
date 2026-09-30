@@ -300,3 +300,76 @@ TEST(sacn_stream_terminated_triggers_failsafe_now) {
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv, setup);
 }
+
+// ── Show control from the network ───────────────────────────────────────────
+
+namespace {
+void control_on(uint16_t universe) {
+    auto c     = config::default_control();  // simple: master16, blackout, strobe, scene, fade
+    c.enabled  = 1;
+    c.universe = universe;
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+}
+void control_off() {
+    config::set_control(config::default_control());
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    dmx::update_show_control();
+    dmx::blackout_set(dmx::kAllOutputs, false);
+}
+}  // namespace
+
+TEST(artdmx_on_the_control_universe_drives_the_show) {
+    control_on(200);
+    const auto before = dmx::get_stats().artnet_packets_rx;
+    shim::net_push(kArt, art_dmx(200, { 0x40, 0x00, 255, 0, 0, 0 }));
+    pump_artnet();
+    dmx::swap_universes();
+    dmx::update_show_control();
+    EXPECT_TRUE(dmx::control_live());
+    EXPECT_EQ(dmx::master_effective(0), 0x4000);
+    EXPECT_EQ(dmx::blackout_effective(), 0xFF);
+    EXPECT_EQ(dmx::get_stats().artnet_packets_rx, before + 1);  // counted like any universe
+    control_off();
+}
+
+TEST(arttrigger_macro_key_drives_the_blackout) {
+    auto macro = [](uint8_t sub) {
+        Bytes p = art_header(artnet::parser::kOpTrigger, 18 + 512);
+        p[14] = 0xFF, p[15] = 0xFF;
+        p[16] = 1;  // KeyMacro
+        p[17] = sub;
+        return p;
+    };
+    shim::net_push(kArt, macro(2));
+    pump_artnet();
+    EXPECT_EQ(dmx::blackout_local(), 0xFF);
+    shim::net_push(kArt, macro(1));  // toggle
+    pump_artnet();
+    EXPECT_EQ(dmx::blackout_local(), 0);
+    shim::net_push(kArt, macro(1));
+    shim::net_push(kArt, macro(3));  // off
+    pump_artnet();
+    EXPECT_EQ(dmx::blackout_local(), 0);
+}
+
+TEST(sacn_joins_the_control_universe_group) {
+    auto g         = config::get_global();
+    g.sacn_enabled = true;
+    config::set_global(g);
+    control_on(300);
+    pump_sacn();
+    bool joined = false;
+    for (uint32_t grp : g_sacn_groups)
+        if (grp == (0xEFFF0000u | 300u)) joined = true;
+    EXPECT_TRUE(joined);
+    shim::net_push(kSacn, sacn_data(300, 100, { 0xFF, 0xFF, 0, 0, 16, 0 }));
+    pump_sacn();
+    dmx::swap_universes();
+    dmx::update_show_control();
+    EXPECT_EQ(dmx::scene_on_output(0), 1);  // band 2
+    dmx::scene_stop();
+    control_off();
+}

@@ -173,17 +173,69 @@ void identify_start(size_t channel_index, uint16_t seconds = 10);
 void identify_stop();
 int identify_channel();  // -1 = inactive
 
-// ── Standalone scenes (manual override) ────────────────────────────────────
-// While a scene plays, channels in its mask render the parametric effect
-// instead of decoding universes — network traffic is ignored until
-// scene_stop() (manual-stop policy). Set from ui/console/web/artnet tasks,
-// read by render_task (single atomic).
-void scene_start(uint8_t scene_index);  // 0..config::num_scenes()-1
-// Call after config::delete_scene / move_scene: the playing scene follows
-// its new position, or stops when it was the one deleted.
+// ── Standalone scenes (manual override), one per output ────────────────────
+// Every output plays its own scene or the live input, so several scenes run
+// at once on disjoint groups ("zones"). Starting a scene claims the outputs
+// of its channel mask (∩ `outputs`) and leaves the others alone; a later
+// start on an overlapping group takes those outputs over. While a scene
+// plays on an output, network traffic for it is ignored until stopped
+// (manual-stop policy). Changes crossfade over scene_fade_ms().
+// Set from ui/console/web/artnet/render tasks (per-output atomics).
+constexpr uint8_t kAllOutputs  = 0xFF;
+constexpr int32_t kDefaultFade = -1;    // the configured / desk-overridden fade
+void scene_start(uint8_t scene_index);  // on the scene's own mask
+void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t fade_ms = kDefaultFade);
+void scene_stop();  // every output back to live
+void scene_stop_on(uint8_t outputs, int32_t fade_ms = kDefaultFade);
+void scene_stop_scene(uint8_t scene_index);  // only the outputs playing it
+// Call after config::delete_scene / move_scene: playing outputs follow their
+// scene to its new position, or go back to live when it was deleted.
 void scene_list_edited(config::SceneEdit op, size_t a, size_t b = 0);
-void scene_stop();
-int active_scene();  // -1 = none
+int scene_on_output(size_t ch);        // -1 = live
+uint8_t scene_outputs(uint8_t index);  // outputs playing scene `index`
+int active_scene();                    // lowest output's scene, -1 = none (summary)
+uint32_t scene_fade_ms();              // effective: desk Fade channel, else config
+
+// ── Show control: grand master, blackout, strobe ────────────────────────────
+// Local values (web / TFT / UART / ArtTrigger) combine with the control
+// universe's: masters multiply, blackouts OR, the faster strobe wins. Runtime
+// only — a reboot comes back at full, lit, steady. Identify and the pixel
+// ruler bypass all three (commissioning must stay visible).
+constexpr uint16_t kMasterFull = 65535;
+void master_set(uint8_t outputs, uint16_t level);
+uint16_t master_local(size_t ch);
+uint16_t master_effective(size_t ch);
+void blackout_set(uint8_t outputs, bool on);
+void blackout_toggle(uint8_t outputs = kAllOutputs);  // dark if any is lit
+uint8_t blackout_local();                             // outputs
+uint8_t blackout_effective();                         // outputs
+void strobe_set(uint8_t outputs, uint8_t hz10);       // tenths of Hz, 0 = off, ≤ 250
+uint8_t strobe_local(size_t ch);
+uint8_t strobe_effective(size_t ch);
+
+// ── DMX control universe ────────────────────────────────────────────────────
+// Evaluates config::get_control() against the front universe bank. Render
+// task, once per frame right after swap_universes(). Levels (master, blackout,
+// strobe, overrides) follow the desk continuously; triggers (scene, FSEQ) act
+// when their band changes — the first frame after the universe appears only
+// acts on non-zero bands, so an idle desk does not stop a local scene.
+// When the universe goes silent (kControlTimeoutUs), master/blackout/strobe
+// return to neutral (never left dark); scenes and overrides stay.
+constexpr int64_t kControlTimeoutUs = 3'000'000;
+void update_show_control();
+bool control_live();
+int control_universe();  // -1 = disabled (sACN joins it when enabled)
+// FSEQ requests from the desk, consumed by fseq_player (render task must not
+// block on SD): kFseqNoRequest, kFseqStopRequest, or a 0-based file index.
+constexpr int16_t kFseqNoRequest   = -2;
+constexpr int16_t kFseqStopRequest = -1;
+int16_t take_fseq_request();
+// Diagnostics: pool slot of the control universe (-1 = unmapped) and ms since
+// its last packet (-1 = never).
+int control_pool_slot();
+int64_t control_last_rx_ms_ago();
+// Effect a desk's Effect channel value selects (-1 = the scene's own).
+int effect_for_dmx_value(uint8_t v);
 
 // ── FSEQ playback ────────────────────────────────────────────────────────────
 // fseq_player calls fseq_set_active(true) while a show is running.

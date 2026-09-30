@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 
 echo "==[1/4] clang-format (CI: format-check) =="
 git ls-files '*.cpp' '*.h' | xargs clang-format --dry-run -Werror --style=file
+python3 tools/lint_atomics.py
 
 echo "==[2/4] host unit tests (CI: host-tests, sanitizers, coverage) =="
 cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Release >/dev/null

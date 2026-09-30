@@ -78,6 +78,7 @@
     <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:#a9aca4;background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
     <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:#a9aca4;background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i>ArtNet / sACN</div>
     <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:#a9aca4;background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
+    <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:#a9aca4;background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="DMX control">DMX control</span></div>
     <div data-nav="system" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:#a9aca4;background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="settings"></i><span data-i18n="System">System</span></div>
     <div data-nav="diag" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:#a9aca4;background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="activity"></i><span data-i18n="Diagnostics">Diagnostics</span></div>
 
@@ -158,6 +159,14 @@
               <button data-action="export" style="display:flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;padding:11px 12px;font:500 13px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic16"></i><span data-i18n="Backup">Backup</span></button>
             </div>
             <button data-reboot style="display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid #3a2826;color:#ec8480;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono';cursor:pointer;margin-top:auto"><i data-lucide="rotate-cw" class="ic16"></i><span data-i18n="Reboot the box">Reboot the box</span></button>
+          </div>
+
+          <div id="show-card" style="grid-column:span 12;background:#121412;border:1px solid #262826;border-radius:0;padding:14px 18px;display:grid;grid-template-columns:auto 1fr 1fr auto auto;align-items:center;gap:20px">
+            <span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:#80837c" data-i18n="SHOW">SHOW</span>
+            <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:#a9aca4"><span data-i18n="Master">Master</span><input id="sh-master" type="range" min="0" max="100" step="1" value="100" style="flex:1;accent-color:#3fd463"/><span id="sh-master-val" style="width:46px;text-align:right;color:#edeeea">100%</span></label>
+            <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:#a9aca4"><span data-i18n="Strobe">Strobe</span><input id="sh-strobe" type="range" min="0" max="25" step="1" value="0" style="flex:1;accent-color:#e8b23a"/><span id="sh-strobe-val" style="width:46px;text-align:right;color:#edeeea">—</span></label>
+            <span id="sh-ctl" style="display:inline-flex;align-items:center;gap:6px;font:500 11px 'DM Mono';color:#80837c;background:rgba(255,255,255,.04);border:1px solid #262826;padding:5px 9px">DMX ctrl · off</span>
+            <button id="sh-bo" data-action="blackout" style="display:inline-flex;align-items:center;gap:8px;background:transparent;border:1px solid #3a2826;color:#ec8480;border-radius:0;padding:10px 16px;font:700 12.5px 'DM Mono';letter-spacing:.08em;cursor:pointer"><i data-lucide="square" class="ic14"></i><span data-i18n="BLACKOUT">BLACKOUT</span></button>
           </div>
 
           <div style="grid-column:span 5;background:#121412;border:1px solid #262826;border-radius:0;padding:18px;display:flex;flex-direction:column;gap:14px">
@@ -384,6 +393,33 @@
         </div>
       </div>
 
+      <!-- ===== DMX CONTROL ===== -->
+      <div data-screen="control" style="display:none">
+        <div style="max-width:980px;display:flex;flex-direction:column;gap:16px">
+          <div style="background:#121412;border:1px solid #262826;border-radius:0;padding:18px 20px;display:grid;grid-template-columns:auto 1fr 1fr auto;align-items:end;gap:18px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding-bottom:9px"><span class="sw"><input id="ct-en" type="checkbox"/><span></span></span><span style="font-size:13.5px;font-weight:600" data-i18n="Enabled">Enabled</span></label>
+            <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Universe">Universe</label><input id="ct-uni" type="number" min="0" max="32767" value="100" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'"/></div>
+            <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Start address">Start address</label><input id="ct-addr" type="number" min="1" max="512" value="1" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'"/></div>
+            <span id="ct-state" style="display:inline-flex;align-items:center;gap:6px;font:500 11px 'DM Mono';color:#80837c;background:rgba(255,255,255,.04);border:1px solid #262826;padding:8px 10px;margin-bottom:2px">off</span>
+          </div>
+          <div id="ct-warn" style="display:none;align-items:center;gap:10px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.35);padding:11px 14px;color:#e8b23a;font:500 12px 'DM Mono'"></div>
+          <div style="background:#121412;border:1px solid #262826;border-radius:0;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;border-bottom:1px solid #222321">
+              <span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:#80837c"><span data-i18n="CHANNEL MAP">CHANNEL MAP</span> <span id="ct-foot" style="color:#a9aca4"></span></span>
+              <span style="display:flex;gap:8px">
+                <button data-ct-preset="simple" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Simple preset">Simple preset</button>
+                <button data-ct-preset="full" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Full preset">Full preset</button>
+                <a id="ct-fixture" href="/api/control/fixture" download="pixfrog-control.json" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer;text-decoration:none"><i data-lucide="download" class="ic14"></i><span data-i18n="Fixture profile">Fixture profile</span></a>
+              </span>
+            </div>
+            <div style="display:grid;grid-template-columns:70px 1.3fr 2fr 1fr 70px 70px;gap:10px;font:500 10px 'DM Mono';letter-spacing:.1em;color:#80837c;padding:10px 18px;border-bottom:1px solid #222321"><span>DMX</span><span data-i18n="FUNCTION">FUNCTION</span><span data-i18n="OUTPUTS">OUTPUTS</span><span data-i18n="OPTION">OPTION</span><span></span><span></span></div>
+            <div id="ct-slots"></div>
+            <div style="padding:12px 18px;background:#0d0e0d"><button data-ct-add style="display:inline-flex;align-items:center;gap:6px;background:#3fd463;border:1px solid #3fd463;color:#08170d;border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="Add a channel">Add a channel</span></button></div>
+          </div>
+          <div style="font:500 12px 'DM Mono';color:#80837c;line-height:1.6" data-i18n="Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. Speed, parameter, effect and colour channels at 0 keep the scene's own value. A scene channel with a partial output group plays its scene on those outputs only.">Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. Speed, parameter, effect and colour channels at 0 keep the scene's own value. A scene channel with a partial output group plays its scene on those outputs only.</div>
+        </div>
+      </div>
+
       <!-- ===== SYSTEM ===== -->
       <div data-screen="system" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1040px">
@@ -396,6 +432,7 @@
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
                 <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Boot scene">Boot scene</label><select id="s-boot" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'Figtree'"><option value="0" data-i18n="None">None</option><option value="1">Scene 1</option><option value="2">Scene 2</option><option value="3">Scene 3</option><option value="4">Scene 4</option><option value="5">Scene 5</option><option value="6">Scene 6</option><option value="7">Scene 7</option><option value="8">Scene 8</option></select></div>
+                <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Scene fade (s)">Scene fade (s)</label><input id="s-fade" type="number" min="0" max="25.5" step="0.1" value="0" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'"/></div>
                 <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Language">Language</label><select id="s-lang" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'Figtree'"><option value="en">English</option><option value="fr">Français</option></select></div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px">
@@ -647,6 +684,48 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 /* ─────────── i18n (English source strings, French overrides) ─────────── */
 var LANG='en';
 var FR={
+  'DMX control':'Contrôle DMX',
+  'SHOW':'SHOW',
+  'Master':'Master',
+  'Strobe':'Stroboscope',
+  'BLACKOUT':'BLACKOUT',
+  'Scene fade (s)':'Fondu des scènes (s)',
+  'Enabled':'Activé',
+  'Start address':'Adresse de départ',
+  'CHANNEL MAP':'CARTE DES CANAUX',
+  'Simple preset':'Préréglage simple',
+  'Full preset':'Préréglage complet',
+  'Fixture profile':'Profil de fixture',
+  'FUNCTION':'FONCTION',
+  'OUTPUTS':'SORTIES',
+  'OPTION':'OPTION',
+  'Add a channel':'Ajouter un canal',
+  'Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. Speed, parameter, effect and colour channels at 0 keep the scene\'s own value. A scene channel with a partial output group plays its scene on those outputs only.':'Les canaux scène et fichier show utilisent des tranches de 8 valeurs (0-7 = aucun, 8-15 = élément 1…) et agissent quand la valeur change. Les canaux vitesse, paramètre, effet et couleur à 0 gardent la valeur de la scène. Un canal scène limité à un groupe de sorties joue sa scène sur ces sorties uniquement.',
+  'Spare':'Réserve',
+  'Scene':'Scène',
+  'Scene speed':'Vitesse de scène',
+  'Scene parameter':'Paramètre de scène',
+  'Colour red':'Couleur rouge',
+  'Colour green':'Couleur verte',
+  'Colour blue':'Couleur bleue',
+  'Effect':'Effet',
+  'Fade time':'Temps de fondu',
+  'Show file':'Fichier show',
+  'Colour':'Couleur',
+  'Move up':'Monter',
+  'Move down':'Descendre',
+  'No channel yet — pick a preset or add one':'Aucun canal — choisissez un préréglage ou ajoutez-en un',
+  'The mode ends past DMX channel 512 — move the start address':'Le mode dépasse le canal DMX 512 — déplacez l’adresse de départ',
+  'Universe {u} also feeds channel {c}: both read the same data':'L’univers {u} alimente aussi la sortie {c} : les deux lisent les mêmes données',
+  'receiving':'réception',
+  'waiting for the desk':'en attente de la console',
+  'waiting':'en attente',
+  'off':'arrêt',
+  'DMX ctrl':'Ctrl DMX',
+  'all outputs':'toutes les sorties',
+  'out':'sorties',
+  'Stopped scene ':'Scène arrêtée ',
+  'Drive the box from any desk: compose its DMX channels':'Pilotez le boîtier depuis n’importe quelle console : composez ses canaux DMX',
   'Diagnostics':'Diagnostics','RENDER PIPELINE':'PIPELINE DE RENDU','MEMORY':'MÉMOIRE',
   'RECEPTION':'RÉCEPTION','SYSTEM':'SYSTÈME','PER-CHANNEL CAPACITY':'CAPACITÉ PAR CANAL',
   'DEVICE LOGS':'LOGS DE L’APPAREIL','wire emit':'émission fil','frames':'trames',
@@ -919,13 +998,13 @@ function sceneRowHTML(sc,i,active){
     +'<span data-srow-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:#5c5f59;cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
     +'<span style="font:500 11px \'DM Mono\';color:#80837c;width:18px;text-align:right;flex:none">'+(i+1)+'</span>'
     +'<span style="width:22px;height:22px;background:'+sw+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:#edeeea;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div style="font:500 11px \'DM Mono\';color:#8e9189">'+esc(t(fx.n))+'</div></div>'
+    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:#edeeea;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div style="font:500 11px \'DM Mono\';color:#8e9189">'+esc(t(fx.n))+(PLAYING[i]?'<span data-sc-outs="'+i+'" style="color:#3fd463"> · '+esc(outsText(PLAYING[i]))+'</span>':'')+'</div></div>'
     +'<button data-sc-play="'+sc.n+'" style="width:28px;height:28px;border-radius:0;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;'+(i===active?'background:#3fd463;border:1px solid #3fd463;color:#08170d':'background:rgba(237,238,234,.04);border:1px solid #363835;color:#a9aca4')+'"><i data-lucide="play" class="ic14"></i></button></div>';
 }
 var lastActiveScene=-1;
 function renderSceneList(){
   var m=el('scene-list-mount'); if(!m) return;
-  m.innerHTML=SCENES.length?SCENES.map(function(sc,i){ return sceneRowHTML(sc,i,lastActiveScene); }).join('')
+  m.innerHTML=SCENES.length?SCENES.map(function(sc,i){ return sceneRowHTML(sc,i,PLAYING[i]?i:-1); }).join('')
     :'<div style="padding:14px 6px;font:500 12px \'DM Mono\';color:#80837c">'+esc(t('No scene yet'))+'</div>';
   createIcons(m);
   var c=el('scene-count'); if(c) c.textContent=SCENES.length+' / '+MAX_SCENES;
@@ -1010,9 +1089,12 @@ function srDragEnd(){
 }
 // Highlight the scene card whose slot is playing (scn = 0-based, -1 = none):
 // glowing border + a lit play button so the active scene is obvious.
+// Zones: several scenes may play at once (PLAYING: scene index → outputs).
+var lastPlayingKey='';
 function applySceneActive(scn){
-  if(scn===lastActiveScene) return;
-  lastActiveScene=scn; renderSceneList();
+  var key=JSON.stringify(PLAYING);
+  if(scn===lastActiveScene && key===lastPlayingKey) return;
+  lastActiveScene=scn; lastPlayingKey=key; renderSceneList();
 }
 function renderScene(n){
   if(n-1===curScene){ var sm=el('scenes-mount'); if(sm){ sm.innerHTML=sceneCardHTML(SCENES[n-1]); createIcons(sm); } }
@@ -1049,8 +1131,8 @@ function buildPatch(){
 }
 
 /* ─────────── navigation ─────────── */
-var TITLES={dashboard:'Dashboard',scenes:'Scenes',fseq:'FSEQ sequences',channels:'Channels',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',system:'System',diag:'Diagnostics'};
-var SUBS={dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · 11 effects · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
+var TITLES={dashboard:'Dashboard',scenes:'Scenes',fseq:'FSEQ sequences',channels:'Channels',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
+var SUBS={control:'Drive the box from any desk: compose its DMX channels',dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · 11 effects · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
 var curScreen='dashboard';
 function go(name){
   curScreen=name;
@@ -1230,6 +1312,7 @@ function pollStatus(){
       setLive('fseq-pos','0:00'); setLive('fseq-dur','0:00');
     }
     setLive('active-scene', scn>=0?(t('Scene')+' '+(scn+1)):'—');
+    applyShow(s.show);
     applySceneActive(playing?-1:scn);
     chanLive=s.channels||[]; applyChanStates();
     prevStatus=s;
@@ -1450,6 +1533,9 @@ function reloadConfig(){
     if(el('s-dim')) el('s-dim').value=g.tft_idle_dim||0;
     if(el('s-dimdelay')) el('s-dimdelay').value=g.tft_dim_delay_s||0;
     if(el('s-boot')) el('s-boot').value=String(g.boot_scene||0);
+    if(el('s-fade')) el('s-fade').value=((g.scene_fade_ms||0)/1000).toFixed(1);
+    if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
+    renderControl();
     if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
     setLive('fw-name','pixfrog '+(d.version||'')); setLive('fw-sub','esp32-p4 · partition '+(d.ota_partition||'?'));
     setLive('side-ver',(d.version||'?')+' · esp32-p4 · '+(d.ota_partition||'?'));
@@ -1480,13 +1566,87 @@ function buildGlobalBody(){
   var b={};
   if(dirty.has('network')){ b.dhcp=netDhcp; if(!netDhcp){ b.ip=el('n-ip').value; b.mask=el('n-mask').value; b.gw=el('n-gw').value; } b.short_name=el('n-host').value; b.long_name=el('n-long').value; }
   if(dirty.has('artnet')){ b.net=parseInt(el('a-net').value,10)||0; b.subnet=parseInt(el('a-subnet').value,10)||0; b.sacn_enabled=el('a-sacn').checked; b.fpp_remote=el('a-fpp').checked; b.merge_mode=el('a-merge').checked?1:0; b.failsafe_mode=parseInt(el('a-fsmode').value,10)||0; b.failsafe_scene=parseInt(el('a-fsscene').value,10)||0; b.failsafe_timeout_s=parseInt(el('a-fsdelay').value,10)||0; }
-  if(dirty.has('sysgen')){ b.refresh_hz=Math.max(20,Math.min(120,parseInt(el('s-refresh').value,10)||60)); b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; b.tft_brightness=parseInt(el('s-bright').value,10)||100; b.tft_idle_dim=parseInt(el('s-dim').value,10)||0; b.tft_dim_delay_s=parseInt(el('s-dimdelay').value,10)||0; }
+  if(dirty.has('sysgen')){ b.refresh_hz=Math.max(20,Math.min(120,parseInt(el('s-refresh').value,10)||60)); b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; b.tft_brightness=parseInt(el('s-bright').value,10)||100; b.tft_idle_dim=parseInt(el('s-dim').value,10)||0; b.tft_dim_delay_s=parseInt(el('s-dimdelay').value,10)||0; b.scene_fade_ms=Math.max(0,Math.min(25500,Math.round((parseFloat(el('s-fade').value)||0)*10)*100)); }
   if(dirty.has('sysauth')){ if(!el('s-auth').checked) b.web_password=''; else if(el('s-pwd').value) b.web_password=el('s-pwd').value; }
   if(dirty.has('syslang')){ b.lang=(LANG==='fr'?1:0); }
   return b;
 }
 function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:c.pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:c.gaps||[]}; }
 function sceneBody(s){ return {name:s.name,effect:s.effectIdx,colors:s.colors,speed:s.speed,param:s.param,mask:s.mask}; }
+/* ─────────── DMX control universe ─────────── */
+var CTL={enabled:false,universe:100,address:1,slots:[]}, CTL_STATE='off';
+var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq'];
+var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Scene speed',param:'Scene parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Effect',fade:'Fade time',fseq:'Show file'};
+function ctlWidth(sl){ return (sl.fn==='master'&&sl.fine)?2:1; }
+function ctlFootprint(){ return CTL.slots.reduce(function(n,sl){ return n+ctlWidth(sl); },0); }
+function ctlPreset(which){
+  var S=[{fn:'master',mask:255,index:0,fine:true},{fn:'blackout',mask:255,index:0,fine:false},{fn:'strobe',mask:255,index:0,fine:false},{fn:'scene',mask:255,index:0,fine:false}];
+  if(which==='full'){ ['speed','param','effect'].forEach(function(f){ S.push({fn:f,mask:255,index:0,fine:false}); });
+    for(var k=0;k<2;k++) ['red','green','blue'].forEach(function(f){ S.push({fn:f,mask:255,index:k,fine:false}); }); }
+  S.push({fn:'fade',mask:255,index:0,fine:false}); if(which==='full') S.push({fn:'fseq',mask:255,index:0,fine:false});
+  CTL.slots=S;
+}
+function ctlOverlap(){
+  if(!CTL.enabled) return null;
+  for(var i=0;i<CHANS.length;i++){ var c=CHANS[i]; if(c.protoRaw==='Off') continue;
+    var span=chanSpan(c); if(CTL.universe>=c.universe && CTL.universe<c.universe+span) return c.n; }
+  return null;
+}
+function renderControl(){
+  var en=el('ct-en'); if(en) en.checked=!!CTL.enabled;
+  if(el('ct-uni')&&document.activeElement!==el('ct-uni')) el('ct-uni').value=CTL.universe;
+  if(el('ct-addr')&&document.activeElement!==el('ct-addr')) el('ct-addr').value=CTL.address;
+  var foot=ctlFootprint(), last=CTL.address+foot-1;
+  var ft=el('ct-foot'); if(ft) ft.textContent=foot?('· '+CTL.address+'–'+last+' ('+foot+' ch)'):'';
+  var m=el('ct-slots'); if(!m) return;
+  var at=CTL.address, rows='';
+  CTL.slots.forEach(function(sl,i){
+    var w=ctlWidth(sl), dmx=w===2?(at+'-'+(at+1)):String(at); at+=w;
+    var opts=CTL_FNS.map(function(f){ return '<option value="'+f+'"'+(f===sl.fn?' selected':'')+'>'+esc(t(CTL_LABELS[f]))+'</option>'; }).join('');
+    var outs=''; for(var o=0;o<8;o++){ var on=(sl.mask>>o)&1;
+      outs+='<button data-ct-out="'+i+'" data-o="'+o+'" style="width:26px;height:26px;border-radius:0;cursor:pointer;font:500 11px \'DM Mono\';'+(on?'background:rgba(63,212,99,.14);border:1px solid rgba(63,212,99,.5);color:#3fd463':'background:#0d0e0d;border:1px solid #262826;color:#5c5f59')+'">'+(o+1)+'</button>'; }
+    var opt='';
+    if(['red','green','blue'].indexOf(sl.fn)>=0){ opt='<select data-ct-idx="'+i+'" style="background:#0d0e0d;border:1px solid #363835;color:#edeeea;padding:6px 8px;font:500 12px \'DM Mono\'">'+[0,1,2,3].map(function(k){ return '<option value="'+k+'"'+(k===sl.index?' selected':'')+'>'+t('Colour')+' '+(k+1)+'</option>'; }).join('')+'</select>'; }
+    else if(sl.fn==='master'){ opt='<label style="display:inline-flex;align-items:center;gap:7px;font:500 12px \'DM Mono\';color:#a9aca4"><input type="checkbox" data-ct-fine="'+i+'"'+(sl.fine?' checked':'')+'/>16-bit</label>'; }
+    rows+='<div data-ct-row="'+i+'" style="display:grid;grid-template-columns:70px 1.3fr 2fr 1fr 70px 70px;gap:10px;align-items:center;padding:8px 18px;border-bottom:1px solid #1c1d1b">'
+      +'<span style="font:500 13px \'DM Mono\';color:#3fd463">'+dmx+'</span>'
+      +'<select data-ct-fn="'+i+'" style="background:#0d0e0d;border:1px solid #363835;color:#edeeea;padding:7px 9px;font:500 13px \'Figtree\'">'+opts+'</select>'
+      +'<span style="display:flex;gap:4px">'+outs+'</span>'
+      +'<span>'+opt+'</span>'
+      +'<span style="display:flex;gap:4px"><button data-ct-up="'+i+'" title="'+esc(t('Move up'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#a9aca4;cursor:pointer">↑</button><button data-ct-down="'+i+'" title="'+esc(t('Move down'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#a9aca4;cursor:pointer">↓</button></span>'
+      +'<button data-ct-del="'+i+'" title="'+esc(t('Delete'))+'" style="width:26px;height:26px;background:transparent;border:1px solid #3a2826;color:#ec8480;cursor:pointer;justify-self:end">×</button>'
+      +'</div>';
+  });
+  m.innerHTML=rows||'<div style="padding:14px 18px;font:500 12px \'DM Mono\';color:#80837c">'+esc(t('No channel yet — pick a preset or add one'))+'</div>';
+  var add=document.querySelector('[data-ct-add]'); if(add){ add.disabled=CTL.slots.length>=32||last>=512; add.style.opacity=add.disabled?'.4':'1'; }
+  var wn=el('ct-warn'), ov=ctlOverlap(), msg='';
+  if(last>512) msg=t('The mode ends past DMX channel 512 — move the start address');
+  else if(ov) msg=t('Universe {u} also feeds channel {c}: both read the same data').replace('{u}',CTL.universe).replace('{c}',ov);
+  if(wn){ wn.style.display=msg?'flex':'none'; wn.textContent=msg; }
+  renderCtlState();
+}
+function renderCtlState(){
+  var st=el('ct-state'); if(st){ st.textContent=t(CTL_STATE==='live'?'receiving':CTL_STATE==='idle'?'waiting for the desk':'off'); st.style.color=CTL_STATE==='live'?'#3fd463':CTL_STATE==='idle'?'#e8b23a':'#80837c'; }
+  var sc=el('sh-ctl'); if(sc){ sc.textContent=t('DMX ctrl')+' · '+t(CTL_STATE==='live'?'receiving':CTL_STATE==='idle'?'waiting':'off'); sc.style.color=CTL_STATE==='live'?'#3fd463':CTL_STATE==='idle'?'#e8b23a':'#80837c'; }
+}
+function ctlBody(){ return {enabled:!!CTL.enabled,universe:CTL.universe,address:CTL.address,slots:CTL.slots.map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index,fine:!!sl.fine}; })}; }
+
+/* ─────────── show (master / blackout / strobe) ─────────── */
+var SHOW={master:100,blackout:0,strobe:0}, PLAYING={};
+function applyShow(sh){
+  if(!sh) return;
+  var ml=(sh.master_local&&sh.master_local.length)?Math.round(sh.master_local[0]):100;
+  var mEl=el('sh-master'); if(mEl&&document.activeElement!==mEl){ mEl.value=ml; setLive2('sh-master-val',ml+'%'); }
+  var sEl=el('sh-strobe'), sh0=(sh.strobe_hz&&sh.strobe_hz.length)?Math.round(sh.strobe_hz[0]):0;
+  if(sEl&&document.activeElement!==sEl){ sEl.value=sh0; setLive2('sh-strobe-val',sh0?sh0+' Hz':'—'); }
+  SHOW.blackout=sh.blackout||0;
+  var bo=el('sh-bo'); if(bo){ var on=!!SHOW.blackout; bo.style.background=on?'#d9534f':'transparent'; bo.style.color=on?'#1a0908':'#ec8480'; bo.style.borderColor=on?'#d9534f':'#3a2826'; }
+  CTL_STATE=sh.control||'off'; renderCtlState();
+  var pl={}; (sh.scenes||[]).forEach(function(sc,o){ if(sc>=0){ pl[sc]=(pl[sc]||0)|(1<<o); } }); PLAYING=pl;
+}
+function setLive2(id,v){ var e=el(id); if(e) e.textContent=v; }
+function outsText(mask){ var a=[]; for(var o=0;o<8;o++) if((mask>>o)&1) a.push(o+1); return a.length===8?t('all outputs'):(t('out')+' '+a.join(',')); }
+
 function saveAll(){
   if(dirty.size===0) return;
   if(curChan>=0 && dirty.has('ch'+curChan)) readChanEditor();
@@ -1494,6 +1654,7 @@ function saveAll(){
   if(['network','artnet','sysgen','sysauth','syslang'].some(function(g){ return dirty.has(g); })) ops.push(api('POST','/api/global',buildGlobalBody()));
   CHANS.forEach(function(c,i){ if(dirty.has('ch'+i)) ops.push(api('POST','/api/channel/'+i,chanBody(c))); });
   SCENES.forEach(function(s,i){ if(dirty.has('scene'+i)) ops.push(api('POST','/api/scene/'+i,sceneBody(s))); });
+  if(dirty.has('control')) ops.push(api('POST','/api/control',ctlBody()));
   toast(t('Saving…'));
   Promise.all(ops).then(function(){ dirty.clear(); langDirty=false; updateSaveBar(); toast(t('✓ saved')); return reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
 }
@@ -1626,6 +1787,7 @@ function doAction(a){
   else if(a==='cancel'){ dirty.clear(); langDirty=false; updateSaveBar(); reloadConfig(); toast(t('✓ saved')); }
   else if(a==='identify'){ api('POST','/api/channel/0/identify',{}).then(function(){ toast(t('Identifying channel ')+'1'); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast(t('Identifying channel ')+(curChan+1)); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
+  else if(a==='blackout'){ api('POST','/api/show',{blackout:'toggle'}).then(applyShow); }
   else if(a==='stop-all'){ Promise.all([api('POST','/api/scenes/stop',{}),api('POST','/api/fseq/stop',{})]).then(function(){ toast(t('Outputs stopped')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='autopatch'){ api('POST','/api/autopatch',{base:0}).then(function(r){ toast(t('Patch — next free universe U')+r.next_free); reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='logs-refresh'){ fetchLogs(); }
@@ -1669,6 +1831,12 @@ function fseqUpload(){
 /* ─────────── click & input delegation ─────────── */
 function onClick(e){
   var act=e.target.closest('[data-action]'); if(act){ doAction(act.getAttribute('data-action')); return; }
+  var cpr=e.target.closest('[data-ct-preset]'); if(cpr){ ctlPreset(cpr.getAttribute('data-ct-preset')); markDirty('control'); renderControl(); return; }
+  if(e.target.closest('[data-ct-add]')){ if(CTL.slots.length<32){ CTL.slots.push({fn:'master',mask:255,index:0,fine:false}); markDirty('control'); renderControl(); } return; }
+  var cto=e.target.closest('[data-ct-out]'); if(cto){ var si=+cto.getAttribute('data-ct-out'), nm=CTL.slots[si].mask^(1<<+cto.getAttribute('data-o')); if(nm){ CTL.slots[si].mask=nm; markDirty('control'); renderControl(); } return; }
+  var ctd=e.target.closest('[data-ct-del]'); if(ctd){ CTL.slots.splice(+ctd.getAttribute('data-ct-del'),1); markDirty('control'); renderControl(); return; }
+  var ctu=e.target.closest('[data-ct-up]'); if(ctu){ var ui=+ctu.getAttribute('data-ct-up'); if(ui>0){ var tmp=CTL.slots[ui-1]; CTL.slots[ui-1]=CTL.slots[ui]; CTL.slots[ui]=tmp; markDirty('control'); renderControl(); } return; }
+  var ctn=e.target.closest('[data-ct-down]'); if(ctn){ var di=+ctn.getAttribute('data-ct-down'); if(di<CTL.slots.length-1){ var tmp2=CTL.slots[di+1]; CTL.slots[di+1]=CTL.slots[di]; CTL.slots[di]=tmp2; markDirty('control'); renderControl(); } return; }
   if(e.target.closest('[data-sc-grip]')) return;
   var sdel=e.target.closest('[data-sc-delcol]'); if(sdel){ var nd=+sdel.getAttribute('data-sc-delcol'), sd=SCENES[nd-1]; if(sd.colors.length>1){ sd.colors.splice(+sdel.getAttribute('data-k'),1); markDirty('scene'+(nd-1)); renderScene(nd); } return; }
   var scol=e.target.closest('[data-scene-color]'); if(scol){ openPicker(+scol.getAttribute('data-scene-color'), +scol.getAttribute('data-k'), scol); return; }
@@ -1676,7 +1844,8 @@ function onClick(e){
 
   var dh=e.target.closest('[data-dhcp]'); if(dh){ netDhcp=(+dh.getAttribute('data-dhcp'))===1; setDhcpUI(); markDirty('network'); return; }
   var sch=e.target.closest('[data-sc-ch]'); if(sch){ var n2=+sch.getAttribute('data-scn'),b=+sch.getAttribute('data-sc-ch'); SCENES[n2-1].mask^=(1<<b); markDirty('scene'+(n2-1)); renderScene(n2); return; }
-  var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1; api('POST','/api/scene/'+n3+'/play',{}).then(function(){ toast(t('Playing scene ')+(n3+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
+  var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1, stop=!!PLAYING[n3];
+    api('POST','/api/scene/'+n3+(stop?'/stop':'/play'),{}).then(function(){ toast(t(stop?'Stopped scene ':'Playing scene ')+(n3+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var fpl=e.target.closest('[data-fseq-play]'); if(fpl){ var fn=fpl.getAttribute('data-fseq-play'); api('POST','/api/fseq/play',{filename:fn}).then(function(){ toast(t('Playing: ')+fn); loadFseq(); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var reboot=e.target.closest('[data-reboot]'); if(reboot){ openModal('reboot'); return; }
   var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
@@ -1698,7 +1867,15 @@ function onInput(e){
   if(['n-ip','n-mask','n-gw','n-host','n-long'].indexOf(t.id)>=0){ markDirty('network'); return; }
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }
-  if(['s-refresh','s-home','s-boot','s-bright','s-dim','s-dimdelay'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
+  if(['s-refresh','s-home','s-boot','s-bright','s-dim','s-dimdelay','s-fade'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
+  if(t.id==='sh-master'){ setLive2('sh-master-val',t.value+'%'); if(e.type==='change') api('POST','/api/show',{master:+t.value}).then(applyShow); return; }
+  if(t.id==='sh-strobe'){ setLive2('sh-strobe-val',+t.value?t.value+' Hz':'—'); if(e.type==='change') api('POST','/api/show',{strobe_hz:+t.value}).then(applyShow); return; }
+  if(t.id==='ct-en'){ CTL.enabled=t.checked; markDirty('control'); renderControl(); return; }
+  if(t.id==='ct-uni'){ CTL.universe=Math.max(0,Math.min(32767,parseInt(t.value,10)||0)); markDirty('control'); renderControl(); return; }
+  if(t.id==='ct-addr'){ CTL.address=Math.max(1,Math.min(512,parseInt(t.value,10)||1)); markDirty('control'); renderControl(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-ct-fn')){ var ci=+t.getAttribute('data-ct-fn'); CTL.slots[ci].fn=t.value; if(t.value!=='master') CTL.slots[ci].fine=false; markDirty('control'); renderControl(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-ct-idx')){ CTL.slots[+t.getAttribute('data-ct-idx')].index=+t.value; markDirty('control'); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-ct-fine')){ CTL.slots[+t.getAttribute('data-ct-fine')].fine=t.checked; markDirty('control'); renderControl(); return; }
   if(t.id==='s-auth'){ setAuthUI(); markDirty('sysauth'); return; }
   if(t.id==='s-pwd'){ markDirty('sysauth'); return; }
   if(t.id==='s-lang'){ langDirty=true; setLang(t.value); markDirty('syslang'); return; }

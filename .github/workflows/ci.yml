@@ -44,6 +44,8 @@ jobs:
           files=$(git ls-files '*.cpp' '*.h')
           echo "Checking $(echo "$files" | wc -l) files..."
           echo "$files" | xargs clang-format --dry-run -Werror --style=file
+      - name: No read-modify-write on sub-word atomics (ESP32-P4)
+        run: python3 tools/lint_atomics.py
 
   host-tests:
     name: Host unit tests

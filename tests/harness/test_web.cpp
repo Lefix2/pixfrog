@@ -77,7 +77,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 26);
+    EXPECT_EQ(shim::http_routes(), 29);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -376,4 +376,135 @@ TEST(unknown_route_is_404) {
 
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv, setup);
+}
+
+// ── Show control, DMX control universe, zones ───────────────────────────────
+
+TEST(show_endpoint_sets_master_blackout_strobe) {
+    Json r(post("/api/show", "{\"master\":50}").body);
+    EXPECT_EQ(dmx::master_local(0), 32768);
+    EXPECT_TRUE(cJSON_GetArrayItem(r["master"], 0)->valuedouble == 50.0);
+    EXPECT_STREQ(r["control"]->valuestring, "off");
+    EXPECT_EQ(post("/api/show", "{\"outputs\":3,\"blackout\":true}").status, 200);
+    EXPECT_EQ(dmx::blackout_local(), 0x03);
+    EXPECT_EQ(post("/api/show", "{\"blackout\":\"toggle\"}").status, 200);
+    EXPECT_EQ(dmx::blackout_local(), 0xFF);
+    EXPECT_EQ(post("/api/show", "{\"blackout\":false,\"strobe_hz\":12,\"master\":100}").status,
+              200);
+    EXPECT_EQ(dmx::blackout_local(), 0);
+    EXPECT_EQ(dmx::strobe_local(5), 120);
+    EXPECT_EQ(post("/api/show", "{\"master\":101}").status, 400);
+    EXPECT_EQ(post("/api/show", "{\"outputs\":0,\"master\":10}").status, 400);
+    EXPECT_EQ(post("/api/show", "{\"blackout\":\"maybe\"}").status, 400);
+    EXPECT_EQ(post("/api/show", "{\"strobe_hz\":-1}").status, 400);
+    EXPECT_EQ(dmx::master_local(0), dmx::kMasterFull);  // the refused ones changed nothing
+    Json st(get("/api/status").body);
+    EXPECT_TRUE(cJSON_IsObject(st["show"]));
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(st["show"], "scenes")), 8);
+    post("/api/show", "{\"strobe_hz\":0}");
+}
+
+TEST(control_endpoint_validates_and_applies) {
+    Json full(post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":77}").body);
+    EXPECT_EQ(static_cast<int>(full["footprint"]->valuedouble), 16);
+    EXPECT_EQ(dmx::control_universe(), 77);
+    const std::string zones =
+        "{\"address\":10,\"slots\":[{\"fn\":\"scene\",\"mask\":15},{\"fn\":\"scene\",\"mask\":240},"
+        "{\"fn\":\"master\",\"fine\":true},{\"fn\":\"green\",\"index\":3},{\"fn\":\"none\"}]}";
+    EXPECT_EQ(post("/api/control", zones).status, 200);
+    const auto& c = config::get_control();
+    EXPECT_EQ(c.count, 5);
+    EXPECT_EQ(c.address, 10);
+    EXPECT_EQ(c.slots[1].mask, 240);
+    EXPECT_EQ(c.slots[2].flags, config::kCtlFlagFine);
+    EXPECT_EQ(c.slots[3].index, 3);
+    EXPECT_EQ(post("/api/control", "{\"slots\":[{\"fn\":\"laser\"}]}").status, 400);
+    EXPECT_EQ(post("/api/control", "{\"slots\":[{\"fn\":\"master\",\"mask\":0}]}").status, 400);
+    EXPECT_EQ(post("/api/control", "{\"address\":512,\"preset\":\"full\"}").status, 400);
+    EXPECT_EQ(post("/api/control", "{\"universe\":40000}").status, 400);
+    EXPECT_EQ(post("/api/control", "{\"preset\":\"huge\"}").status, 400);
+    EXPECT_EQ(config::get_control().count, 5);  // refused bodies changed nothing
+    Json cfg(get("/api/config").body);
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(cfg["control"], "slots")), 5);
+    post("/api/control", "{\"preset\":\"simple\",\"enabled\":false,\"address\":1}");
+}
+
+// The profile a desk imports: one mode, the slots in order, every channel's
+// capabilities covering 0-255 without a gap (what OFL/QLC+ require).
+TEST(fixture_profile_matches_the_control_mode) {
+    post("/api/control", "{\"preset\":\"full\"}");
+    post("/api/control",
+         "{\"slots\":[{\"fn\":\"master\",\"fine\":true},{\"fn\":\"scene\",\"mask\":15},"
+         "{\"fn\":\"scene\",\"mask\":240},{\"fn\":\"none\"},{\"fn\":\"effect\"},{\"fn\":\"red\"},"
+         "{\"fn\":\"blackout\"},{\"fn\":\"strobe\"},{\"fn\":\"fseq\"}]}");
+    const auto res = get("/api/control/fixture");
+    EXPECT_EQ(res.status, 200);
+    EXPECT_TRUE(res.headers.at("Content-Disposition").find("pixfrog-control.json") !=
+                std::string::npos);
+    Json f(res.body);
+    EXPECT_TRUE(f.j != nullptr);
+    const cJSON* mode  = cJSON_GetArrayItem(f["modes"], 0);
+    const cJSON* chans = cJSON_GetObjectItemCaseSensitive(mode, "channels");
+    EXPECT_EQ(cJSON_GetArraySize(chans), 10);  // 9 slots, the master is 16-bit
+    EXPECT_STREQ(cJSON_GetArrayItem(chans, 0)->valuestring, "Master");
+    EXPECT_STREQ(cJSON_GetArrayItem(chans, 1)->valuestring, "Master fine");
+    EXPECT_STREQ(cJSON_GetArrayItem(chans, 2)->valuestring, "Scene (out 1-4)");
+    EXPECT_STREQ(cJSON_GetArrayItem(chans, 3)->valuestring, "Scene (out 5-8)");
+    EXPECT_TRUE(cJSON_IsNull(cJSON_GetArrayItem(chans, 4)));  // the spare channel
+    const cJSON* avail = f["availableChannels"];
+    int checked        = 0;
+    for (const cJSON* ch = avail->child; ch; ch = ch->next) {
+        const cJSON* caps = cJSON_GetObjectItemCaseSensitive(ch, "capabilities");
+        if (!caps) {
+            EXPECT_TRUE(cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(ch, "capability")));
+            continue;
+        }
+        int next = 0;
+        for (const cJSON* cap = caps->child; cap; cap = cap->next) {
+            const cJSON* r = cJSON_GetObjectItemCaseSensitive(cap, "dmxRange");
+            EXPECT_EQ(static_cast<int>(cJSON_GetArrayItem(r, 0)->valuedouble), next);
+            next = static_cast<int>(cJSON_GetArrayItem(r, 1)->valuedouble) + 1;
+        }
+        EXPECT_EQ(next, 256);
+        ++checked;
+    }
+    EXPECT_EQ(checked, 6);  // two scenes, effect, blackout, strobe, fseq
+    const cJSON* scene = cJSON_GetObjectItemCaseSensitive(avail, "Scene (out 1-4)");
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(scene, "capabilities")),
+              static_cast<int>(config::num_scenes()) + 2);
+    post("/api/control", "{\"preset\":\"simple\"}");
+}
+
+TEST(backup_restore_carries_the_control_mode_and_fade) {
+    post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":55,\"address\":7}");
+    post("/api/global", "{\"scene_fade_ms\":2500}");
+    const std::string backup = get("/api/backup").body;
+    config::reset_to_defaults();
+    EXPECT_EQ(config::get_control().universe, config::kDefaultControlUniverse);
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    EXPECT_EQ(config::get_control().universe, 55);
+    EXPECT_EQ(config::get_control().address, 7);
+    EXPECT_EQ(config::get_control().count, 15);
+    EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
+    // A malformed control object is skipped, the rest still restores.
+    std::string bad       = backup;
+    const std::string key = "\"fn\":\"master\"";
+    bad.replace(bad.find(key), key.size(), "\"fn\":\"laser\"");
+    config::reset_to_defaults();
+    EXPECT_EQ(post("/api/restore", bad).status, 200);
+    EXPECT_EQ(config::get_control().universe, config::kDefaultControlUniverse);
+    EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
+    post("/api/global", "{\"scene_fade_ms\":0}");
+    post("/api/control", "{\"enabled\":false}");
+}
+
+TEST(scene_play_takes_an_output_zone_and_stop_is_per_scene) {
+    EXPECT_EQ(post("/api/scene/1/play", "{\"outputs\":15}").status, 200);
+    EXPECT_EQ(dmx::scene_outputs(1), 0x0F & config::get_scene(1).channel_mask);
+    EXPECT_EQ(post("/api/scene/2/play", "").status, 200);  // no body: its own mask
+    EXPECT_EQ(post("/api/scene/1/play", "{\"outputs\":0}").status, 400);
+    EXPECT_EQ(post("/api/scene/2/stop", "").status, 200);
+    EXPECT_EQ(dmx::scene_outputs(2), 0);
+    post("/api/scenes/stop");
+    EXPECT_EQ(dmx::active_scene(), -1);
 }

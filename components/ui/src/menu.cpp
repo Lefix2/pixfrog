@@ -336,6 +336,8 @@ enum class NodeId : uint8_t {
     Fseq,
     TestPattern,
     Gaps,
+    Control,      // DMX control universe
+    ControlSlot,  // one slot of it
     Count,
 };
 
@@ -343,6 +345,14 @@ enum class NodeId : uint8_t {
 void go(NodeId n);
 void go_back();
 void open_channel(uint8_t idx);
+
+// DMX control editor state (the SLOT node edits slot g_ctl_slot).
+uint8_t g_ctl_slot = 0;
+char g_ctl_slot_title[12];
+void save_control(const config::ControlConfig& c) {
+    config::set_control(c);
+    dmx::mark_global_dirty();  // maps (or drops) the control universe
+}
 
 // Dead-pixel editor state and helpers (defined with the DEAD PIXELS node).
 uint8_t g_gap_index = 0;  // gap being edited (== gap_count for a new one)
@@ -381,6 +391,17 @@ enum class Field : uint8_t {
     ChGapPos,  // first dead LED of gap s.gap_index (1-based); chains to ChGapLen
     ChGapLen,  // its length; 0 removes the gap
     AutoPatch,
+    ShowMaster,
+    ShowStrobe,
+    ShowFade,
+    CtlEnabled,
+    CtlUniverse,
+    CtlAddress,
+    CtlPreset,
+    CtlSlotFn,
+    CtlSlotMask,
+    CtlSlotIndex,
+    CtlSlotFine,
 };
 
 enum class StringField : uint8_t {
@@ -401,7 +422,39 @@ enum class ValueKind : uint8_t {
     ColorOrder,
     Failsafe,
     ClockHz,  // clocked-SPI rate, picked from kClockChoices (achievable divisors)
+    CtlFn,    // control-universe function
+    Preset,   // control-universe preset (Simple / Full)
+    Mask,     // outputs bitmask, shown as "1234----"
+    Tenths,   // tenths shown as "2.5s"
 };
+
+// Pick-from-a-list kinds (wheel) vs numeric ones (gauge).
+bool is_enum_kind(ValueKind k) {
+    return k == ValueKind::Protocol || k == ValueKind::ColorOrder || k == ValueKind::Failsafe ||
+           k == ValueKind::CtlFn || k == ValueKind::Preset;
+}
+bool is_gauge_kind(ValueKind k) {
+    return k == ValueKind::Int || k == ValueKind::ClockHz || k == ValueKind::Mask ||
+           k == ValueKind::Tenths;
+}
+
+// TFT labels of the control functions, indexed by config::CtlFn.
+const char* ctl_fn_label(uint8_t fn) {
+    static const char* const kLabels[] = { "Spare",  "Master", "Blackout", "Strobe", "Scene",
+                                           "Speed",  "Param",  "Red",      "Green",  "Blue",
+                                           "Effect", "Fade",   "FSEQ" };
+    static_assert(sizeof(kLabels) / sizeof(kLabels[0]) == static_cast<size_t>(config::CtlFn::Count),
+                  "one label per control function");
+    return fn < static_cast<uint8_t>(config::CtlFn::Count) ? kLabels[fn] : "Spare";
+}
+
+// "12------" style: one digit per output in the mask.
+void format_mask(uint8_t mask, char* out, size_t cap) {
+    if (cap < 9) return;
+    for (int o = 0; o < 8; ++o)
+        out[o] = ((mask >> o) & 1) ? static_cast<char>('1' + o) : '-';
+    out[8] = '\0';
+}
 
 struct EditCtx {
     Field field          = Field::None;
@@ -616,6 +669,14 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
         std::snprintf(out, cap, "%s", color_order_name(static_cast<led::ColorOrder>(v)));
         return;
     case ValueKind::ClockHz: format_clock_mhz(v, out, cap); return;
+    case ValueKind::CtlFn:
+        std::snprintf(out, cap, "%s", ctl_fn_label(static_cast<uint8_t>(v)));
+        return;
+    case ValueKind::Preset: std::snprintf(out, cap, "%s", v ? "Full" : "Simple"); return;
+    case ValueKind::Mask: format_mask(static_cast<uint8_t>(v), out, cap); return;
+    case ValueKind::Tenths:
+        std::snprintf(out, cap, "%ld.%lds", static_cast<long>(v / 10), static_cast<long>(v % 10));
+        return;
     }
 }
 
@@ -637,7 +698,7 @@ using OnClick = void (*)(uint8_t idx);
 
 // Widest node: the scene list (every scene + Stop + Back). Build buffers size
 // to it; they are static (ui_task only) so the bigger list costs no stack.
-constexpr uint8_t kMaxRows = config::kMaxScenes + 2;
+constexpr uint8_t kMaxRows = config::kMaxControlSlots + 8;  // the longest list: DMX CONTROL
 
 // A "return to the parent menu" row. Rendered with a left back-arrow glyph
 // instead of bracketed text; `label` lets Main say "HOME" and the test-pattern
@@ -944,6 +1005,17 @@ void render_home() {
         StatusStrip strip{ ip_end + 11, h };
         if (g.web_enabled) strip.icon(kIcon_globe, color::FrogLine);
         if (g.sacn_enabled) strip.label("sACN", color::GoodBright);
+        // Show control: blackout outranks a dimmed master.
+        if (dmx::blackout_effective()) {
+            strip.label("BO", color::Red);
+        } else if (dmx::master_effective(0) < dmx::kMasterFull) {
+            static char mst[8];
+            std::snprintf(mst, sizeof(mst), "M%u%%",
+                          (static_cast<unsigned>(dmx::master_effective(0)) * 100u + 32767u) /
+                              65535u);
+            strip.label(mst, color::Gold);
+        }
+        if (dmx::control_live()) strip.label("CTL", color::FrogLine);
 
         // Right group (flush right): net icon · data icon · "fps" · cur/cap.
         const int iconY = (h - kIconSize) / 2;
@@ -1118,7 +1190,14 @@ void render_home() {
     px            = draw_pill(px, py, "WEB", g.web_enabled ? color::BadgeGreen : color::HeaderBg,
                    g.web_enabled ? color::Black : color::DarkGray, color::Black);
     std::snprintf(line, sizeof(line), "%uHz", g.refresh_rate_hz);
-    draw_pill(px, py, line, color::HeaderBg, color::DarkGray, color::Black);
+    px = draw_pill(px, py, line, color::HeaderBg, color::DarkGray, color::Black);
+    if (dmx::blackout_effective()) {
+        draw_pill(px, py, "BO", color::Red, color::Black, color::Black);
+    } else if (dmx::master_effective(0) < dmx::kMasterFull) {
+        std::snprintf(line, sizeof(line), "M%u%%",
+                      (static_cast<unsigned>(dmx::master_effective(0)) * 100u + 32767u) / 65535u);
+        draw_pill(px, py, line, color::Gold, color::Black, color::Black);
+    }
     const int scene = dmx::active_scene();
     if (output::get_calibration_mode() >= 0) {
         draw_text_r(kTW - kIndent, ry, "TEST PATTERN", color::Orange, color::Black);
@@ -1489,15 +1568,15 @@ uint8_t build_testpattern(ListItem* items, OnClick* fns) {
 
 // ── SCENES NODE ──────────────────────────────────────────────────────────────
 // Play/stop only — editing colours and masks on a rotary encoder is web/UART
-// territory. The active scene is starred.
+// territory. Every playing scene is starred: several play at once when their
+// output masks differ (a scene claims only its own outputs).
 
 uint8_t build_scenes(ListItem* items, OnClick* fns) {
     static char marked[config::kMaxScenes][kOledCols + 1];
-    const int active = dmx::active_scene();
     const auto count = static_cast<uint8_t>(config::num_scenes());
     for (uint8_t i = 0; i < count; ++i) {
         const auto& sc = config::get_scene(i);
-        if (active == static_cast<int>(i)) {
+        if (dmx::scene_outputs(i)) {
             std::snprintf(marked[i], sizeof(marked[i]), "%s *", sc.name);
             items[i] = { marked[i], "" };
         } else {
@@ -1577,10 +1656,9 @@ void render_edit_value() {
         std::snprintf(hdr, sizeof(hdr), "EDIT  %s", s.edit.label);
     draw_tft_header(hdr);
 
-    const bool gauge = (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz);
+    const bool gauge = is_gauge_kind(s.edit.kind);
     const bool boolf = (s.edit.kind == ValueKind::Bool);
-    const bool enumf = (s.edit.kind == ValueKind::Protocol ||
-                        s.edit.kind == ValueKind::ColorOrder || s.edit.kind == ValueKind::Failsafe);
+    const bool enumf = is_enum_kind(s.edit.kind);
     const int mh     = canvas_font_h(FontId::Mega);
 
     if (enumf) {
@@ -1711,9 +1789,8 @@ void render_edit_value() {
         std::snprintf(hdr, sizeof(hdr), "EDIT %s", s.edit.label);
     draw_tft_header(hdr);
 
-    const bool gauge = (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz);
-    const bool enumf = (s.edit.kind == ValueKind::Protocol ||
-                        s.edit.kind == ValueKind::ColorOrder || s.edit.kind == ValueKind::Failsafe);
+    const bool gauge = is_gauge_kind(s.edit.kind);
+    const bool enumf = is_enum_kind(s.edit.kind);
 
     if (enumf) {
         // A list-of-values picker rendered as a spinning "wheel": the current
@@ -1851,14 +1928,13 @@ void render_edit_value() {
 
     // Reachable range (int/clock) or list position (enum), then the controls.
     char ctx[40];  // wider than the row; draw_row clips to the panel
-    if (s.edit.kind == ValueKind::Int || s.edit.kind == ValueKind::ClockHz) {
+    if (is_gauge_kind(s.edit.kind)) {
         char lo[16], hi[16];
         format_value(s.edit, s.edit.min, lo, sizeof(lo));
         format_value(s.edit, s.edit.max, hi, sizeof(hi));
         std::snprintf(ctx, sizeof(ctx), "  %s..%s", lo, hi);
         draw_row(5, 0, ctx);
-    } else if (s.edit.kind == ValueKind::Protocol || s.edit.kind == ValueKind::ColorOrder ||
-               s.edit.kind == ValueKind::Failsafe) {
+    } else if (is_enum_kind(s.edit.kind)) {
         std::snprintf(ctx, sizeof(ctx), "  %ld / %ld",
                       static_cast<long>(s.edit.current - s.edit.min + 1),
                       static_cast<long>(s.edit.max - s.edit.min + 1));
@@ -1931,6 +2007,48 @@ void commit_edit() {
         // auto_patch_universes persists each channel and marks it dirty itself.
         dmx::auto_patch_universes(static_cast<uint16_t>(v));
         break;
+    case Field::ShowMaster:
+        dmx::master_set(dmx::kAllOutputs, static_cast<uint16_t>(v * 65535 / 100));
+        break;
+    case Field::ShowStrobe: dmx::strobe_set(dmx::kAllOutputs, static_cast<uint8_t>(v * 10)); break;
+    case Field::ShowFade: {
+        auto g          = config::get_global();
+        g.scene_fade_ms = static_cast<uint16_t>(v * 100);
+        config::set_global(g);
+        break;
+    }
+    case Field::CtlEnabled:
+    case Field::CtlUniverse:
+    case Field::CtlAddress:
+    case Field::CtlPreset:
+    case Field::CtlSlotFn:
+    case Field::CtlSlotMask:
+    case Field::CtlSlotIndex:
+    case Field::CtlSlotFine: {
+        auto c   = config::get_control();
+        auto& sl = c.slots[g_ctl_slot < config::kMaxControlSlots ? g_ctl_slot : 0];
+        switch (s.edit.field) {
+        case Field::CtlEnabled: c.enabled = static_cast<uint8_t>(v); break;
+        case Field::CtlUniverse: c.universe = static_cast<uint16_t>(v); break;
+        case Field::CtlAddress: c.address = static_cast<uint16_t>(v); break;
+        case Field::CtlPreset:
+            config::control_apply_preset(c, v ? config::ControlPreset::Full
+                                              : config::ControlPreset::Simple);
+            break;
+        case Field::CtlSlotFn:
+            sl.fn = static_cast<uint8_t>(v);
+            if (sl.fn != static_cast<uint8_t>(config::CtlFn::Master)) sl.flags = 0;
+            break;
+        case Field::CtlSlotMask: sl.mask = static_cast<uint8_t>(v); break;
+        case Field::CtlSlotIndex: sl.index = static_cast<uint8_t>(v - 1); break;
+        case Field::CtlSlotFine: sl.flags = v ? config::kCtlFlagFine : 0; break;
+        default: break;
+        }
+        config::ControlConfig check = c;
+        config::sanitize_control(check);
+        if (check.count == c.count) save_control(c);  // refused if it would pass channel 512
+        break;
+    }
     case Field::GlobalRefresh: {
         auto g            = config::get_global();
         g.refresh_rate_hz = static_cast<uint8_t>(v);
@@ -2617,9 +2735,148 @@ uint8_t build_inputs(ListItem* items, OnClick* fns) {
         enter_edit(Field::AutoPatch, ValueKind::Int, config::get_channel(0).universe_start, 0,
                      32767, 1, "Patch", Screen::Menu);
     };
-    items[6] = back_item();
-    fns[6]   = [](uint8_t) { go_back(); };
-    return 7;
+    static char vctl[8];
+    std::snprintf(vctl, sizeof(vctl), "%s", config::get_control().enabled ? "ON" : "OFF");
+    items[6] = { "DMX ctrl", vctl };
+    fns[6]   = [](uint8_t) { go(NodeId::Control); };
+    items[7] = back_item();
+    fns[7]   = [](uint8_t) { go_back(); };
+    return 8;
+}
+
+// ── DMX CONTROL NODE ─────────────────────────────────────────────────────────
+// The control universe: on/off, where it lives, a preset to start from, then
+// one row per slot ("1-2  Master") — click to edit it — and [Add].
+
+uint8_t build_control(ListItem* items, OnClick* fns) {
+    const auto& c = config::get_control();
+    static char ven[8], vuni[8], vaddr[8], vfoot[8];
+    static char slabel[config::kMaxControlSlots][12], svalue[config::kMaxControlSlots][12];
+    std::snprintf(ven, sizeof(ven), "%s",
+                  c.enabled ? (dmx::control_live() ? "LIVE" : "ON") : "OFF");
+    std::snprintf(vuni, sizeof(vuni), "%u", c.universe);
+    std::snprintf(vaddr, sizeof(vaddr), "%u", c.address);
+    std::snprintf(vfoot, sizeof(vfoot), "%uch",
+                  static_cast<unsigned>(config::control_footprint(c)));
+    uint8_t n = 0;
+    items[n]  = { "Enabled", ven };
+    fns[n++]  = [](uint8_t) {
+        enter_edit(Field::CtlEnabled, ValueKind::Bool, config::get_control().enabled, 0, 1, 1,
+                    "DMX ctrl", Screen::Menu);
+    };
+    items[n] = { "Universe", vuni };
+    fns[n++] = [](uint8_t) {
+        enter_edit(Field::CtlUniverse, ValueKind::Int, config::get_control().universe, 0, 32767, 1,
+                   "Ctrl uni", Screen::Menu);
+    };
+    items[n] = { "Address", vaddr };
+    fns[n++] = [](uint8_t) {
+        enter_edit(Field::CtlAddress, ValueKind::Int, config::get_control().address, 1, 512, 1,
+                   "Ctrl addr", Screen::Menu);
+    };
+    items[n] = { "Preset", vfoot };
+    fns[n++] = [](uint8_t) {
+        enter_edit(Field::CtlPreset, ValueKind::Preset, 0, 0, 1, 1, "Preset", Screen::Menu);
+    };
+    constexpr uint8_t kFirstSlotRow = 4;
+    unsigned at                     = c.address;
+    for (uint8_t i = 0; i < c.count; ++i) {
+        const auto& sl   = c.slots[i];
+        const unsigned w = config::control_slot_width(sl);
+        if (w == 2)
+            std::snprintf(slabel[i], sizeof(slabel[i]), "%u-%u", at, at + 1);
+        else
+            std::snprintf(slabel[i], sizeof(slabel[i]), "%u", at);
+        std::snprintf(svalue[i], sizeof(svalue[i]), "%s", ctl_fn_label(sl.fn));
+        at       += w;
+        items[n]  = { slabel[i], svalue[i] };
+        fns[n++]  = [](uint8_t row) {
+            g_ctl_slot = static_cast<uint8_t>(row - kFirstSlotRow);
+            s.cur[static_cast<uint8_t>(NodeId::ControlSlot)] = 0;
+            s.scr[static_cast<uint8_t>(NodeId::ControlSlot)] = 0;
+            go(NodeId::ControlSlot);
+        };
+    }
+    if (c.count < config::kMaxControlSlots) {
+        items[n] = { "[Add]", "" };
+        fns[n++] = [](uint8_t) {
+            auto cc = config::get_control();
+            if (cc.count >= config::kMaxControlSlots) return;
+            cc.slots[cc.count++]        = config::control_slot(config::CtlFn::Master);
+            config::ControlConfig check = cc;
+            config::sanitize_control(check);
+            if (check.count < cc.count) return;  // would end past channel 512
+            save_control(cc);
+            g_ctl_slot = static_cast<uint8_t>(cc.count - 1);
+            go(NodeId::ControlSlot);
+        };
+    }
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── SLOT NODE ────────────────────────────────────────────────────────────────
+// One control slot: its function, the outputs it acts on, and the fields that
+// only some functions have (colour number, 16-bit master).
+
+uint8_t build_control_slot(ListItem* items, OnClick* fns) {
+    const auto& c = config::get_control();
+    if (g_ctl_slot >= c.count) g_ctl_slot = c.count ? static_cast<uint8_t>(c.count - 1) : 0;
+    std::snprintf(g_ctl_slot_title, sizeof(g_ctl_slot_title), "SLOT %u", g_ctl_slot + 1u);
+    uint8_t n = 0;
+    if (c.count == 0) {
+        items[n] = back_item();
+        fns[n++] = [](uint8_t) { go_back(); };
+        return n;
+    }
+    const auto& sl = c.slots[g_ctl_slot];
+    static char vfn[10], vmask[10], vidx[4], vfine[4];
+    std::snprintf(vfn, sizeof(vfn), "%s", ctl_fn_label(sl.fn));
+    format_mask(sl.mask, vmask, sizeof(vmask));
+    std::snprintf(vidx, sizeof(vidx), "%u", sl.index + 1u);
+    std::snprintf(vfine, sizeof(vfine), "%s", (sl.flags & config::kCtlFlagFine) ? "ON" : "OFF");
+    items[n] = { "Function", vfn };
+    fns[n++] = [](uint8_t) {
+        enter_edit(Field::CtlSlotFn, ValueKind::CtlFn, config::get_control().slots[g_ctl_slot].fn,
+                   0, static_cast<int32_t>(config::CtlFn::Count) - 1, 1, "Function", Screen::Menu);
+    };
+    items[n] = { "Outputs", vmask };
+    fns[n++] = [](uint8_t) {
+        enter_edit(Field::CtlSlotMask, ValueKind::Mask,
+                   config::get_control().slots[g_ctl_slot].mask, 1, 255, 1, "Outputs",
+                   Screen::Menu);
+    };
+    const auto fn = static_cast<config::CtlFn>(sl.fn);
+    if (fn == config::CtlFn::Red || fn == config::CtlFn::Green || fn == config::CtlFn::Blue) {
+        items[n] = { "Colour #", vidx };
+        fns[n++] = [](uint8_t) {
+            enter_edit(Field::CtlSlotIndex, ValueKind::Int,
+                       config::get_control().slots[g_ctl_slot].index + 1, 1,
+                       static_cast<int32_t>(config::kSceneColorsMax), 1, "Colour #", Screen::Menu);
+        };
+    }
+    if (fn == config::CtlFn::Master) {
+        items[n] = { "16-bit", vfine };
+        fns[n++] = [](uint8_t) {
+            const auto& sl2 = config::get_control().slots[g_ctl_slot];
+            enter_edit(Field::CtlSlotFine, ValueKind::Bool,
+                       (sl2.flags & config::kCtlFlagFine) ? 1 : 0, 0, 1, 1, "16-bit", Screen::Menu);
+        };
+    }
+    items[n] = { "[Delete]", "" };
+    fns[n++] = [](uint8_t) {
+        auto cc = config::get_control();
+        if (g_ctl_slot >= cc.count) return;
+        for (size_t i = g_ctl_slot; i + 1 < cc.count; ++i)
+            cc.slots[i] = cc.slots[i + 1];
+        --cc.count;
+        save_control(cc);
+        go_back();
+    };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
 }
 
 // ── OUTPUT NODE ──────────────────────────────────────────────────────────────
@@ -2651,9 +2908,40 @@ uint8_t build_output(ListItem* items, OnClick* fns) {
         enter_edit(Field::ArtnetFailsafeTimeout, ValueKind::Int, g.failsafe_timeout_s, 0, 3600, 1,
                      "FSafe s", Screen::Menu);
     };
-    items[3] = back_item();
-    fns[3]   = [](uint8_t) { go_back(); };
-    return 4;
+    // Show control (runtime, all outputs): grand master, blackout, strobe; and
+    // the scene crossfade time (persisted).
+    static char vmaster[8], vbo[8], vstrobe[8], vfade[8];
+    std::snprintf(vmaster, sizeof(vmaster), "%u%%",
+                  (static_cast<unsigned>(dmx::master_local(0)) * 100u + 32767u) / 65535u);
+    std::snprintf(vbo, sizeof(vbo), "%s", dmx::blackout_local() ? "ON" : "OFF");
+    const uint8_t hz10 = dmx::strobe_local(0);
+    if (hz10)
+        std::snprintf(vstrobe, sizeof(vstrobe), "%uHz", hz10 / 10u);
+    else
+        std::snprintf(vstrobe, sizeof(vstrobe), "Off");
+    std::snprintf(vfade, sizeof(vfade), "%u.%us", g.scene_fade_ms / 1000u,
+                  (g.scene_fade_ms / 100u) % 10u);
+    items[3] = { "Master", vmaster };
+    fns[3]   = [](uint8_t) {
+        enter_edit(Field::ShowMaster, ValueKind::Int,
+                     (static_cast<int32_t>(dmx::master_local(0)) * 100 + 32767) / 65535, 0, 100, 5,
+                     "Master", Screen::Menu);
+    };
+    items[4] = { "Blackout", vbo };
+    fns[4]   = [](uint8_t) { dmx::blackout_toggle(); };  // instant, like the desk button
+    items[5] = { "Strobe", vstrobe };
+    fns[5]   = [](uint8_t) {
+        enter_edit(Field::ShowStrobe, ValueKind::Int, dmx::strobe_local(0) / 10, 0, 25, 1,
+                     "Strobe Hz", Screen::Menu);
+    };
+    items[6] = { "Fade", vfade };
+    fns[6]   = [](uint8_t) {
+        enter_edit(Field::ShowFade, ValueKind::Tenths, config::get_global().scene_fade_ms / 100, 0,
+                     config::kMaxSceneFadeMs / 100, 1, "Fade", Screen::Menu);
+    };
+    items[7] = back_item();
+    fns[7]   = [](uint8_t) { go_back(); };
+    return 8;
 }
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
@@ -3063,6 +3351,8 @@ const Node kNodes[static_cast<uint8_t>(NodeId::Count)] = {
     { "FSEQ", NodeId::Playback, build_fseq },
     { "TEST PATTERN", NodeId::Playback, build_testpattern },
     { "DEAD PIXELS", NodeId::Channel, build_gaps },
+    { "DMX CONTROL", NodeId::Inputs, build_control },
+    { g_ctl_slot_title, NodeId::Control, build_control_slot },
 };
 
 const Node& cur_node() {
@@ -3213,11 +3503,12 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     // Node names mirror the old per-screen names so the emulator agent API and
     // existing navigation scripts keep matching.
     static const char* const kNodeNames[] = {
-        "MainMenu",    "InputsMenu", "NetworkMenu", "OutputMenu",      "PlaybackMenu",
+        "MainMenu",    "InputsMenu",      "NetworkMenu", "OutputMenu",      "PlaybackMenu",
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
         "DisplayMenu",  // keep aligned with NodeId — a missing entry reads as nullptr
 #endif
-        "ChannelMenu", "ScenesMenu", "FSeqMenu",    "TestPatternMenu", "GapsMenu",
+        "ChannelMenu", "ScenesMenu",      "FSeqMenu",    "TestPatternMenu", "GapsMenu",
+        "ControlMenu", "ControlSlotMenu",
     };
     static_assert(sizeof(kNodeNames) / sizeof(kNodeNames[0]) == static_cast<size_t>(NodeId::Count),
                   "one emulator name per menu node");

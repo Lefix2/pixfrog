@@ -805,4 +805,193 @@ inline bool decode_pixels(uint8_t* dst, size_t dst_capacity, const config::Chann
     return true;
 }
 
+// ── Show control: master, blackout, strobe, crossfade ───────────────────────
+
+constexpr uint16_t kMasterFull = 65535;
+
+// Scales `n` bytes by a 16-bit master (65535 = unchanged, 0 = dark).
+inline void apply_master(uint8_t* buf, size_t n, uint16_t level) {
+    if (level == kMasterFull) return;
+    if (level == 0) {
+        std::memset(buf, 0, n);
+        return;
+    }
+    const uint32_t l = level;
+    for (size_t i = 0; i < n; ++i)
+        buf[i] = static_cast<uint8_t>((buf[i] * l + 32767u) / 65535u);
+}
+
+// Mixes `from` into `to` in place: w256 = weight of `to` (0 = all `from`,
+// 256 = all `to`).
+inline void blend_into(uint8_t* to, const uint8_t* from, size_t n, uint32_t w256) {
+    if (w256 >= 256) return;
+    const uint32_t wf = 256 - w256;
+    for (size_t i = 0; i < n; ++i)
+        to[i] = static_cast<uint8_t>((to[i] * w256 + from[i] * wf + 128) >> 8);
+}
+
+// Crossfade weight of the new source, 0..256, `elapsed_ms` into a `len_ms`
+// fade (eased so the ends are soft).
+inline uint32_t fade_weight(uint32_t elapsed_ms, uint32_t len_ms) {
+    if (len_ms == 0 || elapsed_ms >= len_ms) return 256;
+    const uint32_t lin = elapsed_ms * 256u / len_ms;
+    return (lin * lin * (3 * 256 - 2 * lin)) / (256u * 256u);  // smoothstep
+}
+
+// Strobe rate in tenths of Hz: DMX 0 = off, 1..255 = 1..25 Hz.
+constexpr uint8_t kStrobeMaxHz10 = 250;
+inline uint8_t strobe_hz10_from_dmx(uint8_t v) {
+    if (v == 0) return 0;
+    return static_cast<uint8_t>(10 + (static_cast<uint32_t>(v) - 1) * (kStrobeMaxHz10 - 10) / 254);
+}
+
+// Whether a strobing output is lit at `now_ms`: a short flash (≤ 30 ms, at
+// most half the period) at the start of every period. 0 Hz = always lit.
+inline bool strobe_lit(uint32_t now_ms, uint8_t hz10) {
+    if (hz10 == 0) return true;
+    const uint32_t period = 10000u / hz10;
+    const uint32_t on     = period / 2 < 30 ? period / 2 : 30;
+    return (now_ms % period) < on;
+}
+
+// Band of 8 values: 0-7 = 0 ("none"), 8-15 = 1, ... (a fader held a little off
+// its mark still selects the right item — the gobo-wheel convention).
+inline uint8_t dmx_band(uint8_t v) {
+    return static_cast<uint8_t>(v / 8);
+}
+
+// Effect override: 0 = none (-1), 1..255 spread evenly over the effects.
+inline int effect_from_dmx(uint8_t v) {
+    if (v == 0) return -1;
+    return static_cast<int>((static_cast<uint32_t>(v) - 1) * config::kSceneFxCount / 255);
+}
+
+// Per-output scene overrides from the control universe (-1 = not overridden).
+struct SceneOverride {
+    int16_t speed  = -1;
+    int16_t param  = -1;
+    int16_t effect = -1;
+    int16_t color[config::kSceneColorsMax][3];
+    SceneOverride() {
+        for (auto& c : color)
+            c[0] = c[1] = c[2] = -1;
+    }
+};
+
+inline void apply_scene_override(config::Scene& sc, const SceneOverride& o) {
+    if (o.speed >= 0) sc.speed = static_cast<uint8_t>(o.speed);
+    if (o.param >= 0) sc.param = static_cast<uint8_t>(o.param);
+    if (o.effect >= 0) sc.effect = static_cast<uint8_t>(o.effect);
+    for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
+        const int16_t* c = o.color[k];
+        if (c[0] < 0 && c[1] < 0 && c[2] < 0) continue;
+        config::set_scene_color(sc, k, static_cast<uint8_t>(c[0] < 0 ? 0 : c[0]),
+                                static_cast<uint8_t>(c[1] < 0 ? 0 : c[1]),
+                                static_cast<uint8_t>(c[2] < 0 ? 0 : c[2]));
+        if (k + 1 > config::scene_num_colors(sc)) sc.num_colors = static_cast<uint8_t>(k + 1);
+    }
+}
+
+// What one control-universe frame asks for. Masters multiply, blackouts OR,
+// the fastest strobe wins; per-output fields follow the slots' masks.
+struct ControlEval {
+    uint16_t master[config::kNumChannels];
+    uint8_t blackout;  // outputs forced dark
+    uint8_t strobe_hz10[config::kNumChannels];
+    SceneOverride ovr[config::kNumChannels];
+    int32_t fade_ms;    // -1 = no Fade slot
+    int16_t fseq_band;  // -1 = no Fseq slot
+    // Scene selectors in slot order: band (0 = none) + outputs.
+    uint8_t n_scene;
+    uint8_t scene_band[config::kMaxControlSlots];
+    uint8_t scene_mask[config::kMaxControlSlots];
+
+    ControlEval() { reset(); }
+    void reset() {
+        for (auto& m : master)
+            m = kMasterFull;
+        blackout = 0;
+        std::memset(strobe_hz10, 0, sizeof(strobe_hz10));
+        for (auto& o : ovr)
+            o = SceneOverride{};
+        fade_ms   = -1;
+        fseq_band = -1;
+        n_scene   = 0;
+    }
+};
+
+// `dmx` is the control universe from slot 1; `len` how many slots it holds
+// (a short packet leaves the rest at 0). Colour slots override a colour only
+// when R, G or B is non-zero, so an idle desk leaves the scene's palette.
+inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx, size_t len,
+                             ControlEval& out) {
+    out.reset();
+    size_t at = c.address - 1u;
+    auto slot = [&](size_t i) -> uint8_t { return i < len ? dmx[i] : 0; };
+    // Colour channels are gathered first, then applied per colour triple.
+    int16_t col[config::kNumChannels][config::kSceneColorsMax][3];
+    std::memset(col, 0xFF, sizeof(col));  // -1
+    for (size_t i = 0; i < c.count && i < config::kMaxControlSlots; ++i) {
+        const config::ControlSlot& s = c.slots[i];
+        const uint8_t v              = slot(at);
+        const uint8_t mask           = s.mask ? s.mask : 0xFF;
+        const auto fn                = static_cast<config::CtlFn>(s.fn);
+        for (size_t o = 0; o < config::kNumChannels; ++o) {
+            if (!((mask >> o) & 1)) continue;
+            switch (fn) {
+            case config::CtlFn::Master: {
+                uint32_t lvl  = (s.flags & config::kCtlFlagFine)
+                                  ? (static_cast<uint32_t>(v) << 8) | slot(at + 1)
+                                  : static_cast<uint32_t>(v) * 257u;
+                out.master[o] = static_cast<uint16_t>(out.master[o] * lvl / kMasterFull);
+                break;
+            }
+            case config::CtlFn::Blackout:
+                if (v >= 128) out.blackout |= static_cast<uint8_t>(1u << o);
+                break;
+            case config::CtlFn::Strobe: {
+                const uint8_t hz = strobe_hz10_from_dmx(v);
+                if (hz > out.strobe_hz10[o]) out.strobe_hz10[o] = hz;
+                break;
+            }
+            case config::CtlFn::Speed:
+                if (v) out.ovr[o].speed = v;
+                break;
+            case config::CtlFn::Param:
+                if (v) out.ovr[o].param = v;
+                break;
+            case config::CtlFn::Effect:
+                if (v) out.ovr[o].effect = static_cast<int16_t>(effect_from_dmx(v));
+                break;
+            case config::CtlFn::Red:
+            case config::CtlFn::Green:
+            case config::CtlFn::Blue: {
+                const size_t comp = static_cast<size_t>(fn) -
+                                    static_cast<size_t>(config::CtlFn::Red);
+                col[o][s.index % config::kSceneColorsMax][comp] = v;
+                break;
+            }
+            default: break;
+            }
+        }
+        if (fn == config::CtlFn::Scene) {
+            out.scene_band[out.n_scene] = dmx_band(v);
+            out.scene_mask[out.n_scene] = mask;
+            ++out.n_scene;
+        } else if (fn == config::CtlFn::Fade) {
+            out.fade_ms = static_cast<int32_t>(v) * 100;
+        } else if (fn == config::CtlFn::Fseq) {
+            out.fseq_band = dmx_band(v);
+        }
+        at += config::control_slot_width(s);
+    }
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
+            const int16_t* c3 = col[o][k];
+            if (c3[0] <= 0 && c3[1] <= 0 && c3[2] <= 0) continue;  // unpatched or all zero
+            for (int j = 0; j < 3; ++j)
+                out.ovr[o].color[k][j] = c3[j] < 0 ? 0 : c3[j];
+        }
+}
+
 }  // namespace pixfrog::dmx::logic

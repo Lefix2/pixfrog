@@ -54,8 +54,12 @@ void emu_set_failsafe(size_t ch, bool on) {
     if (ch < config::kNumChannels) g_failsafe[ch] = on;
 }
 namespace {
-int g_scene    = -1;
-int g_identify = -1;
+int g_scene_out[config::kNumChannels]   = { -1, -1, -1, -1, -1, -1, -1, -1 };
+int g_identify                          = -1;
+uint16_t g_master[config::kNumChannels] = { kMasterFull, kMasterFull, kMasterFull, kMasterFull,
+                                            kMasterFull, kMasterFull, kMasterFull, kMasterFull };
+uint8_t g_blackout                      = 0;
+uint8_t g_strobe[config::kNumChannels]  = {};
 }  // namespace
 void identify_start(size_t channel_index, uint16_t /*seconds*/) {
     g_identify = static_cast<int>(channel_index);
@@ -66,16 +70,82 @@ void identify_stop() {
 int identify_channel() {
     return g_identify;
 }
+// Zones as on the device (no crossfade: the emulator renders no pixels).
+void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t) {
+    if (scene_index >= config::num_scenes()) return;
+    const uint8_t mask = outputs & config::get_scene(scene_index).channel_mask;
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((mask >> o) & 1) g_scene_out[o] = scene_index;
+}
 void scene_start(uint8_t scene_index) {
-    g_scene = scene_index;
+    scene_start_on(scene_index, kAllOutputs);
+}
+void scene_stop_on(uint8_t outputs, int32_t) {
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((outputs >> o) & 1) g_scene_out[o] = -1;
 }
 void scene_stop() {
-    g_scene = -1;
+    scene_stop_on(kAllOutputs);
 }
-void scene_list_edited(config::SceneEdit, size_t, size_t) {}
-
+uint8_t scene_outputs(uint8_t index) {
+    uint8_t m = 0;
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if (g_scene_out[o] == index) m |= static_cast<uint8_t>(1u << o);
+    return m;
+}
+void scene_stop_scene(uint8_t scene_index) {
+    scene_stop_on(scene_outputs(scene_index));
+}
+int scene_on_output(size_t ch) {
+    return ch < config::kNumChannels ? g_scene_out[ch] : -1;
+}
+void scene_list_edited(config::SceneEdit op, size_t a, size_t b) {
+    for (auto& sc : g_scene_out)
+        sc = config::remap_scene_index(sc, op, a, b);
+}
 int active_scene() {
-    return g_scene;
+    for (int sc : g_scene_out)
+        if (sc >= 0) return sc;
+    return -1;
+}
+uint32_t scene_fade_ms() {
+    return config::get_global().scene_fade_ms;
+}
+
+void master_set(uint8_t outputs, uint16_t level) {
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((outputs >> o) & 1) g_master[o] = level;
+}
+uint16_t master_local(size_t ch) {
+    return ch < config::kNumChannels ? g_master[ch] : kMasterFull;
+}
+uint16_t master_effective(size_t ch) {
+    return master_local(ch);
+}
+void blackout_set(uint8_t outputs, bool on) {
+    g_blackout = on ? (g_blackout | outputs) : (g_blackout & static_cast<uint8_t>(~outputs));
+}
+void blackout_toggle(uint8_t outputs) {
+    blackout_set(outputs, (g_blackout & outputs) != outputs);
+}
+uint8_t blackout_local() {
+    return g_blackout;
+}
+uint8_t blackout_effective() {
+    return g_blackout;
+}
+void strobe_set(uint8_t outputs, uint8_t hz10) {
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((outputs >> o) & 1) g_strobe[o] = hz10;
+}
+uint8_t strobe_local(size_t ch) {
+    return ch < config::kNumChannels ? g_strobe[ch] : 0;
+}
+uint8_t strobe_effective(size_t ch) {
+    return strobe_local(ch);
+}
+bool control_live() {
+    return false;
 }
 void note_universe_terminated(uint16_t /*universe_number*/) {}
 

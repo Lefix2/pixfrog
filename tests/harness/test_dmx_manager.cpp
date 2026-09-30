@@ -3,6 +3,7 @@
 // the fake clock. dmx::init() allocates once per process; each case reshapes
 // the config it needs and resets the runtime state it touches.
 
+#include <cstdio>
 #include <cstring>
 
 #include "config_store.h"
@@ -64,6 +65,61 @@ const uint8_t* decode0() {
     return dmx::pixel_back_buffer(0);
 }
 
+// Control universe off, local show values neutral, no crossfade.
+void reset_show() {
+    config::set_control(config::default_control());
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    dmx::update_show_control();  // releases anything a live desk left behind
+    dmx::master_set(dmx::kAllOutputs, dmx::kMasterFull);
+    dmx::blackout_set(dmx::kAllOutputs, false);
+    dmx::strobe_set(dmx::kAllOutputs, 0);
+    auto g          = config::get_global();
+    g.scene_fade_ms = 0;
+    config::set_global(g);
+    dmx::take_fseq_request();
+}
+
+constexpr uint16_t kCtrlUni = 100;
+
+void enable_control(config::ControlPreset p = config::ControlPreset::Simple,
+                    uint16_t universe = kCtrlUni, uint16_t address = 1) {
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = universe;
+    c.address  = address;
+    config::control_apply_preset(c, p);
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+}
+
+// One desk frame on the control universe, published and evaluated the way
+// render_task does it.
+void ctrl_frame(const uint8_t* d, size_t len, uint16_t universe = kCtrlUni) {
+    dmx::write_universe_from_source(universe, d, len, kSrcA, dmx::kArtnetMergeTimeoutUs);
+    dmx::swap_universes();
+    dmx::update_show_control();
+}
+
+// Scene `idx` becomes a static solid colour on every output (tests own their
+// scenes: earlier cases edit the defaults).
+void solid_scene(size_t idx, uint8_t r, uint8_t g, uint8_t b) {
+    config::Scene sc{};
+    std::snprintf(sc.name, sizeof(sc.name), "Solid %u", static_cast<unsigned>(idx));
+    sc.channel_mask = 0xFF;
+    sc.effect       = config::kSceneFxSolid;
+    sc.num_colors   = 1;
+    config::set_scene_color(sc, 0, r, g, b);
+    config::set_scene(idx, sc);
+}
+
+// Fake clock to the start of the next `period_ms` window.
+void align_ms(uint32_t period_ms) {
+    const auto now = static_cast<uint32_t>(shim::now_us() / 1000);
+    shim::advance_ms(period_ms - now % period_ms);
+}
+
 void setup() {
     static bool once = false;
     if (!once) {
@@ -72,6 +128,7 @@ void setup() {
         dmx::init();
         once = true;
     }
+    reset_show();
     dmx::scene_stop();
     dmx::identify_stop();
     dmx::clear_pixel_preview();
@@ -329,4 +386,228 @@ TEST(telemetry_counters) {
 
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv, setup);
+}
+
+// ── Zones: one scene per output ─────────────────────────────────────────────
+
+TEST(scenes_play_on_their_own_outputs_at_once) {
+    const config::Scene s0 = config::get_scene(0), s1 = config::get_scene(1);
+    auto a = s0, b = s1;
+    a.channel_mask = 0x0F;
+    b.channel_mask = 0xF0;
+    config::set_scene(0, a);
+    config::set_scene(1, b);
+    dmx::scene_start(0);
+    dmx::scene_start(1);  // a disjoint group: scene 0 keeps outputs 1-4
+    EXPECT_EQ(dmx::scene_on_output(0), 0);
+    EXPECT_EQ(dmx::scene_on_output(3), 0);
+    EXPECT_EQ(dmx::scene_on_output(4), 1);
+    EXPECT_EQ(dmx::scene_outputs(0), 0x0F);
+    EXPECT_EQ(dmx::scene_outputs(1), 0xF0);
+    dmx::scene_start_on(2, 0x03);  // an overlapping zone takes over outputs 1-2
+    EXPECT_EQ(dmx::scene_outputs(2), 0x03);
+    EXPECT_EQ(dmx::scene_outputs(0), 0x0C);
+    dmx::scene_stop_scene(0);
+    EXPECT_EQ(dmx::scene_on_output(2), -1);
+    EXPECT_EQ(dmx::scene_on_output(0), 2);
+    EXPECT_EQ(dmx::scene_on_output(5), 1);
+    dmx::scene_stop();
+    EXPECT_EQ(dmx::active_scene(), -1);
+    config::set_scene(0, s0);
+    config::set_scene(1, s1);
+}
+
+TEST(zones_follow_their_scene_through_list_edits) {
+    dmx::scene_start_on(3, 0x01);
+    dmx::scene_start_on(5, 0x02);
+    dmx::scene_list_edited(config::SceneEdit::Delete, 3);
+    EXPECT_EQ(dmx::scene_on_output(0), -1);  // its scene is gone: back to live
+    EXPECT_EQ(dmx::scene_on_output(1), 4);   // shifted up with the list
+}
+
+// ── Crossfade ───────────────────────────────────────────────────────────────
+
+TEST(scene_start_and_stop_crossfade_over_the_fade_time) {
+    auto g          = config::get_global();
+    g.scene_fade_ms = 1000;
+    config::set_global(g);
+    const uint8_t blue[12] = { 0, 0, 200, 0, 0, 200, 0, 0, 200, 0, 0, 200 };
+    solid_scene(0, 255, 180, 110);
+    const uint8_t* px = frame(1, blue, sizeof(blue));
+    EXPECT_EQ(px[2], 200);
+    dmx::scene_start(0);
+    px = decode0();
+    EXPECT_TRUE(px[0] < 10 && px[2] > 190);  // still the live look
+    shim::advance_ms(500);
+    px = decode0();
+    EXPECT_TRUE(px[0] > 110 && px[0] < 145);  // half way
+    shim::advance_ms(600);
+    px = decode0();
+    EXPECT_EQ(px[0], 255);
+    EXPECT_EQ(px[1], 180);
+    dmx::scene_stop();  // and back, faded too
+    px = decode0();
+    EXPECT_TRUE(px[0] > 245);
+    shim::advance_ms(1100);
+    px = decode0();
+    EXPECT_EQ(px[0], 0);
+    EXPECT_EQ(px[2], 200);
+    EXPECT_EQ(dmx::scene_fade_ms(), 1000u);
+}
+
+TEST(no_fade_time_switches_at_once) {
+    solid_scene(0, 255, 180, 110);
+    dmx::scene_start(0);
+    EXPECT_EQ(decode0()[0], 255);
+}
+
+// ── Grand master, blackout, strobe ──────────────────────────────────────────
+
+TEST(master_blackout_and_strobe_act_on_the_rendered_output) {
+    const uint8_t d[12] = { 200, 100, 50, 200, 100, 50, 200, 100, 50, 200, 100, 50 };
+    frame(1, d, sizeof(d));
+    dmx::master_set(dmx::kAllOutputs, 32768);
+    const uint8_t* px = decode0();
+    EXPECT_EQ(px[0], 100);
+    EXPECT_EQ(px[1], 50);
+    EXPECT_EQ(px[2], 25);
+    dmx::blackout_set(0x02, true);  // another output: channel 1 untouched
+    EXPECT_EQ(decode0()[0], 100);
+    dmx::blackout_toggle(0x01);
+    EXPECT_EQ(dmx::blackout_local(), 0x03);
+    EXPECT_EQ(decode0()[0], 0);
+    dmx::blackout_set(dmx::kAllOutputs, false);
+    dmx::master_set(dmx::kAllOutputs, dmx::kMasterFull);
+    dmx::strobe_set(dmx::kAllOutputs, 100);  // 10 Hz
+    align_ms(100);
+    EXPECT_EQ(decode0()[0], 200);  // flash
+    shim::advance_ms(40);
+    EXPECT_EQ(decode0()[0], 0);  // between flashes
+    shim::advance_ms(60);
+    EXPECT_EQ(decode0()[0], 200);
+}
+
+TEST(identify_stays_visible_through_a_blackout) {
+    dmx::blackout_set(dmx::kAllOutputs, true);
+    dmx::identify_start(0, 5);
+    uint8_t seen = 0;
+    for (int i = 0; i < 4; ++i, shim::advance_ms(250))
+        seen = static_cast<uint8_t>(seen | decode0()[0]);
+    EXPECT_EQ(seen, 255);
+    dmx::identify_stop();
+}
+
+// ── DMX control universe ────────────────────────────────────────────────────
+// Simple preset from address 1: 1-2 master (16-bit), 3 blackout, 4 strobe,
+// 5 scene, 6 fade.
+
+TEST(control_universe_drives_master_blackout_and_scenes) {
+    enable_control();
+    EXPECT_EQ(dmx::control_universe(), kCtrlUni);
+    EXPECT_EQ(dmx::channel_for_universe(kCtrlUni), -1);  // feeds no output
+    EXPECT_FALSE(dmx::control_live());
+    uint8_t u[6] = { 0x80, 0x00, 0, 0, 8, 0 };  // master half, scene band 1
+    ctrl_frame(u, sizeof(u));
+    EXPECT_TRUE(dmx::control_live());
+    EXPECT_EQ(dmx::master_effective(0), 0x8000);
+    EXPECT_EQ(dmx::master_local(0), dmx::kMasterFull);  // the desk multiplies
+    EXPECT_EQ(dmx::scene_on_output(0), 0);
+
+    dmx::scene_stop();  // a local action...
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::scene_on_output(0), -1);  // ...holds while the band does not move
+    u[4] = 16;
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::scene_on_output(0), 1);
+
+    u[2] = 255;
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::blackout_effective(), 0xFF);
+    EXPECT_EQ(decode0()[0], 0);
+
+    // The desk goes away: never left dark; the scene holds.
+    shim::advance_ms(3100);
+    dmx::update_show_control();
+    EXPECT_FALSE(dmx::control_live());
+    EXPECT_EQ(dmx::blackout_effective(), 0);
+    EXPECT_EQ(dmx::master_effective(0), dmx::kMasterFull);
+    EXPECT_EQ(dmx::scene_on_output(0), 1);
+}
+
+TEST(an_idle_desk_does_not_stop_a_local_scene) {
+    dmx::scene_start(2);
+    enable_control();
+    const uint8_t idle[6] = { 0xFF, 0xFF, 0, 0, 0, 0 };
+    ctrl_frame(idle, sizeof(idle));
+    EXPECT_EQ(dmx::scene_on_output(0), 2);
+    uint8_t go[6] = { 0xFF, 0xFF, 0, 0, 8, 0 };
+    ctrl_frame(go, sizeof(go));
+    EXPECT_EQ(dmx::scene_on_output(0), 0);
+    go[4] = 0;  // back to "no scene" — a change, so it stops
+    ctrl_frame(go, sizeof(go));
+    EXPECT_EQ(dmx::scene_on_output(0), -1);
+}
+
+TEST(a_desk_already_on_a_scene_starts_it_on_first_contact) {
+    enable_control();
+    const uint8_t u[6] = { 0xFF, 0xFF, 0, 0, 24, 0 };  // band 3
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::scene_on_output(0), 2);
+}
+
+// Full preset: 1-2 master, 3 blackout, 4 strobe, 5 scene, 6 speed, 7 param,
+// 8 effect, 9-11 colour 1, 12-14 colour 2, 15 fade, 16 FSEQ.
+TEST(control_fade_fseq_and_scene_overrides) {
+    solid_scene(0, 255, 180, 110);
+    enable_control(config::ControlPreset::Full);
+    uint8_t u[16]{};
+    u[0] = u[1] = 0xFF;
+    u[4]        = 8;   // scene 1 (solid warm white)
+    u[14]       = 20;  // 2 s fade
+    u[15]       = 16;  // FSEQ file 2
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::scene_fade_ms(), 2000u);
+    EXPECT_EQ(dmx::take_fseq_request(), 1);
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::take_fseq_request(), dmx::kFseqNoRequest);  // no change, no request
+    u[15] = 0;
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::take_fseq_request(), dmx::kFseqStopRequest);
+
+    shim::advance_ms(2100);  // let the fade in finish
+    const uint8_t* px = decode0();
+    EXPECT_EQ(px[0], 255);  // the scene's own colour
+    u[8]  = 10;             // desk colour 1
+    u[9]  = 20;
+    u[10] = 30;
+    ctrl_frame(u, sizeof(u));
+    px = decode0();
+    EXPECT_EQ(px[0], 10);
+    EXPECT_EQ(px[1], 20);
+    EXPECT_EQ(px[2], 30);
+
+    // Switching the control universe off clears the desk's overrides.
+    reset_show();
+    shim::advance_ms(10);
+    px = decode0();
+    EXPECT_EQ(px[0], 255);
+    EXPECT_EQ(dmx::scene_fade_ms(), 0u);
+}
+
+TEST(control_can_share_an_output_universe) {
+    enable_control(config::ControlPreset::Simple, 1, 100);  // channel 0's universe, from slot 100
+    EXPECT_EQ(dmx::channel_for_universe(1), 0);
+    uint8_t u[120]{};
+    for (int i = 0; i < 12; ++i)
+        u[i] = 200;  // the strip's pixels
+    u[99]  = 0;      // master coarse = 0
+    u[100] = 0;
+    ctrl_frame(u, sizeof(u), 1);
+    EXPECT_TRUE(dmx::control_live());
+    const uint8_t* px = decode0();
+    EXPECT_EQ(px[0], 0);  // same data: pixels 200, master 0
+    u[99]  = 0xFF;
+    u[100] = 0xFF;
+    ctrl_frame(u, sizeof(u), 1);
+    EXPECT_EQ(decode0()[0], 200);
 }

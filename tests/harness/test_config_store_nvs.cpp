@@ -299,3 +299,65 @@ TEST(factory_reset_restores_defaults_in_nvs) {
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv);
 }
+
+// ── DMX control universe + scene fade ───────────────────────────────────────
+
+TEST(control_defaults_off_and_round_trip_through_nvs) {
+    fresh_boot();
+    const ControlConfig& d = get_control();
+    EXPECT_EQ(d.enabled, 0);  // an upgrade changes nothing until switched on
+    EXPECT_EQ(d.universe, kDefaultControlUniverse);
+    EXPECT_EQ(d.count, 5);
+    EXPECT_TRUE(shim::nvs_has(kNs, "control"));
+
+    ControlConfig c = d;
+    c.enabled       = 1;
+    c.universe      = 321;
+    c.address       = 40;
+    control_apply_preset(c, ControlPreset::Full);
+    c.slots[4] = control_slot(CtlFn::Scene, 0x0F);
+    EXPECT_TRUE(set_control(c));
+    init();  // reboot
+    EXPECT_EQ(get_control().enabled, 1);
+    EXPECT_EQ(get_control().universe, 321);
+    EXPECT_EQ(get_control().address, 40);
+    EXPECT_EQ(get_control().count, 15);
+    EXPECT_EQ(get_control().slots[4].mask, 0x0F);
+}
+
+TEST(corrupt_control_blob_is_sanitized_on_load) {
+    fresh_boot();
+    ControlConfig c = default_control();
+    c.count         = 200;
+    c.address       = 999;
+    c.slots[0].fn   = 77;
+    shim::nvs_put_raw(kNs, "control", &c, sizeof(c));
+    init();
+    EXPECT_EQ(get_control().count, kMaxControlSlots);
+    EXPECT_EQ(get_control().address, 1);
+    EXPECT_TRUE(get_control().slots[0].fn == static_cast<uint8_t>(CtlFn::None));
+}
+
+TEST(scene_fade_is_a_zero_filled_global_tail) {
+    fresh_boot();
+    GlobalConfig g = get_global();
+    shim::nvs_put_raw(kNs, "global", &g, offsetof(GlobalConfig, scene_fade_ms));
+    init();
+    EXPECT_EQ(get_global().scene_fade_ms, 0);  // instant, as before fades
+    g               = get_global();
+    g.scene_fade_ms = 60000;  // out of range from a bad writer
+    shim::nvs_put_raw(kNs, "global", &g, sizeof(g));
+    init();
+    EXPECT_EQ(get_global().scene_fade_ms, kMaxSceneFadeMs);
+}
+
+TEST(factory_reset_restores_the_control_default) {
+    fresh_boot();
+    ControlConfig c = get_control();
+    c.enabled       = 1;
+    set_control(c);
+    reset_to_defaults();
+    EXPECT_EQ(get_control().enabled, 0);
+    init();
+    EXPECT_EQ(get_control().enabled, 0);
+}

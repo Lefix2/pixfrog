@@ -151,6 +151,11 @@ RECEIVERS = [
     sacn_sync(7),
     b"\1" + sacn_data(1, b"\1" * 9, opts=0x40),  # stream terminated
     b"\1" + sacn_data(4, b"\3" * 30, sc=0xDD),
+    # The control mode (full preset at address 400 of universe 1).
+    b"\0" + art_dmx(1, bytes(399) + bytes([0x80, 0, 0, 12, 16, 60, 5, 120, 255, 0, 0, 0, 0, 255,
+                                            20, 16])),
+    b"\1" + sacn_data(1, bytes(399) + bytes([255, 255, 200, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                              0])),
 ]
 
 CONSOLE = """status
@@ -196,13 +201,30 @@ fseq stop
 loglevel warn
 rollback ack
 factory-reset
-reboot""".splitlines()
+reboot
+show
+show master 40 0f
+show blackout toggle
+show strobe 12 f0
+show fade 1500
+ctrl
+ctrl preset full
+ctrl enable 1
+ctrl universe 77
+ctrl address 500
+ctrl add scene 0f
+ctrl set 0 master ff 0 1
+ctrl del 1
+scene play 1 0f
+scene stop 1""".splitlines()
 
 # fuzz_web_api: byte 0 = route index (kRoutes order), byte 1 = wildcard index.
 ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/scene",
           "DEL /api/scene", "/api/scenes/add", "/api/scenes/move", "/api/scenes/stop",
           "/api/rollback/ack", "/api/autopatch", "/api/fseq/play", "/api/fseq/stop",
-          "/api/loglevel", "/api/ota"]
+          "/api/loglevel", "/api/ota", "GET /api/config", "GET /api/status", "GET /api/backup",
+          "GET /api/fseq/files", "GET /api/logs", "/api/show", "/api/control",
+          "GET /api/control/fixture"]
 R = {r: i for i, r in enumerate(ROUTES)}
 WEB = [
     (R["/api/global"], 0, '{"refresh_hz":45,"short_name":"rig-a"}'),
@@ -225,6 +247,13 @@ WEB = [
     # First fuzzer find: out-of-range numbers were cast before the range check.
     (R["/api/channel"], 1, '{"brightness":-5,"pixel_count":1e40,"grouping":-1}'),
     (R["/api/global"], 0, '{"refresh_hz":-60,"home_timeout_s":1e300}'),
+    (R["/api/show"], 0, '{"outputs":15,"master":40,"blackout":"toggle","strobe_hz":5}'),
+    (R["/api/control"], 0, '{"preset":"full","enabled":true,"universe":77,"address":9}'),
+    (R["/api/control"], 0, '{"slots":[{"fn":"scene","mask":15},{"fn":"master","fine":true},'
+                           '{"fn":"red","index":2},{"fn":"none"}]}'),
+    (R["GET /api/control/fixture"], 0, ""),
+    (R["/api/scene"], 1, '{"outputs":240}'),
+    (R["/api/global"], 0, '{"scene_fade_ms":2500}'),
 ]
 
 

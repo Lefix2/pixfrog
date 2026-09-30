@@ -94,6 +94,18 @@ bool set_channel(size_t channel_index, const ChannelConfig& cfg) {
     return true;
 }
 
+namespace {
+ControlConfig g_control = default_control();
+}  // namespace
+const ControlConfig& get_control() {
+    return g_control;
+}
+bool set_control(const ControlConfig& cfg) {
+    g_control = cfg;
+    sanitize_control(g_control);
+    return true;
+}
+
 void reset_to_defaults() {
     g_inited = false;
     ensure_init();

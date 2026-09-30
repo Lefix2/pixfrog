@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REQUIRED = {
     "MainMenu", "InputsMenu", "NetworkMenu", "OutputMenu", "PlaybackMenu", "ChannelMenu",
     "ScenesMenu", "FSeqMenu", "TestPatternMenu", "GapsMenu", "Stats", "About", "EditValue",
-    "EditString", "EditIp", "EditUni",
+    "EditString", "EditIp", "EditUni", "ControlMenu", "ControlSlotMenu",
 }
 TFT_ONLY = {"DisplayMenu"}
 
@@ -32,6 +32,7 @@ GOLDEN = {
     "channel1_dead_px": [0, 0, 4],
     "output_menu": [0, 10],
     "scenes_menu": [0, 11, 0],
+    "control_menu": [0, 8, 6],
 }
 
 SEED = [
@@ -149,7 +150,7 @@ def crawl(emu, seen):
                     emu.cmd("longclick")  # cancel
             elif scr.endswith("Menu") and scr != name and scr != "MainMenu":
                 # Only descend: a Back row lands on the parent (already queued).
-                if len(path) < 4 and scr not in {n for n, _ in explored} | {"InputsMenu"} or \
+                if len(path) < 4 and scr not in {n for n, _ in explored} or \
                         scr in ("ChannelMenu", "GapsMenu"):
                     menus.append((scr, path + [i]))
             elif scr in ("Stats", "About", "PixelRefresh"):

@@ -133,10 +133,27 @@ static void do_unmount() {
     ESP_LOGI(TAG, "SD card unmounted");
 }
 
-// Background task: polls every 1 s for card insertion / removal.
+// Plays/stops what the DMX control universe asked for (the render task only
+// posts the request: starting a file must not block it).
+static void serve_desk_request() {
+    const int16_t req = dmx::take_fseq_request();
+    if (req == dmx::kFseqNoRequest) return;
+    if (req == dmx::kFseqStopRequest) {
+        stop();
+        return;
+    }
+    static char names[16][kMaxNameLen];
+    const size_t n = list_files(names, 16);
+    if (static_cast<size_t>(req) < n) start(names[req]);
+}
+
+// Background task: polls every 1 s for card insertion / removal, and every
+// 100 ms for desk FSEQ requests.
 static void sd_monitor_task(void* /*arg*/) {
-    for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    for (uint32_t tick = 1;; ++tick) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        serve_desk_request();
+        if (tick % 10) continue;
         if (g_sd_state.load(std::memory_order_acquire) == SdState::Absent) {
             do_mount();
         } else if (sdmmc_get_status(g_card) != ESP_OK) {

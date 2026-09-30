@@ -38,6 +38,15 @@ void init_once() {
     auto g         = config::get_global();
     g.sacn_enabled = true;
     config::set_global(g);
+    // The full control mode on universe 1 (shared with output 1), so desk
+    // bytes also reach the show-control evaluation.
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = 1;
+    c.address  = 400;
+    config::control_apply_preset(c, config::ControlPreset::Full);
+    config::set_control(c);
+    dmx::mark_global_dirty();
     dmx::handle_pending_remaps();
     artnet::set_local_ip(0xC0A80232);
 }
@@ -73,6 +82,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     }
     shim::advance_ms(5);
     dmx::swap_universes();
+    dmx::update_show_control();
+    dmx::take_fseq_request();
     for (size_t ch = 0; ch < 2; ++ch)
         dmx::decode_pixels_for_channel(ch);
     return 0;

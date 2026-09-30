@@ -88,7 +88,13 @@ struct GlobalConfig {
     uint8_t tft_brightness;    // 10..100 % of full backlight; 0 = unset = 100
     uint8_t tft_idle_dim;      // % dimmer once idle; 0 = never dim
     uint16_t tft_dim_delay_s;  // inactivity before dimming; 0 = never dim
+
+    // Crossfade when a scene starts, stops or replaces another on an output.
+    // Zero-fill migration = 0 = instant, the behaviour before fades.
+    uint16_t scene_fade_ms;  // 0..kMaxSceneFadeMs
 };
+
+constexpr uint16_t kMaxSceneFadeMs = 25500;  // what one DMX slot can express (×100 ms)
 
 constexpr uint8_t kLangEnglish = 0;
 constexpr uint8_t kLangFrench  = 1;
@@ -164,6 +170,15 @@ constexpr uint8_t kSceneFxStripes  = 10;
 constexpr uint8_t kSceneFxCount    = 11;
 
 constexpr size_t kSceneColorsMax = 4;
+
+// Display names, indexed by effect id (fixture profiles, TFT).
+inline const char* scene_fx_label(uint8_t fx) {
+    static const char* const kLabels[] = { "Solid",    "Chase", "Rainbow", "Blobs",
+                                           "Gradient", "Fade",  "Twinkle", "Fire",
+                                           "Scanner",  "Wave",  "Stripes" };
+    static_assert(sizeof(kLabels) / sizeof(kLabels[0]) == kSceneFxCount, "one label per effect");
+    return fx < kSceneFxCount ? kLabels[fx] : "Solid";
+}
 
 // The first 25 bytes are the pre-palette layout, unchanged (see
 // migrate_scenes_v1): colour 1 stays in r/g/b, colours 2.. are appended.
@@ -391,6 +406,153 @@ constexpr size_t kMaxWebPasswordLen = 63;
 bool set_web_password(const char* password);
 bool web_password_set();
 bool check_web_password(const char* password);
+
+// ────────────────────────────────────────────────────────────────────────────
+// DMX control universe ("personality")
+// ────────────────────────────────────────────────────────────────────────────
+// A user-composed fixture mode: from `address` in `universe`, each slot takes
+// one DMX channel (two for a 16-bit Master) and drives one show function on
+// the outputs in its mask. The list order is the channel order.
+
+constexpr size_t kMaxControlSlots = 32;
+
+// Persisted: append only, never renumber.
+enum class CtlFn : uint8_t {
+    None     = 0,  // spare channel (keeps the layout of a desk profile)
+    Master   = 1,  // intensity 0..100 % (16-bit with kCtlFlagFine)
+    Blackout = 2,  // >= 128 = outputs dark
+    Strobe   = 3,  // 0 = off, 1..255 = 1..25 Hz
+    Scene    = 4,  // bands of 8: 0-7 = no scene, 8-15 = scene 1, ...
+    Speed    = 5,  // 0 = the scene's own, 1..255 = override
+    Param    = 6,  // 0 = the scene's own, 1..255 = override
+    Red      = 7,  // colour `index` override (R, G and B all 0 = the scene's own)
+    Green    = 8,
+    Blue     = 9,
+    Effect   = 10,  // 0 = the scene's own, 1..255 spread over the effects
+    Fade     = 11,  // scene crossfade, value × 100 ms
+    Fseq     = 12,  // bands of 8: 0-7 = stop, 8-15 = file 1, ...
+    Count,
+};
+constexpr uint8_t kCtlFlagFine = 0x01;  // Master only: coarse + fine channel
+
+// Lower-case ids (console, REST, backup) — indexed by CtlFn.
+inline const char* ctl_fn_id(uint8_t fn) {
+    static const char* const kIds[] = { "none",   "master", "blackout", "strobe", "scene",
+                                        "speed",  "param",  "red",      "green",  "blue",
+                                        "effect", "fade",   "fseq" };
+    static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(CtlFn::Count),
+                  "one id per control function");
+    return fn < static_cast<uint8_t>(CtlFn::Count) ? kIds[fn] : "none";
+}
+// -1 when unknown.
+inline int ctl_fn_from_id(const char* s) {
+    for (uint8_t i = 0; i < static_cast<uint8_t>(CtlFn::Count); ++i)
+        if (std::strcmp(s, ctl_fn_id(i)) == 0) return i;
+    return -1;
+}
+
+struct ControlSlot {
+    uint8_t fn;     // CtlFn
+    uint8_t mask;   // outputs it acts on (bit n = output n); 0 reads as all
+    uint8_t index;  // Red/Green/Blue: colour 0..kSceneColorsMax-1
+    uint8_t flags;  // kCtlFlag*
+};
+
+struct ControlConfig {
+    uint8_t enabled;
+    uint8_t count;      // slots in use
+    uint16_t universe;  // Art-Net port-address / sACN universe
+    uint16_t address;   // first DMX channel, 1..512
+    uint8_t reserved[2];
+    ControlSlot slots[kMaxControlSlots];
+};
+
+constexpr uint16_t kDefaultControlUniverse = 100;
+
+inline uint8_t control_slot_width(const ControlSlot& s) {
+    return (s.fn == static_cast<uint8_t>(CtlFn::Master) && (s.flags & kCtlFlagFine)) ? 2 : 1;
+}
+
+// DMX channels the whole mode occupies.
+inline size_t control_footprint(const ControlConfig& c) {
+    size_t n = 0;
+    for (size_t i = 0; i < c.count && i < kMaxControlSlots; ++i)
+        n += control_slot_width(c.slots[i]);
+    return n;
+}
+
+inline ControlSlot control_slot(CtlFn fn, uint8_t mask = 0xFF, uint8_t index = 0,
+                                uint8_t flags = 0) {
+    return ControlSlot{ static_cast<uint8_t>(fn), mask, index, flags };
+}
+
+// Starting points for the editor. They replace the slot list only.
+enum class ControlPreset : uint8_t { Simple, Full };
+inline void control_apply_preset(ControlConfig& c, ControlPreset p) {
+    std::memset(c.slots, 0, sizeof(c.slots));
+    size_t n     = 0;
+    c.slots[n++] = control_slot(CtlFn::Master, 0xFF, 0, kCtlFlagFine);
+    c.slots[n++] = control_slot(CtlFn::Blackout);
+    c.slots[n++] = control_slot(CtlFn::Strobe);
+    c.slots[n++] = control_slot(CtlFn::Scene);
+    if (p == ControlPreset::Full) {
+        c.slots[n++] = control_slot(CtlFn::Speed);
+        c.slots[n++] = control_slot(CtlFn::Param);
+        c.slots[n++] = control_slot(CtlFn::Effect);
+        for (uint8_t k = 0; k < 2; ++k) {
+            c.slots[n++] = control_slot(CtlFn::Red, 0xFF, k);
+            c.slots[n++] = control_slot(CtlFn::Green, 0xFF, k);
+            c.slots[n++] = control_slot(CtlFn::Blue, 0xFF, k);
+        }
+    }
+    c.slots[n++] = control_slot(CtlFn::Fade);
+    if (p == ControlPreset::Full) c.slots[n++] = control_slot(CtlFn::Fseq);
+    c.count = static_cast<uint8_t>(n);
+}
+
+inline ControlConfig default_control() {
+    ControlConfig c{};
+    c.enabled  = 0;
+    c.universe = kDefaultControlUniverse;
+    c.address  = 1;
+    control_apply_preset(c, ControlPreset::Simple);
+    return c;
+}
+
+// Keeps every field meaningful: unknown functions become spare channels, a
+// fine flag only stays on Master, and the mode is trimmed so it ends inside
+// the universe. Called on load and on every set.
+inline void sanitize_control(ControlConfig& c) {
+    c.enabled = c.enabled ? 1 : 0;
+    if (c.universe > 0x7FFF) c.universe = kDefaultControlUniverse;
+    if (c.address < 1 || c.address > 512) c.address = 1;
+    if (c.count > kMaxControlSlots) c.count = kMaxControlSlots;
+    for (size_t i = 0; i < kMaxControlSlots; ++i) {
+        ControlSlot& s = c.slots[i];
+        if (i >= c.count) {
+            s = ControlSlot{};
+            continue;
+        }
+        if (s.fn >= static_cast<uint8_t>(CtlFn::Count)) s.fn = static_cast<uint8_t>(CtlFn::None);
+        if (s.mask == 0) s.mask = 0xFF;
+        if (s.index >= kSceneColorsMax) s.index = 0;
+        if (s.fn != static_cast<uint8_t>(CtlFn::Master))
+            s.flags &= static_cast<uint8_t>(~kCtlFlagFine);
+        s.flags &= kCtlFlagFine;
+    }
+    size_t used = 0, keep = 0;
+    for (; keep < c.count; ++keep) {
+        const size_t w = control_slot_width(c.slots[keep]);
+        if (c.address - 1u + used + w > 512) break;
+        used += w;
+    }
+    for (size_t i = keep; i < c.count; ++i)
+        c.slots[i] = ControlSlot{};
+    c.count = static_cast<uint8_t>(keep);
+}
+
+const ControlConfig& get_control();
+bool set_control(const ControlConfig& cfg);
 
 // Restore defaults (factory reset). Does NOT reboot.
 void reset_to_defaults();

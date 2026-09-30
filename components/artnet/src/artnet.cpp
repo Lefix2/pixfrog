@@ -253,9 +253,11 @@ void handle_nzs(const uint8_t* buf, size_t len) {
     dmx::note_ctrl_rx();
 }
 
-// ArtTrigger — show control from the desk. Global packets (Oem 0xFFFF) with
-// Key 3 (KeyShow) drive the standalone scenes: SubKey 0 stops, SubKey 1..8
-// plays scene N-1. Other keys/Oems are counted but ignored.
+// ArtTrigger — show control from the desk. Global packets (Oem 0xFFFF):
+// Key 3 (KeyShow) drives the standalone scenes — SubKey 0 stops them all,
+// SubKey N plays scene N-1 on its own outputs; Key 1 (KeyMacro) drives the
+// blackout — SubKey 1 toggles, 2 = on, 3 = off. Other keys/Oems are counted
+// but ignored.
 void handle_trigger(const uint8_t* buf, size_t len) {
     if (len < 18) {
         dmx::note_packet_bad();
@@ -265,7 +267,15 @@ void handle_trigger(const uint8_t* buf, size_t len) {
     const uint16_t oem = static_cast<uint16_t>((buf[14] << 8) | buf[15]);
     const uint8_t key  = buf[16];
     const uint8_t sub  = buf[17];
-    if (oem != 0xFFFF || key != 3) return;  // not a global KeyShow trigger
+    if (oem != 0xFFFF) return;  // not a global trigger
+    if (key == 1) {             // KeyMacro: blackout 1 = toggle, 2 = on, 3 = off
+        if (sub == 1) dmx::blackout_toggle();
+        if (sub == 2) dmx::blackout_set(dmx::kAllOutputs, true);
+        if (sub == 3) dmx::blackout_set(dmx::kAllOutputs, false);
+        ESP_LOGI(TAG, "ArtTrigger: blackout macro %u", static_cast<unsigned>(sub));
+        return;
+    }
+    if (key != 3) return;  // KeyShow drives the scenes
     if (sub == 0) {
         dmx::scene_stop();
         ESP_LOGI(TAG, "ArtTrigger: scene stop");

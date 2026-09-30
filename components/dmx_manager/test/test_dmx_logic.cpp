@@ -970,6 +970,189 @@ static void test_merge_htp_full_universe() {
         EXPECT_EQ(dst[i], a[i] > b[i] ? a[i] : b[i]);
 }
 
+// ── Show control ─────────────────────────────────────────────────────────────
+
+static void test_show_master_scaling() {
+    uint8_t b[4] = { 255, 128, 1, 0 };
+    apply_master(b, 4, kMasterFull);  // unchanged
+    EXPECT_EQ(b[0], 255);
+    EXPECT_EQ(b[1], 128);
+    apply_master(b, 4, 32768);  // ~half, rounded
+    EXPECT_EQ(b[0], 128);
+    EXPECT_EQ(b[1], 64);
+    EXPECT_EQ(b[3], 0);
+    apply_master(b, 4, 0);
+    EXPECT_EQ(b[0] | b[1] | b[2] | b[3], 0);
+}
+
+static void test_show_crossfade_weight_and_blend() {
+    EXPECT_EQ(fade_weight(0, 1000), 0);
+    EXPECT_EQ(fade_weight(1000, 1000), 256);
+    EXPECT_EQ(fade_weight(5, 0), 256);  // no fade = the new source at once
+    EXPECT_EQ(fade_weight(500, 1000), 128);
+    EXPECT_TRUE(fade_weight(100, 1000) < 26);  // eased: slow start
+    uint32_t prev = 0;
+    for (uint32_t t = 0; t <= 1000; t += 50) {  // monotonic
+        EXPECT_TRUE(fade_weight(t, 1000) >= prev);
+        prev = fade_weight(t, 1000);
+    }
+    uint8_t to[2] = { 200, 0 }, from[2] = { 0, 200 };
+    blend_into(to, from, 2, 128);
+    EXPECT_EQ(to[0], 100);
+    EXPECT_EQ(to[1], 100);
+    uint8_t keep[1] = { 42 }, other[1] = { 0 };
+    blend_into(keep, other, 1, 256);
+    EXPECT_EQ(keep[0], 42);
+}
+
+static void test_show_strobe() {
+    EXPECT_EQ(strobe_hz10_from_dmx(0), 0);
+    EXPECT_EQ(strobe_hz10_from_dmx(1), 10);     // 1 Hz
+    EXPECT_EQ(strobe_hz10_from_dmx(255), 250);  // 25 Hz
+    EXPECT_TRUE(strobe_lit(12345, 0));          // off = steady
+    // 10 Hz: 100 ms period, 30 ms flash.
+    EXPECT_TRUE(strobe_lit(1000, 100));
+    EXPECT_TRUE(strobe_lit(1029, 100));
+    EXPECT_TRUE(!(strobe_lit(1030, 100)));
+    EXPECT_TRUE(!(strobe_lit(1099, 100)));
+    EXPECT_TRUE(strobe_lit(1100, 100));
+    // 25 Hz: 40 ms period, flash capped at half of it.
+    EXPECT_TRUE(strobe_lit(19, 250));
+    EXPECT_TRUE(!(strobe_lit(20, 250)));
+}
+
+static void test_show_bands_and_effects() {
+    EXPECT_EQ(dmx_band(0), 0);
+    EXPECT_EQ(dmx_band(7), 0);
+    EXPECT_EQ(dmx_band(8), 1);
+    EXPECT_EQ(dmx_band(15), 1);
+    EXPECT_EQ(dmx_band(255), 31);
+    EXPECT_EQ(effect_from_dmx(0), -1);
+    EXPECT_EQ(effect_from_dmx(1), 0);
+    EXPECT_EQ(effect_from_dmx(255), config::kSceneFxCount - 1);
+    // Every effect is reachable, in order.
+    int prev = 0, seen = 1;
+    for (int v = 2; v <= 255; ++v) {
+        const int e = effect_from_dmx(static_cast<uint8_t>(v));
+        EXPECT_TRUE(e == prev || e == prev + 1);
+        if (e != prev) ++seen;
+        prev = e;
+    }
+    EXPECT_EQ(seen, config::kSceneFxCount);
+}
+
+static void test_control_presets_and_footprint() {
+    config::ControlConfig c = config::default_control();
+    EXPECT_EQ(c.enabled, 0);
+    EXPECT_EQ(c.count, 5);  // master(16) blackout strobe scene fade
+    EXPECT_EQ(config::control_footprint(c), 6);
+    config::control_apply_preset(c, config::ControlPreset::Full);
+    EXPECT_EQ(c.count, 15);
+    EXPECT_EQ(config::control_footprint(c), 16);
+    EXPECT_TRUE(c.slots[c.count - 1].fn == static_cast<uint8_t>(config::CtlFn::Fseq));
+}
+
+static void test_control_sanitize() {
+    config::ControlConfig c = config::default_control();
+    c.count                 = 40;
+    c.address               = 0;
+    c.universe              = 0x9000;
+    c.slots[1].fn           = 99;                    // unknown
+    c.slots[2].flags        = config::kCtlFlagFine;  // fine on a Blackout
+    c.slots[3].mask         = 0;
+    config::sanitize_control(c);
+    EXPECT_EQ(c.count, config::kMaxControlSlots);
+    EXPECT_EQ(c.address, 1);
+    EXPECT_EQ(c.universe, config::kDefaultControlUniverse);
+    EXPECT_TRUE(c.slots[1].fn == static_cast<uint8_t>(config::CtlFn::None));
+    EXPECT_EQ(c.slots[2].flags, 0);
+    EXPECT_EQ(c.slots[3].mask, 0xFF);
+    // A mode that would run past slot 512 is trimmed to what fits.
+    config::ControlConfig d = config::default_control();  // 6 channels
+    d.address               = 509;
+    config::sanitize_control(d);
+    EXPECT_EQ(config::control_footprint(d), 4);  // 509..512
+    EXPECT_EQ(d.count, 3);
+}
+
+static void test_control_evaluate() {
+    config::ControlConfig c{};
+    c.enabled  = 1;
+    c.address  = 10;
+    c.slots[0] = config::control_slot(config::CtlFn::Master, 0xFF, 0, config::kCtlFlagFine);
+    c.slots[1] = config::control_slot(config::CtlFn::Master, 0x0F);  // group dimmer, multiplies
+    c.slots[2] = config::control_slot(config::CtlFn::Blackout, 0xF0);
+    c.slots[3] = config::control_slot(config::CtlFn::Strobe);
+    c.slots[4] = config::control_slot(config::CtlFn::Scene, 0x03);
+    c.slots[5] = config::control_slot(config::CtlFn::Red, 0xFF, 1);
+    c.slots[6] = config::control_slot(config::CtlFn::Blue, 0xFF, 1);
+    c.slots[7] = config::control_slot(config::CtlFn::Fade);
+    c.slots[8] = config::control_slot(config::CtlFn::Speed);
+    c.count    = 9;
+    uint8_t u[512]{};
+    u[9]  = 0x80;  // master coarse
+    u[10] = 0x00;  // master fine → 0x8000
+    u[11] = 255;   // group master full
+    u[12] = 200;   // blackout outputs 5-8
+    u[13] = 1;     // strobe 1 Hz
+    u[14] = 17;    // scene band 2
+    u[15] = 255;   // colour 2 red
+    u[16] = 0;     // colour 2 blue
+    u[17] = 30;    // 3 s fade
+    u[18] = 0;     // speed: the scene's own
+    ControlEval ev;
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_EQ(ev.master[0], 0x8000);
+    EXPECT_EQ(ev.master[7], 0x8000);
+    EXPECT_EQ(ev.blackout, 0xF0);
+    EXPECT_EQ(ev.strobe_hz10[3], 10);
+    EXPECT_EQ(ev.n_scene, 1);
+    EXPECT_EQ(ev.scene_band[0], 2);
+    EXPECT_EQ(ev.scene_mask[0], 0x03);
+    EXPECT_EQ(ev.fade_ms, 3000);
+    EXPECT_EQ(ev.ovr[0].speed, -1);
+    EXPECT_EQ(ev.ovr[0].color[1][0], 255);
+    EXPECT_EQ(ev.ovr[0].color[1][1], 0);   // unpatched component reads 0
+    EXPECT_EQ(ev.ovr[0].color[0][0], -1);  // colour 1 untouched
+    EXPECT_EQ(ev.fseq_band, -1);           // no FSEQ slot
+    // Group master: outputs 1-4 at half × half.
+    u[11] = 128;
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_TRUE(ev.master[0] > 0x3F00 && ev.master[0] < 0x4100);
+    EXPECT_EQ(ev.master[4], 0x8000);
+    // Colour at 0,0,0 = the scene's own; a short packet reads as zeros.
+    u[15] = 0;
+    evaluate_control(c, u, 12, ev);
+    EXPECT_EQ(ev.ovr[0].color[1][0], -1);
+    EXPECT_EQ(ev.blackout, 0);
+    EXPECT_EQ(ev.fade_ms, 0);
+}
+
+static void test_scene_override_applies() {
+    config::Scene sc{};
+    sc.effect     = config::kSceneFxSolid;
+    sc.speed      = 10;
+    sc.num_colors = 1;
+    SceneOverride o;
+    o.speed       = 200;
+    o.effect      = config::kSceneFxChase;
+    o.color[2][0] = 9;
+    o.color[2][1] = 8;
+    o.color[2][2] = 7;
+    apply_scene_override(sc, o);
+    EXPECT_EQ(sc.speed, 200);
+    EXPECT_EQ(sc.effect, config::kSceneFxChase);
+    EXPECT_EQ(config::scene_num_colors(sc), 3);  // colour 3 exists now
+    uint8_t rgb[3];
+    config::scene_color(sc, 2, rgb);
+    EXPECT_EQ(rgb[0], 9);
+    EXPECT_EQ(rgb[2], 7);
+    SceneOverride none;
+    config::Scene before = sc;
+    apply_scene_override(sc, none);
+    EXPECT_EQ(std::memcmp(&before, &sc, sizeof(sc)), 0);
+}
+
 int main() {
     test_total_bytes_rgb();
     test_total_bytes_rgbw();
@@ -1030,6 +1213,14 @@ int main() {
     test_universe_map_pool_exhaustion_is_reported();
     test_universe_map_clamps_at_top_of_range();
     test_universe_routable_range();
+    test_show_master_scaling();
+    test_show_crossfade_weight_and_blend();
+    test_show_strobe();
+    test_show_bands_and_effects();
+    test_control_presets_and_footprint();
+    test_control_sanitize();
+    test_control_evaluate();
+    test_scene_override_applies();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

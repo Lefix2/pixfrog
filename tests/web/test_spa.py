@@ -224,3 +224,73 @@ def test_rollback_banner_until_acknowledged(page, device):
     page.locator('[data-action="rollback-ack"]').click()
     expect(banner).to_be_hidden()
     assert "rollback" not in device.get("/api/status")
+
+
+# ── show control / DMX control / zones ───────────────────────────────────────
+
+def test_show_card_master_and_blackout(page, device):
+    page.locator("#sh-master").fill("40")
+    page.wait_for_function("() => true")
+    for _ in range(40):
+        if device.get("/api/status")["show"]["master_local"][0] == 40:
+            break
+        time.sleep(0.05)
+    assert device.get("/api/status")["show"]["master_local"][0] == 40
+    page.locator('[data-action="blackout"]').click()
+    expect(page.locator("#sh-bo")).to_have_css("background-color", "rgb(217, 83, 79)")
+    assert device.get("/api/status")["show"]["blackout"] == 255
+
+
+def test_control_editor_preset_zone_and_save(page, device):
+    nav(page, "control")
+    page.locator('[data-ct-preset="full"]').click()
+    rows = page.locator("[data-ct-row]")
+    expect(rows).to_have_count(15)
+    expect(page.locator("#ct-foot")).to_contain_text("16 ch")
+    for o in range(4, 8):  # the scene channel (row 3) plays on outputs 1-4 only
+        page.locator(f'[data-ct-out="3"][data-o="{o}"]').click()
+    page.locator('[data-ct-fn="4"]').select_option("fseq")
+    page.locator("#ct-en").check(force=True)
+    page.locator("#ct-uni").fill("77")
+    save(page)
+    c = device.get("/api/config")["control"]
+    assert c["enabled"] and c["universe"] == 77 and len(c["slots"]) == 15
+    assert c["slots"][3] == {"fn": "scene", "mask": 15, "index": 0, "fine": False}
+    assert c["slots"][4]["fn"] == "fseq"
+    expect(page.locator("#ct-state")).to_contain_text("waiting")
+
+
+def test_control_overlap_and_overflow_warnings(page, device):
+    nav(page, "control")
+    page.locator("#ct-en").check(force=True)
+    page.locator("#ct-uni").fill("1")  # channel 1's universe
+    expect(page.locator("#ct-warn")).to_contain_text("also feeds channel 1")
+    page.locator("#ct-addr").fill("510")  # 6 channels from 510 pass 512
+    expect(page.locator("#ct-warn")).to_contain_text("past DMX channel 512")
+
+
+def test_fixture_profile_download(page, device):
+    nav(page, "control")
+    with page.expect_download() as dl:
+        page.locator("#ct-fixture").click()
+    assert dl.value.suggested_filename == "pixfrog-control.json"
+    profile = json.loads(open(dl.value.path()).read())
+    assert profile["modes"][0]["channels"][:2] == ["Master", "Master fine"]
+
+
+def test_zones_show_on_the_scene_list(page, device):
+    device.post("/api/scene/0/play", {"outputs": 15})
+    device.post("/api/scene/1/play", {"outputs": 240})
+    nav(page, "scenes")
+    expect(page.locator('[data-sc-outs="0"]')).to_contain_text("out 1,2,3,4")
+    expect(page.locator('[data-sc-outs="1"]')).to_contain_text("out 5,6,7,8")
+    page.locator('[data-scene-row="0"] [data-sc-play]').click()  # playing: stops it
+    expect(page.locator('[data-sc-outs="0"]')).to_have_count(0)
+    assert device.get("/api/status")["show"]["scenes"][:4] == [-1, -1, -1, -1]
+
+
+def test_scene_fade_setting(page, device):
+    nav(page, "system")
+    page.locator("#s-fade").fill("1.5")
+    save(page)
+    assert device.get("/api/config")["global"]["scene_fade_ms"] == 1500

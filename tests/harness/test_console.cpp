@@ -221,3 +221,80 @@ TEST(unknown_usage_errors_keep_the_protocol) {
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv, setup);
 }
+
+// ── show / ctrl / zones ─────────────────────────────────────────────────────
+
+TEST(show_sets_master_blackout_strobe_and_fade) {
+    EXPECT_TRUE(run("show master 50"));
+    EXPECT_EQ(dmx::master_local(0), 32767);
+    EXPECT_TRUE(run("show master 100 0f"));  // outputs 1-4 back to full
+    EXPECT_EQ(dmx::master_local(0), dmx::kMasterFull);
+    EXPECT_EQ(dmx::master_local(7), 32767);
+    EXPECT_TRUE(run("show blackout on 02"));
+    EXPECT_TRUE(has("blackout=02"));
+    EXPECT_TRUE(run("show blackout toggle"));
+    EXPECT_EQ(dmx::blackout_local(), 0xFF);
+    EXPECT_TRUE(run("show blackout off"));
+    EXPECT_TRUE(run("show strobe 5"));
+    EXPECT_EQ(dmx::strobe_local(3), 50);
+    EXPECT_TRUE(run("show fade 1500"));
+    EXPECT_EQ(config::get_global().scene_fade_ms, 1500);
+    EXPECT_TRUE(run("show"));
+    EXPECT_TRUE(has("master=100,100,100,100,50,50,50,50"));
+    EXPECT_TRUE(has("control=off"));
+    EXPECT_FALSE(run("show master 101"));
+    EXPECT_FALSE(run("show strobe 26"));
+    EXPECT_FALSE(run("show blackout maybe"));
+    EXPECT_FALSE(run("show fade 30000"));
+    EXPECT_FALSE(run("show master 50 1"));  // mask must be 2 hex digits
+    run("show master 100");
+    run("show strobe 0");
+    run("show fade 0");
+}
+
+TEST(ctrl_composes_the_control_mode) {
+    EXPECT_TRUE(run("ctrl preset full"));
+    EXPECT_TRUE(has("slots=15"));
+    EXPECT_TRUE(has("footprint=16"));
+    EXPECT_TRUE(has("slot0 dmx=1+1 fn=master mask=ff index=0 fine=1"));
+    EXPECT_FALSE(run("ctrl address 500"));  // 16 channels from 500 would pass 512
+    EXPECT_TRUE(run("ctrl universe 42"));
+    EXPECT_TRUE(run("ctrl enable 1"));
+    EXPECT_EQ(dmx::control_universe(), 42);
+    EXPECT_TRUE(run("ctrl clear"));
+    EXPECT_TRUE(run("ctrl address 500"));
+    EXPECT_TRUE(run("ctrl add scene 0f"));
+    EXPECT_TRUE(run("ctrl add scene f0"));  // two zones from one desk
+    EXPECT_TRUE(run("ctrl add red ff 2"));
+    EXPECT_TRUE(run("ctrl add master ff 0 1"));
+    EXPECT_TRUE(has("slot3 dmx=503+1 fn=master"));
+    EXPECT_TRUE(run("ctrl set 2 blue 01 3"));
+    EXPECT_TRUE(has("slot2 dmx=502 fn=blue mask=01 index=3"));
+    EXPECT_TRUE(run("ctrl del 0"));
+    EXPECT_TRUE(has("slots=3"));
+    EXPECT_FALSE(run("ctrl add nope"));
+    EXPECT_FALSE(run("ctrl address 0"));
+    EXPECT_FALSE(run("ctrl set 9 master"));
+    // 509..512 fits; one more 16-bit master would end past 512.
+    EXPECT_TRUE(run("ctrl address 509"));
+    EXPECT_FALSE(run("ctrl add master ff 0 1"));
+    EXPECT_TRUE(has("past DMX channel 512"));
+    EXPECT_TRUE(run("ctrl enable 0"));
+    EXPECT_EQ(dmx::control_universe(), -1);
+    run("ctrl address 1");
+    run("ctrl preset simple");
+}
+
+TEST(scene_play_on_a_zone_and_stop_one_scene) {
+    EXPECT_TRUE(run("scene play 1 0f"));
+    EXPECT_TRUE(has("outputs=0f"));
+    EXPECT_TRUE(run("scene play 2 f0"));
+    EXPECT_TRUE(run("scene"));
+    EXPECT_TRUE(has("outputs=1,1,1,1,2,2,2,2"));
+    EXPECT_TRUE(run("scene stop 1"));
+    EXPECT_EQ(dmx::scene_on_output(0), -1);
+    EXPECT_EQ(dmx::scene_on_output(4), 2);
+    EXPECT_FALSE(run("scene play 1 zz"));
+    EXPECT_TRUE(run("scene stop"));
+    EXPECT_EQ(dmx::active_scene(), -1);
+}
