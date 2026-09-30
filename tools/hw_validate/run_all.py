@@ -4,6 +4,7 @@
     ./run_all.py                 # everything except OTA
     ./run_all.py --with-ota      # everything (flashes the inactive slot)
     ./run_all.py artnet scenes   # a subset
+    ./run_all.py --junit out/    # + one JUnit XML per validator (CI / self-hosted runner)
 
 Each validator opens its own UART session (the board resets between them —
 that is fine and even desirable: every validator starts from a booted,
@@ -14,13 +15,19 @@ import sys
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ORDER = ["artnet", "sacn", "failsafe", "scenes", "identify_gamma", "fseq", "display", "webops",
-         "auth", "ota"]
+ORDER = ["artnet", "sacn", "failsafe", "scenes", "output", "identify_gamma", "fseq", "display",
+         "webops", "auth", "ota"]
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    with_ota = "--with-ota" in sys.argv
+    argv = sys.argv[1:]
+    env = dict(os.environ)
+    if "--junit" in argv:
+        i = argv.index("--junit")
+        env["JUNIT_DIR"] = os.path.abspath(argv[i + 1])
+        del argv[i:i + 2]
+    args = [a for a in argv if not a.startswith("--")]
+    with_ota = "--with-ota" in argv
     selected = args or [n for n in ORDER if n != "ota" or with_ota]
 
     failed = []
@@ -30,7 +37,7 @@ def main():
             print(f"unknown validator: {name}")
             failed.append(name)
             continue
-        r = subprocess.run([sys.executable, script])
+        r = subprocess.run([sys.executable, script], env=env)
         if r.returncode != 0:
             failed.append(name)
         print()

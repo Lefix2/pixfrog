@@ -924,9 +924,11 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     auto get_u32 = [&](const char* key, uint32_t lo, uint32_t hi, uint32_t& out) -> bool {
         cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
         if (!item || !cJSON_IsNumber(item)) return false;
-        const uint32_t v = static_cast<uint32_t>(item->valuedouble);
-        if (v < lo || v > hi) return false;
-        out = v;
+        // Range-check the double first: casting an out-of-range value
+        // (-5, 1e40) to uint32_t is undefined (RISC-V saturates -5 to 0).
+        const double d = item->valuedouble;
+        if (!(d >= lo && d <= hi)) return false;
+        out = static_cast<uint32_t>(d);
         return true;
     };
     auto get_str = [&](const char* key) -> const char* {
@@ -1071,9 +1073,11 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
     auto get_u32 = [&](const char* key, uint32_t lo, uint32_t hi, uint32_t& out) -> bool {
         cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
         if (!item || !cJSON_IsNumber(item)) return false;
-        const uint32_t v = static_cast<uint32_t>(item->valuedouble);
-        if (v < lo || v > hi) return false;
-        out = v;
+        // Range-check the double first: casting an out-of-range value
+        // (-5, 1e40) to uint32_t is undefined (RISC-V saturates -5 to 0).
+        const double d = item->valuedouble;
+        if (!(d >= lo && d <= hi)) return false;
+        out = static_cast<uint32_t>(d);
         return true;
     };
     auto get_bool = [&](const char* key, bool& out) -> bool {
@@ -1217,6 +1221,15 @@ static esp_err_t handle_ota(httpd_req_t* req) {
         g_ota_in_progress = false;
         ESP_LOGE(TAG, "esp_ota_set_boot_partition: %s", esp_err_to_name(err));
         return send_err(req, 500, "set boot partition failed");
+    }
+
+    // The new image overwrote the rejected slot: forget which image that was,
+    // so a rollback of this upload is recorded as a new event even when it is
+    // the same build (boot matches the record by image SHA).
+    config::RollbackRecord rb{};
+    if (config::get_rollback(rb)) {
+        std::memset(rb.rejected_sha, 0, sizeof(rb.rejected_sha));
+        config::set_rollback(rb);
     }
 
     ESP_LOGI(TAG, "OTA complete, rebooting into %s", update->label);

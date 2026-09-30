@@ -6,6 +6,7 @@
 # Modes (CI runs all three):
 #   -DPIXFROG_SANITIZE=ON  ASan + UBSan, any report fails the test
 #   -DPIXFROG_COVERAGE=ON  gcov instrumentation, -O0 (see tools/coverage.sh)
+#   -DPIXFROG_FUZZ=ON      clang only: ASan + UBSan + libFuzzer targets (tests/fuzz)
 #
 # The per-component test directories stay self-contained (each still builds on
 # its own, as the host-tests skill documents); this file only aggregates them.
@@ -14,9 +15,20 @@ project(pixfrog_host_tests C CXX)
 
 option(PIXFROG_SANITIZE "Build the suites with ASan + UBSan" OFF)
 option(PIXFROG_COVERAGE "Build the suites with gcov instrumentation" OFF)
+option(PIXFROG_FUZZ "Also build the libFuzzer targets (clang; implies sanitizers)" OFF)
 
 if(PIXFROG_SANITIZE AND PIXFROG_COVERAGE)
     message(FATAL_ERROR "PIXFROG_SANITIZE and PIXFROG_COVERAGE are separate builds")
+endif()
+if(PIXFROG_FUZZ)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "PIXFROG_FUZZ needs clang: CC=clang CXX=clang++ cmake ...")
+    endif()
+    if(PIXFROG_COVERAGE)
+        message(FATAL_ERROR "PIXFROG_FUZZ and PIXFROG_COVERAGE are separate builds")
+    endif()
+    set(PIXFROG_SANITIZE ON)
+    add_compile_options(-fsanitize=fuzzer-no-link)
 endif()
 if(PIXFROG_SANITIZE)
     add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all

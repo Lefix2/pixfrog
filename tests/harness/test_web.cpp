@@ -187,6 +187,20 @@ TEST(fragmented_request_bodies_are_reassembled) {
     EXPECT_EQ(config::get_channel(2).pixel_count, 321);
 }
 
+TEST(out_of_range_numbers_are_ignored_not_wrapped) {
+    // Found by fuzz_web_api: the value was cast to uint32_t before the range
+    // check (UB; on the RISC-V target -5 saturated to 0 and was accepted).
+    const auto before = config::get_channel(1);
+    post("/api/channel/1", "{\"brightness\":-5,\"pixel_count\":1e40,\"grouping\":-1}");
+    const auto after = config::get_channel(1);
+    EXPECT_EQ(after.brightness, before.brightness);
+    EXPECT_EQ(after.pixel_count, before.pixel_count);
+    EXPECT_EQ(after.grouping, before.grouping);
+    const auto g = config::get_global();
+    post("/api/global", "{\"refresh_hz\":-60}");
+    EXPECT_EQ(config::get_global().refresh_rate_hz, g.refresh_rate_hz);
+}
+
 TEST(scene_endpoints_manage_the_list) {
     const size_t n = config::num_scenes();
     Json added(post("/api/scenes/add", "{\"name\":\"Web\",\"effect\":3}").body);
@@ -231,11 +245,23 @@ TEST(ota_rejects_a_bad_image_and_boots_a_good_one) {
     auto bad = post("/api/ota", std::string(4096, '\x00'));  // no 0xE9 magic
     EXPECT_EQ(bad.status, 400);
     EXPECT_FALSE(shim::ota_boot_switched());
+    // An earlier rollback, acknowledged, of the very build about to be sent.
+    config::RollbackRecord rb{};
+    std::strcpy(rb.rejected_version, "v1.2.3");
+    std::memset(rb.rejected_sha, 0xAB, sizeof(rb.rejected_sha));
+    rb.acknowledged = 1;
+    config::set_rollback(rb);
     std::string img(10000, '\x5A');
     img[0] = static_cast<char>(0xE9);
     shim::http_recv_chunk(1000);  // arrives in pieces, like TCP
     auto good = post("/api/ota", img);
     EXPECT_EQ(good.status, 200);
+    // The upload overwrote the rejected slot: the record no longer names that
+    // image, so a rollback of this upload (same SHA) counts as a new one.
+    config::RollbackRecord after{};
+    EXPECT_TRUE(config::get_rollback(after));
+    EXPECT_EQ(after.rejected_sha[0], 0);
+    EXPECT_STREQ(after.rejected_version, "v1.2.3");
     EXPECT_TRUE(shim::ota_boot_switched());
     EXPECT_EQ(shim::ota_image().size(), img.size());
     EXPECT_EQ(shim::restarts(), restarts0 + 1);

@@ -88,18 +88,21 @@ add_custom_command(
     DEPENDS ${REPO}/components/web_config/src/web_ui.html
     VERBATIM)
 
+# A library, so targets in other directories (tests/fuzz) can link the blob.
+add_library(webui_blob STATIC ${WEB_GZ_DIR}/web_ui_blob.o)
+set_target_properties(webui_blob PROPERTIES LINKER_LANGUAGE C)
+
 set(WEB_SOURCES
-    fakes/fseq_fake.cpp
-    fakes/modules_fake.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/fakes/fseq_fake.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/fakes/modules_fake.cpp
     ${REPO}/components/web_config/src/web_config.cpp
     ${REPO}/components/sacn/src/sacn.cpp
     ${REPO}/components/dmx_manager/src/dmx_manager.cpp
     ${REPO}/components/config_store/src/config_store.cpp
     ${LED_PROTOCOLS_SRC}
-    ${WEB_GZ_DIR}/web_ui_blob.o
 )
 pixfrog_harness(harness_web test_web.cpp ${WEB_SOURCES})
-target_link_libraries(harness_web PRIVATE cjson)
+target_link_libraries(harness_web PRIVATE cjson webui_blob)
 target_compile_definitions(harness_web PRIVATE PIXFROG_HARNESS_REAL_WEB)
 
 # The real API on a TCP port for the SPA browser tests (tests/web).
@@ -107,4 +110,9 @@ add_executable(pixfrog_api_host ${CMAKE_CURRENT_SOURCE_DIR}/../web/api_host.cpp 
 target_include_directories(pixfrog_api_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FIRMWARE_INCLUDES})
 target_compile_options(pixfrog_api_host PRIVATE -Wall -Wextra -fno-exceptions -fno-rtti)
 target_compile_definitions(pixfrog_api_host PRIVATE PIXFROG_HARNESS_REAL_WEB)
-target_link_libraries(pixfrog_api_host PRIVATE idf_shims cjson)
+target_link_libraries(pixfrog_api_host PRIVATE idf_shims cjson webui_blob)
+
+# libFuzzer targets reuse the source lists above (a child scope sees them).
+if(PIXFROG_FUZZ)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../fuzz ${CMAKE_BINARY_DIR}/fuzz)
+endif()

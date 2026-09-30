@@ -18,6 +18,11 @@ ctest --test-dir build/tests --output-on-failure
 cmake -S tests -B build/tests-san -DPIXFROG_SANITIZE=ON >/dev/null
 cmake --build build/tests-san --parallel >/dev/null
 ctest --test-dir build/tests-san --output-on-failure
+if command -v clang++ >/dev/null 2>&1; then
+    tools/fuzz.sh "${PIXFROG_FUZZ_SECS:-15}"  # CI: fuzz (60 s per target there)
+else
+    echo "(fuzz skipped: needs clang)"
+fi
 if python3 -c "import gcovr" 2>/dev/null; then
     python3 tools/coverage.py >/dev/null && cat build/coverage/summary.txt
 else

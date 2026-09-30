@@ -13,6 +13,11 @@ against the 16 MHz PCLK gives ~3 samples per PCLK tick, plenty to separate a
 T0H from a T1H.
 
     ./nrz_decode.py digital.csv --channel 0 --protocol ws2815 --pixels 4
+    ./nrz_decode.py digital.csv --pixels 4 --gaps 2:1 --expect ff0000...   # dead LEDs
+
+--pixels and --expect are the *logical* strip (what `pixr` reads back);
+--gaps (same syntax as the console, `pos:len` 1-based physical) inserts the
+dark LEDs the firmware must emit, so the frame checked is the physical one.
 
 Bus bit k is GPIO kLedBusGpio[k] (boards/esp32_p4_devkit.h); pixfrog channel n
 drives data on bus bit 2n and clock on 2n+1, so an NRZ channel only ever moves
@@ -102,7 +107,21 @@ def main():
     ap.add_argument("--bytes-per-pixel", type=int, default=3)
     ap.add_argument("--expect", help="expected hex for the whole frame, e.g. ff0102...")
     ap.add_argument("--frames", type=int, default=3, help="how many frames to print")
+    ap.add_argument("--gaps", default="", help="dead LEDs, e.g. 2:1,10:3 (1-based, physical)")
     args = ap.parse_args()
+    gaps = sorted((int(p) - 1, int(n)) for p, n in
+                  (g.split(":") for g in args.gaps.split(",") if g))
+    bpp = args.bytes_per_pixel
+    if args.pixels:
+        args.pixels += sum(n for _, n in gaps)
+    if args.expect and gaps:
+        logical = bytes.fromhex(args.expect)
+        phys = bytearray()
+        for pos, n in gaps:  # positions are physical: fill up to each gap, then dark LEDs
+            take = pos - len(phys) // bpp
+            phys += logical[:take * bpp] + bytes(n * bpp)
+            logical = logical[take * bpp:]
+        args.expect = (bytes(phys) + logical).hex()
 
     edges = read_edges(args.csv, args.channel)
     if not edges:
