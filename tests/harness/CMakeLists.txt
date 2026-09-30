@@ -48,6 +48,17 @@ pixfrog_harness(harness_dmx_manager
     ${REPO}/components/config_store/src/config_store.cpp
     ${LED_PROTOCOLS_SRC}
 )
+pixfrog_harness(harness_dmx_init
+    test_dmx_init.cpp
+    ${REPO}/components/dmx_manager/src/dmx_manager.cpp
+    ${REPO}/components/config_store/src/config_store.cpp
+    ${LED_PROTOCOLS_SRC}
+)
+# Failed inits leak their partial allocations by design (boot aborts on the
+# device): no leak check for this one.
+set_tests_properties(harness_dmx_init PROPERTIES ENVIRONMENT
+    "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")
+
 pixfrog_harness(harness_receivers
     test_receivers.cpp
     fakes/fseq_fake.cpp

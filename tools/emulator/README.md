@@ -61,6 +61,7 @@ starts at HOME for deterministic runs.
 | `set active <ch>`  | mark channel `ch` (0–7) active (HOME dot)          |
 | `set chan <i> <proto> <uni> <pix>` | seed channel `i` (protocol enum value) |
 | `set gaps <i> [<pos0>:<len> …]` | replace channel `i`'s dead-pixel gaps |
+| `set sd <n>`       | fake a microSD with n `.fseq` files (0 = none)     |
 | `quit`             | exit                                               |
 
 ### Menu crawler and golden screenshots

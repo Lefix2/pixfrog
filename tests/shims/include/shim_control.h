@@ -81,6 +81,30 @@ size_t http_routes();  // handlers registered (esp_http_server caps it)
 // (browser tests); requests are dispatched on the calling thread.
 void http_serve(uint16_t port, volatile bool* stop);
 
+// ── Fault injection ─────────────────────────────────────────────────────────
+// The next `count` calls of that API fail (error paths of the code under test).
+enum class Fault {
+    Socket,       // socket() → -1
+    Bind,         // bind() → -1
+    Join,         // setsockopt(IP_ADD_MEMBERSHIP) → -1
+    SendTo,       // sendto() → -1
+    HeapCaps,     // heap_caps_calloc/malloc → nullptr
+    Semaphore,    // xSemaphoreCreate* → nullptr
+    EventGroup,   // xEventGroupCreate → nullptr
+    OtaNoTarget,  // esp_ota_get_next_update_partition → nullptr
+    OtaBegin,     // esp_ota_begin → ESP_FAIL
+    OtaWrite,     // esp_ota_write → ESP_FAIL
+    OtaSetBoot,   // esp_ota_set_boot_partition → ESP_FAIL
+    HttpdStart,   // httpd_start → ESP_FAIL
+    MdnsInit,     // mdns_init → ESP_FAIL
+    Count,
+};
+// `skip` calls succeed first (fail the Nth allocation, not the first).
+void fail_next(Fault f, int count = 1, int skip = 0);
+bool should_fail(Fault f);  // consumes one pending failure
+void faults_clear();
+void set_reset_reason(int reason);  // esp_reset_reason() value
+
 // ── OTA / core dump / mDNS ──────────────────────────────────────────────────
 std::vector<uint8_t>& ota_image();                     // bytes esp_ota_write() received
 bool ota_boot_switched();                              // esp_ota_set_boot_partition() called

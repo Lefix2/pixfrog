@@ -373,3 +373,146 @@ TEST(sacn_joins_the_control_universe_group) {
     dmx::scene_stop();
     control_off();
 }
+
+// ── Malformed packets, remote programming corners, socket failures ──────────
+
+TEST(malformed_artnet_packets_are_counted_bad) {
+    const auto before = dmx::get_stats().artnet_bad_packets;
+    shim::net_push(kArt, art_header(artnet::parser::kOpDmx, 12));      // no DMX header
+    shim::net_push(kArt, art_header(artnet::parser::kOpPoll, 12));     // short poll
+    shim::net_push(kArt, art_header(artnet::parser::kOpAddress, 40));  // short ArtAddress
+    shim::net_push(kArt, art_header(artnet::parser::kOpIpProg, 20));   // short ArtIpProg
+    shim::net_push(kArt, art_header(artnet::parser::kOpNzs, 12));      // short ArtNzs
+    shim::net_push(kArt, art_header(artnet::parser::kOpTrigger, 12));  // short ArtTrigger
+    shim::net_push(kArt, art_header(artnet::parser::kOpTimeCode, 12));
+    shim::net_push(kArt, art_header(artnet::parser::kOpCommand, 12));  // short ArtCommand
+    pump_artnet();
+    EXPECT_EQ(dmx::get_stats().artnet_bad_packets, before + 8);
+}
+
+TEST(artnzs_and_artcommand_are_counted_control) {
+    const auto before = dmx::get_stats().artnet_ctrl_rx;
+    Bytes nzs         = art_dmx(1, { 1, 2, 3 });
+    nzs[8]            = 0x00;
+    nzs[9]            = 0x51;  // OpNzs
+    nzs[13]           = 0xDD;  // start code
+    shim::net_push(kArt, nzs);
+    shim::net_push(kArt, art_header(artnet::parser::kOpCommand, 16 + 8));
+    shim::net_push(kArt, art_header(0x1234, 20));  // unknown opcode: ignored
+    pump_artnet();
+    EXPECT_EQ(dmx::get_stats().artnet_ctrl_rx, before + 2);
+}
+
+TEST(artaddress_switches_long_name_and_commands) {
+    Bytes p = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
+    p[12]   = 0x80 | 3;  // program net 3
+    p[104]  = 0x80 | 7;  // program subnet 7
+    std::memcpy(p.data() + 32, "A long desk name", 16);
+    p[106] = artnet::parser::kAcCancelMerge;
+    shim::net_push(kArt, p);
+    Bytes q = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
+    q[106]  = 0x90;  // a command we do not implement: logged, nothing changes
+    shim::net_push(kArt, q);
+    pump_artnet();
+    EXPECT_EQ(config::get_global().artnet_net, 3);
+    EXPECT_EQ(config::get_global().artnet_subnet, 7);
+    EXPECT_STREQ(config::get_global().long_name, "A long desk name");
+    auto g          = config::get_global();
+    g.artnet_net    = 0;
+    g.artnet_subnet = 0;
+    config::set_global(g);
+}
+
+TEST(artipprog_reset_to_defaults_and_dhcp) {
+    Bytes p = art_header(artnet::parser::kOpIpProg, 34);
+    p[14]   = 0x80 | 0x10;  // enable + reset to defaults
+    shim::net_push(kArt, p);
+    pump_artnet();
+    EXPECT_TRUE(config::get_global().use_dhcp);
+    EXPECT_EQ(config::get_global().static_ip, 0u);
+    p[14] = 0x80 | 0x40 | 0x08;                   // DHCP on, program the gateway
+    p[26] = 10, p[27] = 0, p[28] = 0, p[29] = 1;  // ProgDg (24-25 = the deprecated port)
+    shim::net_push(kArt, p);
+    p[14] = 0x00;  // programming disabled: reply only
+    shim::net_push(kArt, p);
+    pump_artnet();
+    EXPECT_EQ(config::get_global().static_gateway, 0x0A000001u);
+    EXPECT_EQ(shim::net_sent().size(), 3);  // one ArtIpProgReply each
+}
+
+TEST(artpollreply_send_failure_is_survived) {
+    shim::fail_next(shim::Fault::SendTo, 5);
+    shim::net_push(kArt, art_header(artnet::parser::kOpPoll, 14));
+    pump_artnet();
+    EXPECT_EQ(shim::net_sent().size(), 0);
+    shim::faults_clear();
+}
+
+TEST(artnet_socket_and_bind_failures_end_the_task) {
+    shim::fail_next(shim::Fault::Socket);
+    artnet::start();
+    shim::run_task("artnet_rx");  // returns at once: no socket
+    artnet::stop();
+    shim::fail_next(shim::Fault::Bind);
+    artnet::start();
+    shim::run_task("artnet_rx");
+    artnet::stop();
+    shim::faults_clear();
+    shim::net_push(kArt, art_dmx(1, { 5, 6, 7 }));  // a later start still works
+    pump_artnet();
+    EXPECT_EQ(pixels0()[0], 5);
+}
+
+TEST(sacn_leaves_stale_groups_and_survives_join_failure) {
+    auto g         = config::get_global();
+    g.sacn_enabled = true;
+    config::set_global(g);
+    pump_sacn();
+    EXPECT_EQ(g_sacn_groups.size(), 1);  // universe 1
+    auto c           = config::get_channel(0);
+    c.universe_start = 5;  // moves: 1 must be left, 5 joined
+    config::set_channel(0, c);
+    dmx::mark_channel_dirty(0);
+    dmx::handle_pending_remaps();
+    shim::fail_next(shim::Fault::Join);  // the first join fails, is retried later
+    shim::advance_ms(6000);              // past the membership refresh period
+    shim::net_push(kSacn, sacn_data(5, 100, { 1, 1, 1 }));
+    pump_sacn();
+    c.universe_start = 1;
+    config::set_channel(0, c);
+    dmx::mark_channel_dirty(0);
+    dmx::handle_pending_remaps();
+    shim::faults_clear();
+}
+
+TEST(sacn_sync_and_malformed_packets) {
+    const auto bad = dmx::get_stats().artnet_bad_packets;
+    Bytes sync(49, 0);
+    sync[1] = 0x10;
+    std::memcpy(sync.data() + 4, sacn::parser::kAcnId, sizeof(sacn::parser::kAcnId));
+    sync[21] = 0x08;  // root vector: extended
+    sync[43] = 0x01;  // framing vector: sync
+    shim::net_push(kSacn, sync);
+    Bytes junk = sacn_data(1, 100, { 1 });
+    junk[21]   = 0x04;
+    junk[43]   = 0x7F;  // data root, bad framing vector
+    shim::net_push(kSacn, junk);
+    Bytes other = sacn_data(1, 100, { 1 });
+    other[21]   = 0x09;  // unknown root vector
+    shim::net_push(kSacn, other);
+    pump_sacn();
+    EXPECT_TRUE(dmx::get_stats().artnet_bad_packets >= bad + 2);
+}
+
+TEST(sacn_socket_and_bind_failures_end_the_task) {
+    shim::fail_next(shim::Fault::Socket);
+    sacn::start();
+    shim::run_task("sacn_rx");
+    sacn::stop();
+    shim::fail_next(shim::Fault::Bind);
+    sacn::start();
+    shim::run_task("sacn_rx");
+    sacn::stop();
+    shim::faults_clear();
+    EXPECT_FALSE(sacn::is_running());
+}

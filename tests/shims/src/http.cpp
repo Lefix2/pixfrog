@@ -67,6 +67,7 @@ bool httpd_uri_match_wildcard(const char* tmpl, const char* uri, size_t len) {
 }
 
 esp_err_t httpd_start(httpd_handle_t* handle, const httpd_config_t* cfg) {
+    if (shim::should_fail(shim::Fault::HttpdStart)) return ESP_FAIL;
     static int h;
     g_routes.clear();
     g_match      = cfg->uri_match_fn;

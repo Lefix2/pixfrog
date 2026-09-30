@@ -90,7 +90,7 @@ const char* error_string() {
     return "";
 }
 SdState sd_state() {
-    return SdState::Mounted;
+    return ::fake::modules().sd_mounted ? SdState::Mounted : SdState::Absent;
 }
 size_t list_files(char names[][kMaxNameLen], size_t max) {
     const char* files[] = { "show.fseq", "loop.fseq" };

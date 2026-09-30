@@ -361,3 +361,15 @@ TEST(factory_reset_restores_the_control_default) {
     init();
     EXPECT_EQ(get_control().enabled, 0);
 }
+
+TEST(nvs_reinit_failure_after_erase_runs_on_defaults) {
+    shim::nvs_wipe();
+    shim::nvs_fail_init(2);  // init fails, erase works, the re-init fails too
+    init();
+    EXPECT_FALSE(is_persistence_ok());
+    shim::nvs_fail_open(2);  // namespace unopenable, even after the hard reset
+    init();
+    EXPECT_FALSE(is_persistence_ok());
+    fresh_boot();
+    EXPECT_TRUE(is_persistence_ok());
+}

@@ -50,9 +50,11 @@ void mdns_reset() {
 }  // namespace shim
 
 const esp_partition_t* esp_ota_get_next_update_partition(const esp_partition_t*) {
+    if (shim::should_fail(shim::Fault::OtaNoTarget)) return nullptr;
     return &kOta1;
 }
 esp_err_t esp_ota_begin(const esp_partition_t*, size_t, esp_ota_handle_t* out) {
+    if (shim::should_fail(shim::Fault::OtaBegin)) return ESP_FAIL;
     g_ota.clear();
     g_ota_open      = true;
     g_boot_switched = false;
@@ -60,6 +62,7 @@ esp_err_t esp_ota_begin(const esp_partition_t*, size_t, esp_ota_handle_t* out) {
     return ESP_OK;
 }
 esp_err_t esp_ota_write(esp_ota_handle_t, const void* data, size_t size) {
+    if (shim::should_fail(shim::Fault::OtaWrite)) return ESP_FAIL;
     if (!g_ota_open) return ESP_ERR_INVALID_ARG;
     const auto* p = static_cast<const uint8_t*>(data);
     g_ota.insert(g_ota.end(), p, p + size);
@@ -76,6 +79,7 @@ esp_err_t esp_ota_abort(esp_ota_handle_t) {
     return ESP_OK;
 }
 esp_err_t esp_ota_set_boot_partition(const esp_partition_t*) {
+    if (shim::should_fail(shim::Fault::OtaSetBoot)) return ESP_FAIL;
     g_boot_switched = true;
     return ESP_OK;
 }
@@ -109,6 +113,7 @@ uint32_t esp_get_minimum_free_heap_size() {
 // ── mDNS ─────────────────────────────────────────────────────────────────────
 
 esp_err_t mdns_init() {
+    if (shim::should_fail(shim::Fault::MdnsInit)) return ESP_FAIL;
     return ESP_OK;
 }
 void mdns_free() {}
@@ -125,13 +130,15 @@ esp_err_t mdns_service_add(const char*, const char*, const char*, uint16_t, mdns
 esp_err_t mdns_query_ptr(const char*, const char*, uint32_t, size_t, mdns_result_t** results) {
     mdns_result_t* head = nullptr;
     for (auto it = g_peers.rbegin(); it != g_peers.rend(); ++it) {
-        auto* r            = new mdns_result_t{};
-        r->instance_name   = it->instance.c_str();
-        r->port            = 80;
-        r->txt             = new mdns_txt_item_t[3]{ { "product", it->product.c_str() },
-                                                     { "node", it->node.c_str() },
-                                                     { "fw", it->fw.c_str() } };
-        r->txt_count       = 3;
+        auto* r = new mdns_result_t{};
+        r->port = 80;
+        // An empty node/fw is left out of the TXT record, as a peer without them would.
+        r->txt                 = new mdns_txt_item_t[3]{};
+        r->txt_count           = 0;
+        r->txt[r->txt_count++] = { "product", it->product.c_str() };
+        if (!it->node.empty()) r->txt[r->txt_count++] = { "node", it->node.c_str() };
+        if (!it->fw.empty()) r->txt[r->txt_count++] = { "fw", it->fw.c_str() };
+        r->instance_name   = it->instance.empty() ? nullptr : it->instance.c_str();
         r->addr            = new mdns_ip_addr_t{};
         r->addr->addr.type = ESP_IPADDR_TYPE_V4;
         // lwIP keeps IPv4 in network order: first octet in the low byte.

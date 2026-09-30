@@ -7,9 +7,12 @@
 #include "cJSON.h"
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "esp_log.h"
+#include "esp_system.h"
 #include "fakes/fseq_fake.h"
 #include "fakes/modules_fake.h"
 #include "harness.h"
+#include "sacn.h"
 #include "shim_control.h"
 #include "web_config.h"
 
@@ -286,6 +289,24 @@ TEST(backup_then_restore_round_trips) {
     EXPECT_EQ(post("/api/channel/3", "{\"protocol\":\"DMX512\"}").status, 400);
 }
 
+TEST(ota_error_paths_report_and_release_the_lock) {
+    // Runs before the successful upload below, which leaves the lock taken.
+    std::string img(4096, '\x5A');
+    img[0] = static_cast<char>(0xE9);
+    shim::fail_next(shim::Fault::OtaNoTarget);
+    EXPECT_TRUE(post("/api/ota", img).body.find("no OTA partition") != std::string::npos);
+    shim::fail_next(shim::Fault::OtaBegin);
+    EXPECT_TRUE(post("/api/ota", img).body.find("esp_ota_begin failed") != std::string::npos);
+    shim::fail_next(shim::Fault::OtaWrite);
+    EXPECT_TRUE(post("/api/ota", img).body.find("flash write failed") != std::string::npos);
+    shim::fail_next(shim::Fault::OtaSetBoot);
+    EXPECT_TRUE(post("/api/ota", img).body.find("set boot partition failed") != std::string::npos);
+    EXPECT_TRUE(post("/api/ota", std::string(8u << 20, '\xE9')).body.find("image too large") !=
+                std::string::npos);  // larger than the 7 MB slot
+    shim::faults_clear();
+    EXPECT_FALSE(shim::ota_boot_switched());
+}
+
 TEST(ota_rejects_a_bad_image_and_boots_a_good_one) {
     const int restarts0 = shim::restarts();
     EXPECT_EQ(post("/api/ota", "").status, 400);
@@ -507,4 +528,135 @@ TEST(scene_play_takes_an_output_zone_and_stop_is_per_scene) {
     EXPECT_EQ(dmx::scene_outputs(2), 0);
     post("/api/scenes/stop");
     EXPECT_EQ(dmx::active_scene(), -1);
+}
+
+// ── Coverage: logs, diag, every global/channel field, OTA and upload errors ──
+
+TEST(log_ring_demotes_sd_spam_strips_colours_and_wraps) {
+    esp_log_level_set("*", ESP_LOG_INFO);
+    ESP_LOGE("sdmmc_cmd", "sdmmc_card_init failed");  // below debug: dropped
+    ESP_LOGW("x", "\x1b[0;33mcoloured\x1b[0m line");
+    auto logs = get("/api/logs").body;
+    EXPECT_TRUE(logs.find("sdmmc_card_init") == std::string::npos);
+    EXPECT_TRUE(logs.find("coloured line") != std::string::npos);
+    EXPECT_TRUE(logs.find('\x1b') == std::string::npos);
+    esp_log_level_set("*", ESP_LOG_DEBUG);
+    ESP_LOGE("sdmmc_cmd", "sdmmc retry");  // at debug: kept, relabelled
+    logs = get("/api/logs").body;
+    EXPECT_TRUE(logs.find("sdmmc retry") != std::string::npos);
+    for (int i = 0; i < 400; ++i)  // more than the ring holds
+        ESP_LOGI("fill", "line %03d of a long burst of log output to wrap the ring", i);
+    logs = get("/api/logs").body;
+    EXPECT_TRUE(logs.find("line 399") != std::string::npos);
+    EXPECT_TRUE(logs.find("line 000") == std::string::npos);  // overwritten
+    esp_log_level_set("*", ESP_LOG_INFO);
+}
+
+TEST(loglevel_accepts_every_level) {
+    for (const char* l : { "none", "error", "warn", "info", "debug", "verbose" }) {
+        EXPECT_EQ(post("/api/loglevel", std::string("{\"level\":\"") + l + "\"}").status, 200);
+    }
+    EXPECT_EQ(shim::log_level(), ESP_LOG_VERBOSE);
+    post("/api/loglevel", "{\"level\":\"info\"}");
+}
+
+TEST(diag_names_every_reset_reason) {
+    const int reasons[]    = { ESP_RST_EXT,      ESP_RST_SW,     ESP_RST_PANIC,     ESP_RST_INT_WDT,
+                               ESP_RST_TASK_WDT, ESP_RST_WDT,    ESP_RST_DEEPSLEEP, ESP_RST_BROWNOUT,
+                               ESP_RST_SDIO,     ESP_RST_UNKNOWN };
+    const char* expected[] = { "external", "software",   "panic",    "int-wdt", "task-wdt",
+                               "wdt",      "deep-sleep", "brownout", "sdio" };
+    for (size_t i = 0; i < sizeof(reasons) / sizeof(reasons[0]); ++i) {
+        shim::set_reset_reason(reasons[i]);
+        const std::string body = get("/api/diag").body;
+        if (i < sizeof(expected) / sizeof(expected[0]))
+            EXPECT_TRUE(body.find(std::string("\"") + expected[i] + "\"") != std::string::npos);
+    }
+    shim::set_reset_reason(ESP_RST_POWERON);
+}
+
+TEST(global_post_sets_network_display_failsafe_and_services) {
+    const auto before = config::get_global();
+    Json r(post("/api/global",
+                "{\"dhcp\":0,\"ip\":\"10.1.2.3\",\"mask\":\"255.255.0.0\",\"gw\":\"10.1.0.1\","
+                "\"long_name\":\"A long name\",\"tft_brightness\":55,\"tft_dim_delay_s\":80,"
+                "\"failsafe_scene\":1,\"failsafe_color\":\"#102030\",\"sacn_enabled\":1,"
+                "\"fpp_remote\":true}")
+               .body);
+    EXPECT_STREQ(r["note"]->valuestring, "network_changes_apply_after_reboot");
+    const auto& g = config::get_global();
+    EXPECT_FALSE(g.use_dhcp);
+    EXPECT_EQ(g.static_ip, 0x0A010203u);
+    EXPECT_EQ(g.static_mask, 0xFFFF0000u);
+    EXPECT_EQ(g.static_gateway, 0x0A010001u);
+    EXPECT_STREQ(g.long_name, "A long name");
+    EXPECT_EQ(g.tft_brightness, 55);
+    EXPECT_EQ(g.tft_dim_delay_s, 80);
+    EXPECT_EQ(g.failsafe_scene, 1);
+    EXPECT_EQ(g.failsafe_g, 0x20);
+    EXPECT_TRUE(sacn::is_running());
+    EXPECT_TRUE(::fake::modules().fpp_running);
+    post("/api/global", "{\"sacn_enabled\":false,\"fpp_remote\":false}");
+    shim::run_task("sacn_rx");  // the stopped task runs to its end
+    EXPECT_FALSE(sacn::is_running());
+    EXPECT_FALSE(::fake::modules().fpp_running);
+    EXPECT_EQ(post("/api/global", "{\"ip\":\"1.2.3\"}").status, 400);
+    EXPECT_EQ(post("/api/global", "{\"mask\":\"x\"}").status, 400);
+    EXPECT_EQ(post("/api/global", "{\"gw\":\"300.1.1.1\"}").status, 400);
+    config::set_global(before);
+}
+
+TEST(channel_post_colour_order_and_numeric_bools) {
+    EXPECT_EQ(post("/api/channel/4", "{\"color_order\":\"BGR\",\"invert\":1}").status, 200);
+    EXPECT_TRUE(config::get_channel(4).color_order == led::ColorOrder::BGR);
+    EXPECT_TRUE(config::get_channel(4).invert_direction);
+    EXPECT_EQ(post("/api/channel/4", "{\"color_order\":\"XYZ\"}").status, 400);
+    post("/api/channel/4", "{\"invert\":false}");
+}
+
+TEST(restore_accepts_a_single_legacy_scene_colour) {
+    const std::string backup = get("/api/backup").body;
+    std::string one = "{\"scenes\":[{\"name\":\"Old\",\"effect\":0,\"color\":\"#0a0b0c\"}]}";
+    EXPECT_EQ(post("/api/restore", one).status, 200);
+    EXPECT_EQ(config::get_scene(0).r, 0x0A);
+    EXPECT_EQ(config::get_scene(0).b, 0x0C);
+    post("/api/restore", backup);
+}
+
+TEST(fseq_upload_rejects_before_touching_the_card) {
+    fseq::fake::set(fseq::Status::Idle, 0);
+    ::fake::modules().sd_mounted = false;
+    EXPECT_EQ(post("/api/fseq/upload?name=show.fseq", "data").status, 500);  // no SD card
+    ::fake::modules().sd_mounted = true;
+    EXPECT_EQ(post("/api/fseq/upload", "data").status, 400);                   // no name
+    EXPECT_EQ(post("/api/fseq/upload?name=..%2Fx.fseq", "data").status, 400);  // traversal
+    EXPECT_EQ(post("/api/fseq/upload?name=show.txt", "data").status, 400);
+    EXPECT_EQ(post("/api/fseq/upload?name=show+2.fseq", "").status, 400);  // empty body
+    EXPECT_EQ(post("/api/fseq/play", "{}").status, 400);                   // missing filename
+}
+
+TEST(peers_fall_back_to_the_instance_name) {
+    shim::mdns_reset();
+    shim::advance_ms(6000);  // past the 5 s peers cache
+    shim::mdns_add_peer("anon-box", 0xC0A80244, "pixfrog", nullptr, nullptr);
+    shim::mdns_add_peer("", 0xC0A80245, "pixfrog", nullptr, nullptr);
+    const std::string body = get("/api/peers").body;
+    EXPECT_TRUE(body.find("\"anon-box\"") != std::string::npos);
+    EXPECT_TRUE(body.find("\"name\":\"pixfrog\"") != std::string::npos);
+    shim::mdns_reset();
+}
+
+TEST(server_restart_and_start_failures) {
+    web::stop();
+    EXPECT_FALSE(web::is_running());
+    web::stop();  // twice is harmless
+    shim::fail_next(shim::Fault::HttpdStart);
+    web::start();
+    EXPECT_FALSE(web::is_running());
+    shim::fail_next(shim::Fault::MdnsInit);
+    web::start();  // up without mDNS
+    EXPECT_TRUE(web::is_running());
+    web::stop();
+    web::start();
+    EXPECT_TRUE(web::is_running());
 }

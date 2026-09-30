@@ -611,3 +611,49 @@ TEST(control_can_share_an_output_universe) {
     ctrl_frame(u, sizeof(u), 1);
     EXPECT_EQ(decode0()[0], 200);
 }
+
+// ── Accessors and corners ───────────────────────────────────────────────────
+
+TEST(accessors_report_the_current_state) {
+    dmx::set_pixel_preview(0, 33);
+    EXPECT_EQ(dmx::pixel_preview_count(), 33);
+    dmx::clear_pixel_preview();
+    auto c    = config::get_channel(0);
+    c.gaps[0] = { 1, 2 };
+    config::set_channel(0, c);
+    EXPECT_EQ(dmx::channel_gap_count(0), 1u);
+    EXPECT_EQ(dmx::channel_gap_count(99), 0u);
+    EXPECT_EQ(dmx::physical_pixels(config::get_channel(0)), 6u);  // 4 live + 2 dead
+    one_channel();
+    dmx::fseq_set_active(true);
+    EXPECT_TRUE(dmx::fseq_is_active());
+    const uint8_t d[3] = { 9, 8, 7 };
+    EXPECT_EQ(frame(1, d, sizeof(d))[0], 9);  // FSEQ live path decodes the banks
+    dmx::fseq_set_active(false);
+    const auto u0 = dmx::get_stats().dma_underruns;
+    dmx::note_dma_underrun();
+    EXPECT_EQ(dmx::get_stats().dma_underruns, u0 + 1);
+    EXPECT_EQ(dmx::channel_for_universe(40000), -1);  // past the 15-bit range
+}
+
+TEST(an_exhausted_pool_is_reported_not_overrun) {
+    // 8 × 1024 px RGBW = 8 universes each: the 64-slot pool is full.
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        auto c           = config::get_channel(ch);
+        c.protocol       = led::Protocol::SK6812;
+        c.pixel_count    = 1024;
+        c.universe_start = static_cast<uint16_t>(1 + ch * 8);
+        config::set_channel(ch, c);
+    }
+    apply_channels();
+    enable_control();  // all 64 slots taken: no slot left for it
+    EXPECT_EQ(dmx::control_pool_slot(), -1);
+    auto top           = config::get_channel(7);
+    top.universe_start = 0x7FFE;  // runs past the top of the range: partly unmapped
+    config::set_channel(7, top);
+    apply_channels();
+    EXPECT_EQ(dmx::channel_for_universe(0x7FFE), 7);
+    EXPECT_EQ(dmx::channel_for_universe(0x7FFF), 7);
+    reset_show();
+    one_channel();
+}

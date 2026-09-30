@@ -1,24 +1,31 @@
-// Host stub for fseq_player.  The emulator has no SD card, so init() always
-// reports no card, list_files() returns 0, and start()/stop() manipulate a
-// fake in-memory state so the FSEQ menu FSM can be exercised.
+// Host stub for fseq_player. No SD card by default; `set sd <n>` on the agent
+// API fakes one holding n files. start()/stop() manipulate an in-memory state
+// so the FSEQ menu FSM can be exercised.
 
 #include "fseq_player.h"
 
+#include <cstdio>
 #include <cstring>
+
+#include "dmx_emu.h"
 
 namespace pixfrog::fseq {
 
 namespace {
 char g_active[kMaxNameLen] = {};
 Status g_status            = Status::Idle;
+int g_files                = 0;
 }  // namespace
 
 bool init(const InitConfig& /*cfg*/) {
     return false;  // no SD card in emulator
 }
 
-size_t list_files(char /*names*/[][kMaxNameLen], size_t /*max*/) {
-    return 0;
+size_t list_files(char names[][kMaxNameLen], size_t max) {
+    size_t n = 0;
+    for (; n < static_cast<size_t>(g_files) && n < max; ++n)
+        std::snprintf(names[n], kMaxNameLen, "show%u.fseq", static_cast<unsigned>(n + 1));
+    return n;
 }
 
 bool start(const char* filename) {
@@ -39,7 +46,7 @@ const char* active_file() {
 }
 
 SdState sd_state() {
-    return SdState::Absent;  // emulator has no SD card
+    return g_files ? SdState::Mounted : SdState::Absent;
 }
 
 Status status() {
@@ -50,4 +57,12 @@ const char* error_string() {
     return "";
 }
 
+void emu_set_files(int n) {
+    g_files = n < 0 ? 0 : n;
+}
+
 }  // namespace pixfrog::fseq
+
+void emu_fseq_set_files(int n) {
+    pixfrog::fseq::emu_set_files(n);
+}
