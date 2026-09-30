@@ -33,8 +33,8 @@ namespace {
 
 constexpr const char* TAG = "CONSOLE";
 
-const char* const kProtocolNames[] = { "Off",    "WS2815", "WS2812B", "WS2811",  "SK6812",
-                                       "WS2814", "APA102", "SK9822",  "LPD8806", "DMX512" };
+const char* const kProtocolNames[] = { "Off",    "WS2815", "WS2812B", "WS2811", "SK6812",
+                                       "WS2814", "APA102", "SK9822",  "LPD8806" };
 static_assert(sizeof(kProtocolNames) / sizeof(kProtocolNames[0]) ==
               static_cast<size_t>(led::Protocol::COUNT));
 
@@ -449,7 +449,7 @@ int cmd_ch(int argc, char** argv) {
         const int p = lookup_name(kProtocolNames, static_cast<size_t>(led::Protocol::COUNT), val);
         if (p < 0)
             return err("protocol: Off|WS2815|WS2812B|WS2811|SK6812|WS2814|APA102|SK9822|"
-                       "LPD8806|DMX512 or 0..9");
+                       "LPD8806 or 0..8");
         c.protocol = static_cast<led::Protocol>(p);
     } else if (strcmp(key, "order") == 0) {
         const int o = lookup_name(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), val);

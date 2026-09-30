@@ -109,6 +109,8 @@ TEST(channel_get_set_and_validation) {
     EXPECT_TRUE(has("gaps=1:1,50:2"));
     EXPECT_FALSE(run("ch 8"));
     EXPECT_FALSE(run("ch 2 protocol LOL"));
+    EXPECT_FALSE(run("ch 2 protocol DMX512"));  // moved to the DMX node firmware
+    EXPECT_FALSE(run("ch 2 protocol 9"));
     EXPECT_FALSE(run("ch 2 pixels 0"));
     EXPECT_FALSE(run("ch 2 gaps 0:1"));
     EXPECT_FALSE(run("ch 2 clock_hz 100"));

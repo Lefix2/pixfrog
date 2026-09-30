@@ -163,8 +163,7 @@ size_t line_samples_for_config() {
     size_t step = 2;
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& cc = config::get_channel(ch);
-        if (led::is_off(cc.protocol) || led::is_dmx(cc.protocol) || led::is_clocked(cc.protocol))
-            continue;
+        if (led::is_off(cc.protocol) || led::is_clocked(cc.protocol)) continue;
         const led::Timing t = led::timing_for(cc.protocol, cc.clock_hz);
         if (t.samples_bit == 0) continue;
         const size_t merged = lcm(step, t.samples_bit);

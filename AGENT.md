@@ -8,7 +8,7 @@ This file keeps the rules, invariants and design facts.
 
 ## What this is
 
-Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives an LED strip (WS/SK NRZ or APA/SK/LPD clocked SPI) or, alternatively, a single DMX512 universe output. Detailed design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); hardware in [docs/HARDWARE.md](docs/HARDWARE.md); per-protocol timings (incl. DMX512 §7) in [docs/PROTOCOLS.md](docs/PROTOCOLS.md); target board ([Waveshare ESP32-P4 Module DEV-KIT](https://docs.waveshare.com/ESP32-P4-Module-DEV-KIT/Resources-And-Documents)).
+Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives an LED strip (WS/SK NRZ or APA/SK/LPD clocked SPI); DMX512 output was removed and lives in the DMX node firmware (a separate project forked from this one). Detailed design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); hardware in [docs/HARDWARE.md](docs/HARDWARE.md); per-protocol timings in [docs/PROTOCOLS.md](docs/PROTOCOLS.md); target board ([Waveshare ESP32-P4 Module DEV-KIT](https://docs.waveshare.com/ESP32-P4-Module-DEV-KIT/Resources-And-Documents)).
 
 ## Conventions
 
@@ -24,7 +24,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | Path                           | Responsibility                                          |
 |--------------------------------|---------------------------------------------------------|
 | `boards/esp32_p4_devkit.h`     | Single source of truth for pinout / I2C addrs           |
-| `components/led_protocols`     | Pure C++ NRZ + SPI + DMX512 encoders (host-testable)    |
+| `components/led_protocols`     | Pure C++ NRZ + SPI encoders (host-testable)             |
 | `components/led_output`    | 16-bit LED bus output: PARLIO TX loop (default, triple-buffered PSRAM FBs) or legacy LCD_CAM RGB backend (Kconfig choice, NOT CI-built, double-buffered), calibration |
 | `components/artnet`            | UDP receiver + parser; ArtDmx/Poll/Sync/Address/IpProg  |
 | `components/sacn`              | sACN (E1.31) receiver: multicast joins, priority gate (opt-in) |

@@ -200,12 +200,11 @@ void draw_chan_badge(int x, int y, int side, int number, Color family, bool fill
 }
 
 // Number of DMX universes a channel occupies, derived from its pixel
-// byte-footprint (pixels × bytes/px, offset by dmx_start). DMX512 always emits
-// exactly one universe; a disabled channel none. Lets HOME show the real
+// byte-footprint (pixels × bytes/px, offset by dmx_start); a disabled channel
+// none. Lets HOME show the real
 // addressing span (U1-2, U8-10) instead of only the start universe.
 int channel_universe_span(const config::ChannelConfig& cc) {
     if (led::is_off(cc.protocol)) return 0;
-    if (led::is_dmx(cc.protocol)) return 1;
     const uint32_t offset = (cc.dmx_start > 0) ? (cc.dmx_start - 1u) : 0u;
     const uint32_t bytes  = static_cast<uint32_t>(cc.pixel_count) *
                            led::bytes_per_pixel(cc.protocol);
@@ -532,17 +531,15 @@ const char* protocol_name(led::Protocol p) {
     case led::Protocol::APA102: return "APA102";
     case led::Protocol::SK9822: return "SK9822";
     case led::Protocol::LPD8806: return "LPD8806";
-    case led::Protocol::DMX512: return "DMX512";
     case led::Protocol::Off: return "Off";
     default: return "?";
     }
 }
 
-// Channel badge colour mirrors the wiring family: clocked SPI strips and DMX512
-// stand out from the common NRZ pixels; a disabled channel is greyed out.
+// Channel badge colour mirrors the wiring family: clocked SPI strips stand out
+// from the common NRZ pixels; a disabled channel is greyed out.
 Color badge_color(led::Protocol p) {
     if (led::is_off(p)) return color::DarkGray;
-    if (led::is_dmx(p)) return color::Orange;
     if (led::is_clocked(p)) return color::BadgePurple;
     return color::BadgeGreen;
 }
@@ -885,8 +882,7 @@ void render_list(const char* title, const ListItem* items, uint8_t count, uint8_
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
 // Per-channel metric shown in HOME's rotating right-hand slot. The unit shares
 // the value's Body face (px / % / g), so the suffix alone identifies the metric
-// as the display cycles through them. DMX512 channels have no brightness/gamma/
-// order, so they always show their slot count instead of rotating.
+// as the display cycles through them.
 enum class ChMetric : uint8_t { Pixels, Bright, Gamma, Order, Count };
 
 // Advance one metric every kHomeRotateMs — slow enough to read, brisk enough to
@@ -1010,13 +1006,9 @@ void render_home() {
             canvas_fill_round_rect_aa(x0 + dotR - 8, cy + (kChH - 8) / 2, 8, 8, 4, dotcol, row_bg);
         }
         if (!off) {
-            // Rotating metric (right-aligned): DMX512 has no bright/gamma/order,
-            // so it shows its slot count instead of cycling.
+            // Rotating metric (right-aligned).
             char mv[16];
-            if (led::is_dmx(cc.protocol))
-                std::snprintf(mv, sizeof(mv), "%u", cc.pixel_count);
-            else
-                format_ch_metric(cc, static_cast<ChMetric>(metric), mv, sizeof(mv));
+            format_ch_metric(cc, static_cast<ChMetric>(metric), mv, sizeof(mv));
             const int mvw        = body_w(mv);
             const int metricLeft = x0 + rotR - mvw;
 
@@ -1176,11 +1168,9 @@ void render_home() {
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
             // Red: the stored count is more than this refresh rate can drive.
             draw_text_r(kColPixEnd, ty, line, ok ? color::LightGray : color::Red, row_bg);
-            if (!led::is_dmx(cc.protocol)) {
-                std::snprintf(line, sizeof(line), "%u%%",
-                              (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
-                draw_text_r(kColBriEnd, ty, line, color::LightGray, row_bg);
-            }
+            std::snprintf(line, sizeof(line), "%u%%",
+                          (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
+            draw_text_r(kColBriEnd, ty, line, color::LightGray, row_bg);
         }
 
         // Activity LED: red = over capacity, orange = failsafe, green = live DMX.
@@ -2803,14 +2793,13 @@ uint8_t build_network(ListItem* items, OnClick* fns) {
 constexpr size_t kProtocolCount = static_cast<size_t>(led::Protocol::COUNT);
 
 // The channel menu is layout-driven: the visible items depend on the protocol
-// family. DMX512 output ignores the LED-only fields (color order, brightness,
-// grouping, invert, clock), so they are hidden; clocked SPI strips add Clock.
+// family — an Off channel shows only Proto; clocked SPI strips add Clock.
 enum class ChItem : uint8_t {
     Proto,
     Uni,
     Dmx,
-    Pixels,  // labelled "Slots" in DMX512 mode
-    Gaps,    // dead pixels submenu (LED protocols only)
+    Pixels,
+    Gaps,  // dead pixels submenu
     Order,
     Bright,
     Gamma,
@@ -2834,16 +2823,14 @@ uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     out[n++] = ChItem::Uni;
     out[n++] = ChItem::Dmx;
     out[n++] = ChItem::Pixels;
-    if (!led::is_dmx(cc.protocol)) {
-        out[n++] = ChItem::Gaps;
-        out[n++] = ChItem::Order;
-        out[n++] = ChItem::Bright;
-        out[n++] = ChItem::Gamma;
-        out[n++] = ChItem::Group;
-        out[n++] = ChItem::Invert;
-        if (led::is_clocked(cc.protocol)) out[n++] = ChItem::Clock;
-        out[n++] = ChItem::Identify;
-    }
+    out[n++] = ChItem::Gaps;
+    out[n++] = ChItem::Order;
+    out[n++] = ChItem::Bright;
+    out[n++] = ChItem::Gamma;
+    out[n++] = ChItem::Group;
+    out[n++] = ChItem::Invert;
+    if (led::is_clocked(cc.protocol)) out[n++] = ChItem::Clock;
+    out[n++] = ChItem::Identify;
     out[n++] = ChItem::Back;
     return n;
 }
@@ -2878,16 +2865,15 @@ OnClick channel_action(ChItem it) {
         return [](uint8_t) {
             // Upper bound is whatever the bus can clock out within the refresh
             // budget (and DMA buffer) for this protocol — e.g. 512 px WS2815
-            // @60 Hz, 1024 @30 Hz, 512 slots for a DMX universe.
+            // @60 Hz, 1024 @30 Hz.
             const auto& cc     = config::get_channel(s.channel_index);
-            const bool dmx     = led::is_dmx(cc.protocol);
             const int32_t pmax = dmx::channel_max_pixels(s.channel_index);
             int32_t pcur       = cc.pixel_count;
             if (pcur > pmax) pcur = pmax;
-            enter_edit(Field::ChPixels, ValueKind::Int, pcur, 1, pmax, 1, dmx ? "Slots" : "Pixels",
-                       Screen::Menu, s.channel_index);
-            // Live strip ruler while editing (LED protocols only).
-            if (!dmx) dmx::set_pixel_preview(s.channel_index, static_cast<uint16_t>(pcur));
+            enter_edit(Field::ChPixels, ValueKind::Int, pcur, 1, pmax, 1, "Pixels", Screen::Menu,
+                       s.channel_index);
+            // Live strip ruler while editing.
+            dmx::set_pixel_preview(s.channel_index, static_cast<uint16_t>(pcur));
         };
     case ChItem::Order:
         return [](uint8_t) {
@@ -2949,7 +2935,6 @@ OnClick channel_action(ChItem it) {
 
 uint8_t build_channel(ListItem* items, OnClick* fns) {
     const auto& cc = config::get_channel(s.channel_index);
-    const bool dmx = led::is_dmx(cc.protocol);
     std::snprintf(g_channel_title, sizeof(g_channel_title), "CHANNEL %u", s.channel_index + 1);
 
     static char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8],
@@ -2977,7 +2962,7 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
         case ChItem::Proto: items[i] = { "Proto", vproto }; break;
         case ChItem::Uni: items[i] = { "Uni", vuni }; break;
         case ChItem::Dmx: items[i] = { "DMX", vdmx }; break;
-        case ChItem::Pixels: items[i] = { dmx ? "Slots" : "Pixels", vpix }; break;
+        case ChItem::Pixels: items[i] = { "Pixels", vpix }; break;
         case ChItem::Gaps: items[i] = { "Dead px", vgaps }; break;
         case ChItem::Order: items[i] = { "Order", vorder }; break;
         case ChItem::Bright: items[i] = { "Bright", vbri }; break;

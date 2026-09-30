@@ -12,7 +12,6 @@ set(LED_PROTOCOLS_SRC
     ${REPO}/components/led_protocols/src/encoder_frame.cpp
     ${REPO}/components/led_protocols/src/encoder_nrz.cpp
     ${REPO}/components/led_protocols/src/encoder_spi.cpp
-    ${REPO}/components/led_protocols/src/encoder_dmx.cpp
 )
 set(FIRMWARE_INCLUDES
     ${REPO}/components/artnet/include

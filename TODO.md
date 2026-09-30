@@ -4,6 +4,10 @@ Improvement backlog, grouped by value. Per [AGENT.md](AGENT.md), features land
 only from this list. Items are unordered within a section; suggested first
 picks are marked ★.
 
+DMX512 output was removed (2026-09-30): it moves to a DMX node firmware forked
+from this project at `d4f0f77`, the last commit that still has it. DMX-output
+items (44 Hz pacing, ArtNzs routing, RDM) belong to that fork.
+
 ## Audit 2026-07 — bug fixes
 
 Findings from the July 2026 full-project audit. Small, low-risk, one `fix/` PR.
@@ -179,12 +183,6 @@ From the September 2026 functional/technical review.
       rate rises (1024 px @30 Hz → 512 @60 Hz) and nothing restores it when
       going back to 30 Hz. Keep the requested count; clamp only what is
       emitted (and flag the channel over budget in the UIs).
-- [ ] ★ **One 512-slot DMX512 output drags every LED output to 44 Hz** — the
-      render loop paces on `max(period, frame_emit_us())` (`main.cpp`), and a
-      full DMX frame is ~22.7 ms. Minimum: say it in every UI next to the DMX
-      slot count ("512 slots caps the whole box at 44 Hz; 100 slots ≈ 4.5 ms").
-      Better: let a DMX frame straddle LED frames (encoder keeps its slot
-      cursor across loop buffers) so DMX runs at its own rate.
 - [ ] ★ **FSEQ playback tears** — `fseq_player` injects through
       `dmx::inject_universe()`, which writes *both* banks while `render_task`
       reads the front one (the function is documented as a bench path). Route
@@ -204,8 +202,6 @@ From the September 2026 functional/technical review.
 - [x] **Failsafe "scene" ignores the scene's channel mask** — every lost
       channel plays it (`dmx_manager.cpp` decode path). Honour the mask (or
       document that failsafe uses the scene as a pattern only).
-- [ ] **Scenes silently skip DMX512 outputs** — say so in the web/TFT scene
-      editor (grey the DMX channels in the target-channel chips).
 - [ ] **Scene clock wraps after 49.7 days** — effects run on
       `uint32_t(esp_timer/1000)`; a permanent install sees one jump. Use a
       64-bit phase or wrap it on a period the effects are continuous over.
@@ -290,7 +286,7 @@ From the September 2026 functional/technical review.
       console, TFT editor steps by 30). xLights commonly exports 20/40 fps
       (60 Hz rendering then judders) and Europe needs 25/50 Hz for
       camera-friendly output. The code is already rate-generic (period =
-      1e6/rate, budgets, DMX min(rate, 44 Hz)); only the validators and the
+      1e6/rate, budgets); only the validators and the
       editors change, and the pixel budget follows. Measured on the board
       (2026-09-30): encode ≈ 23 µs per pixel row for 8 WS2815 outputs —
       8 × 235 px (the 120 Hz budget) encodes in ≈ 5.5 ms for an 8.3 ms
@@ -481,14 +477,12 @@ Handled: `ArtDmx`, `ArtPoll`, `ArtPollReply` (emitted), `ArtSync`,
 reboot applies), `ArtTrigger` (global KeyShow plays/stops the standalone
 scenes), `ArtTimeCode` (slaves a running FSEQ playback to the desk clock,
 100 ms drift tolerance). Validated + counted in `stats artnet_ctrl_rx` but
-not yet consumed: `ArtNzs` (payload not routed — alternate-start-code
-storage and DMX512 encoder interleaving needed), `ArtCommand`.
+not yet consumed: `ArtNzs` (payload not routed — no DMX output here; the DMX
+node firmware owns it), `ArtCommand`.
 Remaining candidates:
 
 | Opcode | Value | What it brings |
 |---|---|---|
-| `ArtNzs` routing | 0x5100 | Store alternate-start-code frames + emit them on DMX512 channels (encoder interleaving). |
 | `ArtCommand` consumer | 0x2400 | Mirror the UART console (`key=value`). |
 | `ArtDiagData` | 0x2300 | Emit diagnostics to subscribed controllers (we'd be a sender; ArtPoll already tells us who wants them). |
-| `ArtTodRequest/TodData/TodControl/Rdm/RdmSub` | 0x8000–0x8400 | RDM over ArtNet — only meaningful for DMX512 output channels, and needs RDM on the wire (driver work). Large. |
 | `ArtFirmwareMaster/Reply` | 0xF200 / 0xF300 | OTA via ArtNet — prefer web OTA; note for completeness. |

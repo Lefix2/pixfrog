@@ -33,7 +33,8 @@ enum class Protocol : uint8_t {
     APA102  = 6,
     SK9822  = 7,
     LPD8806 = 8,
-    DMX512  = 9,
+    // 9 was DMX512 output — moved to the DMX node firmware (a fork). NVS blobs
+    // holding 9 load as Off (config::sanitize_channel).
     COUNT,
 };
 
@@ -50,17 +51,10 @@ constexpr bool is_rgbw(Protocol p) {
     return p == Protocol::SK6812 || p == Protocol::WS2814;
 }
 
-// DMX512 raw output: the channel emits one DMX universe (8N2 @ 250 kbps) on its
-// DATA bit rather than encoding RGB(W) pixels. Source bytes are passed through.
-constexpr bool is_dmx(Protocol p) {
-    return p == Protocol::DMX512;
-}
-
-// Source bytes per logical "pixel". For DMX512 one "pixel" is a single DMX slot.
-// A disabled channel maps to 0 bytes so it consumes neither buffer nor universe.
+// Source bytes per pixel. A disabled channel maps to 0 bytes so it consumes
+// neither buffer nor universe.
 constexpr size_t bytes_per_pixel(Protocol p) {
     if (is_off(p)) return 0;
-    if (is_dmx(p)) return 1;
     return is_rgbw(p) ? 4 : 3;
 }
 
@@ -278,7 +272,7 @@ size_t encoded_size_samples(const ChannelDesc& desc);
 // Unlike per-channel encode_channel calls (read-modify-write over the whole
 // frame region, once per channel), the NRZ channels are merged and written
 // with pure stores — `out_samples` needs NO pre-zeroing and [0, return value)
-// is fully initialized on return. Clocked SPI and DMX512 channels are OR-ed
+// is fully initialized on return. Clocked SPI channels are OR-ed
 // on top. Off channels and null pixel pointers are skipped.
 //
 // `descs` / `pixels` are parallel arrays of `channel_count` entries.

@@ -235,9 +235,9 @@
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 22px">
               <div style="grid-column:span 2">
-                <label style="display:block;font:500 11px 'DM Mono';letter-spacing:.06em;color:#a9aca4;margin-bottom:7px" data-i18n="LED / DMX PROTOCOL">LED / DMX PROTOCOL</label>
+                <label style="display:block;font:500 11px 'DM Mono';letter-spacing:.06em;color:#a9aca4;margin-bottom:7px" data-i18n="LED PROTOCOL">LED PROTOCOL</label>
                 <select id="cd-proto" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'Figtree'">
-                  <option value="WS2812B">WS2812B</option><option value="WS2815">WS2815</option><option value="SK6812">SK6812 (RGBW)</option><option value="APA102">APA102 (DATA+CLK)</option><option value="SK9822">SK9822 (DATA+CLK)</option><option value="LPD8806">LPD8806 (DATA+CLK)</option><option value="DMX512">DMX512</option><option value="Off" data-i18n="Off">Off</option>
+                  <option value="WS2812B">WS2812B</option><option value="WS2815">WS2815</option><option value="SK6812">SK6812 (RGBW)</option><option value="APA102">APA102 (DATA+CLK)</option><option value="SK9822">SK9822 (DATA+CLK)</option><option value="LPD8806">LPD8806 (DATA+CLK)</option><option value="Off" data-i18n="Off">Off</option>
                 </select>
               </div>
 
@@ -615,7 +615,7 @@ function createIcons(root){
 }
 
 /* ─────────── constants & state ─────────── */
-var PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806','DMX512'];
+var PROTOCOLS=['Off','WS2815','WS2812B','WS2811','SK6812','WS2814','APA102','SK9822','LPD8806'];
 var CLOCKED=['APA102','SK9822','LPD8806'];
 // Achievable bus rates (16 MHz / even divisor). Snap any stored value to the
 // nearest so the dropdown always lands on a real option.
@@ -684,7 +684,7 @@ var FR={
   'Firmware update rolled back':'Mise à jour du firmware annulée','Acknowledge':'Acquitter','last rollback':'dernier rollback','none':'aucun',
   '{v} on {slot} was rejected ({why}) — running {run}':'{v} sur {slot} a été rejeté ({why}) — version active {run}',
   'Dead pixels':'Pixels morts','first LED · count':'première LED · nombre','Add dead pixels':'Ajouter des pixels morts','Remove':'Retirer',
-  'LED / DMX PROTOCOL':'PROTOCOLE LED / DMX','Pixels':'Pixels','DMX slots':'Slots DMX','Color order':'Ordre des couleurs',
+  'LED PROTOCOL':'PROTOCOLE LED','Pixels':'Pixels','Color order':'Ordre des couleurs',
   'Art-Net address':'Adresse Art-Net','= absolute universe':'= univers absolu','DMX start address':'Adresse DMX de départ',
   'Max brightness':'Luminosité max','Pixel grouping':'Groupement de pixels','Gamma ×10':'Gamma ×10',
   'Clock frequency':'Fréquence horloge','White balance':'Balance des blancs','Reverse direction':'Inverser le sens',
@@ -732,7 +732,7 @@ var FR={
   'I understand this action is irreversible.':'Je comprends que cette action est irréversible.',
   'Resetting…':'Réinitialisation…','restoring factory configuration':'restauration de la configuration d’usine',
   'Reboot the box':'Redémarrer le boîtier',
-  'LED / DMX output will be interrupted during the reboot. All saved settings are kept.':'La sortie LED / DMX sera interrompue pendant le redémarrage. Tous les réglages enregistrés sont conservés.',
+  'LED output will be interrupted during the reboot. All saved settings are kept.':'La sortie LED sera interrompue pendant le redémarrage. Tous les réglages enregistrés sont conservés.',
   'Rebooting…':'Redémarrage…','the network link will reset':'le lien réseau va se réinitialiser',
   'Title':'Titre','Description':'Description','Acknowledgement':'Acquittement','Confirm':'Confirmer',
   'Identifying channel ':'Identification canal ','Outputs stopped':'Sorties arrêtées',
@@ -1026,7 +1026,7 @@ function fseqRow(name,active){
     +'<span style="padding:0 18px;font:500 12px \'DM Mono\';color:#8e9189">—</span>'
     +'<span style="display:flex;gap:6px"><button data-fseq-play="'+esc(name)+'" style="width:30px;height:30px;border-radius:0;background:#3fd463;border:1px solid #3fd463;color:#08170d;display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="play" class="ic14"></i></button></span></div>';
 }
-function chanSlots(c){ return c.protoRaw==='DMX512'? c.pixels : c.pixels*3; }
+function chanSlots(c){ return c.pixels*3; }
 function chanSpan(c){ return Math.max(1,Math.ceil(chanSlots(c)/512)); }
 function totalUniverses(){ var n=0; CHANS.forEach(function(c){ if(c.protoRaw!=='Off') n+=chanSpan(c); }); return n; }
 function patchRow(n,proto,range,dmx){
@@ -1042,7 +1042,7 @@ function buildPatch(){
     if(c.protoRaw==='Off'){ rows+=patchRow(c.n,'—','—','—'); return; }
     var span=chanSpan(c), u=c.universe, end=u+span-1;
     if(end>maxEnd) maxEnd=end;
-    rows+=patchRow(c.n,c.proto,span>1?('U'+u+'–U'+end):('U'+u),c.protoRaw==='DMX512'?c.dmx:'1');
+    rows+=patchRow(c.n,c.proto,span>1?('U'+u+'–U'+end):('U'+u),c.dmx);
   });
   var nf2=el('patch-nextfree'); if(nf2) nf2.textContent=(maxEnd+1);
   return rows;
@@ -1080,7 +1080,7 @@ function selectChan(i){
   function v(id,val){ var e=el(id); if(e) e.value=val; }
   function k(id,val){ var e=el(id); if(e) e.checked=!!val; }
   v('cd-proto',c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
-  var pe=el('cd-pix'); if(pe){ pe.max=c.protoRaw==='DMX512'?512:1024; pe.min=1; }
+  var pe=el('cd-pix'); if(pe){ pe.max=1024; pe.min=1; }
   renderGaps(); updatePixWarn();
   v('cd-order',c.order); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
   v('cd-clk',snapClk(c.clk)); v('cd-gam',c.gam); v('cd-wb',c.wb);
@@ -1100,7 +1100,7 @@ function setUniFields(u){ u=u||0; var e; if((e=el('cd-net'))) e.value=(u>>8)&0x7
 function updateUniFlat(u){ if(u==null) u=readUni(); var f=el('cd-uni-flat'); if(f) f.textContent=u; }
 function updateChanVis(){
   var sel=el('cd-proto'); if(!sel) return;
-  var p=sel.value, off=p==='Off', dmx=p==='DMX512', clk=CLOCKED.indexOf(p)>=0;
+  var p=sel.value, off=p==='Off', clk=CLOCKED.indexOf(p)>=0;
   var f=el('cd-fields'); if(f) f.style.display=off?'none':'grid';
   if(off) return;
   setOrderOptions(p);
@@ -1108,10 +1108,9 @@ function updateChanVis(){
   // row (label + switch side by side). 'flex' on the others put the input beside
   // the label and broke alignment.
   function show(id,vis){ var e=el(id); if(e) e.style.display=vis?(id==='cd-row-inv'?'flex':'block'):'none'; }
-  show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
-  show('cd-row-inv',!dmx); show('cd-row-gaps',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
+  show('cd-row-clk',clk);
   var lbl=el('cd-pixlabel'); if(lbl){ var cc=CHANS[curChan]; var mx=cc&&cc.maxpx?cc.maxpx:1024;
-    lbl.textContent=(dmx?t('DMX slots'):t('Pixels'))+' (max '+mx+' @ '+REFRESH+' Hz)'; }
+    lbl.textContent=t('Pixels')+' (max '+mx+' @ '+REFRESH+' Hz)'; }
   updatePixWarn();
 }
 // The stored count is kept above the budget (a lower rate brings it back);
@@ -1139,14 +1138,14 @@ function renderGaps(){
 function pxLabel(c){
   if(c.protoRaw==='Off') return 'Off';
   var n=c.pixels>c.maxpx?(c.pixels+'→'+c.maxpx):String(c.pixels);
-  return n+(c.protoRaw==='DMX512'?' sl':' px');
+  return n+' px';
 }
 function readChanEditor(){
   var c=CHANS[curChan]; if(!c) return;
   function nv(id){ var e=el(id); return e?parseInt(e.value,10)||0:0; }
   c.protoRaw=el('cd-proto').value; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
   c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx');
-  c.pixels=Math.max(1,Math.min(nv('cd-pix'),c.protoRaw==='DMX512'?512:1024));
+  c.pixels=Math.max(1,Math.min(nv('cd-pix'),1024));
   c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
   c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
   (c.gaps||[]).forEach(function(g,k){ var p=nv('cd-gap-p-'+k), l=nv('cd-gap-l-'+k); if(p>=1) g[0]=Math.min(p,1024); if(l>=1) g[1]=Math.min(l,1024); });
@@ -1369,8 +1368,8 @@ function aggTile(devName,n,proto,px,uni,s){
 function tilesForChans(devName,chans,live){
   return (chans||[]).map(function(c,i){
     var st=(!c||c.protocol==='Off')?'off':((live&&live[i]&&live[i].failsafe)?'failsafe':'active');
-    var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
-    return aggTile(devName,i+1,off?'—':c.protocol,off?'Off':(dmx?c.pixel_count+' sl':c.pixel_count+' px'),off?'—':'U'+c.universe_start,ST[st]);
+    var off=c.protocol==='Off';
+    return aggTile(devName,i+1,off?'—':c.protocol,off?'Off':c.pixel_count+' px',off?'—':'U'+c.universe_start,ST[st]);
   }).join('');
 }
 function offlineTiles(devName){
@@ -1416,7 +1415,7 @@ function buildChrome(){
 
 /* ─────────── config load ─────────── */
 function buildChan(c,i){
-  var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
+  var off=c.protocol==='Off';
   return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
     order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),
     state:'off',px:pxLabel({protoRaw:c.protocol,pixels:c.pixel_count,maxpx:c.max_pixels||1024}),uni:off?'—':'U'+c.universe_start,
@@ -1587,7 +1586,7 @@ function openModal(kind,opt){
   }:{
     kind:kind,icon:'rotate-cw',accent:'#e8b23a',bg:'rgba(232,178,58,.14)',bd:'rgba(232,178,58,.32)',
     title:t('Reboot the box'),
-    desc:t('LED / DMX output will be interrupted during the reboot. All saved settings are kept.'),
+    desc:t('LED output will be interrupted during the reboot. All saved settings are kept.'),
     confirm:t('Reboot'),confirmIcon:'rotate-cw',confBg:'#e8b23a',confText:'#08170d',
     ack:null,prog:t('Rebooting…'),progSub:t('the network link will reset')
   };

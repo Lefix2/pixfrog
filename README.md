@@ -1,6 +1,6 @@
 # pixfrog
 
-> High-performance ArtNet / sACN → LED driver for ESP32-P4. 8 channels × 2 lines (DATA + CLOCK), supporting 1-wire protocols (WS2815, WS2812B, SK6812…), clocked protocols (APA102, SK9822, LPD8806) — or a DMX512 universe output per channel.
+> High-performance ArtNet / sACN → LED driver for ESP32-P4. 8 channels × 2 lines (DATA + CLOCK), supporting 1-wire protocols (WS2815, WS2812B, SK6812…), clocked protocols (APA102, SK9822, LPD8806). DMX512 output lives in the DMX node firmware (a separate project forked from this one).
 
 ## Features
 

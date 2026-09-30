@@ -78,8 +78,7 @@ static void test_bytes_per_pixel() {
     EXPECT_EQ(bytes_per_pixel(Protocol::WS2812B), 3);
     EXPECT_EQ(bytes_per_pixel(Protocol::SK6812), 4);
     EXPECT_EQ(bytes_per_pixel(Protocol::WS2814), 4);
-    EXPECT_EQ(bytes_per_pixel(Protocol::DMX512), 1);  // one byte per DMX slot
-    EXPECT_EQ(bytes_per_pixel(Protocol::Off), 0);     // disabled → no bytes
+    EXPECT_EQ(bytes_per_pixel(Protocol::Off), 0);  // disabled → no bytes
 }
 
 // ── Off (disabled channel) ──────────────────────────────────────────────────
@@ -97,93 +96,6 @@ static void test_off_produces_nothing() {
     const uint8_t px[1] = { 0xAB };
     EXPECT_EQ(encode_channel(d, px, out, 8), 0);  // writes nothing
     EXPECT_EQ(out[0], 0xFFFF);                    // buffer untouched
-}
-
-// ── DMX512 output encoder ───────────────────────────────────────────────────
-
-static void test_dmx_size() {
-    ChannelDesc d{};
-    d.protocol     = Protocol::DMX512;
-    d.pixel_count  = 512;
-    d.bus_bit_data = 0;
-
-    // BREAK(1536) + MAB(192) + (512 slots + 1 start code) × 11 bits × 64 samples.
-    const size_t expected = 1536 + 192 + (512 + 1) * 11 * 64;
-    EXPECT_EQ(encoded_size_samples(d), expected);
-}
-
-static void test_dmx_waveform() {
-    ChannelDesc d{};
-    d.protocol      = Protocol::DMX512;
-    d.pixel_count   = 1;  // single slot + null start code
-    d.bus_bit_data  = 0;  // DATA+ = bit 0
-    d.bus_bit_clock = 1;  // DATA− (complement) = bit 1
-
-    const uint8_t slots[1] = { 0x01 };  // LSB set → only data bit 0 is high
-    const size_t cap       = encoded_size_samples(d);
-    std::vector<uint16_t> out(cap, 0);
-    const size_t written = encode_channel(d, slots, out.data(), cap);
-    EXPECT_EQ(written, cap);
-
-    constexpr int kBit   = 64;
-    constexpr int kBreak = 1536;
-    constexpr int kMab   = 192;
-
-    // The complement line (bit 1) must always be the inverse of DATA (bit 0).
-    for (size_t i = 0; i < cap; ++i)
-        EXPECT_EQ((out[i] & 1) ^ ((out[i] >> 1) & 1), 1);
-
-    // BREAK is entirely LOW.
-    for (int i = 0; i < kBreak; ++i)
-        EXPECT_EQ(out[i] & 1, 0);
-    // MAB is entirely HIGH.
-    for (int i = kBreak; i < kBreak + kMab; ++i)
-        EXPECT_EQ(out[i] & 1, 1);
-
-    // Start code 0x00: start bit LOW, then 8 data bits LOW, then 2 stop HIGH.
-    const int sc = kBreak + kMab;  // first sample of the start-code character
-    for (int i = 0; i < 9 * kBit; ++i)
-        EXPECT_EQ(out[sc + i] & 1, 0);  // start + 8 zero data bits
-    for (int i = 9 * kBit; i < 11 * kBit; ++i)
-        EXPECT_EQ(out[sc + i] & 1, 1);  // 2 stop bits
-
-    // Slot value 0x01: start LOW, data bit0 HIGH (LSB first), bits1..7 LOW.
-    const int sl = sc + 11 * kBit;
-    for (int i = 0; i < kBit; ++i)
-        EXPECT_EQ(out[sl + i] & 1, 0);  // start bit
-    for (int i = kBit; i < 2 * kBit; ++i)
-        EXPECT_EQ(out[sl + i] & 1, 1);  // data bit 0 = 1
-    for (int i = 2 * kBit; i < 9 * kBit; ++i)
-        EXPECT_EQ(out[sl + i] & 1, 0);  // data bits 1..7 = 0
-}
-
-static void test_dmx_or_into_buffer() {
-    ChannelDesc d{};
-    d.protocol      = Protocol::DMX512;
-    d.pixel_count   = 4;
-    d.bus_bit_data  = 6;  // some other channel's DATA bit
-    d.bus_bit_clock = 7;  // its complement bit
-
-    const uint8_t slots[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
-    const size_t cap       = encoded_size_samples(d);
-    std::vector<uint16_t> out(cap, 0);
-
-    const uint16_t foreign_mask = (1u << 0) | (1u << 3) | (1u << 14);
-    for (auto& s : out)
-        s = foreign_mask;
-
-    encode_channel(d, slots, out.data(), cap);
-
-    // OR-only semantics: foreign bits must be preserved, and the DATA/complement
-    // pair must always be mutually exclusive.
-    const uint16_t data_mask = static_cast<uint16_t>(1u << 6);
-    const uint16_t comp_mask = static_cast<uint16_t>(1u << 7);
-    for (size_t i = 0; i < cap; ++i) {
-        EXPECT_TRUE((out[i] & foreign_mask) == foreign_mask);
-        const bool data = out[i] & data_mask;
-        const bool comp = out[i] & comp_mask;
-        EXPECT_TRUE(data != comp);  // exactly one of the pair is asserted
-    }
 }
 
 // ── NRZ encoder: one pixel, verify exact bit layout ────────────────────────
@@ -556,10 +468,10 @@ static void test_frame_two_groups_sk6812() {
 }
 
 static void test_frame_full_mix() {
-    // NRZ + clocked + DMX + Off + zero-length on one bus.
+    // NRZ + clocked + Off + zero-length on one bus.
     std::vector<ChannelDesc> descs{
         make_desc(0, Protocol::WS2815, 256), make_desc(1, Protocol::APA102, 100),
-        make_desc(2, Protocol::DMX512, 512), make_desc(3, Protocol::Off, 99),
+        make_desc(2, Protocol::SK9822, 300), make_desc(3, Protocol::Off, 99),
         make_desc(4, Protocol::SK6812, 80),  make_desc(5, Protocol::LPD8806, 50),
         make_desc(6, Protocol::WS2812B, 0),  make_desc(7, Protocol::WS2811, 1024),
     };
@@ -572,7 +484,7 @@ static void test_frame_full_mix() {
 static void test_frame_fuzz() {
     const Protocol protos[] = { Protocol::Off,    Protocol::WS2815,  Protocol::WS2812B,
                                 Protocol::WS2811, Protocol::SK6812,  Protocol::WS2814,
-                                Protocol::APA102, Protocol::LPD8806, Protocol::DMX512 };
+                                Protocol::APA102, Protocol::LPD8806, Protocol::SK9822 };
     for (int iter = 0; iter < 25; ++iter) {
         std::vector<ChannelDesc> descs;
         std::vector<std::vector<uint8_t>> px;
@@ -590,35 +502,8 @@ static void test_frame_fuzz() {
     }
 }
 
-static void test_frame_all_dmx() {
-    // 8 DMX channels, ragged slot counts incl. 0 (BREAK+MAB+start code only).
-    std::vector<ChannelDesc> descs;
-    std::vector<std::vector<uint8_t>> px;
-    const uint16_t slot_counts[8] = { 512, 1, 0, 256, 512, 100, 511, 7 };
-    for (size_t ch = 0; ch < 8; ++ch) {
-        descs.push_back(make_desc(ch, Protocol::DMX512, slot_counts[ch]));
-        px.push_back(random_pixels(descs.back()));
-    }
-    check_frame_equivalence(descs, px, __LINE__);
-}
-
-static void test_frame_dmx_dominant() {
-    // DMX region (363 k samples) larger than the NRZ region → DMX must win
-    // the pure-store pass and the NRZ groups OR over it.
-    std::vector<ChannelDesc> descs{
-        make_desc(0, Protocol::DMX512, 512),
-        make_desc(1, Protocol::WS2815, 256),
-        make_desc(2, Protocol::SK6812, 100),
-        make_desc(3, Protocol::APA102, 60),
-    };
-    std::vector<std::vector<uint8_t>> px;
-    for (const auto& d : descs)
-        px.push_back(random_pixels(d));
-    check_frame_equivalence(descs, px, __LINE__);
-}
-
 static void test_frame_nrz_with_clocked() {
-    // NRZ store group is the largest extent (no DMX) and clocked channels fit
+    // NRZ store group is the largest extent and clocked channels fit
     // inside it → exercises the fused single-pass NRZ+clocked store path. Mixed
     // NRZ timings (WS2815 {5,15} + WS2812B {6,11}) + APA102/SK9822/LPD8806, with
     // ragged lengths so a clocked channel ends before the NRZ store group.
@@ -696,41 +581,6 @@ static void test_perf_frame_8x512() {
     }
 }
 
-// 8 full DMX universes: the largest frame region (363 k samples). The sweep
-// must keep this a single store pass, not 8 RMW traversals.
-static void test_perf_frame_8xdmx512() {
-    std::vector<ChannelDesc> descs;
-    std::vector<std::vector<uint8_t>> px;
-    std::vector<const uint8_t*> ptrs;
-    for (size_t ch = 0; ch < 8; ++ch) {
-        descs.push_back(make_desc(ch, Protocol::DMX512, 512));
-        px.push_back(random_pixels(descs.back()));
-    }
-    for (const auto& p : px)
-        ptrs.push_back(p.data());
-
-    size_t cap = 0;
-    for (const auto& d : descs)
-        cap = std::max(cap, encoded_size_samples(d));
-    std::vector<uint16_t> samples(cap);
-
-    constexpr int kReps = 20;
-    auto t0             = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < kReps; ++i)
-        encode_frame(descs.data(), ptrs.data(), descs.size(), samples.data(), cap);
-    auto t1 = std::chrono::high_resolution_clock::now();
-
-    const double per_ms = std::chrono::duration<double, std::milli>(t1 - t0).count() / kReps;
-    std::printf("perf: encode_frame 8×DMX512 = %.3f ms/call\n", per_ms);
-
-    if (per_ms < 8.0)
-        g_pass++;
-    else {
-        g_fail++;
-        std::fprintf(stderr, "FAIL perf: encode_frame 8×DMX512 %.3f ms >= 8 ms\n", per_ms);
-    }
-}
-
 // ── Gamma / white-balance LUT ───────────────────────────────────────────────
 
 static void test_lut_identity() {
@@ -799,9 +649,6 @@ int main() {
     test_timing_apa102_clock();
     test_bytes_per_pixel();
     test_off_produces_nothing();
-    test_dmx_size();
-    test_dmx_waveform();
-    test_dmx_or_into_buffer();
     test_nrz_one_pixel_ws2815();
     test_nrz_or_into_buffer();
     test_gap_helpers();
@@ -815,12 +662,9 @@ int main() {
     test_frame_two_groups_sk6812();
     test_frame_full_mix();
     test_frame_fuzz();
-    test_frame_all_dmx();
-    test_frame_dmx_dominant();
     test_frame_nrz_with_clocked();
     test_frame_capacity_too_small();
     test_perf_frame_8x512();
-    test_perf_frame_8xdmx512();
     test_lut_identity();
     test_lut_zero_fill_is_identity();
     test_lut_gamma22();

@@ -319,6 +319,11 @@ struct ChannelConfig {
 // Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
 // 0 would silently black a colour out. Called after every NVS load.
 inline void sanitize_channel(ChannelConfig& c) {
+    // Protocol 9 was DMX512 output, moved to the DMX node firmware: such a
+    // channel (or any unknown value) comes back disabled rather than emitting
+    // its slot count as LED pixels.
+    if (static_cast<uint8_t>(c.protocol) >= static_cast<uint8_t>(led::Protocol::COUNT))
+        c.protocol = led::Protocol::Off;
     // A clock under led::kMinClockHz inflates a clocked frame past
     // kMaxSamplesPerFrame, and the output backend then refuses every frame —
     // the channel goes dark. 0 means a pre-clock NVS blob rather than a slow

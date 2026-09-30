@@ -256,14 +256,14 @@ config::ChannelConfig effective_channel(size_t ch);
 
 // Pixels on the wire for `cc`'s (live) pixel_count: live + dead (gaps).
 uint32_t physical_pixels(const config::ChannelConfig& cc);
-// Dead-pixel runs in use on channel `ch` (0 for DMX512 / Off channels).
+// Dead-pixel runs in use on channel `ch` (0 for an Off channel).
 size_t channel_gap_count(size_t ch);
 
 // Physical emission time (µs) of the current frame: the longest configured
 // channel's wire time (all channels emit in parallel on the shared bus). The
 // render loop never paces faster than this, so a channel whose frame outlasts
-// the configured period — a DMX universe at 60 Hz sits at its ~44 Hz, ~22.7 ms
-// ceiling — emits intact at its own rate instead of being over-submitted.
+// the configured period (a long strip at a high refresh) emits intact at its
+// own rate instead of being over-submitted.
 uint64_t frame_emit_us();
 
 // ────────────────────────────────────────────────────────────────────────────

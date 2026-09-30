@@ -264,8 +264,8 @@ static bool require_auth(httpd_req_t* req) {
 
 // ── Protocol / color-order name tables ──────────────────────────────────────
 
-static const char* const kProtoNames[] = { "Off",    "WS2815", "WS2812B", "WS2811",  "SK6812",
-                                           "WS2814", "APA102", "SK9822",  "LPD8806", "DMX512" };
+static const char* const kProtoNames[] = { "Off",    "WS2815", "WS2812B", "WS2811", "SK6812",
+                                           "WS2814", "APA102", "SK9822",  "LPD8806" };
 static_assert(sizeof(kProtoNames) / sizeof(kProtoNames[0]) ==
               static_cast<size_t>(led::Protocol::COUNT));
 
@@ -766,6 +766,9 @@ static void restore_channel(size_t i, cJSON* jc) {
         const int pv = lookup(kProtoNames, static_cast<size_t>(led::Protocol::COUNT),
                               it->valuestring);
         if (pv >= 0) c.protocol = static_cast<led::Protocol>(pv);
+        // A backup from before DMX512 output moved to the DMX node firmware:
+        // that channel described a DMX universe, not a strip — disable it.
+        if (std::strcmp(it->valuestring, "DMX512") == 0) c.protocol = led::Protocol::Off;
     }
     it = cJSON_GetObjectItemCaseSensitive(jc, "color_order");
     if (cJSON_IsString(it)) {
