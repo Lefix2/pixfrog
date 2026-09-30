@@ -105,6 +105,11 @@
 
       <!-- ===== DASHBOARD ===== -->
       <div data-screen="dashboard">
+        <div id="rb-banner" style="display:none;align-items:center;gap:12px;margin-bottom:13px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.35);border-radius:0;padding:12px 16px;color:#e8b23a">
+          <i data-lucide="triangle-alert" class="ic20"></i>
+          <div style="flex:1;min-width:0"><div style="font:700 14px 'Figtree';color:#edeeea" data-i18n="Firmware update rolled back">Firmware update rolled back</div><div id="rb-text" style="font:500 12px 'DM Mono';color:#e8b23a;margin-top:3px"></div></div>
+          <button data-action="rollback-ack" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;padding:8px 13px;font:500 12.5px 'DM Mono';cursor:pointer;flex:none" data-i18n="Acknowledge">Acknowledge</button>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:13px">
           <div style="grid-column:span 3;background:#121412;border:1px solid #262826;border-radius:0;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
             <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:#80837c" data-i18n="NETWORK LINK">NETWORK LINK</span><span style="color:#6f726c;display:flex"><i data-lucide="network" class="ic16"></i></span></div>
@@ -468,6 +473,7 @@
               <div style="display:flex;justify-content:space-between"><span style="color:#a9aca4">IDF</span><span data-live="d-idf">—</span></div>
               <div style="display:flex;justify-content:space-between"><span style="color:#a9aca4" data-i18n="partition">partition</span><span data-live="d-part">—</span></div>
               <div style="display:flex;justify-content:space-between"><span style="color:#a9aca4" data-i18n="last reset">last reset</span><span data-live="d-reset" style="color:#e8b23a">—</span></div>
+              <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#a9aca4;flex:none" data-i18n="last rollback">last rollback</span><span data-live="d-rollback" style="text-align:right">—</span></div>
             </div>
           </div>
         </div>
@@ -675,6 +681,8 @@ var FR={
   'No .fseq file on the microSD card.':'Aucun fichier .fseq sur la carte microSD.',
   'Channel':'Canal','Active':'Actif','Failsafe':'Failsafe','Off':'Désactivé',
   'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
+  'Firmware update rolled back':'Mise à jour du firmware annulée','Acknowledge':'Acquitter','last rollback':'dernier rollback','none':'aucun',
+  '{v} on {slot} was rejected ({why}) — running {run}':'{v} sur {slot} a été rejeté ({why}) — version active {run}',
   'Dead pixels':'Pixels morts','first LED · count':'première LED · nombre','Add dead pixels':'Ajouter des pixels morts','Remove':'Retirer',
   'LED / DMX PROTOCOL':'PROTOCOLE LED / DMX','Pixels':'Pixels','DMX slots':'Slots DMX','Color order':'Ordre des couleurs',
   'Art-Net address':'Adresse Art-Net','= absolute universe':'= univers absolu','DMX start address':'Adresse DMX de départ',
@@ -1174,6 +1182,9 @@ function loop(){ cv.forEach(drawSpark); raf=requestAnimationFrame(loop); }
 function pollStatus(){
   api('GET','/api/status').then(function(s){
     var link=!!s.link;
+    var rbb=el('rb-banner');
+    if(rbb){ var rb=s.rollback; rbb.style.display=rb?'flex':'none';
+      if(rb) el('rb-text').textContent=t('{v} on {slot} was rejected ({why}) — running {run}').replace('{v}',rb.rejected_version).replace('{slot}',rb.rejected_slot).replace('{why}',rb.reset_reason).replace('{run}',rb.running_version); }
     setLive('fps',s.fps);
     setLive('hdr-link',t(link?'link':'offline'));
     setLive('link-big',link?'100M':'down');
@@ -1242,6 +1253,7 @@ function pollDiag(){
     setLive('d-sacn',nf(x.sacn_rx)); setLive('d-bad',nf(x.bad_rx));
     setLive('d-uptime',fmtUptime(s.uptime_s)); setLive('d-ver',s.version);
     setLive('d-idf',s.idf); setLive('d-part',s.partition); setLive('d-reset',s.reset_reason);
+    var rb=s.last_rollback; setLive('d-rollback',rb?(rb.rejected_version+' ('+rb.rejected_slot+', '+rb.reset_reason+')'):t('none'));
     var box=el('d-chans');
     if(box){ box.innerHTML=(d.channels||[]).map(function(c,i){
       var ok=c.capacity_ok, col=ok?'#3fd463':'#ec8480';
@@ -1608,6 +1620,7 @@ function closeModal(){ if(md.bd) md.bd.style.display='none'; clearTimeout(modalT
 /* ─────────── actions ─────────── */
 function doAction(a){
   if(a==='save'){ saveAll(); }
+  else if(a==='rollback-ack'){ api('POST','/api/rollback/ack',{}).then(function(){ pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='scene-add'){ sceneAdd(); }
   else if(a==='scene-dup'){ sceneDuplicate(); }
   else if(a==='scene-del'){ sceneDelete(); }

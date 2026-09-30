@@ -22,7 +22,8 @@ ChannelConfig g_channels[kNumChannels]{};
 SceneBank g_bank{};
 bool g_nvs_ok = false;
 
-constexpr const char* kKeyScenes = "scenes";
+constexpr const char* kKeyScenes   = "scenes";
+constexpr const char* kKeyRollback = "rollback";
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
@@ -292,6 +293,31 @@ void init() {
 
 bool is_persistence_ok() {
     return g_nvs_ok;
+}
+
+bool get_rollback(RollbackRecord& out) {
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
+    size_t n       = sizeof(out);
+    const bool got = nvs_get_blob(h, kKeyRollback, &out, &n) == ESP_OK && n == sizeof(out);
+    nvs_close(h);
+    if (got) {
+        out.rejected_version[sizeof(out.rejected_version) - 1] = '\0';
+        out.rejected_slot[sizeof(out.rejected_slot) - 1]       = '\0';
+        out.running_version[sizeof(out.running_version) - 1]   = '\0';
+    }
+    return got;
+}
+
+bool set_rollback(const RollbackRecord& rec) {
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_save_blob(h, kKeyRollback, &rec, sizeof(rec));
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
 }
 
 const GlobalConfig& get_global() {

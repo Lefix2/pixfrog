@@ -276,9 +276,13 @@ Read by HOME, the UART console (`stats`) and `/api/config`.
 - Web mutations (config, OTA, reboot) sit behind optional HTTP Basic auth;
   the password is stored as a salted SHA-256, never in clear, and the UART
   console is the physical recovery channel.
-- OTA uses A/B slots with BOOTLOADER_APP_ROLLBACK: an image that fails to
-  reach boot-complete is reverted on the next reset; a power cut mid-upload
-  never touches the running slot.
+- OTA uses A/B slots with BOOTLOADER_APP_ROLLBACK: a new image confirms
+  itself only after 30 s of a live render loop (`ota_confirm_task`), so one
+  that crashes or hangs early is reverted on the next reset; a power cut
+  mid-upload never touches the running slot. Every rollback is logged at boot
+  and kept as an NVS record (rejected version/slot, reset reason) shown by the
+  web dashboard banner, `/api/diag` and the console `version` until
+  acknowledged (`POST /api/rollback/ack`, `rollback ack`).
 - Hardware watchdog enabled; `render_task` is subscribed and kicks every frame.
 
 ---
