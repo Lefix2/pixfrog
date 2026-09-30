@@ -380,6 +380,36 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
     printf("clock_hz=%lu\n", static_cast<unsigned long>(c.clock_hz));
     printf("gamma_x10=%u\n", c.gamma_x10);
     printf("wb=%02x%02x%02x\n", c.wb_r, c.wb_g, c.wb_b);
+    // first dead LED (1-based):count, comma-separated; "-" = none
+    const size_t ng = led::gap_count(c.gaps, led::kMaxPixelGaps);
+    printf("gaps=");
+    for (size_t k = 0; k < ng; ++k)
+        printf("%s%u:%u", k ? "," : "", c.gaps[k].pos + 1u, static_cast<unsigned>(c.gaps[k].len));
+    printf("%s\n", ng ? "" : "-");
+}
+
+// "pos:len[,pos:len…]" (pos 1-based) or "-" → gaps; false on a malformed list.
+bool parse_gaps(const char* arg, led::PixelGap out[led::kMaxPixelGaps]) {
+    for (size_t k = 0; k < led::kMaxPixelGaps; ++k)
+        out[k] = led::PixelGap{ 0, 0 };
+    if (strcmp(arg, "-") == 0) return true;
+    char buf[led::kMaxPixelGaps * 10 + 1];
+    if (strlen(arg) >= sizeof(buf)) return false;
+    copy_str(buf, sizeof(buf), arg);
+    size_t n   = 0;
+    char* save = nullptr;
+    for (char* tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(nullptr, ",", &save)) {
+        char* colon = strchr(tok, ':');
+        if (!colon || n == led::kMaxPixelGaps) return false;
+        *colon       = '\0';
+        uint32_t pos = 0;
+        uint32_t len = 0;
+        if (!parse_u32_in(tok, 1, led::kMaxPixelsPerChannel, pos) ||
+            !parse_u32_in(colon + 1, 1, led::kMaxPixelsPerChannel, len))
+            return false;
+        out[n++] = led::PixelGap{ static_cast<uint16_t>(pos - 1), static_cast<uint16_t>(len) };
+    }
+    return n > 0;
 }
 
 int cmd_ch(int argc, char** argv) {
@@ -437,9 +467,12 @@ int cmd_ch(int argc, char** argv) {
         if (!parse_u32_in(val, led::kMinClockHz, led::kMaxClockHz, u))
             return err("clock_hz: 500000..8000000");
         c.clock_hz = u;
+    } else if (strcmp(key, "gaps") == 0) {
+        if (!parse_gaps(val, c.gaps))
+            return err("gaps: pos:len[,pos:len...] (pos 1-based, max 8) or -");
     } else {
         return err("unknown key (protocol order universe dmx_start pixels brightness grouping "
-                   "invert clock_hz gamma_x10 wb)");
+                   "invert clock_hz gamma_x10 wb gaps)");
     }
 
     const bool persisted = config::set_channel(ch, c);

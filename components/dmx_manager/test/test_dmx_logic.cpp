@@ -614,6 +614,42 @@ static void test_effective_pixel_count_non_destructive() {
     EXPECT_EQ(effective_pixel_count(cc, pclk, 60, buf), 600);
 }
 
+// Dead pixels take their share of the physical budget: at 60 Hz a WS2815 line
+// carries 512 physical pixels, so 3 dead ones leave 509 live.
+static void test_gaps_budget_and_physical_count() {
+    pixfrog::config::ChannelConfig cc{};
+    cc.protocol         = pixfrog::led::Protocol::WS2815;
+    cc.pixel_count      = 1024;
+    cc.gaps[0]          = { 0, 1 };
+    cc.gaps[1]          = { 200, 2 };
+    const size_t buf    = pixfrog::led::kMaxSamplesPerFrame;
+    const uint32_t pclk = pixfrog::led::kPclkHz;
+    EXPECT_EQ(max_live_pixels_for(cc, pclk, 60, buf), 509);
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 60, buf), 509);
+    cc.pixel_count = 300;
+    EXPECT_EQ(channel_physical_pixels(cc), 303);
+    cc.pixel_count = 150;  // line ends before the mid gap
+    EXPECT_EQ(channel_physical_pixels(cc), 151);
+    // Gaps mean nothing on a DMX universe.
+    cc.protocol    = pixfrog::led::Protocol::DMX512;
+    cc.pixel_count = 512;
+    EXPECT_EQ(channel_physical_pixels(cc), 512);
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 30, buf), 512);
+}
+
+// The ruler is written in physical order: dead pixels in their own colour,
+// live ones numbered as live (the 10th live LED is the decade mark).
+static void test_preview_with_gaps() {
+    const pixfrog::led::PixelGap gaps[1] = { { 0, 1 } };
+    uint8_t buf[12 * 3];
+    std::memset(buf, 0xEE, sizeof(buf));
+    fill_preview_pattern(buf, sizeof(buf), 10, 10, 3, gaps, 1);
+    EXPECT_EQ(buf[0], kPreviewDead.r);            // physical 0 = dead
+    EXPECT_EQ(buf[1 * 3 + 1], kPreviewGreen.g);   // live 1
+    EXPECT_EQ(buf[10 * 3 + 0], kPreviewWhite.r);  // live 10 = physical 10
+    EXPECT_EQ(buf[11 * 3], 0xEE);                 // nothing past 11 physical
+}
+
 static void test_scene_solid() {
     uint8_t buf[4 * 3] = {};
     fill_scene_pattern(buf, sizeof(buf), 4, 3, mk_scene(0 /*solid*/, 10, 20, 30, 0, 0), 12345);
@@ -1005,6 +1041,8 @@ int main() {
     test_failsafe_fill_color_rgbw_white_off();
     test_failsafe_fill_overflow_is_noop();
     test_effective_pixel_count_non_destructive();
+    test_gaps_budget_and_physical_count();
+    test_preview_with_gaps();
     test_scene_solid();
     test_scene_solid_rgbw_white_off();
     test_scene_chase_position_and_width();

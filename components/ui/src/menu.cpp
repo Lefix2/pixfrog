@@ -336,6 +336,7 @@ enum class NodeId : uint8_t {
     Scenes,
     Fseq,
     TestPattern,
+    Gaps,
     Count,
 };
 
@@ -343,6 +344,11 @@ enum class NodeId : uint8_t {
 void go(NodeId n);
 void go_back();
 void open_channel(uint8_t idx);
+
+// Dead-pixel editor state and helpers (defined with the DEAD PIXELS node).
+uint8_t g_gap_index = 0;  // gap being edited (== gap_count for a new one)
+void preview_gap_edit(uint16_t pos0, uint16_t len);
+void enter_gap_len_edit();
 
 // ── Editable fields ─────────────────────────────────────────────────────────
 enum class Field : uint8_t {
@@ -373,6 +379,8 @@ enum class Field : uint8_t {
     ChGrouping,
     ChInvert,
     ChClock,
+    ChGapPos,  // first dead LED of gap s.gap_index (1-based); chains to ChGapLen
+    ChGapLen,  // its length; 0 removes the gap
     AutoPatch,
 };
 
@@ -2054,6 +2062,31 @@ void commit_edit() {
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
+    case Field::ChGapPos: {
+        auto c         = config::get_channel(s.edit.channel);
+        const auto p0  = static_cast<uint16_t>(v - 1);
+        const size_t n = led::gap_count(c.gaps, led::kMaxPixelGaps);
+        if (g_gap_index < n) {
+            c.gaps[g_gap_index].pos = p0;
+        } else if (n < led::kMaxPixelGaps) {
+            c.gaps[n] = { p0, 1 };
+        }
+        config::set_channel(s.edit.channel, c);  // normalizes: the gap may move slot
+        dmx::mark_channel_dirty(s.edit.channel);
+        // Follow the gap to its sorted slot for the length edit that comes next.
+        const auto& stored = config::get_channel(s.edit.channel);
+        for (size_t k = 0; k < led::kMaxPixelGaps && stored.gaps[k].len; ++k)
+            if (p0 >= stored.gaps[k].pos && p0 < stored.gaps[k].pos + stored.gaps[k].len)
+                g_gap_index = static_cast<uint8_t>(k);
+        break;
+    }
+    case Field::ChGapLen: {
+        auto c = config::get_channel(s.edit.channel);
+        if (g_gap_index < led::kMaxPixelGaps) c.gaps[g_gap_index].len = static_cast<uint16_t>(v);
+        config::set_channel(s.edit.channel, c);  // len 0 → dropped by normalize
+        dmx::mark_channel_dirty(s.edit.channel);
+        break;
+    }
 
     default: break;
     }
@@ -2080,6 +2113,15 @@ void dispatch_edit_value(Event e) {
         if (s.edit.field == Field::ChPixels && dmx::pixel_preview_channel() == s.edit.channel) {
             dmx::set_pixel_preview(s.edit.channel, static_cast<uint16_t>(s.edit.current));
         }
+        if (s.edit.field == Field::ChGapPos || s.edit.field == Field::ChGapLen) {
+            const auto& cc      = config::get_channel(s.edit.channel);
+            const bool existing = g_gap_index < led::gap_count(cc.gaps, led::kMaxPixelGaps);
+            if (s.edit.field == Field::ChGapPos)
+                preview_gap_edit(static_cast<uint16_t>(s.edit.current - 1),
+                                 existing ? cc.gaps[g_gap_index].len : 1);
+            else if (existing)
+                preview_gap_edit(cc.gaps[g_gap_index].pos, static_cast<uint16_t>(s.edit.current));
+        }
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
         // Live backlight preview: the panel follows the encoder, nothing stored.
         if (s.edit.field == Field::DisplayBrightness)
@@ -2087,12 +2129,14 @@ void dispatch_edit_value(Event e) {
 #endif
     }
     if (e == Event::Click) {
+        const Field done = s.edit.field;
         dmx::clear_pixel_preview();
         commit_edit();
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
         backlight_preview_end();  // after commit_edit: hands over to the stored level
 #endif
         s.screen = s.edit.return_screen;
+        if (done == Field::ChGapPos) enter_gap_len_edit();  // position, then length
     }
 }
 
@@ -2766,6 +2810,7 @@ enum class ChItem : uint8_t {
     Uni,
     Dmx,
     Pixels,  // labelled "Slots" in DMX512 mode
+    Gaps,    // dead pixels submenu (LED protocols only)
     Order,
     Bright,
     Gamma,
@@ -2776,7 +2821,7 @@ enum class ChItem : uint8_t {
     Back,
 };
 
-// Fills `out` (capacity ≥ 12) with the ordered items for `cc` and returns count.
+// Fills `out` (capacity ≥ 13) with the ordered items for `cc` and returns count.
 uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     uint8_t n = 0;
     out[n++]  = ChItem::Proto;
@@ -2790,6 +2835,7 @@ uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     out[n++] = ChItem::Dmx;
     out[n++] = ChItem::Pixels;
     if (!led::is_dmx(cc.protocol)) {
+        out[n++] = ChItem::Gaps;
         out[n++] = ChItem::Order;
         out[n++] = ChItem::Bright;
         out[n++] = ChItem::Gamma;
@@ -2893,6 +2939,7 @@ OnClick channel_action(ChItem it) {
                        kClockChoices[kClockChoiceCount - 1], 1, "Clock", Screen::Menu,
                        s.channel_index);
         };
+    case ChItem::Gaps: return [](uint8_t) { go(NodeId::Gaps); };
     case ChItem::Identify:
         return [](uint8_t) { dmx::identify_start(s.channel_index); };  // 10 s blink; stay
     case ChItem::Back: return [](uint8_t) { go_back(); };
@@ -2906,7 +2953,7 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     std::snprintf(g_channel_title, sizeof(g_channel_title), "CHANNEL %u", s.channel_index + 1);
 
     static char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8],
-        vclk[12], vgam[8];
+        vclk[12], vgam[8], vgaps[8];
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
     format_uni(vuni, sizeof(vuni), cc.universe_start);
     std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
@@ -2917,8 +2964,13 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     std::snprintf(vinv, sizeof(vinv), "%s", cc.invert_direction ? "ON" : "OFF");
     format_clock_mhz(static_cast<int32_t>(cc.clock_hz), vclk, sizeof(vclk));
     std::snprintf(vgam, sizeof(vgam), "%u.%u", cc.gamma_x10 / 10, cc.gamma_x10 % 10);
+    const size_t ngaps = led::gap_count(cc.gaps, led::kMaxPixelGaps);
+    if (ngaps)
+        std::snprintf(vgaps, sizeof(vgaps), "%u", static_cast<unsigned>(ngaps));
+    else
+        std::snprintf(vgaps, sizeof(vgaps), "-");
 
-    ChItem order[12];
+    ChItem order[13];
     const uint8_t count = channel_items(cc, order);
     for (uint8_t i = 0; i < count; ++i) {
         switch (order[i]) {
@@ -2926,6 +2978,7 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
         case ChItem::Uni: items[i] = { "Uni", vuni }; break;
         case ChItem::Dmx: items[i] = { "DMX", vdmx }; break;
         case ChItem::Pixels: items[i] = { dmx ? "Slots" : "Pixels", vpix }; break;
+        case ChItem::Gaps: items[i] = { "Dead px", vgaps }; break;
         case ChItem::Order: items[i] = { "Order", vorder }; break;
         case ChItem::Bright: items[i] = { "Bright", vbri }; break;
         case ChItem::Gamma: items[i] = { "Gamma", vgam }; break;
@@ -2938,6 +2991,68 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
         fns[i] = channel_action(order[i]);
     }
     return count;
+}
+
+// ── DEAD PIXELS NODE ─────────────────────────────────────────────────────────
+// One row per gap of the open channel ("LED 12  x2"), "[Add]" while a slot is
+// free, Back. Clicking a gap edits its first LED, then its length (0 removes
+// it); both edits drive the strip ruler with the pending gap so the dead LED
+// is seen moving before anything is stored.
+
+// The open channel's gaps with gap g_gap_index set to (pos0, len) — what the
+// ruler shows while that gap is being edited.
+void preview_gap_edit(uint16_t pos0, uint16_t len) {
+    const auto& cc = config::get_channel(s.channel_index);
+    led::PixelGap tmp[led::kMaxPixelGaps];
+    std::memcpy(tmp, cc.gaps, sizeof(tmp));
+    if (g_gap_index < led::kMaxPixelGaps) tmp[g_gap_index] = { pos0, len };
+    dmx::set_preview_gaps(tmp, led::kMaxPixelGaps);
+    dmx::set_pixel_preview(s.channel_index, dmx::effective_channel(s.channel_index).pixel_count);
+}
+
+void enter_gap_pos_edit(uint8_t k) {
+    const auto& cc      = config::get_channel(s.channel_index);
+    g_gap_index         = k;
+    const bool existing = k < led::gap_count(cc.gaps, led::kMaxPixelGaps);
+    const uint16_t pos0 = existing ? cc.gaps[k].pos : 0;
+    const uint16_t len  = existing ? cc.gaps[k].len : 1;
+    enter_edit(Field::ChGapPos, ValueKind::Int, pos0 + 1, 1,
+               static_cast<int32_t>(led::kMaxPixelsPerChannel), 1, "Dead LED", Screen::Menu,
+               s.channel_index);
+    preview_gap_edit(pos0, len);
+}
+
+void enter_gap_len_edit() {
+    const auto& cc     = config::get_channel(s.channel_index);
+    const uint16_t len = g_gap_index < led::gap_count(cc.gaps, led::kMaxPixelGaps)
+                           ? cc.gaps[g_gap_index].len
+                           : 1;
+    enter_edit(Field::ChGapLen, ValueKind::Int, len, 0, 64, 1, "Dead count", Screen::Menu,
+               s.channel_index);
+    if (g_gap_index < led::kMaxPixelGaps) preview_gap_edit(cc.gaps[g_gap_index].pos, len);
+}
+
+uint8_t build_gaps(ListItem* items, OnClick* fns) {
+    static char labels[led::kMaxPixelGaps][12], values[led::kMaxPixelGaps][8];
+    const auto& cc  = config::get_channel(s.channel_index);
+    const size_t ng = led::gap_count(cc.gaps, led::kMaxPixelGaps);
+    uint8_t n       = 0;
+    for (size_t k = 0; k < ng; ++k) {
+        std::snprintf(labels[k], sizeof(labels[k]), "LED %u", cc.gaps[k].pos + 1u);
+        std::snprintf(values[k], sizeof(values[k]), "x%u", static_cast<unsigned>(cc.gaps[k].len));
+        items[n] = { labels[k], values[k] };
+        fns[n++] = [](uint8_t idx) { enter_gap_pos_edit(idx); };
+    }
+    if (ng < led::kMaxPixelGaps) {
+        items[n] = { "[Add]", "" };
+        fns[n++] = [](uint8_t) {
+            const auto& c = config::get_channel(s.channel_index);
+            enter_gap_pos_edit(static_cast<uint8_t>(led::gap_count(c.gaps, led::kMaxPixelGaps)));
+        };
+    }
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
 }
 
 // ── Node table + engine ──────────────────────────────────────────────────────
@@ -2962,6 +3077,7 @@ const Node kNodes[static_cast<uint8_t>(NodeId::Count)] = {
     { "SCENES", NodeId::Playback, build_scenes },
     { "FSEQ", NodeId::Playback, build_fseq },
     { "TEST PATTERN", NodeId::Playback, build_testpattern },
+    { "DEAD PIXELS", NodeId::Channel, build_gaps },
 };
 
 const Node& cur_node() {

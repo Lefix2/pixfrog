@@ -103,10 +103,21 @@ inline uint16_t build_universe_map(const config::ChannelConfig* chans, size_t n,
 
 // ── Capacity check ──────────────────────────────────────────────────────────
 
+// Gaps apply to LED strips only (a DMX512 "pixel" is a slot).
+inline size_t channel_gap_count(const config::ChannelConfig& cc) {
+    if (led::is_off(cc.protocol) || led::is_dmx(cc.protocol)) return 0;
+    return led::gap_count(cc.gaps, led::kMaxPixelGaps);
+}
+
+// Pixels on the wire for the channel's live pixel_count: live + dead.
+inline uint32_t channel_physical_pixels(const config::ChannelConfig& cc) {
+    return led::physical_count(cc.pixel_count, cc.gaps, channel_gap_count(cc));
+}
+
 inline uint64_t channel_t_dma_us(const config::ChannelConfig& cc, uint32_t pclk_hz) {
     led::ChannelDesc d{};
     d.protocol    = cc.protocol;
-    d.pixel_count = cc.pixel_count;
+    d.pixel_count = static_cast<uint16_t>(channel_physical_pixels(cc));
     d.clock_hz    = cc.clock_hz;
     if (pclk_hz == 0) return 0;
     return static_cast<uint64_t>(led::encoded_size_samples(d)) * 1'000'000ULL / pclk_hz;
@@ -197,13 +208,21 @@ inline uint16_t max_pixels_for(const config::ChannelConfig& cc, uint32_t pclk_hz
     return best;
 }
 
-// The pixel count actually emitted: the stored count is what the user asked
-// for and is never rewritten when the refresh rate (or the protocol / clock)
-// shrinks the budget, so going back restores the full line.
+// max_pixels_for counts physical pixels; this is the LIVE pixels that fit once
+// the channel's dead pixels take their share of the line.
+inline uint16_t max_live_pixels_for(const config::ChannelConfig& cc, uint32_t pclk_hz,
+                                    uint8_t refresh_rate_hz, size_t buffer_samples) {
+    const uint16_t phys = max_pixels_for(cc, pclk_hz, refresh_rate_hz, buffer_samples);
+    return static_cast<uint16_t>(led::live_within(phys, cc.gaps, channel_gap_count(cc)));
+}
+
+// The live pixel count actually emitted: the stored count is what the user
+// asked for and is never rewritten when the refresh rate (or the protocol /
+// clock / gaps) shrinks the budget, so going back restores the full line.
 inline uint16_t effective_pixel_count(const config::ChannelConfig& cc, uint32_t pclk_hz,
                                       uint8_t refresh_rate_hz, size_t buffer_samples) {
     if (led::is_off(cc.protocol)) return cc.pixel_count;
-    const uint16_t mx = max_pixels_for(cc, pclk_hz, refresh_rate_hz, buffer_samples);
+    const uint16_t mx = max_live_pixels_for(cc, pclk_hz, refresh_rate_hz, buffer_samples);
     return cc.pixel_count < mx ? cc.pixel_count : mx;
 }
 
@@ -232,25 +251,44 @@ constexpr PreviewRGB kPreviewYellow{ 77, 77, 0 };     // 30 % yellow — decade 
 constexpr PreviewRGB kPreviewPink{ 77, 0, 38 };       // 30 % pink   — centade marks
 constexpr PreviewRGB kPreviewWhite{ 255, 255, 255 };  // 100 % white — the count
 
+constexpr PreviewRGB kPreviewDead{ 90, 0, 0 };  // dim red — a dead pixel (gap)
+
+// `lit_count` / `emit_count` count LIVE pixels; the buffer is written in
+// physical order (the preview emits with no gap mapping) so each gap shows up
+// on the strip as its own colour, exactly where it is wired.
 inline void fill_preview_pattern(uint8_t* dst, size_t dst_capacity, uint16_t lit_count,
-                                 uint16_t emit_count, uint8_t bytes_per_pixel) {
+                                 uint16_t emit_count, uint8_t bytes_per_pixel,
+                                 const led::PixelGap* gaps = nullptr, size_t gap_n = 0) {
     if (emit_count < lit_count) emit_count = lit_count;
-    const size_t total = static_cast<size_t>(emit_count) * bytes_per_pixel;
-    if (total > dst_capacity || bytes_per_pixel == 0) return;
-    for (uint16_t i = 1; i <= emit_count; ++i) {
-        PreviewRGB c{ 0, 0, 0 };  // erase tail (i > lit_count) stays black
-        if (i <= lit_count) {
-            c = kPreviewGreen;
-            if (i % 10 == 0) c = kPreviewYellow;
-            if (i % 100 == 0) c = kPreviewPink;     // centade wins over decade
-            if (i == lit_count) c = kPreviewWhite;  // the count wins over all
+    if (bytes_per_pixel == 0) return;
+    uint32_t phys_emit      = led::physical_count(emit_count, gaps, gap_n);
+    const uint32_t phys_lit = led::physical_count(lit_count, gaps, gap_n);
+    // Without gaps an oversized request is a caller bug (write nothing, as
+    // before); with gaps being edited it can outgrow the buffer — clip then.
+    if (static_cast<size_t>(phys_emit) * bytes_per_pixel > dst_capacity) {
+        if (gap_n == 0) return;
+        phys_emit = static_cast<uint32_t>(dst_capacity / bytes_per_pixel);
+    }
+    for (uint32_t p = 0; p < phys_emit; ++p) {
+        PreviewRGB c{ 0, 0, 0 };  // erase tail stays black
+        const int32_t li = led::live_index(p, gaps, gap_n);
+        if (li < 0) {
+            if (p < phys_lit) c = kPreviewDead;
+        } else {
+            const uint32_t i = static_cast<uint32_t>(li) + 1;  // 1-based live LED
+            if (i <= lit_count) {
+                c = kPreviewGreen;
+                if (i % 10 == 0) c = kPreviewYellow;
+                if (i % 100 == 0) c = kPreviewPink;     // centade wins over decade
+                if (i == lit_count) c = kPreviewWhite;  // the count wins over all
+            }
         }
-        uint8_t* p = dst + static_cast<size_t>(i - 1) * bytes_per_pixel;
-        p[0]       = c.r;
-        if (bytes_per_pixel > 1) p[1] = c.g;
-        if (bytes_per_pixel > 2) p[2] = c.b;
+        uint8_t* px = dst + static_cast<size_t>(p) * bytes_per_pixel;
+        px[0]       = c.r;
+        if (bytes_per_pixel > 1) px[1] = c.g;
+        if (bytes_per_pixel > 2) px[2] = c.b;
         for (uint8_t k = 3; k < bytes_per_pixel; ++k)
-            p[k] = 0;  // W die stays dark
+            px[k] = 0;  // W die stays dark
     }
 }
 

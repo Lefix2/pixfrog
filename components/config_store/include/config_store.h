@@ -311,6 +311,9 @@ struct ChannelConfig {
     uint8_t wb_r;       // 255 = unity; 0 → sanitized to 255
     uint8_t wb_g;
     uint8_t wb_b;
+    // Dead physical pixels (normalized: sorted, merged, used slots first;
+    // zero-fill migration = none). pixel_count counts LIVE pixels.
+    led::PixelGap gaps[led::kMaxPixelGaps];
 };
 
 // Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
@@ -336,6 +339,9 @@ inline void sanitize_channel(ChannelConfig& c) {
     // name tables are indexed by it).
     if (static_cast<uint8_t>(c.color_order) >= static_cast<uint8_t>(led::ColorOrder::COUNT))
         c.color_order = led::ColorOrder::RGBW;
+    for (auto& g : c.gaps)
+        if (g.pos >= led::kMaxPixelsPerChannel) g.len = 0;
+    led::normalize_gaps(c.gaps, led::kMaxPixelGaps);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

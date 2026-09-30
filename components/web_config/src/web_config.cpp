@@ -353,9 +353,38 @@ static cJSON* build_channels_json() {
         char wb[8];
         snprintf(wb, sizeof(wb), "#%02x%02x%02x", c.wb_r, c.wb_g, c.wb_b);
         cJSON_AddStringToObject(jc, "wb", wb);
+        // [[first dead LED, 1-based physical], count], ...
+        cJSON* jg = cJSON_AddArrayToObject(jc, "gaps");
+        for (size_t k = 0; k < led::gap_count(c.gaps, led::kMaxPixelGaps); ++k) {
+            cJSON* pair = cJSON_CreateArray();
+            cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.gaps[k].pos + 1));
+            cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.gaps[k].len));
+            cJSON_AddItemToArray(jg, pair);
+        }
         cJSON_AddItemToArray(jchs, jc);
     }
     return jchs;
+}
+
+// "gaps": [[first dead LED (1-based), count], ...] replaces the whole list when
+// present and well-formed (≤ kMaxPixelGaps pairs, in range); config_store
+// normalizes (sort + merge) on write.
+static void apply_gaps_json(const cJSON* jc, config::ChannelConfig& c) {
+    const cJSON* jg = cJSON_GetObjectItemCaseSensitive(jc, "gaps");
+    if (!cJSON_IsArray(jg) || cJSON_GetArraySize(jg) > static_cast<int>(led::kMaxPixelGaps)) return;
+    led::PixelGap parsed[led::kMaxPixelGaps] = {};
+    size_t n                                 = 0;
+    for (const cJSON* pair = jg->child; pair; pair = pair->next) {
+        const cJSON* jp = cJSON_GetArrayItem(pair, 0);
+        const cJSON* jl = cJSON_GetArrayItem(pair, 1);
+        if (!cJSON_IsNumber(jp) || !cJSON_IsNumber(jl) || jp->valuedouble < 1 ||
+            jp->valuedouble > led::kMaxPixelsPerChannel || jl->valuedouble < 0 ||
+            jl->valuedouble > led::kMaxPixelsPerChannel)
+            return;
+        parsed[n].pos   = static_cast<uint16_t>(jp->valuedouble - 1);
+        parsed[n++].len = static_cast<uint16_t>(jl->valuedouble);
+    }
+    std::memcpy(c.gaps, parsed, sizeof(c.gaps));
 }
 
 // ── GET /api/config ─────────────────────────────────────────────────────────
@@ -715,6 +744,7 @@ static void restore_channel(size_t i, cJSON* jc) {
             c.wb_b = cb ? static_cast<uint8_t>(cb) : 255;
         }
     }
+    apply_gaps_json(jc, c);
     config::set_channel(i, c);
     dmx::mark_channel_dirty(i);
 }
@@ -1044,6 +1074,7 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
             c.wb_b = wbv ? static_cast<uint8_t>(wbv) : 255;
         }
     }
+    apply_gaps_json(j, c);
 
     cJSON_Delete(j);
     config::set_channel(static_cast<size_t>(idx), c);
