@@ -12,14 +12,14 @@ items (44 Hz pacing, ArtNzs routing, RDM) belong to that fork.
 
 Findings from the July 2026 full-project audit. Small, low-risk, one `fix/` PR.
 
-- [ ] ★ **Web password > 63 chars locks the user out** — `handle_post_global`
+- [x] ★ **Web password > 63 chars locks the user out** — `handle_post_global`
       truncates the password to 63 bytes before hashing
       (`web_config.cpp`, `char pwd[64]`), but `check_web_password` hashes the
       full string the browser sends, so a long password set via the SPA never
       authenticates (UART recovery only). Reject > 63 chars with a 400 (and
       surface the limit in the SPA), or size both paths identically. The
       160-byte `Authorization` header buffer imposes a similar silent limit.
-- [ ] ★ **Backup/restore drops `fpp_remote` and `lang`** — `restore_global`
+- [x] ★ **Backup/restore drops `fpp_remote` and `lang`** — `restore_global`
       never reads them although `build_global_json` exports both. Also apply
       the sACN/FPP start/stop side effects on restore like `POST /api/global`
       does.

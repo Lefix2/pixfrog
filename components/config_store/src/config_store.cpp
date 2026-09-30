@@ -376,6 +376,7 @@ bool hash_is_zero(const uint8_t hash[32]) {
 }  // namespace
 
 bool set_web_password(const char* password) {
+    if (password && std::strlen(password) > kMaxWebPasswordLen) return false;
     GlobalConfig g = g_global;
     if (!password || password[0] == '\0') {
         std::memset(g.web_auth_salt, 0, sizeof(g.web_auth_salt));

@@ -343,6 +343,8 @@ int cmd_global(int argc, char** argv) {
     } else if (strcmp(key, "web_password") == 0) {
         // UART = the trusted physical recovery channel. `-` clears (auth off).
         const bool cleared = (strcmp(val, "-") == 0);
+        if (!cleared && strlen(val) > config::kMaxWebPasswordLen)
+            return err("web_password: at most 63 characters");
         if (!config::set_web_password(cleared ? "" : val)) printf("warn=not_persisted\n");
         printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
         return ok();
