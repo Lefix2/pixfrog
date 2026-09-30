@@ -37,6 +37,14 @@ leaves the others alone. Two scenes with masks 1–4 and 5–8 therefore run sid
 side, and a scene started on an overlapping group takes those outputs over.
 `scene stop <n>` stops one scene; `scene stop` stops them all.
 
+| From | Play scene *n* on a group |
+|---|---|
+| Web UI | scene editor → **PLAY ON**: pick the outputs (only the scene's target channels can be picked), then ▶ Play; ■ Stop stops that scene only. The ▶ of the scene list plays on the whole mask. |
+| UART | `scene play <n> <outputs-hex>` (e.g. `scene play 0 01`, `scene play 1 02`), `scene stop <n>` |
+| REST | `POST /api/scene/<n>/play {"outputs":1}`, `POST /api/scene/<n>/stop` |
+| Desk | two Scene slots with different output groups in the control universe |
+| TFT, ArtTrigger | play on the scene's own mask — set the masks first |
+
 Every change of source crossfades over the scene fade time (`scene_fade_ms`,
 0–25.5 s, eased). This covers live → scene, scene → scene and scene → live.
 The fade is global, and the desk's Fade channel overrides it.
