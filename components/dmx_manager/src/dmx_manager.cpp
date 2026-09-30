@@ -1,6 +1,7 @@
 #include "dmx_manager.h"
 
 #include <atomic>
+#include <cstdint>
 #include <cstring>
 
 #include "esp_heap_caps.h"
@@ -118,6 +119,9 @@ uint16_t g_slots_used = 0;
 logic::MergeState g_merge[kNumUniverses]{};
 uint8_t* g_merge_staging = nullptr;
 
+// Per-channel last-activity timestamp (µs). 0 = never seen; kTerminatedUs =
+// the source announced its end (sACN stream_terminated).
+constexpr int64_t kTerminatedUs = INT64_MIN / 2;
 // Per-channel last-activity timestamp (µs). 0 = never seen.
 int64_t g_last_activity_us[config::kNumChannels]{};
 // "Active" if last_activity within this window:
@@ -544,9 +548,10 @@ bool is_channel_failsafe(size_t channel_index) {
 void note_universe_terminated(uint16_t universe_number) {
     const int ch = channel_for_universe(universe_number);
     if (ch < 0) return;
-    // Age the timestamp to the epoch+1µs: still "was active once", but past
-    // any timeout — the next render tick applies the failsafe.
-    if (g_last_activity_us[ch] != 0) g_last_activity_us[ch] = 1;
+    // Age the timestamp far into the past: still "was active once" (non-zero),
+    // but past any timeout whatever the uptime — ageing it to boot+1 µs left a
+    // stream terminated within the first failsafe_timeout_s of uptime ignored.
+    if (g_last_activity_us[ch] != 0) g_last_activity_us[ch] = kTerminatedUs;
 }
 
 // Seed a pool slot in the back bank from the front bank the first time it is

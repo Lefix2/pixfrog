@@ -1,0 +1,20 @@
+// Single-threaded FreeRTOS subset: the harness drives tasks explicitly and
+// blocking calls advance the fake clock instead of sleeping.
+#pragma once
+#include <cstdint>
+typedef uint32_t TickType_t;
+typedef int BaseType_t;
+typedef unsigned UBaseType_t;
+typedef uint32_t EventBits_t;
+#define pdTRUE 1
+#define pdFALSE 0
+#define pdPASS 1
+#define pdFAIL 0
+#define portMAX_DELAY 0xffffffffu
+#define configTICK_RATE_HZ 1000
+#define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
+#define portTICK_PERIOD_MS 1
+typedef struct shim_sem* SemaphoreHandle_t;
+typedef struct shim_eg* EventGroupHandle_t;
+typedef void* TaskHandle_t;
+typedef void (*TaskFunction_t)(void*);

@@ -43,12 +43,13 @@ static int g_pass = 0, g_fail = 0;
         }                                                                                          \
     } while (0)
 
-// ── Migration simulation ─────────────────────────────────────────────────────
+// ── Migration data ───────────────────────────────────────────────────────────
 //
-// Mirrors the logic in config_store.cpp::nvs_load_blob:
-//   memset(dst, 0, size); then copy the first min(old_size, size) bytes.
-// Returns false when old_size > size (downgrade scenario — blob is larger
-// than the struct the firmware knows about).
+// Builds the zero-filled-tail struct nvs_load_blob produces from an older,
+// shorter blob, to check what the header helpers (sanitize_channel,
+// tft_*_pct, …) make of it. This is a model of the load, not the load itself:
+// the real NVS path (config_store.cpp) runs in tests/harness/
+// test_config_store_nvs.cpp against an in-memory NVS.
 
 template <typename T> bool migrate_blob(const void* old_data, size_t old_size, T& dst) {
     if (old_size > sizeof(T)) return false;

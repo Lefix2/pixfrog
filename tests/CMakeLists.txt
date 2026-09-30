@@ -49,6 +49,9 @@ foreach(entry IN LISTS PIXFROG_SUITES)
     add_test(NAME ${component} COMMAND ${exe})
 endforeach()
 
-set_tests_properties(led_protocols dmx_manager artnet config_store sacn fseq_player fpp_sync
-    PROPERTIES ENVIRONMENT
+set(PIXFROG_TEST_ENV
     "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1;UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")
+set_tests_properties(led_protocols dmx_manager artnet config_store sacn fseq_player fpp_sync
+    PROPERTIES ENVIRONMENT "${PIXFROG_TEST_ENV}")
+
+add_subdirectory(harness)
