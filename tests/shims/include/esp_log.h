@@ -19,3 +19,6 @@ typedef enum {
     ESP_LOG_VERBOSE
 } esp_log_level_t;
 void esp_log_level_set(const char* tag, esp_log_level_t level);
+typedef int (*vprintf_like_t)(const char*, va_list);
+esp_log_level_t esp_log_level_get(const char* tag);
+vprintf_like_t esp_log_set_vprintf(vprintf_like_t func);

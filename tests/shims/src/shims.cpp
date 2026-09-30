@@ -2,12 +2,14 @@
 // Single-threaded by design: tests drive every task explicitly, and a blocking
 // call advances the fake clock by its timeout instead of sleeping.
 
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "esp_err.h"
@@ -27,8 +29,15 @@
 // ── Clock ────────────────────────────────────────────────────────────────────
 
 namespace {
-int64_t g_now_us = 1'000'000;  // not 0: firmware treats 0 as "never happened"
+int64_t g_now_us  = 1'000'000;  // not 0: firmware treats 0 as "never happened"
+bool g_real_clock = false;
+int64_t mono_us() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
+int64_t g_real_base = 0;
+}  // namespace
 
 namespace shim {
 void set_time_us(int64_t t) {
@@ -41,28 +50,20 @@ void advance_ms(int64_t dt) {
     g_now_us += dt * 1000;
 }
 int64_t now_us() {
-    return g_now_us;
+    return g_real_clock ? 1'000'000 + mono_us() - g_real_base : g_now_us;
+}
+void use_real_clock(bool on) {
+    g_real_clock = on;
+    g_real_base  = mono_us();
+}
+bool real_clock() {
+    return g_real_clock;
 }
 }  // namespace shim
 
 int64_t esp_timer_get_time() {
-    return g_now_us;
+    return shim::now_us();
 }
-
-// ── Log ──────────────────────────────────────────────────────────────────────
-
-namespace shim {
-void log_write(char level, const char* tag, const char* fmt, ...) {
-    static const bool on = std::getenv("PIXFROG_TEST_LOG") != nullptr;
-    if (!on) return;
-    std::fprintf(stderr, "%c (%s) ", level, tag);
-    va_list ap;
-    va_start(ap, fmt);
-    std::vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    std::fputc('\n', stderr);
-}
-}  // namespace shim
 
 const char* esp_err_to_name(esp_err_t code) {
     switch (code) {
@@ -257,10 +258,13 @@ EventBits_t xEventGroupGetBits(EventGroupHandle_t g) {
     return g->bits;
 }
 void vTaskDelay(TickType_t ticks) {
-    shim::advance_ms(ticks);
+    if (shim::real_clock())
+        std::this_thread::sleep_for(std::chrono::milliseconds(ticks));
+    else
+        shim::advance_ms(ticks);
 }
 TickType_t xTaskGetTickCount() {
-    return static_cast<TickType_t>(g_now_us / 1000);
+    return static_cast<TickType_t>(shim::now_us() / 1000);
 }
 BaseType_t xTaskCreate(TaskFunction_t fn, const char* name, uint32_t stack, void* arg,
                        UBaseType_t prio, TaskHandle_t* out) {

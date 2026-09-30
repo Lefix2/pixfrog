@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,9 @@ void set_time_us(int64_t t);
 void advance_us(int64_t dt);
 void advance_ms(int64_t dt);
 int64_t now_us();
+// Serve mode (browser tests): time follows the wall clock, blocking calls sleep.
+void use_real_clock(bool on);
+bool real_clock();
 
 // ── NVS ─────────────────────────────────────────────────────────────────────
 void nvs_wipe();  // empty flash, faults cleared
@@ -55,5 +59,35 @@ void net_reset();
 int console_exec(const char* line, std::string* out = nullptr);
 int restarts();   // esp_restart() calls
 int log_level();  // last esp_log_level_set("*", …)
+
+// ── HTTP (esp_http_server) ──────────────────────────────────────────────────
+struct HttpResponse {
+    int status = 0;  // parsed from the status line, 200 when unset
+    std::string status_line;
+    std::string content_type;
+    std::map<std::string, std::string> headers;
+    std::string body;
+    bool handled = false;  // a registered handler matched
+};
+HttpResponse http_request(const char* method, const std::string& uri,
+                          const std::string& body                           = std::string(),
+                          const std::map<std::string, std::string>& headers = {});
+// Largest chunk one httpd_req_recv() returns (0 = whole body): exercises the
+// handlers' body-reassembly loops.
+void http_recv_chunk(size_t max);
+bool http_running();
+size_t http_routes();  // handlers registered (esp_http_server caps it)
+// Serves the registered handlers on a real TCP port until *stop is set
+// (browser tests); requests are dispatched on the calling thread.
+void http_serve(uint16_t port, volatile bool* stop);
+
+// ── OTA / core dump / mDNS ──────────────────────────────────────────────────
+std::vector<uint8_t>& ota_image();                     // bytes esp_ota_write() received
+bool ota_boot_switched();                              // esp_ota_set_boot_partition() called
+void ota_fail_validation(bool fail);                   // esp_ota_end() rejects the image
+void coredump_set(const std::vector<uint8_t>& image);  // empty = none
+void mdns_add_peer(const char* instance, uint32_t ip, const char* product, const char* node,
+                   const char* fw);
+void mdns_reset();
 
 }  // namespace shim

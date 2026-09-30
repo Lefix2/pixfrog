@@ -2,7 +2,8 @@
 # compiled against tests/shims — fake clock, in-memory NVS, single-threaded
 # FreeRTOS. One executable per component keeps their static state apart.
 set(SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/../shims)
-add_library(idf_shims STATIC ${SHIMS}/src/shims.cpp ${SHIMS}/src/net.cpp ${SHIMS}/src/system.cpp)
+add_library(idf_shims STATIC ${SHIMS}/src/shims.cpp ${SHIMS}/src/net.cpp ${SHIMS}/src/system.cpp
+    ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp)
 target_include_directories(idf_shims PUBLIC ${SHIMS}/include)
 target_compile_options(idf_shims PRIVATE -Wall -Wextra)
 
@@ -67,3 +68,43 @@ pixfrog_harness(harness_console
     ${REPO}/components/config_store/src/config_store.cpp
     ${LED_PROTOCOLS_SRC}
 )
+
+# web_config: the real handlers + cJSON (vendored, the library IDF ships) +
+# the gzipped SPA linked in as the same _binary_web_ui_html_gz_* symbols the
+# firmware's EMBED gets.
+add_library(cjson STATIC ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cJSON/cJSON.c)
+target_include_directories(cjson PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cJSON)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+set(WEB_GZ_DIR ${CMAKE_CURRENT_BINARY_DIR}/webui)
+file(MAKE_DIRECTORY ${WEB_GZ_DIR})
+add_custom_command(
+    OUTPUT ${WEB_GZ_DIR}/web_ui_blob.o
+    COMMAND ${Python3_EXECUTABLE} -c
+            "import gzip,sys; open(sys.argv[2],'wb').write(gzip.compress(open(sys.argv[1],'rb').read(),9,mtime=0))"
+            ${REPO}/components/web_config/src/web_ui.html ${WEB_GZ_DIR}/web_ui.html.gz
+    COMMAND ld -r -b binary -z noexecstack -o web_ui_blob.o web_ui.html.gz
+    WORKING_DIRECTORY ${WEB_GZ_DIR}
+    DEPENDS ${REPO}/components/web_config/src/web_ui.html
+    VERBATIM)
+
+set(WEB_SOURCES
+    fakes/fseq_fake.cpp
+    fakes/modules_fake.cpp
+    ${REPO}/components/web_config/src/web_config.cpp
+    ${REPO}/components/sacn/src/sacn.cpp
+    ${REPO}/components/dmx_manager/src/dmx_manager.cpp
+    ${REPO}/components/config_store/src/config_store.cpp
+    ${LED_PROTOCOLS_SRC}
+    ${WEB_GZ_DIR}/web_ui_blob.o
+)
+pixfrog_harness(harness_web test_web.cpp ${WEB_SOURCES})
+target_link_libraries(harness_web PRIVATE cjson)
+target_compile_definitions(harness_web PRIVATE PIXFROG_HARNESS_REAL_WEB)
+
+# The real API on a TCP port for the SPA browser tests (tests/web).
+add_executable(pixfrog_api_host ${CMAKE_CURRENT_SOURCE_DIR}/../web/api_host.cpp ${WEB_SOURCES})
+target_include_directories(pixfrog_api_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FIRMWARE_INCLUDES})
+target_compile_options(pixfrog_api_host PRIVATE -Wall -Wextra -fno-exceptions -fno-rtti)
+target_compile_definitions(pixfrog_api_host PRIVATE PIXFROG_HARNESS_REAL_WEB)
+target_link_libraries(pixfrog_api_host PRIVATE idf_shims cjson)

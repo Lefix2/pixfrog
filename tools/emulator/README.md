@@ -59,7 +59,26 @@ starts at HOME for deterministic runs.
 | `set fps <n>`      | inject a fake FPS counter (HOME)                   |
 | `set pkts <n>`     | inject a fake ArtNet RX packet counter (HOME)      |
 | `set active <ch>`  | mark channel `ch` (0–7) active (HOME dot)          |
+| `set chan <i> <proto> <uni> <pix>` | seed channel `i` (protocol enum value) |
+| `set gaps <i> [<pos0>:<len> …]` | replace channel `i`'s dead-pixel gaps |
 | `quit`             | exit                                               |
+
+### Menu crawler and golden screenshots
+
+`crawl.py` seeds rich state, snaps a few static screens and compares them pixel
+for pixel with `golden/<panel>/*.png`, then walks every menu node, activates
+every row (commits value edits, cancels the others) and fails if a node or an
+editor kind was never reached. CI runs it on both panels; `tools/coverage.py`
+runs it too (it brings `menu.cpp` above 80 %).
+
+```sh
+python3 tools/emulator/crawl.py build/pixfrog_emu
+python3 tools/emulator/crawl.py build.st7789/pixfrog_emu --panel st7789
+python3 tools/emulator/crawl.py build/pixfrog_emu --update-golden  # intended UI change
+```
+
+A mismatch leaves the new render in the temp dir (`golden-<panel>-<name>.png`).
+Needs Pillow (`pip install pillow`).
 
 ### Example
 

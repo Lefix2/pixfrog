@@ -32,6 +32,7 @@ bool is_running() {
     return ::fake::modules().fpp_running;
 }
 }  // namespace fpp
+#ifndef PIXFROG_HARNESS_REAL_WEB  // harness_web links the real web_config
 namespace web {
 void start() {
     ::fake::modules().web_running = true;
@@ -44,6 +45,7 @@ bool is_running() {
     return ::fake::modules().web_running;
 }
 }  // namespace web
+#endif
 namespace output {
 size_t fb_bytes() {
     return 65664;

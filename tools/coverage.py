@@ -54,6 +54,7 @@ def build_and_run():
     for script in sorted(os.listdir(os.path.join(REPO, "tools", "emulator"))):
         if script == "smoke.sh" or (script.startswith("scenario_") and script.endswith(".sh")):
             run(["bash", os.path.join("tools", "emulator", script), emu], cwd=REPO, env=env)
+    run([sys.executable, "tools/emulator/crawl.py", emu, "--no-golden"], cwd=REPO, env=env)
 
 
 def code_lines(path):
