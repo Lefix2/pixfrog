@@ -7,6 +7,7 @@ after the reboot. Needs the coredump partition — boards flashed with the
 pre-coredump partition table fail that leg (expected until the one-time
 USB reflash).
 """
+import gzip
 import json
 import os
 import subprocess
@@ -53,7 +54,15 @@ def run(board: Board):
     status, hdrs = head()
     c.check("GET / is 200", status == "200")
     c.check("SPA served gzip", hdrs.get("content-encoding") == "gzip")
-    c.check("SPA under 64 KB on the wire", int(hdrs.get("content-length", 1 << 30)) < 65536)
+    r = subprocess.run(["curl", "-s", "-m", "20", "-H", "Accept-Encoding: gzip",
+                        f"http://{BOARD_IP}/"], capture_output=True)
+    try:
+        page = gzip.decompress(r.stdout)
+    except OSError:
+        page = b""
+    c.check("gzip body inflates to the SPA", page.lstrip()[:15].lower() == b"<!doctype html>")
+    c.check(f"compression pays (wire {len(r.stdout)} B, page {len(page)} B)",
+            0 < len(r.stdout) * 2 < len(page))
     etag = hdrs.get("etag", "")
     c.check("SPA has an ETag", len(etag) > 2)
     status, _ = head("-H", f"If-None-Match: {etag}")

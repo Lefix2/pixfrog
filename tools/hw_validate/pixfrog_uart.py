@@ -73,8 +73,11 @@ class Board:
         return False
 
     def reboot_and_resync(self):
+        # Wait for the ROM banner of the restart: syncing right away can catch
+        # the prompt of the image that is still shutting down.
+        self.ser.reset_input_buffer()
         self.ser.write(b"reboot\r\n")
-        time.sleep(1)
+        self.watch_log("ESP-ROM", deadline=10)
         return self.sync()
 
     def watch_log(self, needle, deadline=25):
