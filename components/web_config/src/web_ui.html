@@ -684,6 +684,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 /* ─────────── i18n (English source strings, French overrides) ─────────── */
 var LANG='en';
 var FR={
+  'PLAY ON':'JOUER SUR','Play':'Lire','Playing':'En lecture','Output':'Sortie','Not a target channel of this scene':'Pas un canal cible de cette scène','Select at least one output':'Choisissez au moins une sortie',
   'DMX control':'Contrôle DMX',
   'SHOW':'SHOW',
   'Master':'Master',
@@ -986,11 +987,28 @@ function sceneCardHTML(sc){
     +colsHtml
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'+sliders+'</div>'
     +'<div><div style="font:500 10px \'DM Mono\';letter-spacing:.1em;color:#80837c;margin-bottom:6px">'+t('TARGET CHANNELS')+'</div><div style="display:flex;gap:5px">'+chansHtml+'</div></div>'
+    +playOnHTML(sc)
     +'<div style="display:flex;gap:9px;padding-top:14px;border-top:1px solid #222321">'
     +'<button data-action="scene-dup" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer"><i data-lucide="copy" class="ic14"></i>'+t('Duplicate')+'</button>'
     +'<button data-action="scene-del" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid #3a2826;color:#ec8480;border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer;margin-left:auto"><i data-lucide="trash-2" class="ic14"></i>'+t('Delete')+'</button>'
     +'</div></div>';
 }
+// Zones: which outputs the ▶ of the card claims (∩ the scene's saved mask).
+// Starts as the whole mask; per scene, kept while the page is open.
+var PLAY_ON={};
+function playOnMask(sc){ var i=sc.n-1, m=(PLAY_ON[i]!=null?PLAY_ON[i]:sc.mask); return m&sc.mask; }
+function playOnHTML(sc){
+  var i=sc.n-1, m=playOnMask(sc), chips='';
+  for(var c=0;c<8;c++){ var can=!!(sc.mask&(1<<c)), on=can&&!!(m&(1<<c));
+    chips+='<span data-sc-pon="'+c+'" data-scn="'+sc.n+'" title="'+esc(can?t('Output')+' '+(c+1):t('Not a target channel of this scene'))+'" style="'+chip(on)+(can?'':';opacity:.35;cursor:not-allowed')+'">'+(c+1)+'</span>'; }
+  var btn='display:inline-flex;align-items:center;gap:6px;border-radius:0;padding:6px 11px;font:500 12px \'DM Mono\';cursor:pointer;margin-left:6px;';
+  return '<div><div style="font:500 10px \'DM Mono\';letter-spacing:.1em;color:#80837c;margin-bottom:6px">'+t('PLAY ON')+'</div>'
+    +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+chips
+    +'<button data-sc-playon="'+sc.n+'" style="'+btn+'background:#3fd463;border:1px solid #3fd463;color:#08170d"><i data-lucide="play" class="ic14"></i>'+t('Play')+'</button>'
+    +'<button data-sc-stop="'+sc.n+'" style="'+btn+'background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea"><i data-lucide="square" class="ic14"></i>'+t('Stop')+'</button></div>'
+    +'<div data-sc-playing="'+sc.n+'" style="font:500 11px \'DM Mono\';color:#3fd463;margin-top:6px;min-height:14px">'+esc(playingText(i))+'</div></div>';
+}
+function playingText(i){ return PLAYING[i]?(t('Playing')+' · '+outsText(PLAYING[i])):''; }
 function sceneRowHTML(sc,i,active){
   var on=i===curScene, fx=fxOf(sc);
   var sw=fx.nocol?'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f)':swatchBg(sc.colors);
@@ -1095,6 +1113,7 @@ function applySceneActive(scn){
   var key=JSON.stringify(PLAYING);
   if(scn===lastActiveScene && key===lastPlayingKey) return;
   lastActiveScene=scn; lastPlayingKey=key; renderSceneList();
+  document.querySelectorAll('[data-sc-playing]').forEach(function(e){ e.textContent=playingText(+e.getAttribute('data-sc-playing')-1); });
 }
 function renderScene(n){
   if(n-1===curScene){ var sm=el('scenes-mount'); if(sm){ sm.innerHTML=sceneCardHTML(SCENES[n-1]); createIcons(sm); } }
@@ -1844,6 +1863,13 @@ function onClick(e){
 
   var dh=e.target.closest('[data-dhcp]'); if(dh){ netDhcp=(+dh.getAttribute('data-dhcp'))===1; setDhcpUI(); markDirty('network'); return; }
   var sch=e.target.closest('[data-sc-ch]'); if(sch){ var n2=+sch.getAttribute('data-scn'),b=+sch.getAttribute('data-sc-ch'); SCENES[n2-1].mask^=(1<<b); markDirty('scene'+(n2-1)); renderScene(n2); return; }
+  var pon=e.target.closest('[data-sc-pon]'); if(pon){ var pn=+pon.getAttribute('data-scn'), ps=SCENES[pn-1], pb=+pon.getAttribute('data-sc-pon');
+    if(ps.mask&(1<<pb)){ PLAY_ON[pn-1]=playOnMask(ps)^(1<<pb); renderScene(pn); } return; }
+  var spo=e.target.closest('[data-sc-playon]'); if(spo){ var on=+spo.getAttribute('data-sc-playon')-1, om=playOnMask(SCENES[on]);
+    if(!om){ toast(t('Select at least one output'),true); return; }
+    api('POST','/api/scene/'+on+'/play',{outputs:om}).then(function(){ toast(t('Playing scene ')+(on+1)+' · '+outsText(om)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
+  var sst=e.target.closest('[data-sc-stop]'); if(sst){ var sn2=+sst.getAttribute('data-sc-stop')-1;
+    api('POST','/api/scene/'+sn2+'/stop',{}).then(function(){ toast(t('Stopped scene ')+(sn2+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1, stop=!!PLAYING[n3];
     api('POST','/api/scene/'+n3+(stop?'/stop':'/play'),{}).then(function(){ toast(t(stop?'Stopped scene ':'Playing scene ')+(n3+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var fpl=e.target.closest('[data-fseq-play]'); if(fpl){ var fn=fpl.getAttribute('data-fseq-play'); api('POST','/api/fseq/play',{filename:fn}).then(function(){ toast(t('Playing: ')+fn); loadFseq(); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
