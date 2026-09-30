@@ -300,11 +300,12 @@ int cmd_global(int argc, char** argv) {
         if (m < 0) return err("failsafe_mode: hold|blackout|color|scene or 0..3");
         g.failsafe_mode = static_cast<uint8_t>(m);
     } else if (strcmp(key, "failsafe_scene") == 0) {
-        if (!parse_u32_in(val, 0, config::kNumScenes - 1, u)) return err("failsafe_scene: 0..7");
+        if (config::num_scenes() == 0 || !parse_u32_in(val, 0, config::num_scenes() - 1, u))
+            return err("failsafe_scene: an existing scene index (see `scene`)");
         g.failsafe_scene = static_cast<uint8_t>(u);
     } else if (strcmp(key, "boot_scene") == 0) {
-        if (!parse_u32_in(val, 0, config::kNumScenes, u))
-            return err("boot_scene: 0=none, 1..8 = scene N");
+        if (!parse_u32_in(val, 0, config::num_scenes(), u))
+            return err("boot_scene: 0=none, N = scene N-1");
         g.boot_scene = static_cast<uint8_t>(u);
     } else if (strcmp(key, "failsafe_timeout_s") == 0) {
         if (!parse_u32_in(val, 0, 3600, u)) return err("failsafe_timeout_s: 0..3600 (0=off)");
@@ -605,24 +606,49 @@ int cmd_identify(int argc, char** argv) {
 
 // ── standalone scenes ───────────────────────────────────────────────────────
 
-const char* const kSceneFxNames[] = { "solid", "chase", "rainbow" };
+const char* const kSceneFxNames[] = { "solid",   "chase", "rainbow", "blobs", "gradient", "fade",
+                                      "twinkle", "fire",  "scanner", "wave",  "stripes" };
+static_assert(sizeof(kSceneFxNames) / sizeof(kSceneFxNames[0]) == config::kSceneFxCount,
+              "one console name per scene effect");
+
+// "rrggbb[,rrggbb…]" → up to kSceneColorsMax colours; returns the count, 0 on error.
+size_t parse_scene_colors(const char* arg, uint8_t out[][3]) {
+    char buf[config::kSceneColorsMax * 7 + 1];
+    copy_str(buf, sizeof(buf), arg);
+    if (strlen(arg) >= sizeof(buf)) return 0;
+    size_t n   = 0;
+    char* save = nullptr;
+    for (char* tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(nullptr, ",", &save)) {
+        if (n == config::kSceneColorsMax || parse_hex(tok, out[n], 3) != 3) return 0;
+        ++n;
+    }
+    return n;
+}
+
+bool parse_scene_index(const char* s, uint32_t& out) {
+    return config::num_scenes() > 0 && parse_u32_in(s, 0, config::num_scenes() - 1, out);
+}
 
 int cmd_scene(int argc, char** argv) {
     if (argc == 1) {
         printf("active=%d\n", dmx::active_scene());
-        for (size_t i = 0; i < config::kNumScenes; ++i) {
+        for (size_t i = 0; i < config::num_scenes(); ++i) {
             const auto& sc = config::get_scene(i);
-            printf("scene%u name=%s effect=%s color=%02x%02x%02x speed=%u param=%u mask=%02x\n",
-                   static_cast<unsigned>(i), sc.name, kSceneFxNames[sc.effect <= 2 ? sc.effect : 0],
-                   sc.r, sc.g, sc.b, sc.speed, sc.param, sc.channel_mask);
+            printf("scene%u name=%s effect=%s color=", static_cast<unsigned>(i), sc.name,
+                   kSceneFxNames[sc.effect < config::kSceneFxCount ? sc.effect : 0]);
+            for (size_t k = 0; k < config::scene_num_colors(sc); ++k) {
+                uint8_t rgb[3];
+                config::scene_color(sc, k, rgb);
+                printf("%s%02x%02x%02x", k ? "," : "", rgb[0], rgb[1], rgb[2]);
+            }
+            printf(" speed=%u param=%u mask=%02x\n", sc.speed, sc.param, sc.channel_mask);
         }
         return ok();
     }
 
     uint32_t n = 0;
     if (strcmp(argv[1], "play") == 0) {
-        if (argc != 3 || !parse_u32_in(argv[2], 0, config::kNumScenes - 1, n))
-            return err("usage: scene play <0..7>");
+        if (argc != 3 || !parse_scene_index(argv[2], n)) return err("usage: scene play <index>");
         dmx::scene_start(static_cast<uint8_t>(n));
         printf("active=%u\n", static_cast<unsigned>(n));
         return ok();
@@ -632,40 +658,70 @@ int cmd_scene(int argc, char** argv) {
         return ok();
     }
     if (strcmp(argv[1], "name") == 0) {
-        if (argc != 4 || !parse_u32_in(argv[2], 0, config::kNumScenes - 1, n))
-            return err("usage: scene name <0..7> <text>");
+        if (argc != 4 || !parse_scene_index(argv[2], n))
+            return err("usage: scene name <index> <text>");
         auto sc = config::get_scene(n);
         copy_str(sc.name, sizeof(sc.name), argv[3]);
         if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
         return ok();
     }
     if (strcmp(argv[1], "set") == 0) {
-        // scene set <n> <effect> <rrggbb> <speed> <param> <mask-hex>
+        // scene set <n> <effect> <rrggbb[,rrggbb…]> <speed> <param> <mask-hex>
         if (argc != 8)
-            return err("usage: scene set <n> <solid|chase|rainbow> <rrggbb> "
+            return err("usage: scene set <n> <effect> <rrggbb[,rrggbb...]> "
                        "<speed 0..255> <param 0..255> <mask hex>");
-        if (!parse_u32_in(argv[2], 0, config::kNumScenes - 1, n)) return err("scene: 0..7");
-        const int fx = lookup_name(kSceneFxNames, 3, argv[3]);
-        if (fx < 0) return err("effect: solid|chase|rainbow or 0..2");
-        uint8_t rgb[3];
-        if (parse_hex(argv[4], rgb, 3) != 3) return err("color: rrggbb");
+        if (!parse_scene_index(argv[2], n)) return err("scene: an existing index");
+        const int fx = lookup_name(kSceneFxNames, config::kSceneFxCount, argv[3]);
+        if (fx < 0)
+            return err("effect: solid|chase|rainbow|blobs|gradient|fade|twinkle|fire|scanner|"
+                       "wave|stripes or 0..10");
+        uint8_t cols[config::kSceneColorsMax][3];
+        const size_t ncols = parse_scene_colors(argv[4], cols);
+        if (ncols == 0) return err("colors: rrggbb[,rrggbb...] (1..4)");
         uint32_t speed = 0, param = 0;
         if (!parse_u32_in(argv[5], 0, 255, speed)) return err("speed: 0..255");
         if (!parse_u32_in(argv[6], 0, 255, param)) return err("param: 0..255");
         uint8_t mask[1];
         if (parse_hex(argv[7], mask, 1) != 1) return err("mask: 2-digit hex (ff = all)");
-        auto sc         = config::get_scene(n);
-        sc.effect       = static_cast<uint8_t>(fx);
-        sc.r            = rgb[0];
-        sc.g            = rgb[1];
-        sc.b            = rgb[2];
+        auto sc   = config::get_scene(n);
+        sc.effect = static_cast<uint8_t>(fx);
+        for (size_t k = 0; k < ncols; ++k)
+            config::set_scene_color(sc, k, cols[k][0], cols[k][1], cols[k][2]);
+        sc.num_colors   = static_cast<uint8_t>(ncols);
         sc.speed        = static_cast<uint8_t>(speed);
         sc.param        = static_cast<uint8_t>(param);
         sc.channel_mask = mask[0];
         if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
         return ok();
     }
-    return err("usage: scene [play <n> | stop | name <n> <text> | set <n> ...]");
+    if (strcmp(argv[1], "add") == 0) {
+        // scene add [name] — a solid white scene on every channel, appended.
+        config::Scene sc{};
+        copy_str(sc.name, sizeof(sc.name), argc >= 3 ? argv[2] : "New scene");
+        sc.channel_mask = 0xFF;
+        sc.num_colors   = 1;
+        sc.r = sc.g = sc.b = 255;
+        const int idx      = config::add_scene(sc);
+        if (idx < 0) return err("scene list full (30)");
+        printf("index=%d\n", idx);
+        return ok();
+    }
+    if (strcmp(argv[1], "del") == 0) {
+        if (argc != 3 || !parse_scene_index(argv[2], n)) return err("usage: scene del <index>");
+        config::delete_scene(n);
+        dmx::scene_list_edited(config::SceneEdit::Delete, n);
+        return ok();
+    }
+    if (strcmp(argv[1], "move") == 0) {
+        uint32_t to = 0;
+        if (argc != 4 || !parse_scene_index(argv[2], n) || !parse_scene_index(argv[3], to))
+            return err("usage: scene move <from> <to>");
+        config::move_scene(n, to);
+        dmx::scene_list_edited(config::SceneEdit::Move, n, to);
+        return ok();
+    }
+    return err("usage: scene [play <n> | stop | name <n> <text> | set <n> ... | add [name] | "
+               "del <n> | move <from> <to>]");
 }
 
 // ── FSEQ player ─────────────────────────────────────────────────────────────

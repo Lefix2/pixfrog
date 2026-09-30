@@ -333,42 +333,323 @@ inline void set_px(uint8_t* dst, uint8_t bpp, uint16_t i, uint8_t r, uint8_t g, 
         p[k] = 0;  // W die off — scene colours are RGB-defined
 }
 
-// Renders one frame of scene `effect` at time `phase_ms`:
-//   solid   — r,g,b everywhere
-//   chase   — black background, `param`-pixel head moving at `speed` px/s
-//   rainbow — `param` wheel repeats along the strip, rotating with `speed`
+struct Rgb {
+    uint8_t r, g, b;
+};
+
+inline void set_px(uint8_t* dst, uint8_t bpp, uint16_t i, Rgb c) {
+    set_px(dst, bpp, i, c.r, c.g, c.b);
+}
+
+// Saturating add, for effects whose shapes overlap (blobs).
+inline void add_px(uint8_t* dst, uint8_t bpp, uint16_t i, Rgb c) {
+    uint8_t* p         = dst + static_cast<size_t>(i) * bpp;
+    const uint8_t v[3] = { c.r, c.g, c.b };
+    for (uint8_t k = 0; k < 3 && k < bpp; ++k) {
+        const unsigned s = p[k] + v[k];
+        p[k]             = static_cast<uint8_t>(s > 255 ? 255 : s);
+    }
+}
+
+inline Rgb scale_rgb(Rgb c, uint32_t v255) {
+    return { static_cast<uint8_t>(c.r * v255 / 255), static_cast<uint8_t>(c.g * v255 / 255),
+             static_cast<uint8_t>(c.b * v255 / 255) };
+}
+
+inline uint8_t lerp8(uint8_t a, uint8_t b, uint32_t t255) {
+    return static_cast<uint8_t>(a +
+                                (static_cast<int32_t>(b) - a) * static_cast<int32_t>(t255) / 255);
+}
+
+inline Rgb lerp_rgb(Rgb a, Rgb b, uint32_t t255) {
+    return { lerp8(a.r, b.r, t255), lerp8(a.g, b.g, t255), lerp8(a.b, b.b, t255) };
+}
+
+// Stateless effects need per-pixel randomness that is stable across frames.
+inline uint32_t hash32(uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+
+// Smoothstep on 0..255: removes the corners of linear ramps.
+inline uint8_t ease8(uint32_t t) {
+    if (t > 255) t = 255;
+    return static_cast<uint8_t>(t * t * (765 - 2 * t) / 65025);
+}
+
+// One cosine-like bump per period: 0 → 255 → 0 as phase runs 0..255.
+inline uint8_t wave8(uint8_t phase) {
+    const uint32_t t = phase < 128 ? phase * 2u : (255u - phase) * 2u;
+    return ease8(t);
+}
+
+// 2-D value noise, coordinates in 1/256 cell units, result 0..255.
+inline uint8_t noise8(uint32_t x, uint32_t y) {
+    const uint32_t xi = x >> 8, yi = y >> 8;
+    const int32_t fx = ease8(x & 255), fy = ease8(y & 255);
+    auto corner = [](uint32_t cx, uint32_t cy) {
+        return static_cast<int32_t>(hash32(cx * 73856093u ^ cy * 19349663u) & 255);
+    };
+    const int32_t c00 = corner(xi, yi), c10 = corner(xi + 1, yi);
+    const int32_t c01 = corner(xi, yi + 1), c11 = corner(xi + 1, yi + 1);
+    const int32_t top = c00 + (c10 - c00) * fx / 255;
+    const int32_t bot = c01 + (c11 - c01) * fx / 255;
+    return static_cast<uint8_t>(top + (bot - top) * fy / 255);
+}
+
+struct Palette {
+    Rgb c[config::kSceneColorsMax];
+    uint8_t n;
+};
+
+inline Palette scene_palette(const config::Scene& s) {
+    Palette p{};
+    p.n = config::scene_num_colors(s);
+    for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
+        uint8_t rgb[3];
+        config::scene_color(s, k, rgb);
+        p.c[k] = { rgb[0], rgb[1], rgb[2] };
+    }
+    return p;
+}
+
+// Cyclic gradient through the palette, one full cycle per 65536. A lone
+// colour cycles against black so the gradient keeps some contrast.
+inline Rgb palette_at(const Palette& p, uint32_t pos16) {
+    const uint32_t n = p.n < 2 ? 2 : p.n;
+    const uint32_t x = (pos16 & 0xFFFF) * n;
+    const uint32_t k = x >> 16;
+    const Rgb a      = p.n < 2 && k == 1 ? Rgb{ 0, 0, 0 } : p.c[k];
+    const Rgb b      = p.n < 2 && k == 0 ? Rgb{ 0, 0, 0 } : p.c[(k + 1) % n];
+    return lerp_rgb(a, b, (x & 0xFFFF) >> 8);
+}
+
+// Non-cyclic ramp black → colour 1 → … → colour n, for heat maps.
+inline Rgb palette_ramp(const Palette& p, uint32_t v255) {
+    const uint32_t x   = v255 * p.n;
+    const uint32_t seg = x >> 8;
+    const Rgb from     = seg == 0 ? Rgb{ 0, 0, 0 } : p.c[seg - 1];
+    return lerp_rgb(from, p.c[seg < p.n ? seg : p.n - 1], x & 255);
+}
+
+// A bounce over [0, span] in 1/256 px: position at `travel256` along the path.
+inline uint32_t bounce256(uint64_t travel256, uint32_t span) {
+    const uint64_t leg = static_cast<uint64_t>(span) * 256;
+    const uint64_t m   = travel256 % (2 * leg);
+    return static_cast<uint32_t>(m < leg ? m : 2 * leg - m);
+}
+
+// Per-effect meaning of speed/param. param 0 always means the effect's default.
+//   solid    — colour 1; speed = strobe 0..60 Hz: 1/60 s flashes of colour 2
+//              (black when unset), so 0 is steady colour 1 and 255 steady colour 2
+//   chase    — one param-px head per colour (default 1), evenly spaced, speed px/s
+//   rainbow  — param wheel repeats (default 1), speed rotates; colours unused
+//   blobs    — param soft blobs (default 3, max 16) drifting and bouncing, one
+//              colour each, additive where they meet; speed ≈ px/s
+//   gradient — the palette spread param times along the strip, scrolling with speed
+//   fade     — whole strip crossfades through the palette; speed = rate
+//   twinkle  — pixels flare up in palette colours on black; param = density
+//              (default 64/255), speed = tempo
+//   fire     — value-noise flames rising from pixel 0, heat mapped black →
+//              colour 1 → … → colour n; speed = flicker
+//   scanner  — param-px eye (default 5 % of the strip) sweeping back and forth
+//              with a fading trail, next colour each pass; speed px/s
+//   wave     — param brightness waves (default 2) travelling over the palette
+//   stripes  — param-px bands (default 4) of each colour marching at speed px/s
+namespace fx {
+
+inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                  uint32_t t) {
+    const uint64_t pos = static_cast<uint64_t>(t) * speed * 60 % 255000;
+    const bool flash   = pos < static_cast<uint64_t>(speed) * 1000;
+    const Rgb c        = flash ? (p.n > 1 ? p.c[1] : Rgb{ 0, 0, 0 }) : p.c[0];
+    for (uint16_t i = 0; i < n; ++i)
+        set_px(d, bpp, i, c);
+}
+
+inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                  uint8_t param, uint32_t t) {
+    std::memset(d, 0, static_cast<size_t>(n) * bpp);
+    const uint16_t width = param ? param : 1;
+    const uint32_t head  = (static_cast<uint64_t>(t) * speed / 1000) % n;
+    for (uint8_t k = 0; k < p.n; ++k) {
+        const uint32_t h = head + static_cast<uint32_t>(k) * n / p.n;
+        for (uint16_t w = 0; w < width && w < n; ++w)
+            set_px(d, bpp, static_cast<uint16_t>((h + n - w % n) % n), p.c[k]);
+    }
+}
+
+inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t param, uint32_t t) {
+    const uint32_t repeats = param ? param : 1;
+    const uint32_t offset  = (static_cast<uint64_t>(t) * speed / 100) % 360;
+    for (uint16_t i = 0; i < n; ++i) {
+        const uint32_t hue = static_cast<uint32_t>(i) * 360 * repeats / n + offset;
+        uint8_t r, g, b;
+        hue_to_rgb(hue, &r, &g, &b);
+        set_px(d, bpp, i, r, g, b);
+    }
+}
+
+inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                  uint8_t param, uint32_t t) {
+    std::memset(d, 0, static_cast<size_t>(n) * bpp);
+    const uint32_t count = param ? (param > 16 ? 16 : param) : 3;
+    const uint32_t span  = n > 1 ? n - 1u : 1u;
+    uint32_t radius      = n / ((count + 1) * 2);
+    if (radius < 2) radius = 2;
+    const uint32_t r256 = radius * 256;
+    for (uint32_t k = 0; k < count; ++k) {
+        const uint32_t h = hash32(k * 0x9E3779B9u + 1);
+        // 0.6×..1.4× the nominal speed, so blobs overtake and cross each other.
+        const uint32_t vel    = 96 + (h & 127);
+        const uint64_t travel = static_cast<uint64_t>(t) * speed * vel * 256 / (160 * 1000);
+        const uint32_t pos    = bounce256(travel + (h >> 8) % (2 * span * 256), span);
+        const Rgb c           = p.c[k % p.n];
+        const uint32_t lo     = pos > r256 ? (pos - r256) / 256 : 0;
+        const uint32_t hi     = (pos + r256) / 256;
+        for (uint32_t i = lo; i <= hi && i < n; ++i) {
+            const uint32_t x    = i * 256;
+            const uint32_t dist = x > pos ? x - pos : pos - x;
+            if (dist >= r256) continue;
+            add_px(d, bpp, static_cast<uint16_t>(i), scale_rgb(c, ease8(255 - dist * 255 / r256)));
+        }
+    }
+}
+
+inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                     uint8_t param, uint32_t t) {
+    const uint32_t repeats = param ? param : 1;
+    const uint32_t offset  = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000);
+    for (uint16_t i = 0; i < n; ++i)
+        set_px(
+            d, bpp, i,
+            palette_at(p, static_cast<uint32_t>(static_cast<uint64_t>(i) * 65536u * repeats / n) -
+                              offset));
+}
+
+inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint32_t t) {
+    const Rgb c = palette_at(p,
+                             static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000));
+    for (uint16_t i = 0; i < n; ++i)
+        set_px(d, bpp, i, c);
+}
+
+inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                    uint8_t param, uint32_t t) {
+    const uint32_t density = param ? param : 64;
+    const uint32_t ticks   = static_cast<uint32_t>(static_cast<uint64_t>(t) * (speed + 4u) / 64);
+    for (uint16_t i = 0; i < n; ++i) {
+        const uint32_t h      = hash32(i * 2654435761u ^ 0x5bd1e995u);
+        const uint32_t period = 512 + (h & 1023);
+        const uint32_t u      = ticks + (h >> 12);
+        const uint32_t cycle  = u / period;
+        const uint32_t local  = u % period;
+        const uint32_t roll   = hash32(h ^ (cycle * 0x27d4eb2du));
+        if (local < 256 && (roll & 255) < density)
+            set_px(d, bpp, i,
+                   scale_rgb(p.c[(roll >> 8) % p.n], wave8(static_cast<uint8_t>(local))));
+        else
+            set_px(d, bpp, i, 0, 0, 0);
+    }
+}
+
+inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint32_t t) {
+    const uint32_t y    = static_cast<uint32_t>(static_cast<uint64_t>(t) * (speed + 8u) / 32);
+    const uint32_t span = n > 1 ? n - 1u : 1u;
+    for (uint16_t i = 0; i < n; ++i) {
+        const uint32_t u    = static_cast<uint32_t>(i) * 65535u / span;  // 0 at the base
+        const uint32_t fall = 255 - (u >> 8);
+        // Sampling further down the strip as time runs makes the noise rise.
+        const uint32_t base = u * 8 / 256 + 0x40000000u - y / 4;
+        // Coarse tongues plus a finer, faster octave for the flicker.
+        const uint32_t nv = (2u * noise8(base, y / 4) + noise8(base * 3, y / 2)) / 3;
+        uint32_t heat     = nv * fall / 255 * 5 / 4 + fall / 5;
+        if (heat > 255) heat = 255;
+        set_px(d, bpp, i, palette_ramp(p, heat));
+    }
+}
+
+inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                    uint8_t param, uint32_t t) {
+    const uint32_t span   = n > 1 ? n - 1u : 1u;
+    const uint32_t width  = param ? param : (n / 20 ? n / 20 : 1);
+    const uint32_t half   = width * 128;
+    const uint32_t trail  = width * 4 * 256;
+    const uint64_t travel = static_cast<uint64_t>(t) * speed * 256 / 1000;
+    const uint64_t leg    = static_cast<uint64_t>(span) * 256;
+    const bool forward    = travel % (2 * leg) < leg;
+    const uint32_t pos    = bounce256(travel, span);
+    const Rgb c           = p.c[(travel / leg) % p.n];
+    for (uint16_t i = 0; i < n; ++i) {
+        const int32_t x      = static_cast<int32_t>(i) * 256;
+        const int32_t behind = forward ? static_cast<int32_t>(pos) - x
+                                       : x - static_cast<int32_t>(pos);
+        const uint32_t ad    = static_cast<uint32_t>(behind < 0 ? -behind : behind);
+        uint32_t v           = 0;
+        if (ad <= half) {
+            v = 255;
+        } else if (behind > 0 && ad - half < trail) {
+            v = 255 - (ad - half) * 255 / trail;
+            v = v * v / 255;
+        }
+        set_px(d, bpp, i, scale_rgb(c, v));
+    }
+}
+
+inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                 uint8_t param, uint32_t t) {
+    const uint32_t waves = param ? param : 2;
+    const uint32_t shift = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 512 / 1000);
+    for (uint16_t i = 0; i < n; ++i) {
+        const uint32_t pos = static_cast<uint32_t>(static_cast<uint64_t>(i) * 65536u * waves / n) -
+                             shift;
+        const Rgb c = p.n > 1 ? palette_at(p, static_cast<uint32_t>(i) * 65536u / n) : p.c[0];
+        set_px(d, bpp, i, scale_rgb(c, wave8(static_cast<uint8_t>(pos >> 8))));
+    }
+}
+
+inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+                    uint8_t param, uint32_t t) {
+    const uint32_t width  = param ? param : 4;
+    const uint32_t bands  = p.n > 1 ? p.n : 2;  // a lone colour alternates with black
+    const uint32_t period = width * bands;
+    const uint32_t shift  = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed / 1000 % period);
+    for (uint16_t i = 0; i < n; ++i) {
+        const uint32_t band = (i + period - shift) % period / width;
+        set_px(d, bpp, i, band < p.n ? p.c[band] : Rgb{ 0, 0, 0 });
+    }
+}
+
+}  // namespace fx
+
+// Renders one frame of `scene` at wall-clock time `phase_ms` (animation speed
+// is refresh-rate independent). Canonical RGB(W) order; colour order and
+// brightness apply at encode time.
 inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
-                               uint8_t bytes_per_pixel, uint8_t effect, uint8_t r, uint8_t g,
-                               uint8_t b, uint8_t speed, uint8_t param, uint32_t phase_ms) {
+                               uint8_t bytes_per_pixel, const config::Scene& scene,
+                               uint32_t phase_ms) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
-
-    switch (effect) {
-    case 1: {  // chase
-        std::memset(dst, 0, total);
-        const uint16_t width = param ? param : 1;
-        const uint32_t head  = (static_cast<uint64_t>(phase_ms) * speed / 1000) % pixel_count;
-        for (uint16_t k = 0; k < width && k < pixel_count; ++k) {
-            const uint16_t i = static_cast<uint16_t>((head + pixel_count - k) % pixel_count);
-            set_px(dst, bytes_per_pixel, i, r, g, b);
-        }
-        break;
-    }
-    case 2: {  // rainbow
-        const uint32_t repeats = param ? param : 1;
-        const uint32_t offset  = (static_cast<uint64_t>(phase_ms) * speed / 100) % 360;
-        for (uint16_t i = 0; i < pixel_count; ++i) {
-            const uint32_t hue = (static_cast<uint32_t>(i) * 360 * repeats / pixel_count + offset);
-            uint8_t pr, pg, pb;
-            hue_to_rgb(hue, &pr, &pg, &pb);
-            set_px(dst, bytes_per_pixel, i, pr, pg, pb);
-        }
-        break;
-    }
-    default:  // solid
-        for (uint16_t i = 0; i < pixel_count; ++i)
-            set_px(dst, bytes_per_pixel, i, r, g, b);
-        break;
+    const Palette p = scene_palette(scene);
+    const uint8_t s = scene.speed, k = scene.param;
+    const uint16_t n  = pixel_count;
+    const uint8_t bpp = bytes_per_pixel;
+    switch (scene.effect) {
+    case config::kSceneFxChase: fx::chase(dst, n, bpp, p, s, k, phase_ms); break;
+    case config::kSceneFxRainbow: fx::rainbow(dst, n, bpp, s, k, phase_ms); break;
+    case config::kSceneFxBlobs: fx::blobs(dst, n, bpp, p, s, k, phase_ms); break;
+    case config::kSceneFxGradient: fx::gradient(dst, n, bpp, p, s, k, phase_ms); break;
+    case config::kSceneFxFade: fx::fade(dst, n, bpp, p, s, phase_ms); break;
+    case config::kSceneFxTwinkle: fx::twinkle(dst, n, bpp, p, s, k, phase_ms); break;
+    case config::kSceneFxFire: fx::fire(dst, n, bpp, p, s, phase_ms); break;
+    case config::kSceneFxScanner: fx::scanner(dst, n, bpp, p, s, k, phase_ms); break;
+    case config::kSceneFxWave: fx::wave(dst, n, bpp, p, s, k, phase_ms); break;
+    case config::kSceneFxStripes: fx::stripes(dst, n, bpp, p, s, k, phase_ms); break;
+    default: fx::solid(dst, n, bpp, p, s, phase_ms); break;
     }
 }
 

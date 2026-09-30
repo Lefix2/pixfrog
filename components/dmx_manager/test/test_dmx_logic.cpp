@@ -571,9 +571,29 @@ static void test_failsafe_fill_overflow_is_noop() {
 
 // ── Scene generators ────────────────────────────────────────────────────────
 
+static pixfrog::config::Scene mk_scene(uint8_t effect, uint8_t r, uint8_t g, uint8_t b,
+                                       uint8_t speed, uint8_t param) {
+    pixfrog::config::Scene s{};
+    s.effect     = effect;
+    s.r          = r;
+    s.g          = g;
+    s.b          = b;
+    s.speed      = speed;
+    s.param      = param;
+    s.num_colors = 1;
+    return s;
+}
+
+static pixfrog::config::Scene with_color(pixfrog::config::Scene s, uint8_t r, uint8_t g,
+                                         uint8_t b) {
+    pixfrog::config::set_scene_color(s, s.num_colors, r, g, b);
+    ++s.num_colors;
+    return s;
+}
+
 static void test_scene_solid() {
     uint8_t buf[4 * 3] = {};
-    fill_scene_pattern(buf, sizeof(buf), 4, 3, 0 /*solid*/, 10, 20, 30, 0, 0, 12345);
+    fill_scene_pattern(buf, sizeof(buf), 4, 3, mk_scene(0 /*solid*/, 10, 20, 30, 0, 0), 12345);
     for (int i = 0; i < 4; ++i) {
         EXPECT_EQ(buf[i * 3 + 0], 10);
         EXPECT_EQ(buf[i * 3 + 1], 20);
@@ -584,7 +604,7 @@ static void test_scene_solid() {
 static void test_scene_solid_rgbw_white_off() {
     uint8_t buf[2 * 4];
     std::memset(buf, 0xFF, sizeof(buf));
-    fill_scene_pattern(buf, sizeof(buf), 2, 4, 0, 1, 2, 3, 0, 0, 0);
+    fill_scene_pattern(buf, sizeof(buf), 2, 4, mk_scene(0, 1, 2, 3, 0, 0), 0);
     EXPECT_EQ(buf[3], 0);
     EXPECT_EQ(buf[7], 0);
 }
@@ -592,7 +612,7 @@ static void test_scene_solid_rgbw_white_off() {
 static void test_scene_chase_position_and_width() {
     // 10 px, speed 100 px/s, t=0 → head at 0; width 3 → pixels 0, 9, 8 lit.
     uint8_t buf[10 * 3] = {};
-    fill_scene_pattern(buf, sizeof(buf), 10, 3, 1 /*chase*/, 255, 0, 0, 100, 3, 0);
+    fill_scene_pattern(buf, sizeof(buf), 10, 3, mk_scene(1 /*chase*/, 255, 0, 0, 100, 3), 0);
     EXPECT_EQ(buf[0 * 3], 255);
     EXPECT_EQ(buf[9 * 3], 255);
     EXPECT_EQ(buf[8 * 3], 255);
@@ -600,12 +620,12 @@ static void test_scene_chase_position_and_width() {
 
     // t=1000 ms → 100 px advanced → head back at 0 (wrap).
     uint8_t buf2[10 * 3] = {};
-    fill_scene_pattern(buf2, sizeof(buf2), 10, 3, 1, 255, 0, 0, 100, 3, 1000);
+    fill_scene_pattern(buf2, sizeof(buf2), 10, 3, mk_scene(1, 255, 0, 0, 100, 3), 1000);
     EXPECT_EQ(buf2[0 * 3], 255);
 
     // t=50 ms → 5 px advanced → head at 5.
     uint8_t buf3[10 * 3] = {};
-    fill_scene_pattern(buf3, sizeof(buf3), 10, 3, 1, 255, 0, 0, 100, 3, 50);
+    fill_scene_pattern(buf3, sizeof(buf3), 10, 3, mk_scene(1, 255, 0, 0, 100, 3), 50);
     EXPECT_EQ(buf3[5 * 3], 255);
     EXPECT_EQ(buf3[0 * 3], 0);
 }
@@ -613,7 +633,7 @@ static void test_scene_chase_position_and_width() {
 static void test_scene_rainbow_spans_hues() {
     // 6 px, 1 repeat, t=0 → hues 0,60,...,300 → all distinct primaries/mixes.
     uint8_t buf[6 * 3] = {};
-    fill_scene_pattern(buf, sizeof(buf), 6, 3, 2 /*rainbow*/, 0, 0, 0, 0, 1, 0);
+    fill_scene_pattern(buf, sizeof(buf), 6, 3, mk_scene(2 /*rainbow*/, 0, 0, 0, 0, 1), 0);
     EXPECT_EQ(buf[0], 255);  // hue 0 = red
     EXPECT_EQ(buf[1], 0);
     // hue 120 (pixel 2) = green
@@ -623,15 +643,153 @@ static void test_scene_rainbow_spans_hues() {
     EXPECT_EQ(buf[4 * 3 + 2], 255);
     // rotation: with speed, t shifts the wheel
     uint8_t buf2[6 * 3] = {};
-    fill_scene_pattern(buf2, sizeof(buf2), 6, 3, 2, 0, 0, 0, 100, 1, 60);  // +60°
-    EXPECT_EQ(buf2[0 * 3 + 0], 255);                                       // hue 60 = yellow
+    fill_scene_pattern(buf2, sizeof(buf2), 6, 3, mk_scene(2, 0, 0, 0, 100, 1), 60);  // +60°
+    EXPECT_EQ(buf2[0 * 3 + 0], 255);  // hue 60 = yellow
     EXPECT_EQ(buf2[0 * 3 + 1], 255);
 }
 
 static void test_scene_overflow_is_noop() {
     uint8_t buf[5] = {};
-    fill_scene_pattern(buf, sizeof(buf), 2, 3, 0, 9, 9, 9, 0, 0, 0);
+    fill_scene_pattern(buf, sizeof(buf), 2, 3, mk_scene(0, 9, 9, 9, 0, 0), 0);
     EXPECT_EQ(buf[0], 0);
+}
+
+// Strobe: 0 → steady colour 1, 255 → steady colour 2, in between 1/60 s
+// flashes of colour 2 at speed×60/255 Hz.
+static void test_scene_solid_strobe() {
+    using namespace pixfrog::config;
+    const Scene base = with_color(mk_scene(kSceneFxSolid, 10, 0, 0, 0, 0), 0, 0, 200);
+    uint8_t buf[2 * 3];
+    for (uint32_t t : { 0u, 7u, 999u, 123456u }) {
+        fill_scene_pattern(buf, sizeof(buf), 2, 3, base, t);
+        EXPECT_EQ(buf[0], 10);  // speed 0: never flashes
+        EXPECT_EQ(buf[2], 0);
+    }
+    Scene full = base;
+    full.speed = 255;
+    for (uint32_t t : { 0u, 7u, 999u, 123456u }) {
+        fill_scene_pattern(buf, sizeof(buf), 2, 3, full, t);
+        EXPECT_EQ(buf[0], 0);  // 60 Hz of 1/60 s flashes: always colour 2
+        EXPECT_EQ(buf[2], 200);
+    }
+    // 51 → 12 Hz: period 83.3 ms, flash for the first 16.7 ms of each.
+    Scene mid = base;
+    mid.speed = 51;
+    fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 5);
+    EXPECT_EQ(buf[2], 200);
+    fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 40);
+    EXPECT_EQ(buf[0], 10);
+    fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 90);  // next period's flash
+    EXPECT_EQ(buf[2], 200);
+    // One colour: the flash is black (classic strobe on a lit strip).
+    Scene single = mk_scene(kSceneFxSolid, 50, 50, 50, 255, 0);
+    fill_scene_pattern(buf, sizeof(buf), 2, 3, single, 3);
+    EXPECT_EQ(buf[0], 0);
+}
+
+static void test_scene_chase_one_head_per_colour() {
+    using namespace pixfrog::config;
+    const Scene s       = with_color(mk_scene(kSceneFxChase, 255, 0, 0, 0, 1), 0, 0, 255);
+    uint8_t buf[10 * 3] = {};
+    fill_scene_pattern(buf, sizeof(buf), 10, 3, s, 0);
+    EXPECT_EQ(buf[0 * 3 + 0], 255);  // head 1 at 0
+    EXPECT_EQ(buf[5 * 3 + 2], 255);  // head 2 half a strip away
+    EXPECT_EQ(buf[3 * 3 + 0], 0);
+}
+
+static int lit_pixels(const uint8_t* buf, int n) {
+    int lit = 0;
+    for (int i = 0; i < n; ++i)
+        if (buf[i * 3] | buf[i * 3 + 1] | buf[i * 3 + 2]) ++lit;
+    return lit;
+}
+
+static void test_scene_blobs_move_and_stay_in_bounds() {
+    using namespace pixfrog::config;
+    const Scene s    = with_color(mk_scene(kSceneFxBlobs, 0, 0, 255, 60, 3), 255, 0, 0);
+    constexpr int kN = 120;
+    uint8_t a[kN * 3 + 3], b[kN * 3 + 3];
+    std::memset(a, 0xAB, sizeof(a));
+    std::memset(b, 0xAB, sizeof(b));
+    fill_scene_pattern(a, sizeof(a), kN, 3, s, 1000);
+    fill_scene_pattern(b, sizeof(b), kN, 3, s, 3000);
+    EXPECT_EQ(a[kN * 3], 0xAB);  // nothing past the strip
+    EXPECT_TRUE(lit_pixels(a, kN) > 10);
+    EXPECT_TRUE(lit_pixels(a, kN) < kN);  // blobs, not a wash
+    EXPECT_TRUE(std::memcmp(a, b, kN * 3) != 0);
+    // Deterministic: same time, same frame.
+    fill_scene_pattern(b, sizeof(b), kN, 3, s, 1000);
+    EXPECT_TRUE(std::memcmp(a, b, kN * 3) == 0);
+}
+
+static void test_scene_fire_hot_base_dark_tip() {
+    using namespace pixfrog::config;
+    Scene s          = with_color(mk_scene(kSceneFxFire, 255, 0, 0, 60, 0), 255, 255, 0);
+    constexpr int kN = 60;
+    uint8_t buf[kN * 3];
+    fill_scene_pattern(buf, sizeof(buf), kN, 3, s, 4321);
+    EXPECT_TRUE(buf[0] > 100);            // base glows
+    EXPECT_EQ(buf[(kN - 1) * 3 + 1], 0);  // tip burns out
+}
+
+static void test_scene_scanner_bounces() {
+    using namespace pixfrog::config;
+    const Scene s = mk_scene(kSceneFxScanner, 0, 255, 0, 100, 1);
+    uint8_t buf[11 * 3];
+    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 50);  // 5 px along the first leg
+    EXPECT_EQ(buf[5 * 3 + 1], 255);
+    EXPECT_TRUE(buf[4 * 3 + 1] > 0);                      // trail behind
+    EXPECT_EQ(buf[6 * 3 + 1], 0);                         // nothing ahead
+    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 150);  // 15 px: bounced back to 5
+    EXPECT_EQ(buf[5 * 3 + 1], 255);
+    EXPECT_TRUE(buf[6 * 3 + 1] > 0);  // trail now on the other side
+}
+
+static void test_scene_stripes_alternate_palette() {
+    using namespace pixfrog::config;
+    const Scene s = with_color(mk_scene(kSceneFxStripes, 255, 0, 0, 0, 2), 0, 255, 0);
+    uint8_t buf[8 * 3];
+    fill_scene_pattern(buf, sizeof(buf), 8, 3, s, 0);
+    EXPECT_EQ(buf[0 * 3 + 0], 255);
+    EXPECT_EQ(buf[1 * 3 + 0], 255);
+    EXPECT_EQ(buf[2 * 3 + 1], 255);
+    EXPECT_EQ(buf[4 * 3 + 0], 255);
+}
+
+static void test_scene_fade_crosses_palette() {
+    using namespace pixfrog::config;
+    const Scene s = with_color(mk_scene(kSceneFxFade, 255, 0, 0, 255, 0), 0, 0, 255);
+    uint8_t buf[3];
+    fill_scene_pattern(buf, sizeof(buf), 1, 3, s, 0);
+    EXPECT_EQ(buf[0], 255);
+    EXPECT_EQ(buf[2], 0);
+    // 255 × 256 / 1000 per ms: half a cycle (colour 2) after ~502 ms.
+    fill_scene_pattern(buf, sizeof(buf), 1, 3, s, 502);
+    EXPECT_TRUE(buf[2] > 240);
+    EXPECT_TRUE(buf[0] < 15);
+}
+
+// Every effect must stay within pixel_count × bpp, zero the W die, and cope
+// with 1-pixel strips, max-size strips and extreme parameters.
+static void test_scene_all_effects_bounded() {
+    using namespace pixfrog::config;
+    constexpr int kN = 1024;
+    static uint8_t buf[kN * 4 + 8];
+    for (uint8_t fx = 0; fx < kSceneFxCount; ++fx)
+        for (int n : { 1, 2, 7, kN })
+            for (uint8_t speed : { 0, 1, 255 })
+                for (uint8_t param : { 0, 1, 255 }) {
+                    Scene s = with_color(with_color(mk_scene(fx, 255, 1, 2, speed, param), 3, 4, 5),
+                                         6, 7, 8);
+                    s       = with_color(s, 9, 10, 11);
+                    std::memset(buf, 0xCD, sizeof(buf));
+                    fill_scene_pattern(buf, sizeof(buf), static_cast<uint16_t>(n), 4, s,
+                                       0xFFFFFFF0u);
+                    bool ok = buf[n * 4] == 0xCD;
+                    for (int i = 0; i < n; ++i)
+                        ok = ok && buf[i * 4 + 3] == 0;
+                    EXPECT_TRUE(ok);
+                }
 }
 
 static void test_hue_wheel_endpoints() {
@@ -828,6 +986,14 @@ int main() {
     test_scene_chase_position_and_width();
     test_scene_rainbow_spans_hues();
     test_scene_overflow_is_noop();
+    test_scene_solid_strobe();
+    test_scene_chase_one_head_per_colour();
+    test_scene_blobs_move_and_stay_in_bounds();
+    test_scene_fire_hot_base_dark_tip();
+    test_scene_scanner_bounces();
+    test_scene_stripes_alternate_palette();
+    test_scene_fade_crosses_palette();
+    test_scene_all_effects_bounded();
     test_hue_wheel_endpoints();
     test_merge_single_source_passthrough();
     test_merge_htp_two_sources();

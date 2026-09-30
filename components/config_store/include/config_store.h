@@ -11,6 +11,8 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstring>
 #include <stdint.h>
 
 #include "led_protocols.h"
@@ -65,8 +67,9 @@ struct GlobalConfig {
     uint8_t failsafe_b;
 
     // Standalone scenes hooks (zero-fill migration = none/0).
-    uint8_t boot_scene;      // 0 = none, 1..kNumScenes = play scene N-1 at boot
-    uint8_t failsafe_scene;  // scene index 0..kNumScenes-1 used by failsafe mode 3
+    // Both follow their scene when the list is reordered (remap_scene_index).
+    uint8_t boot_scene;      // 0 = none, N = play scene N-1 at boot
+    uint8_t failsafe_scene;  // scene index used by failsafe mode 3
 
     // 2-source merge policy when two senders feed one universe. Zero-fill
     // migration = HTP, the Art-Net default. Settable via ArtAddress too.
@@ -133,22 +136,149 @@ constexpr uint8_t kMergeLtp = 1;
 // Standalone scenes — parametric effects, no recorded frames
 // ────────────────────────────────────────────────────────────────────────────
 
-constexpr size_t kNumScenes    = 8;
+// A variable-length list: 0..kMaxScenes scenes, created, deleted and
+// reordered at run time. Scenes are addressed by list position.
+constexpr size_t kMaxScenes    = 30;
 constexpr size_t kSceneNameMax = 16;
+// Fixed slot count of the v1/v2 layouts, kept for their migration.
+constexpr size_t kLegacyNumScenes = 8;
 
-constexpr uint8_t kSceneFxSolid   = 0;
-constexpr uint8_t kSceneFxChase   = 1;
-constexpr uint8_t kSceneFxRainbow = 2;
+// Effect ids are persisted: append only, never renumber.
+constexpr uint8_t kSceneFxSolid    = 0;
+constexpr uint8_t kSceneFxChase    = 1;
+constexpr uint8_t kSceneFxRainbow  = 2;
+constexpr uint8_t kSceneFxBlobs    = 3;
+constexpr uint8_t kSceneFxGradient = 4;
+constexpr uint8_t kSceneFxFade     = 5;
+constexpr uint8_t kSceneFxTwinkle  = 6;
+constexpr uint8_t kSceneFxFire     = 7;
+constexpr uint8_t kSceneFxScanner  = 8;
+constexpr uint8_t kSceneFxWave     = 9;
+constexpr uint8_t kSceneFxStripes  = 10;
+constexpr uint8_t kSceneFxCount    = 11;
 
+constexpr size_t kSceneColorsMax = 4;
+
+// The first 25 bytes are the pre-palette layout, unchanged (see
+// migrate_scenes_v1): colour 1 stays in r/g/b, colours 2.. are appended.
 struct Scene {
     char name[kSceneNameMax];  // null-padded
     uint8_t channel_mask;      // bit n = channel n participates
     uint8_t effect;            // kSceneFx*
-    uint8_t r, g, b;           // solid / chase colour
-    uint8_t speed;             // solid: unused; chase: px/s; rainbow: rotation
-    uint8_t param;             // chase: head width px; rainbow: wheel repeats
-    uint8_t reserved[2];
+    uint8_t r, g, b;           // colour 1
+    uint8_t speed;             // per effect — see fill_scene_pattern
+    uint8_t param;             // per effect; 0 = the effect's default
+    uint8_t num_colors;        // 1..kSceneColorsMax; 0 (pre-palette blob) reads as 1
+    uint8_t reserved;
+    uint8_t extra[kSceneColorsMax - 1][3];  // colours 2..kSceneColorsMax, RGB
 };
+
+constexpr size_t kSceneV1Size = 25;
+static_assert(offsetof(Scene, num_colors) == 23, "pre-palette Scene layout moved");
+static_assert(sizeof(Scene) == kSceneV1Size + 9, "Scene layout changed");
+
+inline uint8_t scene_num_colors(const Scene& s) {
+    if (s.num_colors == 0) return 1;
+    return s.num_colors > kSceneColorsMax ? static_cast<uint8_t>(kSceneColorsMax) : s.num_colors;
+}
+
+// Colour k (0-based) as RGB; k past the configured count reads as black.
+inline void scene_color(const Scene& s, size_t k, uint8_t rgb[3]) {
+    if (k == 0) {
+        rgb[0] = s.r;
+        rgb[1] = s.g;
+        rgb[2] = s.b;
+    } else if (k < scene_num_colors(s)) {
+        rgb[0] = s.extra[k - 1][0];
+        rgb[1] = s.extra[k - 1][1];
+        rgb[2] = s.extra[k - 1][2];
+    } else {
+        rgb[0] = rgb[1] = rgb[2] = 0;
+    }
+}
+
+inline void set_scene_color(Scene& s, size_t k, uint8_t r, uint8_t g, uint8_t b) {
+    if (k == 0) {
+        s.r = r;
+        s.g = g;
+        s.b = b;
+    } else if (k < kSceneColorsMax) {
+        s.extra[k - 1][0] = r;
+        s.extra[k - 1][1] = g;
+        s.extra[k - 1][2] = b;
+    }
+}
+
+// v1 stored exactly kLegacyNumScenes × 25-byte records in one blob; the grown
+// record no longer lines up with it, so it is re-packed record by record.
+// Solid used to ignore speed, which now drives its strobe: an upgraded solid
+// scene must stay static. Returns false unless old_size is that exact layout.
+inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* dst) {
+    if (old_size != kLegacyNumScenes * kSceneV1Size) return false;
+    for (size_t i = 0; i < kLegacyNumScenes; ++i) {
+        std::memset(&dst[i], 0, sizeof(Scene));
+        std::memcpy(&dst[i], old_data + i * kSceneV1Size, kSceneV1Size);
+        dst[i].name[kSceneNameMax - 1] = '\0';
+        dst[i].num_colors              = 1;
+        dst[i].reserved                = 0;
+        if (dst[i].effect >= kSceneFxCount) dst[i].effect = kSceneFxSolid;
+        if (dst[i].effect == kSceneFxSolid) dst[i].speed = 0;
+    }
+    return true;
+}
+
+// NVS image of the scene list (v3): a count byte, then that many records.
+// Scene is byte-aligned, so the struct has no padding and the blob is the
+// first 1 + count × sizeof(Scene) bytes of it. v1 (200 B) and v2 (8 fixed
+// records, 272 B) sizes can never be 1 + k × 34, so the three never collide.
+struct SceneBank {
+    uint8_t count;
+    Scene scenes[kMaxScenes];
+};
+static_assert(sizeof(SceneBank) == 1 + kMaxScenes * sizeof(Scene), "SceneBank must be packed");
+
+inline size_t scene_bank_bytes(size_t count) {
+    return 1 + count * sizeof(Scene);
+}
+
+// Parses a stored scene blob of any known layout into `bank`. Returns false
+// for an unknown size or an inconsistent count (caller falls back to defaults).
+inline bool load_scene_bank(const uint8_t* blob, size_t size, SceneBank& bank) {
+    std::memset(&bank, 0, sizeof(bank));
+    if (migrate_scenes_v1(blob, size, bank.scenes)) {
+        bank.count = kLegacyNumScenes;
+    } else if (size == kLegacyNumScenes * sizeof(Scene)) {
+        std::memcpy(bank.scenes, blob, size);
+        bank.count = kLegacyNumScenes;
+    } else if (size >= 1 && blob[0] <= kMaxScenes && size == scene_bank_bytes(blob[0])) {
+        std::memcpy(&bank, blob, size);
+    } else {
+        return false;
+    }
+    for (size_t i = 0; i < bank.count; ++i) {
+        Scene& sc                  = bank.scenes[i];
+        sc.name[kSceneNameMax - 1] = '\0';
+        sc.num_colors              = scene_num_colors(sc);
+        if (sc.effect >= kSceneFxCount) sc.effect = kSceneFxSolid;
+    }
+    return true;
+}
+
+// Where scene `idx` lands after the list is edited; -1 when it was deleted.
+// Keeps boot/failsafe/active references on the same scene, not the same slot.
+enum class SceneEdit : uint8_t { Delete, Move };
+inline int remap_scene_index(int idx, SceneEdit op, size_t a, size_t b = 0) {
+    if (idx < 0) return idx;
+    const auto i = static_cast<size_t>(idx);
+    if (op == SceneEdit::Delete) {
+        if (i == a) return -1;
+        return i > a ? idx - 1 : idx;
+    }
+    if (i == a) return static_cast<int>(b);        // the moved scene
+    if (a < b && i > a && i <= b) return idx - 1;  // moved down: gap closes up
+    if (b < a && i >= b && i < a) return idx + 1;  // moved up: others shift down
+    return idx;
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Per-channel configuration
@@ -219,9 +349,20 @@ const ChannelConfig& get_channel(size_t channel_index);
 bool set_global(const GlobalConfig& cfg);
 bool set_channel(size_t channel_index, const ChannelConfig& cfg);
 
-// Scene slots (RAM-cached, NVS-persisted like channels).
+// Scene list (RAM-cached, NVS-persisted like channels). Out-of-range reads
+// return a blank (black, no channels) scene rather than aliasing another one.
+size_t num_scenes();
 const Scene& get_scene(size_t scene_index);
 bool set_scene(size_t scene_index, const Scene& scene);
+// Structural edits also remap boot_scene / failsafe_scene; a deleted
+// reference is cleared (boot → none, failsafe scene mode → blackout).
+// The playing scene lives in dmx_manager: callers remap it with
+// dmx::scene_list_edited(). add_scene returns the new index, -1 when full.
+int add_scene(const Scene& scene);
+bool delete_scene(size_t scene_index);
+bool move_scene(size_t from, size_t to);
+// Replaces the whole list (backup restore). count is clamped to kMaxScenes.
+bool replace_scenes(const Scene* scenes, size_t count);
 
 // ── Web UI admin password ───────────────────────────────────────────────────
 // Empty/null password clears the hash (auth disabled). Setting a password

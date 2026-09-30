@@ -19,7 +19,7 @@ constexpr const char* kKeyGlobal = "global";
 
 GlobalConfig g_global{};
 ChannelConfig g_channels[kNumChannels]{};
-Scene g_scenes[kNumScenes]{};
+SceneBank g_bank{};
 bool g_nvs_ok = false;
 
 constexpr const char* kKeyScenes = "scenes";
@@ -62,27 +62,42 @@ ChannelConfig make_default_channel(size_t idx) {
     return c;
 }
 
-// Usable starter set: 0-2 showcase each effect, the rest are named slots.
+// Usable starter set: one slot per showcase effect.
 void fill_default_scenes() {
-    std::memset(g_scenes, 0, sizeof(g_scenes));
-    for (size_t i = 0; i < kNumScenes; ++i) {
-        std::snprintf(g_scenes[i].name, kSceneNameMax, "Scene %u", static_cast<unsigned>(i + 1));
-        g_scenes[i].channel_mask = 0xFF;
-        g_scenes[i].effect       = kSceneFxSolid;
+    std::memset(&g_bank, 0, sizeof(g_bank));
+    struct Def {
+        const char* name;
+        uint8_t effect, speed, param, n;
+        uint8_t rgb[kSceneColorsMax][3];
+    };
+    static const Def kDefs[kLegacyNumScenes] = {
+        { "Warm white", kSceneFxSolid, 0, 0, 1, { { 255, 180, 110 } } },
+        { "Chase", kSceneFxChase, 60, 3, 2, { { 255, 255, 255 }, { 255, 120, 0 } } },
+        { "Rainbow", kSceneFxRainbow, 50, 1, 1, { { 255, 255, 255 } } },
+        { "Blobs", kSceneFxBlobs, 40, 4, 3, { { 0, 90, 255 }, { 255, 0, 140 }, { 0, 255, 160 } } },
+        { "Fire",
+          kSceneFxFire,
+          60,
+          0,
+          4,
+          { { 180, 16, 0 }, { 255, 80, 0 }, { 255, 170, 20 }, { 255, 240, 150 } } },
+        { "Twinkle", kSceneFxTwinkle, 60, 60, 2, { { 255, 200, 120 }, { 160, 200, 255 } } },
+        { "Scanner", kSceneFxScanner, 80, 0, 1, { { 255, 0, 0 } } },
+        { "Strobe", kSceneFxSolid, 0, 0, 2, { { 0, 0, 0 }, { 255, 255, 255 } } },
+    };
+    g_bank.count = kLegacyNumScenes;
+    for (size_t i = 0; i < kLegacyNumScenes; ++i) {
+        Scene& sc    = g_bank.scenes[i];
+        const Def& d = kDefs[i];
+        std::strncpy(sc.name, d.name, kSceneNameMax - 1);
+        sc.channel_mask = 0xFF;
+        sc.effect       = d.effect;
+        sc.speed        = d.speed;
+        sc.param        = d.param;
+        sc.num_colors   = d.n;
+        for (size_t k = 0; k < d.n; ++k)
+            set_scene_color(sc, k, d.rgb[k][0], d.rgb[k][1], d.rgb[k][2]);
     }
-    std::strncpy(g_scenes[0].name, "Warm white", kSceneNameMax - 1);
-    g_scenes[0].r = 255;
-    g_scenes[0].g = 180;
-    g_scenes[0].b = 110;
-    std::strncpy(g_scenes[1].name, "Chase", kSceneNameMax - 1);
-    g_scenes[1].effect = kSceneFxChase;
-    g_scenes[1].r = g_scenes[1].g = g_scenes[1].b = 255;
-    g_scenes[1].speed                             = 60;  // px/s
-    g_scenes[1].param                             = 3;   // head width
-    std::strncpy(g_scenes[2].name, "Rainbow", kSceneNameMax - 1);
-    g_scenes[2].effect = kSceneFxRainbow;
-    g_scenes[2].speed  = 50;
-    g_scenes[2].param  = 1;
 }
 
 // Loads a blob from NVS into dst (size bytes). Handles forward migration: if
@@ -102,6 +117,48 @@ bool nvs_load_blob(nvs_handle_t handle, const char* key, void* dst, size_t size)
 void nvs_save_blob(nvs_handle_t handle, const char* key, const void* src, size_t size) {
     esp_err_t err = nvs_set_blob(handle, key, src, size);
     if (err != ESP_OK) ESP_LOGE(TAG, "nvs_set_blob(%s) failed: %d", key, err);
+}
+
+void save_scenes(nvs_handle_t h) {
+    nvs_save_blob(h, kKeyScenes, &g_bank, scene_bank_bytes(g_bank.count));
+}
+
+// Persists the scene list (and the global config when a structural edit moved
+// its scene references). RAM is already updated; false = not persisted.
+bool persist_scenes(bool with_global) {
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    save_scenes(h);
+    if (with_global) nvs_save_blob(h, kKeyGlobal, &g_global, sizeof(g_global));
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
+}
+
+void sanitize_scene(Scene& sc) {
+    sc.name[kSceneNameMax - 1] = '\0';
+    sc.num_colors              = scene_num_colors(sc);
+    if (sc.effect >= kSceneFxCount) sc.effect = kSceneFxSolid;
+}
+
+// Follows boot/failsafe references through a list edit. Returns true when
+// either changed (the global config then needs persisting too).
+bool remap_global_scene_refs(SceneEdit op, size_t a, size_t b) {
+    const int boot      = remap_scene_index(static_cast<int>(g_global.boot_scene) - 1, op, a, b);
+    const auto nb       = static_cast<uint8_t>(boot < 0 ? 0 : boot + 1);
+    bool changed        = nb != g_global.boot_scene;
+    g_global.boot_scene = nb;
+    const int fs        = remap_scene_index(g_global.failsafe_scene, op, a, b);
+    if (fs < 0) {
+        g_global.failsafe_scene = 0;
+        if (g_global.failsafe_mode == kFailsafeScene) g_global.failsafe_mode = kFailsafeBlackout;
+        changed = true;
+    } else if (fs != g_global.failsafe_scene) {
+        g_global.failsafe_scene = static_cast<uint8_t>(fs);
+        changed                 = true;
+    }
+    return changed;
 }
 
 void channel_key(size_t idx, char buf[8]) {
@@ -202,9 +259,23 @@ void init() {
         sanitize_channel(g_channels[i]);
     }
 
-    if (!nvs_load_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes))) {
-        fill_default_scenes();
-        nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
+    {
+        size_t size      = 0;
+        const bool exist = nvs_get_blob(h, kKeyScenes, nullptr, &size) == ESP_OK;
+        // v1/v2 images are smaller than the bank; anything larger is unknown.
+        static uint8_t raw[sizeof(SceneBank)];
+        size_t n = sizeof(raw);
+        if (exist && size <= sizeof(raw) && nvs_get_blob(h, kKeyScenes, raw, &n) == ESP_OK &&
+            load_scene_bank(raw, n, g_bank)) {
+            if (n != scene_bank_bytes(g_bank.count)) {
+                save_scenes(h);
+                ESP_LOGI(TAG, "scene list migrated (%u→%u bytes)", static_cast<unsigned>(n),
+                         static_cast<unsigned>(scene_bank_bytes(g_bank.count)));
+            }
+        } else {
+            fill_default_scenes();
+            save_scenes(h);
+        }
     }
 
     nvs_commit(h);
@@ -300,21 +371,63 @@ bool check_web_password(const char* password) {
     return diff == 0;
 }
 
+size_t num_scenes() {
+    return g_bank.count;
+}
+
 const Scene& get_scene(size_t i) {
-    return g_scenes[i < kNumScenes ? i : 0];
+    static const Scene kBlank{};
+    return i < g_bank.count ? g_bank.scenes[i] : kBlank;
 }
 
 bool set_scene(size_t i, const Scene& scene) {
-    if (i >= kNumScenes) return false;
-    g_scenes[i]                         = scene;
-    g_scenes[i].name[kSceneNameMax - 1] = '\0';
-    if (!g_nvs_ok) return false;
-    nvs_handle_t h;
-    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
-    nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
-    nvs_commit(h);
-    nvs_close(h);
+    if (i >= g_bank.count) return false;
+    g_bank.scenes[i] = scene;
+    sanitize_scene(g_bank.scenes[i]);
+    return persist_scenes(false);
+}
+
+int add_scene(const Scene& scene) {
+    if (g_bank.count >= kMaxScenes) return -1;
+    Scene& sc = g_bank.scenes[g_bank.count];
+    sc        = scene;
+    sanitize_scene(sc);
+    const int idx = g_bank.count++;
+    persist_scenes(false);
+    return idx;
+}
+
+bool delete_scene(size_t i) {
+    if (i >= g_bank.count) return false;
+    std::memmove(&g_bank.scenes[i], &g_bank.scenes[i + 1], (g_bank.count - i - 1) * sizeof(Scene));
+    --g_bank.count;
+    std::memset(&g_bank.scenes[g_bank.count], 0, sizeof(Scene));
+    persist_scenes(remap_global_scene_refs(SceneEdit::Delete, i, 0));
     return true;
+}
+
+bool move_scene(size_t from, size_t to) {
+    if (from >= g_bank.count || to >= g_bank.count) return false;
+    if (from == to) return true;
+    const Scene moved = g_bank.scenes[from];
+    if (from < to)
+        std::memmove(&g_bank.scenes[from], &g_bank.scenes[from + 1], (to - from) * sizeof(Scene));
+    else
+        std::memmove(&g_bank.scenes[to + 1], &g_bank.scenes[to], (from - to) * sizeof(Scene));
+    g_bank.scenes[to] = moved;
+    persist_scenes(remap_global_scene_refs(SceneEdit::Move, from, to));
+    return true;
+}
+
+bool replace_scenes(const Scene* scenes, size_t count) {
+    if (count > kMaxScenes) count = kMaxScenes;
+    std::memset(&g_bank, 0, sizeof(g_bank));
+    for (size_t i = 0; i < count; ++i) {
+        g_bank.scenes[i] = scenes[i];
+        sanitize_scene(g_bank.scenes[i]);
+    }
+    g_bank.count = static_cast<uint8_t>(count);
+    return persist_scenes(false);
 }
 
 void reset_to_defaults() {
@@ -328,7 +441,7 @@ void reset_to_defaults() {
         channel_key(i, key);
         nvs_save_blob(h, key, &g_channels[i], sizeof(ChannelConfig));
     }
-    nvs_save_blob(h, kKeyScenes, g_scenes, sizeof(g_scenes));
+    save_scenes(h);
     nvs_commit(h);
     nvs_close(h);
 }

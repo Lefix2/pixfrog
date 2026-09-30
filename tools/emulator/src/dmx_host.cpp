@@ -72,6 +72,8 @@ void scene_start(uint8_t scene_index) {
 void scene_stop() {
     g_scene = -1;
 }
+void scene_list_edited(config::SceneEdit, size_t, size_t) {}
+
 int active_scene() {
     return g_scene;
 }

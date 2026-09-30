@@ -270,7 +270,7 @@ void handle_trigger(const uint8_t* buf, size_t len) {
     if (sub == 0) {
         dmx::scene_stop();
         ESP_LOGI(TAG, "ArtTrigger: scene stop");
-    } else if (sub <= config::kNumScenes) {
+    } else if (sub <= config::num_scenes()) {
         dmx::scene_start(static_cast<uint8_t>(sub - 1));
         ESP_LOGI(TAG, "ArtTrigger: scene %u", static_cast<unsigned>(sub - 1));
     }
