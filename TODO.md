@@ -190,6 +190,11 @@ From the September 2026 functional/technical review.
       reads the front one (the function is documented as a bench path). Route
       FSEQ frames through the back bank + dirty mask like network data, and
       publish them atomically per FSEQ frame.
+- [ ] **Encoder acceleration feels wrong** — the ×10 / ×100 step multiplier
+      (`menu.cpp` `accel_note_rotation`) only resets after 350 ms without a
+      detent, whatever the direction. Reset the streak on a direction
+      reversal (overshoot correction must be ×1), and give the ×100 tier a
+      shorter timeout than ×10 (a brief pause drops back from ×100).
 - [ ] **Failsafe "scene" ignores the scene's channel mask** — every lost
       channel plays it (`dmx_manager.cpp` decode path). Honour the mask (or
       document that failsafe uses the scene as a pattern only).
@@ -207,8 +212,13 @@ From the September 2026 functional/technical review.
       clock for small drifts instead of seeking, and tighten the threshold.
 - [ ] **OTA confirmed too early** — `esp_ota_mark_app_valid_cancel_rollback()`
       runs right after the tasks spawn, before a single frame rendered; a
-      crash at t+2 s is not covered by rollback. Confirm after N seconds of
-      healthy `render_task` frames.
+      crash at t+2 s is not covered by rollback. Confirm after ~30 s of
+      healthy `render_task` frames with the network up. **Log every
+      rollback**: detect it at boot (`esp_ota_get_last_invalid_partition`),
+      `ESP_LOGW` the rejected + running versions and the reset reason, keep a
+      "last rollback" record in NVS, and show it in the web Diagnostics tab,
+      as a dashboard banner until acknowledged, and in the console
+      (`version`).
 
 ## Review 2026-09 — show control (desk / theatre)
 
@@ -260,15 +270,26 @@ From the September 2026 functional/technical review.
 
 ## Review 2026-09 — touring / events
 
-- [ ] ★ **Null pixels** — per-channel count of leading (and optionally
-      trailing) pixels to skip, as in Falcon/xLights: sacrificial level-shift
-      pixels and injection-point pixels. Our own bench strip needs it (first
-      LED is sacrificial).
-- [ ] ★ **More refresh rates** — only 30|60 Hz today (web, console, TFT).
-      xLights commonly exports 20/40 fps (60 Hz rendering then judders) and
-      Europe needs 50 Hz for camera-friendly output (banding/flicker on 25/50
-      fps cameras). Accept 20..60 Hz (or 25/30/40/50/60), with the pixel
-      budget following.
+- [ ] ★ **Pixel gaps anywhere (null / dead pixels)** — up to 8 physical gaps
+      per channel (position, length): leading null pixels (sacrificial
+      level-shift LED — our bench strip needs one), and dead pixels mid-line
+      (a repeater or injector carrying an LED chip). DMX data fills the live
+      pixels only; gaps stay black; universe usage is unchanged, the pixel
+      budget counts physical pixels. Applied in the encoder after grouping and
+      invert (a gap is wiring, it must not move when the direction flips).
+      Editable from the web UI, the console (`ch N gaps 0:1,300:2`) and the
+      TFT (per-channel "Dead pixels" submenu); the pixel-count ruler shows
+      the gaps in their own colour. ChannelConfig grows, zero-fill = no gap.
+- [ ] ★ **Any refresh rate 20..120 Hz, step 1** — only 30|60 Hz today (web,
+      console, TFT editor steps by 30). xLights commonly exports 20/40 fps
+      (60 Hz rendering then judders) and Europe needs 25/50 Hz for
+      camera-friendly output. The code is already rate-generic (period =
+      1e6/rate, budgets, DMX min(rate, 44 Hz)); only the validators and the
+      editors change, and the pixel budget follows. Measured on the board
+      (2026-09-30): encode ≈ 23 µs per pixel row for 8 WS2815 outputs —
+      8 × 235 px (the 120 Hz budget) encodes in ≈ 5.5 ms for an 8.3 ms
+      period, so 120 Hz holds at ~75 % of core 1. The limit above 60 Hz is the
+      wire: WS281x ≈ 235 px, SK6812 ≈ 190 px, APA102 @4 MHz ≈ 900 px @120 Hz.
 - [ ] **Current limiter (ABL)** — per-channel amp budget (mA per channel at
       full, PSU limit) scaling the frame down when the sum exceeds it. Safety
       for 5 V / 12 V supplies.
@@ -295,6 +316,16 @@ From the September 2026 functional/technical review.
       physical wire limit (≈512 px @60 Hz per 800 kbps output) but frees CPU
       and bandwidth. Choose PCLK/density per frame from the protocol mix
       (clocked protocols keep 16 MHz).
+- [ ] **Buffer sizes for longer lines** — at low refresh the wire allows more
+      than the 1024 px cap (WS2815 @20 Hz ≈ 1600 px), but every buffer is
+      sized from `led::kMaxPixelsPerChannel` = 1024: SRAM pixel buffers
+      (8 × 2 × 4 KB, `dmx::kMaxBytesPerChan`), the three PSRAM frame buffers
+      (`kMaxSamplesPerFrame`, sized for the 40-samples/bit worst case: 3 ×
+      2.6 MB), the universe pool (`kNumUniverses` = 64, capped by the uint64
+      dirty mask — 8 × 2048 px RGBW needs 128 universes), sACN joins and the
+      UI editors. Decide the target (e.g. 2048 px/channel), then: pixel buffers
+      to PSRAM or larger SRAM, a wider dirty mask, bigger pool, FB budget
+      (shrinks a lot with adaptive sample density, below).
 - [ ] **16-output NRZ mode** — with no clocked channel configured, reuse the
       8 CLOCK bus bits as 8 more NRZ DATA outputs (16 × 512 px @60 Hz).
       Depends on the adaptive density above and on the shield (buffers,
