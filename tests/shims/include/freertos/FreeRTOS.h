@@ -21,6 +21,9 @@ typedef void (*TaskFunction_t)(void*);
 typedef struct {
     int unused;
 } portMUX_TYPE;
+// clang-format 18.1.3 (CI) and 18.1.8 disagree on brace-init macros.
+// clang-format off
 #define portMUX_INITIALIZER_UNLOCKED { 0 }
+// clang-format on
 #define portENTER_CRITICAL(m) ((void)(m))
 #define portEXIT_CRITICAL(m) ((void)(m))

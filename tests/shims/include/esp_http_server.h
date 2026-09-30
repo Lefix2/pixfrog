@@ -47,7 +47,10 @@ typedef struct {
     uint16_t send_wait_timeout;
     httpd_uri_match_func_t uri_match_fn;
 } httpd_config_t;
+// clang-format 18.1.3 (CI) and 18.1.8 disagree on brace-init macros.
+// clang-format off
 #define HTTPD_DEFAULT_CONFIG() { 5, 4096, 0x7fffffff, 80, 32768, 7, 8, 8, 5, false, 5, 5, nullptr }
+// clang-format on
 bool httpd_uri_match_wildcard(const char* tmpl, const char* uri, size_t len);
 esp_err_t httpd_start(httpd_handle_t* handle, const httpd_config_t* cfg);
 esp_err_t httpd_stop(httpd_handle_t handle);
