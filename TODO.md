@@ -61,6 +61,21 @@ Findings from the July 2026 full-project audit. Small, low-risk, one `fix/` PR.
       alternative: funnel writes through one task. Update AGENT.md's rule
       (today it only documents the console/ui_task sharing) and fix the
       `config_get_runtime_snapshot()` comment while at it.
+      *Review 2026-09:* the scene list made it worse — `delete_scene` /
+      `move_scene` `memmove` the bank while `render_task` may be reading the
+      active scene, and the active-index remap (`dmx::scene_list_edited`) is
+      not atomic with the edit. Worst case one wrong frame (fields are
+      sanitized at render), but the same mutex should cover scene edits, and
+      `render_task` should take a per-frame *copy* of the active scene
+      (`get_scene` returns a reference into mutable storage).
+- [ ] **Torn 64-bit activity timestamps** — `g_last_activity_us[]` (int64,
+      written by the receiver tasks on core 0, read by `render_task` on core 1)
+      is not atomic on RV32: at every 2³² µs rollover (~71 min) a reader can
+      see mixed halves → one spurious failsafe frame. Store 32-bit ms or use
+      `std::atomic<int64_t>`.
+- [ ] **Document the swap-mutex priority inversion** — `g_uni_swap_mux` is
+      taken by `render_task` (prio 20) and the receivers (prio 10); bounded by
+      one 512-byte memcpy, acceptable, but say so in ARCHITECTURE.md §6.
 - [ ] **Factory reset leaves opt-in services running** — web/UART
       `factory-reset` zeroes `sacn_enabled`/`fpp_remote`/`web_enabled` but the
       servers keep running until reboot; stop them (or print/return the reboot
@@ -152,8 +167,179 @@ One `docs/` PR, trivial but prevents real agent/human mistakes:
 - [ ] **Backup filename** — include date + `short_name` in the
       `Content-Disposition` name (`pixfrog-config.json` collides with several
       boxes).
-- [ ] **`get_scene` out-of-range** — silently aliases to scene 0
-      (`config_store.cpp`); make the clamp explicit.
+- [x] **`get_scene` out-of-range** — now returns a blank scene (PR #88,
+      variable-length scene list).
+
+## Review 2026-09 — bugs & edge cases
+
+From the September 2026 functional/technical review.
+
+- [ ] ★ **Refresh change truncates pixel counts for good** —
+      `clamp_pixel_counts()` rewrites `pixel_count` in NVS when the refresh
+      rate rises (1024 px @30 Hz → 512 @60 Hz) and nothing restores it when
+      going back to 30 Hz. Keep the requested count; clamp only what is
+      emitted (and flag the channel over budget in the UIs).
+- [ ] ★ **One 512-slot DMX512 output drags every LED output to 44 Hz** — the
+      render loop paces on `max(period, frame_emit_us())` (`main.cpp`), and a
+      full DMX frame is ~22.7 ms. Minimum: say it in every UI next to the DMX
+      slot count ("512 slots caps the whole box at 44 Hz; 100 slots ≈ 4.5 ms").
+      Better: let a DMX frame straddle LED frames (encoder keeps its slot
+      cursor across loop buffers) so DMX runs at its own rate.
+- [ ] ★ **FSEQ playback tears** — `fseq_player` injects through
+      `dmx::inject_universe()`, which writes *both* banks while `render_task`
+      reads the front one (the function is documented as a bench path). Route
+      FSEQ frames through the back bank + dirty mask like network data, and
+      publish them atomically per FSEQ frame.
+- [ ] **Failsafe "scene" ignores the scene's channel mask** — every lost
+      channel plays it (`dmx_manager.cpp` decode path). Honour the mask (or
+      document that failsafe uses the scene as a pattern only).
+- [ ] **Scenes silently skip DMX512 outputs** — say so in the web/TFT scene
+      editor (grey the DMX channels in the target-channel chips).
+- [ ] **Scene clock wraps after 49.7 days** — effects run on
+      `uint32_t(esp_timer/1000)`; a permanent install sees one jump. Use a
+      64-bit phase or wrap it on a period the effects are continuous over.
+- [ ] **sACN: no sequence-number check** (E1.31 §6.7.2 — discard
+      out-of-order packets), and a source that *lowers* its own priority is
+      rejected for 2.5 s by the per-universe gate (`sacn_parser.h`
+      `gate_accept`): track priority per source CID, not per universe.
+- [ ] **FPP MultiSync tolerance is coarse** — `kToleranceMs = 100` is 4
+      frames at 40 fps, visible between neighbouring boxes. Slew the pacing
+      clock for small drifts instead of seeking, and tighten the threshold.
+- [ ] **OTA confirmed too early** — `esp_ota_mark_app_valid_cancel_rollback()`
+      runs right after the tasks spawn, before a single frame rendered; a
+      crash at t+2 s is not covered by rollback. Confirm after N seconds of
+      healthy `render_task` frames.
+
+## Review 2026-09 — show control (desk / theatre)
+
+- [ ] ★ **DMX control universe ("personality" mode)** — a configurable
+      universe/address whose few slots drive the box from any desk with a
+      generic fixture profile: master dimmer, scene number, speed, param,
+      colour 1/2 (RGB), strobe. Probably the most valuable missing feature for
+      theatre use (few desks can send ArtTrigger).
+- [ ] ★ **Grand master + blackout** — global intensity applied at encode
+      time (like `brightness`), plus a blackout toggle; reachable from the web
+      UI, the TFT, UART, ArtTrigger (a reserved key/subkey) and the control
+      universe above.
+- [ ] **Scene vs network priority policy** — today a playing scene (and the
+      boot scene) overrides the network until stopped, and nothing tells the
+      desk. Add a per-box policy: `override` (today) / `yield` (a scene is an
+      idle look that stops as soon as DMX arrives on its channels, resumes on
+      failsafe). Surface the override in ArtPollReply NodeReport and on the
+      HOME screen.
+- [ ] **Scene transitions** — crossfade time (per scene or global) when
+      switching scenes or starting/stopping one.
+- [ ] **Scene zones** — several scenes active at once on disjoint channel
+      masks (scene A on outputs 1-4, B on 5-8); today one scene is global.
+
+## Review 2026-09 — standalone installation
+
+- [ ] ★ **FSEQ loop / playlist / autostart** — loop a file, chain several
+      (playlist with per-item repeat), start a file or playlist at boot
+      (sibling of `boot_scene`). Today a sequence plays once and stops.
+- [ ] **Configurable FSEQ start universe** — `kUniverseBase = 1` is
+      hard-coded in `fseq_player.cpp`; expose it (or map FSEQ absolute
+      channels onto the channel configs).
+- [ ] **FSEQ pacing tied to the render clock** — the player paces on FreeRTOS
+      ticks, independent of `render_task`: a 40 fps file on a 60 Hz render
+      judders. Let the render loop pick the FSEQ frame by elapsed time (or
+      follow the file's step time, see the refresh-rate item).
+- [ ] **FSEQ block handling** — O(n) block lookup + offset recompute per
+      frame, and a whole ≤2 MB zstd block decompressed in one go (can exceed a
+      frame period → catch-up burst). Precompute offsets, decompress the next
+      block ahead of time.
+- [ ] **GPIO trigger inputs** — dry-contact / button inputs mapped to
+      scene/sequence/stop/blackout (GPIO21 is free since PR #25), with
+      debounce; museum and escape-room staple.
+- [ ] **Time-of-day scheduling** — start/stop scenes or playlists on a
+      schedule. Needs trustworthy time: opt-in SNTP, and/or an RTC on the
+      shield (none on the dev kit).
+- [ ] **DHCP-timeout fallback address** — with no DHCP server the box stays
+      at 0.0.0.0 forever. Fall back to link-local 169.254.x.x (or Art-Net
+      2.x.x.x) after a timeout so "plug a laptop in and configure" works.
+
+## Review 2026-09 — touring / events
+
+- [ ] ★ **Null pixels** — per-channel count of leading (and optionally
+      trailing) pixels to skip, as in Falcon/xLights: sacrificial level-shift
+      pixels and injection-point pixels. Our own bench strip needs it (first
+      LED is sacrificial).
+- [ ] ★ **More refresh rates** — only 30|60 Hz today (web, console, TFT).
+      xLights commonly exports 20/40 fps (60 Hz rendering then judders) and
+      Europe needs 50 Hz for camera-friendly output (banding/flicker on 25/50
+      fps cameras). Accept 20..60 Hz (or 25/30/40/50/60), with the pixel
+      budget following.
+- [ ] **Current limiter (ABL)** — per-channel amp budget (mA per channel at
+      full, PSU limit) scaling the frame down when the sum exceeds it. Safety
+      for 5 V / 12 V supplies.
+- [ ] **OSC input** — opt-in UDP OSC receiver (QLab, TouchDesigner):
+      `/pixfrog/scene N`, `/pixfrog/master f`, `/pixfrog/blackout`,
+      `/pixfrog/fseq/play name`. The HTTP API works but is awkward from those
+      tools.
+- [ ] **Live output preview in the web UI** — low-resolution read-back of
+      the pixel front buffers (`pixr`-like endpoint) drawn as strips, for
+      remote commissioning.
+
+## Review 2026-09 — bigger features
+
+- [ ] **Audio with FSEQ** — play the sequence's media file in sync through
+      the on-board ES8311 codec (I2C 0x18): a standalone mini-FPP.
+- [ ] **Physical DMX input** — RS-485 receive on the shield to be driven
+      without a network (hardware work).
+
+## Review 2026-09 — performance & architecture
+
+- [ ] **Adaptive PCLK / sample density** — NRZ is encoded at 16 MHz with 20
+      samples per bit; 3-4 samples at ~3.2 MHz are enough. Frame buffers and
+      PSRAM/DMA bandwidth are 5-6× larger than needed. It does not move the
+      physical wire limit (≈512 px @60 Hz per 800 kbps output) but frees CPU
+      and bandwidth. Choose PCLK/density per frame from the protocol mix
+      (clocked protocols keep 16 MHz).
+- [ ] **16-output NRZ mode** — with no clocked channel configured, reuse the
+      8 CLOCK bus bits as 8 more NRZ DATA outputs (16 × 512 px @60 Hz).
+      Depends on the adaptive density above and on the shield (buffers,
+      connectors).
+- [ ] **Split the encode across both cores** — decode + effects + encode all
+      run on core 1 while core 0 is mostly idle; encode two halves of the
+      sample buffer in parallel if heavy effects × 8 × 1024 px get tight.
+- [ ] **Serve the SPA gzipped with cache headers** — 226 KB sent raw on every
+      load (`handle_root`), no `Cache-Control`/`ETag`, and httpd is
+      single-threaded (a page load stalls API calls). gzip at build (~60 KB)
+      + ETag = firmware version.
+- [ ] **Push live status** — every tab polls `/api/status` each second; a
+      WebSocket (or SSE) push scales better with several clients.
+- [ ] **Versioned NVS blobs** — layouts are told apart by blob size (the
+      scene v1/v2/v3 migration relies on sizes never colliding). Prefix each
+      blob with a version byte.
+- [ ] **ArtPollReply: one bind per universe** — it advertises 8 ports with
+      the *global* net/subnet + each channel's `universe_start` low nibble:
+      wrong for channels on another net/subnet, and a channel's 2nd..nth
+      universes are never advertised (desk auto-discovery — MADRIX, xLights —
+      sees 8 universes instead of up to 48). Emit one bind per mapped
+      universe with its own Net/SubNet.
+- [ ] **ArtSync / sACN sync mode** — banks are published on the first dirty
+      slot of a frame, so a channel spanning several universes can show two
+      source frames at once. Once a sync is seen, hold bank publication until
+      the next sync (revert to free-run after 4 s without one, Art-Net 4);
+      honour the E1.31 sync address. `g_sync_pending` already exists and is
+      dead state.
+
+## Review 2026-09 — refactors & tests
+
+- [ ] **Split `menu.cpp` (3.1 k lines)** per menu node, and
+      **`web_config.cpp` (1.7 k lines)** per resource (global, channel,
+      scenes, fseq, system/OTA); finish sharing the JSON field parsers between
+      `POST` handlers and `restore_*`.
+- [ ] **SPA: CSS classes instead of inline styles** — the whole UI is inline
+      styles inside HTML and JS string templates (the site-style restyle was a
+      660-line diff for a theme change). Keep a single embedded file, move the
+      look to classes + CSS variables.
+- [ ] **Web API/SPA scenario tests in CI** — the mock API + headless Chrome
+      harness used for PR #87/#88 (add/delete/move scene, colour reorder, save
+      bodies) as a CI job; today neither the REST handlers nor the SPA logic
+      have tests.
+- [ ] **FSEQ → banks → render integration test** on the host (fake SD file,
+      assert decoded pixels), covering the tearing fix above.
 
 ## Protocol / network
 
@@ -200,6 +386,11 @@ One `docs/` PR, trivial but prevents real agent/human mistakes:
       no preflight); writes stay behind Basic auth. No proxy, no extra
       opt-in flag (rides `web_enabled`). Validation multi-cartes (≥2 boards
       sur un LAN) reste à faire sur matériel.
+
+- [ ] **Shared scene clock** — every box animates the same scene with its own
+      `esp_timer` phase, so neighbouring boxes drift visibly. Share a phase
+      origin (FPP MultiSync, ArtTrigger timestamp, or a tiny broadcast) so the
+      same scene lines up across boxes.
 
 ## ArtNet opcodes not yet handled
 
