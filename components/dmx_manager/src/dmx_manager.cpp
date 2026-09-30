@@ -438,15 +438,19 @@ bool decode_pixels_for_channel(size_t ch) {
     const auto& g = config::get_global();
     if (g.failsafe_mode != config::kFailsafeHold &&
         logic::failsafe_due(g_last_activity_us[ch], esp_timer_get_time(), g.failsafe_timeout_s)) {
-        // Mode "scene": play the configured scene's effect on the lost channel.
-        if (g.failsafe_mode == config::kFailsafeScene && !led::is_dmx(cc.protocol)) {
-            const auto& scene = config::get_scene(g.failsafe_scene);
+        // Mode "scene": play the configured scene's effect on the lost channel —
+        // only on the channels the scene targets; the others black out.
+        const auto& scene  = config::get_scene(g.failsafe_scene);
+        const bool in_mask = (scene.channel_mask >> ch) & 1;
+        if (g.failsafe_mode == config::kFailsafeScene && in_mask && !led::is_dmx(cc.protocol)) {
             logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
                                       led::bytes_per_pixel(cc.protocol), scene,
                                       static_cast<uint32_t>(esp_timer_get_time() / 1000));
             return true;
         }
-        const uint8_t mode = led::is_dmx(cc.protocol) ? config::kFailsafeBlackout : g.failsafe_mode;
+        const uint8_t mode = (led::is_dmx(cc.protocol) || g.failsafe_mode == config::kFailsafeScene)
+                               ? config::kFailsafeBlackout
+                               : g.failsafe_mode;
         logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
                                      led::bytes_per_pixel(cc.protocol), mode, g.failsafe_r,
                                      g.failsafe_g, g.failsafe_b);

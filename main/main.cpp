@@ -9,6 +9,7 @@
 //   6. ArtNet UDP receiver               (artnet)
 //   7. render_task spawn
 
+#include "esp_app_desc.h"
 #include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_ldo_regulator.h"
@@ -16,12 +17,15 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_ota_ops.h"
+#include "esp_system.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/inet.h"
 #include "nvs_flash.h"
+
+#include <cstring>
 
 #include "esp32_p4_devkit.h"
 
@@ -295,6 +299,70 @@ void power_vdd_io5_pads() {
     }
 }
 
+// A new OTA image boots "pending verify": if it resets before confirming
+// itself, the bootloader marks it invalid and boots the previous slot. That is
+// the only trace of a rollback, so turn it into a logged, persisted record the
+// web UI and the console can show until someone acknowledges it.
+// Fixed-size, possibly unterminated IDF strings → a terminated, truncated copy.
+void copy_field(char* dst, size_t cap, const char* src, size_t src_cap) {
+    const size_t n = strnlen(src, src_cap);
+    const size_t k = n < cap - 1 ? n : cap - 1;
+    std::memcpy(dst, src, k);
+    dst[k] = '\0';
+}
+
+void record_rollback_if_any() {
+    const esp_partition_t* bad = esp_ota_get_last_invalid_partition();
+    if (!bad) return;
+    esp_app_desc_t desc{};
+    if (esp_ota_get_partition_description(bad, &desc) != ESP_OK) return;
+
+    pixfrog::config::RollbackRecord prev{};
+    const bool known = pixfrog::config::get_rollback(prev) &&
+                       std::memcmp(prev.rejected_sha, desc.app_elf_sha256,
+                                   sizeof(prev.rejected_sha)) == 0;
+    if (known) {
+        if (!prev.acknowledged)
+            ESP_LOGW(TAG, "OTA rollback (unacknowledged): %s on %s was rejected, running %s",
+                     prev.rejected_version, prev.rejected_slot, prev.running_version);
+        return;
+    }
+    pixfrog::config::RollbackRecord rec{};
+    copy_field(rec.rejected_version, sizeof(rec.rejected_version), desc.version,
+               sizeof(desc.version));
+    copy_field(rec.rejected_slot, sizeof(rec.rejected_slot), bad->label, sizeof(bad->label));
+    copy_field(rec.running_version, sizeof(rec.running_version), esp_app_get_description()->version,
+               sizeof(desc.version));
+    std::memcpy(rec.rejected_sha, desc.app_elf_sha256, sizeof(rec.rejected_sha));
+    rec.reset_reason = static_cast<uint8_t>(esp_reset_reason());
+    pixfrog::config::set_rollback(rec);
+    ESP_LOGW(TAG, "OTA ROLLBACK: firmware %s on %s was rejected (reset reason %d) — running %s",
+             rec.rejected_version, rec.rejected_slot, rec.reset_reason, rec.running_version);
+}
+
+// Confirm a pending-verify image only once it has proven itself: 30 s of a
+// live render loop. Confirming at the end of app_main (as before) happened
+// before a single frame rendered, so an image crashing a few seconds in was
+// already "valid" and boot-looped instead of rolling back. No network
+// condition: a box booted without its cable must not reject a good image.
+constexpr uint32_t kOtaConfirmDelayMs = 30'000;
+
+void ota_confirm_task(void*) {
+    vTaskDelay(pdMS_TO_TICKS(kOtaConfirmDelayMs));
+    for (int tries = 0; tries < 6; ++tries) {
+        if (pixfrog::dmx::get_stats().current_fps > 0) {
+            esp_ota_mark_app_valid_cancel_rollback();
+            ESP_LOGI(TAG, "OTA image confirmed after %u s of healthy rendering",
+                     static_cast<unsigned>(kOtaConfirmDelayMs / 1000 + tries * 5));
+            vTaskDelete(nullptr);
+            return;
+        }
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+    ESP_LOGE(TAG, "render loop not running 60 s after an OTA boot — rebooting to roll back");
+    esp_restart();
+}
+
 extern "C" void app_main() {
     // Capture logs from the very first line so the web Diagnostics tab has the
     // boot log even when the web server stays disabled (tees to UART as usual).
@@ -304,6 +372,7 @@ extern "C" void app_main() {
     power_vdd_io5_pads();
 
     pixfrog::config::init();
+    record_rollback_if_any();
     if (!pixfrog::dmx::init()) {
         ESP_LOGE(TAG, "dmx_manager init failed — aborting");
         return;
@@ -363,15 +432,13 @@ extern "C" void app_main() {
 
     pixfrog::console::start();
 
-    // OTA rollback gate: every subsystem above came up, so confirm this
-    // image. If a freshly OTA'd build crashes before reaching this line,
-    // the bootloader reverts to the previous slot on the next reset.
     const esp_partition_t* running = esp_ota_get_running_partition();
     esp_ota_img_states_t ota_state;
     if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK &&
         ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-        esp_ota_mark_app_valid_cancel_rollback();
-        ESP_LOGI(TAG, "OTA image confirmed on %s", running->label);
+        ESP_LOGI(TAG, "OTA image on %s pending verification (%u s)", running->label,
+                 static_cast<unsigned>(kOtaConfirmDelayMs / 1000));
+        xTaskCreatePinnedToCore(ota_confirm_task, "ota_confirm", 3072, nullptr, 3, nullptr, 0);
     }
 
     ESP_LOGI(TAG, "boot complete (%s)", running->label);

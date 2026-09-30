@@ -190,12 +190,18 @@ From the September 2026 functional/technical review.
       reads the front one (the function is documented as a bench path). Route
       FSEQ frames through the back bank + dirty mask like network data, and
       publish them atomically per FSEQ frame.
+- [ ] **Network silent after a USB-flash reset (seen once)** — 2026-09-30,
+      right after `idf.py flash` (esptool hard reset via RTS) the board logged
+      link up + static IP but answered neither ping nor HTTP for about a
+      minute; a reset through the UART console fixed it. Not reproduced on
+      later flashes. If it comes back: capture EMAC/PHY state (`eth` link
+      speed/duplex, ARP from the PC side) before resetting.
 - [ ] **Encoder acceleration feels wrong** — the ×10 / ×100 step multiplier
       (`menu.cpp` `accel_note_rotation`) only resets after 350 ms without a
       detent, whatever the direction. Reset the streak on a direction
       reversal (overshoot correction must be ×1), and give the ×100 tier a
       shorter timeout than ×10 (a brief pause drops back from ×100).
-- [ ] **Failsafe "scene" ignores the scene's channel mask** — every lost
+- [x] **Failsafe "scene" ignores the scene's channel mask** — every lost
       channel plays it (`dmx_manager.cpp` decode path). Honour the mask (or
       document that failsafe uses the scene as a pattern only).
 - [ ] **Scenes silently skip DMX512 outputs** — say so in the web/TFT scene
@@ -210,7 +216,7 @@ From the September 2026 functional/technical review.
 - [ ] **FPP MultiSync tolerance is coarse** — `kToleranceMs = 100` is 4
       frames at 40 fps, visible between neighbouring boxes. Slew the pacing
       clock for small drifts instead of seeking, and tighten the threshold.
-- [ ] **OTA confirmed too early** — `esp_ota_mark_app_valid_cancel_rollback()`
+- [x] **OTA confirmed too early** — `esp_ota_mark_app_valid_cancel_rollback()`
       runs right after the tasks spawn, before a single frame rendered; a
       crash at t+2 s is not covered by rollback. Confirm after ~30 s of
       healthy `render_task` frames with the network up. **Log every
@@ -333,7 +339,7 @@ From the September 2026 functional/technical review.
 - [ ] **Split the encode across both cores** — decode + effects + encode all
       run on core 1 while core 0 is mostly idle; encode two halves of the
       sample buffer in parallel if heavy effects × 8 × 1024 px get tight.
-- [ ] **Serve the SPA gzipped with cache headers** — 226 KB sent raw on every
+- [x] **Serve the SPA gzipped with cache headers** — 226 KB sent raw on every
       load (`handle_root`), no `Cache-Control`/`ETag`, and httpd is
       single-threaded (a page load stalls API calls). gzip at build (~60 KB)
       + ETag = firmware version.

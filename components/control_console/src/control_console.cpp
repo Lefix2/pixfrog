@@ -146,6 +146,24 @@ int cmd_version(int, char**) {
     printf("idf=%s\n", esp_get_idf_version());
     printf("compile=%s %s\n", app->date, app->time);
     printf("partition=%s\n", esp_ota_get_running_partition()->label);
+    config::RollbackRecord rb{};
+    if (config::get_rollback(rb)) {
+        printf("last_rollback=%s on %s rejected, running %s, reset_reason=%u, acknowledged=%u\n",
+               rb.rejected_version, rb.rejected_slot, rb.running_version, rb.reset_reason,
+               rb.acknowledged);
+    } else {
+        printf("last_rollback=none\n");
+    }
+    return ok();
+}
+
+// rollback ack — mark the recorded OTA rollback as seen (clears the web banner).
+int cmd_rollback(int argc, char** argv) {
+    if (argc != 2 || strcmp(argv[1], "ack") != 0) return err("usage: rollback ack");
+    config::RollbackRecord rb{};
+    if (!config::get_rollback(rb)) return err("no rollback recorded");
+    rb.acknowledged = 1;
+    if (!config::set_rollback(rb)) printf("warn=not_persisted\n");
     return ok();
 }
 
@@ -838,6 +856,7 @@ void start() {
 
     esp_console_register_help_command();
     register_cmd("version", "Firmware/IDF version", cmd_version);
+    register_cmd("rollback", "Acknowledge the recorded OTA rollback: rollback ack", cmd_rollback);
     register_cmd("status", "Link, IP, MAC, FPS, cal mode, heap", cmd_status);
     register_cmd("stats", "DMX/ArtNet/DMA telemetry counters", cmd_stats);
     register_cmd("chstat", "Per-channel activity + capacity flags", cmd_chstat);

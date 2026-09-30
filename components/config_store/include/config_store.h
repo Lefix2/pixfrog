@@ -394,4 +394,22 @@ void reset_to_defaults();
 // because nothing is written to flash.
 bool is_persistence_ok();
 
+// ── OTA rollback record ─────────────────────────────────────────────────────
+// The last firmware image the bootloader rejected (a new OTA image that reset
+// before confirming itself). Kept in NVS so it outlives the boot that noticed
+// it — and a factory reset: it is diagnostics, not configuration — until the
+// user acknowledges it.
+struct RollbackRecord {
+    char rejected_version[32];  // esp_app_desc_t::version of the rejected image
+    char rejected_slot[16];     // its OTA partition label
+    char running_version[32];   // what booted instead
+    uint8_t rejected_sha[8];    // elf SHA-256 prefix: identifies the image
+    uint8_t reset_reason;       // esp_reset_reason_t of the boot that rolled back
+    uint8_t acknowledged;       // 1 once seen by the user (web / console)
+};
+
+// False when no rollback was ever recorded.
+bool get_rollback(RollbackRecord& out);
+bool set_rollback(const RollbackRecord& rec);
+
 }  // namespace pixfrog::config

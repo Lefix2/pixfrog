@@ -38,8 +38,8 @@ constexpr const char* TAG = "WEB";
 httpd_handle_t g_server = nullptr;
 
 // Embedded SPA (web_ui.html baked in at link time).
-extern const uint8_t web_ui_html_start[] asm("_binary_web_ui_html_start");
-extern const uint8_t web_ui_html_end[] asm("_binary_web_ui_html_end");
+extern const uint8_t web_ui_gz_start[] asm("_binary_web_ui_html_gz_start");
+extern const uint8_t web_ui_gz_end[] asm("_binary_web_ui_html_gz_end");
 
 // ── Log capture ring ────────────────────────────────────────────────────────
 // A vprintf tee on esp_log: every formatted log line also lands in a fixed ring
@@ -104,6 +104,27 @@ const char* reset_reason_str(esp_reset_reason_t r) {
     case ESP_RST_SDIO: return "sdio";
     default: return "unknown";
     }
+}
+
+// ── OTA rollback record ─────────────────────────────────────────────────────
+// Served by /api/status (banner while unacknowledged) and /api/diag (history).
+// Re-read on each request (one small NVS blob) so an acknowledge from the
+// console clears the web banner too. httpd is single-threaded: one buffer.
+config::RollbackRecord g_rollback{};
+
+const config::RollbackRecord* rollback_record() {
+    return config::get_rollback(g_rollback) ? &g_rollback : nullptr;
+}
+
+cJSON* rollback_json(const config::RollbackRecord& r) {
+    cJSON* j = cJSON_CreateObject();
+    cJSON_AddStringToObject(j, "rejected_version", r.rejected_version);
+    cJSON_AddStringToObject(j, "rejected_slot", r.rejected_slot);
+    cJSON_AddStringToObject(j, "running_version", r.running_version);
+    cJSON_AddStringToObject(j, "reset_reason",
+                            reset_reason_str(static_cast<esp_reset_reason_t>(r.reset_reason)));
+    cJSON_AddBoolToObject(j, "acknowledged", r.acknowledged != 0);
+    return j;
 }
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -262,10 +283,43 @@ static int lookup(const char* const* names, size_t count, const char* s) {
 
 // ── GET / → SPA ─────────────────────────────────────────────────────────────
 
+// Content hash of the embedded page (FNV-1a), computed once: the ETag must
+// change whenever the page does, including dev builds that keep the version.
+// The two linker symbols bound one blob, but to the compiler they are unrelated
+// objects: comparing pointers across them is undefined and GCC turned a
+// `p < end` walk into an infinite loop. Take the length through integers.
+static size_t web_ui_gz_len() {
+    return reinterpret_cast<uintptr_t>(web_ui_gz_end) -
+           reinterpret_cast<uintptr_t>(web_ui_gz_start);
+}
+
+static const char* web_ui_etag() {
+    static char etag[12] = {};
+    if (!etag[0]) {
+        uint32_t h       = 2166136261u;
+        const size_t len = web_ui_gz_len();
+        for (size_t i = 0; i < len; ++i)
+            h = (h ^ web_ui_gz_start[i]) * 16777619u;
+        snprintf(etag, sizeof(etag), "\"%08lx\"", static_cast<unsigned long>(h));
+    }
+    return etag;
+}
+
+// Revalidated on every load ("no-cache"): a 304 costs a few bytes, and a new
+// firmware's page is picked up at once.
 static esp_err_t handle_root(httpd_req_t* req) {
+    const char* etag = web_ui_etag();
+    httpd_resp_set_hdr(req, "ETag", etag);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    char inm[16];
+    if (httpd_req_get_hdr_value_str(req, "If-None-Match", inm, sizeof(inm)) == ESP_OK &&
+        strcmp(inm, etag) == 0) {
+        httpd_resp_set_status(req, "304 Not Modified");
+        return httpd_resp_send(req, nullptr, 0);
+    }
     httpd_resp_set_type(req, "text/html; charset=utf-8");
-    const size_t len = web_ui_html_end - web_ui_html_start;
-    return httpd_resp_send(req, reinterpret_cast<const char*>(web_ui_html_start), len);
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    return httpd_resp_send(req, reinterpret_cast<const char*>(web_ui_gz_start), web_ui_gz_len());
 }
 
 // ── GET /api/config ─────────────────────────────────────────────────────────
@@ -430,6 +484,8 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
 
     cJSON_AddNumberToObject(root, "active_scene", dmx::active_scene());
     cJSON_AddNumberToObject(root, "identify_channel", dmx::identify_channel());
+    if (const auto* rb = rollback_record(); rb && !rb->acknowledged)
+        cJSON_AddItemToObject(root, "rollback", rollback_json(*rb));
     cJSON_AddBoolToObject(root, "sacn_running", sacn::is_running());
     cJSON_AddBoolToObject(root, "fpp_running", fpp::is_running());
 
@@ -502,6 +558,8 @@ static esp_err_t handle_get_diag(httpd_req_t* req) {
     cJSON_AddStringToObject(js, "idf", esp_get_idf_version());
     cJSON_AddStringToObject(js, "partition", esp_ota_get_running_partition()->label);
     cJSON_AddStringToObject(js, "reset_reason", reset_reason_str(esp_reset_reason()));
+    if (const auto* rb = rollback_record())
+        cJSON_AddItemToObject(js, "last_rollback", rollback_json(*rb));
     cJSON_AddItemToObject(root, "sys", js);
 
     // Per-channel capacity.
@@ -1253,6 +1311,16 @@ static esp_err_t handle_scenes_move(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// ── POST /api/rollback/ack ───────────────────────────────────────────────────
+static esp_err_t handle_rollback_ack(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    if (const auto* rb = rollback_record(); rb && !rb->acknowledged) {
+        g_rollback.acknowledged = 1;
+        config::set_rollback(g_rollback);
+    }
+    return send_ok(req);
+}
+
 static esp_err_t handle_scenes_stop(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
     dmx::scene_stop();
@@ -1625,6 +1693,10 @@ void start() {
         { .uri      = "/api/scenes/move",
           .method   = HTTP_POST,
           .handler  = handle_scenes_move,
+          .user_ctx = nullptr },
+        { .uri      = "/api/rollback/ack",
+          .method   = HTTP_POST,
+          .handler  = handle_rollback_ack,
           .user_ctx = nullptr },
         { .uri      = "/api/scenes/stop",
           .method   = HTTP_POST,
