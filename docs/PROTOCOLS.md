@@ -249,6 +249,31 @@ The bus never clocks out more than fits in time, but the configured
   live ruler maps 1:1 to LEDs); the web UI and the console accept up to 1024
   (512 DMX slots) at any rate.
 
+### 5.4 Dead pixels (gaps)
+
+Up to 8 runs of dead physical LEDs per channel (`ChannelConfig::gaps`,
+`led::PixelGap {pos, len}`): a sacrificial level-shift pixel at the head of a
+line, a repeater or injector carrying an LED chip mid-line. They are wiring,
+so they are indexed in physical order from the controller and never move with
+`invert` or `grouping`.
+
+- `pixel_count` counts **live** pixels: DMX data (and scenes, failsafe,
+  identify) fill the live pixels only, so universe usage is unchanged.
+- The encoder emits black on dead positions and shifts the live pixels past
+  them (`detail::source_pixel`: gap lookup, then invert/grouping on the live
+  index). Both the per-channel and the single-pass encoders go through it.
+- The budget counts **physical** pixels: `max_pixels_for` is physical, and the
+  live maximum the UIs show is `live_within(max_physical)` — at 60 Hz a WS2815
+  line with 3 dead pixels carries 509 live ones.
+- Gaps are normalized on every write (sorted, overlapping/adjacent runs
+  merged, unused slots last). A gap starting past the end of the line is kept
+  but costs nothing.
+- The pixel-count ruler paints dead pixels dim red in place; while a gap is
+  being edited on the TFT the ruler follows the pending value.
+- Edit: web channel editor ("Dead pixels"), console
+  `ch N gaps 1:1,301:2` (first dead LED, 1-based : count; `-` clears), TFT
+  channel menu → "Dead px". API/backup: `"gaps": [[first_led, count], ...]`.
+
 ---
 
 ## 6. Verification

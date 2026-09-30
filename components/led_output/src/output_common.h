@@ -46,7 +46,7 @@ inline led::ChannelDesc desc_for_channel(size_t ch) {
     led::ChannelDesc d{};
     d.protocol         = cc.protocol;
     d.color_order      = cc.color_order;
-    d.pixel_count      = cc.pixel_count;
+    d.pixel_count      = static_cast<uint16_t>(dmx::physical_pixels(cc));
     d.brightness       = cc.brightness;
     d.grouping         = cc.grouping;
     d.invert_direction = cc.invert_direction;
@@ -54,6 +54,9 @@ inline led::ChannelDesc desc_for_channel(size_t ch) {
     d.bus_bit_clock    = static_cast<uint8_t>(ch * 2 + 1);
     d.clock_hz         = cc.clock_hz;
     d.lut              = channel_lut(ch, cc);
+    // Point at the stored (normalized) runs: `cc` is a per-call copy.
+    d.gap_count = static_cast<uint8_t>(dmx::channel_gap_count(ch));
+    d.gaps      = d.gap_count ? config::get_channel(ch).gaps : nullptr;
 
     // Pixel-count preview: emit the physical LED count decode published — the
     // lit count, or larger on the one frame a shrink blanks the dropped tail.
@@ -64,6 +67,8 @@ inline led::ChannelDesc desc_for_channel(size_t ch) {
         d.brightness       = 255;
         d.grouping         = 1;
         d.invert_direction = false;
+        d.gaps             = nullptr;  // the ruler already paints the gaps in place
+        d.gap_count        = 0;
     }
     return d;
 }

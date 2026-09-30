@@ -225,6 +225,82 @@ static void test_nrz_one_pixel_ws2815() {
         EXPECT_EQ(out[i] & 2, 0);
 }
 
+// ── Pixel gaps ───────────────────────────────────────────────────────────────
+
+static void test_gap_helpers() {
+    PixelGap g[kMaxPixelGaps] = { { 300, 2 }, { 0, 1 }, { 0, 0 }, { 301, 3 }, { 10, 0 } };
+    EXPECT_EQ(normalize_gaps(g, kMaxPixelGaps), 2);  // sorted, 300+2 and 301+3 merged
+    EXPECT_EQ(g[0].pos, 0);
+    EXPECT_EQ(g[0].len, 1);
+    EXPECT_EQ(g[1].pos, 300);
+    EXPECT_EQ(g[1].len, 4);
+    EXPECT_EQ(g[2].len, 0);
+    EXPECT_EQ(gap_count(g, kMaxPixelGaps), 2);
+
+    // 500 live pixels: head gap (1) + mid gap (4, starts inside) → 505 physical.
+    EXPECT_EQ(physical_count(500, g, 2), 505);
+    // 299 live: the mid gap would start at 300 = the end of the line → outside.
+    EXPECT_EQ(physical_count(299, g, 2), 300);
+    EXPECT_EQ(live_within(505, g, 2), 500);
+    EXPECT_EQ(live_within(302, g, 2), 299);  // 300..301 dead of the first 302
+    EXPECT_EQ(live_index(0, g, 2), -1);
+    EXPECT_EQ(live_index(1, g, 2), 0);
+    EXPECT_EQ(live_index(299, g, 2), 298);
+    EXPECT_EQ(live_index(303, g, 2), -1);
+    EXPECT_EQ(live_index(304, g, 2), 299);
+    EXPECT_EQ(physical_count(7, g, 0), 7);  // no gap: identity
+}
+
+// Recover the bytes of physical pixel `pi` from a single-channel NRZ stream
+// (bit 0 of the bus, WS2815 timing: '1' = 15 high samples, '0' = 5).
+static void nrz_pixel_bytes(const std::vector<uint16_t>& s, size_t pi, uint8_t out[3]) {
+    for (size_t b = 0; b < 3; ++b) {
+        uint8_t v = 0;
+        for (size_t bit = 0; bit < 8; ++bit) {
+            const size_t base = ((pi * 3 + b) * 8 + bit) * 20;
+            int high          = 0;
+            for (size_t k = 0; k < 20; ++k)
+                high += s[base + k] & 1;
+            v = static_cast<uint8_t>((v << 1) | (high > 10 ? 1 : 0));
+        }
+        out[b] = v;
+    }
+}
+
+static void test_nrz_gaps_and_invert() {
+    const PixelGap gaps[1] = { { 1, 1 } };  // physical LED 2 is dead
+    ChannelDesc d{};
+    d.protocol            = Protocol::WS2815;
+    d.color_order         = ColorOrder::RGB;
+    d.pixel_count         = 3;  // physical: live, dead, live
+    d.brightness          = 255;
+    d.grouping            = 1;
+    d.gaps                = gaps;
+    d.gap_count           = 1;
+    const uint8_t live[6] = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66 };
+    const size_t cap      = encoded_size_samples(d);
+    std::vector<uint16_t> out(cap, 0);
+    encode_channel(d, live, out.data(), cap);
+    uint8_t px[3];
+    nrz_pixel_bytes(out, 0, px);
+    EXPECT_EQ(px[0], 0x11);
+    nrz_pixel_bytes(out, 1, px);
+    EXPECT_EQ(px[0] | px[1] | px[2], 0);  // the gap is black
+    nrz_pixel_bytes(out, 2, px);
+    EXPECT_EQ(px[2], 0x66);
+
+    // Invert flips the live pixels; the gap stays where it is wired.
+    d.invert_direction = true;
+    std::fill(out.begin(), out.end(), 0);
+    encode_channel(d, live, out.data(), cap);
+    nrz_pixel_bytes(out, 0, px);
+    EXPECT_EQ(px[0], 0x44);
+    nrz_pixel_bytes(out, 1, px);
+    EXPECT_EQ(px[0] | px[1] | px[2], 0);
+    nrz_pixel_bytes(out, 2, px);
+    EXPECT_EQ(px[0], 0x11);
+}
+
 // ── NRZ encoder: OR-into-buffer must preserve other channels' bits ─────────
 
 static void test_nrz_or_into_buffer() {
@@ -436,6 +512,29 @@ static void test_frame_mixed_t0h_and_lengths() {
     descs[0].invert_direction = true;
     descs[1].brightness       = 128;
     descs[3].grouping         = 3;
+    std::vector<std::vector<uint8_t>> px;
+    for (const auto& d : descs)
+        px.push_back(random_pixels(d));
+    check_frame_equivalence(descs, px, __LINE__);
+}
+
+// Gaps go through the same per-pixel transform in both encoders; this pins the
+// single-pass sweeps (NRZ and clocked) to the per-channel reference with gaps,
+// grouping and invert combined.
+static void test_frame_with_gaps() {
+    static const PixelGap g0[2] = { { 0, 1 }, { 100, 3 } };
+    static const PixelGap g1[1] = { { 50, 2 } };
+    std::vector<ChannelDesc> descs{ make_desc(0, Protocol::WS2815, 300),
+                                    make_desc(1, Protocol::APA102, 120),
+                                    make_desc(2, Protocol::SK6812, 90) };
+    descs[0].gaps             = g0;
+    descs[0].gap_count        = 2;
+    descs[0].invert_direction = true;
+    descs[1].gaps             = g1;
+    descs[1].gap_count        = 1;
+    descs[2].gaps             = g1;
+    descs[2].gap_count        = 1;
+    descs[2].grouping         = 2;
     std::vector<std::vector<uint8_t>> px;
     for (const auto& d : descs)
         px.push_back(random_pixels(d));
@@ -705,6 +804,9 @@ int main() {
     test_dmx_or_into_buffer();
     test_nrz_one_pixel_ws2815();
     test_nrz_or_into_buffer();
+    test_gap_helpers();
+    test_nrz_gaps_and_invert();
+    test_frame_with_gaps();
     test_spi_size();
     test_perf_encode_ws2815_1024();
     test_frame_single_channel();

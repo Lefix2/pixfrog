@@ -37,6 +37,9 @@ void mark_global_dirty() {}
 
 // The emulator doesn't link the encoder, so it can't compute the real budget;
 // report the absolute cap and never clamp (capacity is exercised on hardware).
+config::ChannelConfig effective_channel(size_t ch) {
+    return config::get_channel(ch);
+}
 uint16_t channel_max_pixels(size_t /*ch*/) {
     return static_cast<uint16_t>(led::kMaxPixelsPerChannel);
 }
@@ -83,6 +86,7 @@ int g_preview_ch         = -1;
 uint16_t g_preview_count = 0;
 }  // namespace
 
+void set_preview_gaps(const led::PixelGap*, size_t) {}
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
     g_preview_ch    = static_cast<int>(channel_index);
     g_preview_count = pixel_count;
