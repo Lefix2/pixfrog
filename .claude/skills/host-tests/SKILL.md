@@ -1,27 +1,33 @@
 ---
 name: host-tests
-description: Build and run the seven pure-host unit test suites (led_protocols, dmx_manager, artnet, config_store, sacn, fseq_player, fpp_sync) — no IDF needed
+description: Build and run every host test suite (ctest) — plain, under ASan+UBSan, and with the whole-firmware coverage report; no IDF needed
 ---
 
+Every suite lives in one CMake project, `tests/CMakeLists.txt` (it aggregates
+`components/*/test` plus the IDF-shim harness):
+
 ```bash
-for t in components/led_protocols/test components/dmx_manager/test components/artnet/test \
-         components/config_store/test components/sacn/test components/fseq_player/test \
-         components/fpp_sync/test; do
-    cmake -S "$t" -B "$t/build" -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build "$t/build" --parallel >/dev/null
-done
-./components/led_protocols/test/build/test_led_protocols
-./components/dmx_manager/test/build/test_dmx_logic
-./components/artnet/test/build/test_artnet_parser
-./components/config_store/test/build/test_config_store
-./components/sacn/test/build/test_sacn_parser
-./components/fseq_player/test/build/test_fseq_parser
-./components/fpp_sync/test/build/test_fpp_sync_parser
+cmake -S tests -B build/tests -DCMAKE_BUILD_TYPE=Release
+cmake --build build/tests --parallel
+ctest --test-dir build/tests --output-on-failure
 ```
 
-Each prints `PASS=<n> FAIL=0` on success. These are the same seven suites the
-`host-tests` CI job runs — keep this list in sync with `.github/workflows/ci.yml`
-and `tools/ci-local.sh` when a component gains a suite.
+Same suites under AddressSanitizer + UndefinedBehaviorSanitizer (CI job
+`sanitizers`; any report fails the test):
 
-A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
-suite green; the same goes for `config_store`, `sacn`, `fseq_player` and
-`fpp_sync`.
+```bash
+cmake -S tests -B build/tests-san -DPIXFROG_SANITIZE=ON
+cmake --build build/tests-san --parallel
+ctest --test-dir build/tests-san --output-on-failure
+```
+
+Coverage (CI job `coverage`, uploaded to Codecov) — host suites + emulator
+scenarios; firmware files no test compiles count at 0 %, so the figure is the
+whole code base. Needs `pip install gcovr` (+ `libsdl2-dev` for the emulator):
+
+```bash
+python3 tools/coverage.py          # → build/coverage/{summary.txt,coverage.lcov,html/}
+```
+
+Each suite prints `PASS=<n> FAIL=0`. A new suite is registered in
+`tests/CMakeLists.txt` only — CI and `tools/ci-local.sh` pick it up.

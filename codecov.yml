@@ -1,0 +1,23 @@
+# Coverage comes from tools/coverage.py: host suites + emulator scenarios, with
+# every firmware .cpp that no test compiles reported at 0 % (so the project
+# figure is the whole code base, not just the tested libraries).
+ignore:
+  - "tests"
+  - "tools"
+  - "components/*/test"
+  - "components/fseq_player/third_party"
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%   # the harness only grows: a real drop means a test was lost
+    patch:
+      default:
+        target: 60%     # new code should come with tests
+        informational: true
+
+comment:
+  layout: "diff, flags, files"
+  require_changes: true
