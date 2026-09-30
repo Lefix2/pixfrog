@@ -684,6 +684,10 @@ bool parse_scene_index(const char* s, uint32_t& out) {
 int cmd_scene(int argc, char** argv) {
     if (argc == 1) {
         printf("active=%d\n", dmx::active_scene());
+        printf("outputs=");  // scene per output, -1 = live
+        for (size_t o = 0; o < config::kNumChannels; ++o)
+            printf("%s%d", o ? "," : "", dmx::scene_on_output(o));
+        printf("\n");
         for (size_t i = 0; i < config::num_scenes(); ++i) {
             const auto& sc = config::get_scene(i);
             printf("scene%u name=%s effect=%s color=", static_cast<unsigned>(i), sc.name,
@@ -700,13 +704,24 @@ int cmd_scene(int argc, char** argv) {
 
     uint32_t n = 0;
     if (strcmp(argv[1], "play") == 0) {
-        if (argc != 3 || !parse_scene_index(argv[2], n)) return err("usage: scene play <index>");
-        dmx::scene_start(static_cast<uint8_t>(n));
+        // scene play <n> [outputs-hex] — on the scene's mask (∩ outputs)
+        uint8_t outs = dmx::kAllOutputs;
+        if ((argc != 3 && argc != 4) || !parse_scene_index(argv[2], n) ||
+            (argc == 4 && parse_hex(argv[3], &outs, 1) != 1))
+            return err("usage: scene play <index> [outputs-hex]");
+        dmx::scene_start_on(static_cast<uint8_t>(n), outs);
         printf("active=%u\n", static_cast<unsigned>(n));
+        printf("outputs=%02x\n", dmx::scene_outputs(static_cast<uint8_t>(n)));
         return ok();
     }
     if (strcmp(argv[1], "stop") == 0) {
-        dmx::scene_stop();
+        // scene stop [n] — every output, or only those playing scene n
+        if (argc == 3) {
+            if (!parse_scene_index(argv[2], n)) return err("usage: scene stop [index]");
+            dmx::scene_stop_scene(static_cast<uint8_t>(n));
+        } else {
+            dmx::scene_stop();
+        }
         return ok();
     }
     if (strcmp(argv[1], "name") == 0) {
@@ -825,6 +840,178 @@ int cmd_fseq(int argc, char** argv) {
     return err("usage: fseq [list | play <filename> | stop | seek <ms>]");
 }
 
+// ── show / ctrl ─────────────────────────────────────────────────────────────
+
+// Optional trailing outputs mask (hex); all outputs when absent.
+bool parse_outputs(int argc, char** argv, int at, uint8_t& out) {
+    out = dmx::kAllOutputs;
+    if (argc <= at) return true;
+    return argc == at + 1 && parse_hex(argv[at], &out, 1) == 1;
+}
+
+// show — grand master / blackout / strobe / scene fade (+ control state)
+int cmd_show(int argc, char** argv) {
+    uint32_t v   = 0;
+    uint8_t outs = dmx::kAllOutputs;
+    if (argc == 1) {
+        printf("master=");
+        for (size_t o = 0; o < config::kNumChannels; ++o)
+            printf("%s%u", o ? "," : "",
+                   (static_cast<unsigned>(dmx::master_effective(o)) * 100u + 32767u) / 65535u);
+        printf("\nmaster_local=");
+        for (size_t o = 0; o < config::kNumChannels; ++o)
+            printf("%s%u", o ? "," : "",
+                   (static_cast<unsigned>(dmx::master_local(o)) * 100u + 32767u) / 65535u);
+        printf("\nblackout=%02x\nblackout_local=%02x\n", dmx::blackout_effective(),
+               dmx::blackout_local());
+        printf("strobe_hz10=");
+        for (size_t o = 0; o < config::kNumChannels; ++o)
+            printf("%s%u", o ? "," : "", dmx::strobe_effective(o));
+        printf("\nfade_ms=%lu\nfade_ms_config=%u\n",
+               static_cast<unsigned long>(dmx::scene_fade_ms()),
+               config::get_global().scene_fade_ms);
+        printf("control=%s\n", !config::get_control().enabled ? "off"
+                               : dmx::control_live()          ? "live"
+                                                              : "idle");
+        return ok();
+    }
+    if (strcmp(argv[1], "master") == 0) {
+        if (argc < 3 || !parse_u32_in(argv[2], 0, 100, v) || !parse_outputs(argc, argv, 3, outs))
+            return err("usage: show master <0..100> [outputs-hex]");
+        dmx::master_set(outs, static_cast<uint16_t>(v * 65535u / 100u));
+        return ok();
+    }
+    if (strcmp(argv[1], "blackout") == 0) {
+        if (argc < 3 || !parse_outputs(argc, argv, 3, outs))
+            return err("usage: show blackout on|off|toggle [outputs-hex]");
+        if (strcmp(argv[2], "on") == 0)
+            dmx::blackout_set(outs, true);
+        else if (strcmp(argv[2], "off") == 0)
+            dmx::blackout_set(outs, false);
+        else if (strcmp(argv[2], "toggle") == 0)
+            dmx::blackout_toggle(outs);
+        else
+            return err("usage: show blackout on|off|toggle [outputs-hex]");
+        printf("blackout=%02x\n", dmx::blackout_effective());
+        return ok();
+    }
+    if (strcmp(argv[1], "strobe") == 0) {
+        if (argc < 3 || !parse_u32_in(argv[2], 0, 25, v) || !parse_outputs(argc, argv, 3, outs))
+            return err("usage: show strobe <0..25 Hz> [outputs-hex]");
+        dmx::strobe_set(outs, static_cast<uint8_t>(v * 10));
+        return ok();
+    }
+    if (strcmp(argv[1], "fade") == 0) {
+        if (argc != 3 || !parse_u32_in(argv[2], 0, config::kMaxSceneFadeMs, v))
+            return err("usage: show fade <0..25500 ms>");
+        auto g          = config::get_global();
+        g.scene_fade_ms = static_cast<uint16_t>(v);
+        if (!config::set_global(g)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    return err("usage: show [master|blackout|strobe|fade ...]");
+}
+
+void print_control(const config::ControlConfig& c) {
+    printf("enabled=%u\nuniverse=%u\naddress=%u\nslots=%u\nfootprint=%u\nlive=%d\n", c.enabled,
+           c.universe, c.address, c.count, static_cast<unsigned>(config::control_footprint(c)),
+           dmx::control_live() ? 1 : 0);
+    printf("pool_slot=%d\nlast_rx_ms=%lld\n", dmx::control_pool_slot(),
+           static_cast<long long>(dmx::control_last_rx_ms_ago()));
+    unsigned at = c.address;
+    for (size_t i = 0; i < c.count; ++i) {
+        const auto& s    = c.slots[i];
+        const unsigned w = config::control_slot_width(s);
+        printf("slot%u dmx=%u%s fn=%s mask=%02x index=%u fine=%u\n", static_cast<unsigned>(i), at,
+               w == 2 ? "+1" : "", config::ctl_fn_id(s.fn), s.mask, s.index,
+               (s.flags & config::kCtlFlagFine) ? 1u : 0u);
+        at += w;
+    }
+}
+
+// <fn> [mask-hex] [index] [fine] → slot
+bool parse_ctl_slot(int argc, char** argv, int at, config::ControlSlot& out) {
+    if (argc <= at) return false;
+    const int fn = config::ctl_fn_from_id(argv[at]);
+    if (fn < 0) return false;
+    out        = config::control_slot(static_cast<config::CtlFn>(fn));
+    uint32_t v = 0;
+    if (argc > at + 1 && parse_hex(argv[at + 1], &out.mask, 1) != 1) return false;
+    if (argc > at + 2) {
+        if (!parse_u32_in(argv[at + 2], 0, config::kSceneColorsMax - 1, v)) return false;
+        out.index = static_cast<uint8_t>(v);
+    }
+    if (argc > at + 3) {
+        if (!parse_u32_in(argv[at + 3], 0, 1, v)) return false;
+        out.flags = v ? config::kCtlFlagFine : 0;
+    }
+    return argc <= at + 4;
+}
+
+int apply_control(const config::ControlConfig& c) {
+    if (!config::set_control(c)) printf("warn=not_persisted\n");
+    dmx::mark_global_dirty();  // maps (or drops) the control universe
+    print_control(config::get_control());
+    return ok();
+}
+
+// ctrl — the DMX control universe ("personality")
+int cmd_ctrl(int argc, char** argv) {
+    config::ControlConfig c = config::get_control();
+    uint32_t v              = 0;
+    if (argc == 1) {
+        print_control(c);
+        return ok();
+    }
+    const char* sub = argv[1];
+    if (strcmp(sub, "enable") == 0) {
+        if (argc != 3 || !parse_u32_in(argv[2], 0, 1, v)) return err("usage: ctrl enable 0|1");
+        c.enabled = static_cast<uint8_t>(v);
+    } else if (strcmp(sub, "universe") == 0) {
+        if (argc != 3 || !parse_u32_in(argv[2], 0, 32767, v))
+            return err("usage: ctrl universe <0..32767>");
+        c.universe = static_cast<uint16_t>(v);
+    } else if (strcmp(sub, "address") == 0) {
+        if (argc != 3 || !parse_u32_in(argv[2], 1, 512, v))
+            return err("usage: ctrl address <1..512>");
+        c.address = static_cast<uint16_t>(v);
+    } else if (strcmp(sub, "preset") == 0) {
+        if (argc == 3 && strcmp(argv[2], "simple") == 0)
+            config::control_apply_preset(c, config::ControlPreset::Simple);
+        else if (argc == 3 && strcmp(argv[2], "full") == 0)
+            config::control_apply_preset(c, config::ControlPreset::Full);
+        else
+            return err("usage: ctrl preset simple|full");
+    } else if (strcmp(sub, "clear") == 0) {
+        c.count = 0;
+    } else if (strcmp(sub, "add") == 0) {
+        config::ControlSlot s{};
+        if (!parse_ctl_slot(argc, argv, 2, s))
+            return err("usage: ctrl add <fn> [mask-hex] [colour 0..3] [fine 0|1]");
+        if (c.count >= config::kMaxControlSlots) return err("control mode full (32 slots)");
+        c.slots[c.count++] = s;
+    } else if (strcmp(sub, "set") == 0) {
+        config::ControlSlot s{};
+        if (argc < 4 || !parse_u32_in(argv[2], 0, c.count ? c.count - 1u : 0u, v) || !c.count ||
+            !parse_ctl_slot(argc, argv, 3, s))
+            return err("usage: ctrl set <slot> <fn> [mask-hex] [colour 0..3] [fine 0|1]");
+        c.slots[v] = s;
+    } else if (strcmp(sub, "del") == 0) {
+        if (argc != 3 || !c.count || !parse_u32_in(argv[2], 0, c.count - 1u, v))
+            return err("usage: ctrl del <slot>");
+        for (size_t i = v; i + 1 < c.count; ++i)
+            c.slots[i] = c.slots[i + 1];
+        --c.count;
+    } else {
+        return err("usage: ctrl [enable|universe|address|preset|clear|add|set|del ...]");
+    }
+    const size_t before         = c.count;
+    config::ControlConfig check = c;
+    config::sanitize_control(check);
+    if (check.count < before) return err("mode would end past DMX channel 512");
+    return apply_control(c);
+}
+
 void register_cmd(const char* name, const char* help, esp_console_cmd_func_t fn) {
     const esp_console_cmd_t cmd = {
         .command        = name,
@@ -870,7 +1057,12 @@ void start() {
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
     register_cmd("identify", "identify <ch> [s] — blink a strip white to locate it", cmd_identify);
-    register_cmd("scene", "scene [play <n>|stop|name|set] — standalone scenes", cmd_scene);
+    register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|set] — standalone scenes",
+                 cmd_scene);
+    register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",
+                 cmd_show);
+    register_cmd("ctrl", "ctrl [enable|universe|address|preset|add|set|del|clear] — DMX control",
+                 cmd_ctrl);
     register_cmd("fseq", "fseq [list | play <file> | stop | seek <ms>] — FSEQ show player",
                  cmd_fseq);
     register_cmd("cal", "cal [-1|0|1|2|3] — get/set calibration pattern (3 = GPIO bit-bang probe)",

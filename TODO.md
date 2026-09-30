@@ -224,25 +224,25 @@ From the September 2026 functional/technical review.
 
 ## Review 2026-09 — show control (desk / theatre)
 
-- [ ] ★ **DMX control universe ("personality" mode)** — a configurable
-      universe/address whose few slots drive the box from any desk with a
-      generic fixture profile: master dimmer, scene number, speed, param,
-      colour 1/2 (RGB), strobe. Probably the most valuable missing feature for
-      theatre use (few desks can send ArtTrigger).
-- [ ] ★ **Grand master + blackout** — global intensity applied at encode
-      time (like `brightness`), plus a blackout toggle; reachable from the web
-      UI, the TFT, UART, ArtTrigger (a reserved key/subkey) and the control
-      universe above.
+- [x] ★ **DMX control universe ("personality" mode)** — composable: up to 32
+      slots (master 8/16-bit, blackout, strobe, scene bands, speed, param,
+      effect, colour 1-4 RGB, fade time, FSEQ bands), each on an output group;
+      presets Simple/Full; OFL fixture profile export; web + TFT + UART editors.
+- [x] ★ **Grand master + blackout** (+ strobe) — per output group, from the web,
+      TFT, UART, ArtTrigger KeyMacro (1 toggle, 2 on, 3 off) and the control
+      universe; applied after decode, identify/ruler bypass it.
 - [ ] **Scene vs network priority policy** — today a playing scene (and the
       boot scene) overrides the network until stopped, and nothing tells the
       desk. Add a per-box policy: `override` (today) / `yield` (a scene is an
       idle look that stops as soon as DMX arrives on its channels, resumes on
       failsafe). Surface the override in ArtPollReply NodeReport and on the
       HOME screen.
-- [ ] **Scene transitions** — crossfade time (per scene or global) when
-      switching scenes or starting/stopping one.
-- [ ] **Scene zones** — several scenes active at once on disjoint channel
-      masks (scene A on outputs 1-4, B on 5-8); today one scene is global.
+- [x] **Scene transitions** — global crossfade time (`scene_fade_ms`,
+      0-25.5 s), desk-overridable; per-scene times not done.
+- [x] **Scene zones** — one scene per output: a scene claims its mask (∩ the
+      requested outputs); several play at once.
+- [ ] **Per-scene fade time** — the fade is global today; a per-scene value
+      would sit in the Scene record (needs a v4 layout).
 
 ## Review 2026-09 — standalone installation
 

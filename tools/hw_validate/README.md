@@ -19,6 +19,7 @@ PORT=/dev/ttyACM1 BOARD_IP=10.0.0.5 ./run_all.py
 | `sacn` | E1.31 unicast → pool → decode (opt-in flag honoured) |
 | `failsafe` | never-active rule, colour fill, recovery, blackout, hold |
 | `scenes` | generators, multi-colour blobs, solid strobe ends, channel mask, network priority, scene list add/rename/move/delete + persistence, ArtTrigger, boot scene |
+| `show` | grand master / blackout / strobe (console + ArtTrigger KeyMacro), scene zones and crossfade, the DMX control universe over Art-Net (master, blackout, scene band, local stop holds, release when the desk goes silent), fixture profile |
 | `output` | refresh bounds 20..120 Hz and the rate actually held, pixels above the budget kept, dead-pixel gaps (merge, persistence, logical pixels untouched) |
 | `identify_gamma` | identify blink, gamma/wb readback, backup/restore round-trip |
 | `display` | backlight level + idle dim + dim delay: console ranges, NVS persistence, web round-trip |

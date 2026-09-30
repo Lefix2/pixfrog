@@ -324,6 +324,434 @@ static esp_err_t handle_root(httpd_req_t* req) {
     return httpd_resp_send(req, reinterpret_cast<const char*>(web_ui_gz_start), web_ui_gz_len());
 }
 
+// ── DMX control universe JSON ───────────────────────────────────────────────
+// {"enabled":true,"universe":100,"address":1,"footprint":6,
+//  "slots":[{"fn":"master","mask":255,"index":0,"fine":true}, ...]}
+
+static cJSON* build_control_json() {
+    const auto& c = config::get_control();
+    cJSON* jc     = cJSON_CreateObject();
+    cJSON_AddBoolToObject(jc, "enabled", c.enabled);
+    cJSON_AddNumberToObject(jc, "universe", c.universe);
+    cJSON_AddNumberToObject(jc, "address", c.address);
+    cJSON_AddNumberToObject(jc, "footprint", static_cast<double>(config::control_footprint(c)));
+    cJSON* js = cJSON_CreateArray();
+    for (size_t i = 0; i < c.count; ++i) {
+        const auto& sl = c.slots[i];
+        cJSON* j       = cJSON_CreateObject();
+        cJSON_AddStringToObject(j, "fn", config::ctl_fn_id(sl.fn));
+        cJSON_AddNumberToObject(j, "mask", sl.mask);
+        cJSON_AddNumberToObject(j, "index", sl.index);
+        cJSON_AddBoolToObject(j, "fine", (sl.flags & config::kCtlFlagFine) != 0);
+        cJSON_AddItemToArray(js, j);
+    }
+    cJSON_AddItemToObject(jc, "slots", js);
+    return jc;
+}
+
+// Applies the fields present in `jc` onto `c`. False (with *why) on anything
+// out of range: nothing is half-applied by the caller then.
+static bool apply_control_json(const cJSON* jc, config::ControlConfig& c, const char** why) {
+    const cJSON* it = cJSON_GetObjectItemCaseSensitive(jc, "enabled");
+    if (it) {
+        if (!cJSON_IsBool(it)) return *why = "enabled: boolean", false;
+        c.enabled = cJSON_IsTrue(it) ? 1 : 0;
+    }
+    it = cJSON_GetObjectItemCaseSensitive(jc, "universe");
+    if (it) {
+        if (!cJSON_IsNumber(it) || !(it->valuedouble >= 0 && it->valuedouble <= 32767))
+            return *why = "universe: 0..32767", false;
+        c.universe = static_cast<uint16_t>(it->valuedouble);
+    }
+    it = cJSON_GetObjectItemCaseSensitive(jc, "address");
+    if (it) {
+        if (!cJSON_IsNumber(it) || !(it->valuedouble >= 1 && it->valuedouble <= 512))
+            return *why = "address: 1..512", false;
+        c.address = static_cast<uint16_t>(it->valuedouble);
+    }
+    it = cJSON_GetObjectItemCaseSensitive(jc, "preset");
+    if (it) {
+        if (cJSON_IsString(it) && strcmp(it->valuestring, "simple") == 0)
+            config::control_apply_preset(c, config::ControlPreset::Simple);
+        else if (cJSON_IsString(it) && strcmp(it->valuestring, "full") == 0)
+            config::control_apply_preset(c, config::ControlPreset::Full);
+        else
+            return *why = "preset: simple|full", false;
+    }
+    it = cJSON_GetObjectItemCaseSensitive(jc, "slots");
+    if (it) {
+        if (!cJSON_IsArray(it) ||
+            cJSON_GetArraySize(it) > static_cast<int>(config::kMaxControlSlots))
+            return *why = "slots: array of at most 32", false;
+        config::ControlSlot parsed[config::kMaxControlSlots]{};
+        size_t n = 0;
+        for (const cJSON* js = it->child; js; js = js->next) {
+            const cJSON* fn = cJSON_GetObjectItemCaseSensitive(js, "fn");
+            const int f     = cJSON_IsString(fn) ? config::ctl_fn_from_id(fn->valuestring) : -1;
+            if (f < 0) return *why = "slots[].fn: unknown function", false;
+            config::ControlSlot sl = config::control_slot(static_cast<config::CtlFn>(f));
+            const cJSON* m         = cJSON_GetObjectItemCaseSensitive(js, "mask");
+            if (m) {
+                if (!cJSON_IsNumber(m) || !(m->valuedouble >= 1 && m->valuedouble <= 255))
+                    return *why = "slots[].mask: 1..255", false;
+                sl.mask = static_cast<uint8_t>(m->valuedouble);
+            }
+            const cJSON* ix = cJSON_GetObjectItemCaseSensitive(js, "index");
+            if (ix) {
+                if (!cJSON_IsNumber(ix) ||
+                    !(ix->valuedouble >= 0 && ix->valuedouble <= config::kSceneColorsMax - 1))
+                    return *why = "slots[].index: 0..3", false;
+                sl.index = static_cast<uint8_t>(ix->valuedouble);
+            }
+            if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(js, "fine")) &&
+                f == static_cast<int>(config::CtlFn::Master))
+                sl.flags = config::kCtlFlagFine;
+            parsed[n++] = sl;
+        }
+        std::memcpy(c.slots, parsed, sizeof(c.slots));
+        c.count = static_cast<uint8_t>(n);
+    }
+    config::ControlConfig check = c;
+    config::sanitize_control(check);
+    if (check.count < c.count) return *why = "the mode would end past DMX channel 512", false;
+    return true;
+}
+
+// ── OFL fixture profile of the control mode ─────────────────────────────────
+// Open Fixture Library format (importable in QLC+, and convertible to most
+// desk formats on open-fixture-library.org): one mode, the slots in order.
+
+static void ofl_range(cJSON* caps, int lo, int hi, cJSON* cap) {
+    cJSON* r = cJSON_CreateArray();
+    cJSON_AddItemToArray(r, cJSON_CreateNumber(lo));
+    cJSON_AddItemToArray(r, cJSON_CreateNumber(hi));
+    cJSON_AddItemToObject(cap, "dmxRange", r);
+    cJSON_AddItemToArray(caps, cap);
+}
+
+static cJSON* ofl_cap(const char* type) {
+    cJSON* c = cJSON_CreateObject();
+    cJSON_AddStringToObject(c, "type", type);
+    return c;
+}
+
+// "Master", or "Master (out 1-4)" when the slot does not cover every output.
+static void ofl_channel_name(char* out, size_t cap, const char* base, uint8_t mask) {
+    if (mask == 0xFF) {
+        snprintf(out, cap, "%s", base);
+        return;
+    }
+    char outs[24] = "";
+    size_t n      = 0;
+    for (int o = 0; o < 8;) {
+        if (!((mask >> o) & 1)) {
+            ++o;
+            continue;
+        }
+        int e = o;
+        while (e + 1 < 8 && ((mask >> (e + 1)) & 1))
+            ++e;
+        n += static_cast<size_t>(snprintf(outs + n, sizeof(outs) - n, "%s%d", n ? "," : "", o + 1));
+        if (e > o) n += static_cast<size_t>(snprintf(outs + n, sizeof(outs) - n, "-%d", e + 1));
+        o = e + 1;
+    }
+    snprintf(out, cap, "%s (out %s)", base, outs);
+}
+
+static cJSON* ofl_channel(const config::ControlSlot& sl) {
+    cJSON* ch     = cJSON_CreateObject();
+    cJSON* caps   = cJSON_CreateArray();
+    const auto fn = static_cast<config::CtlFn>(sl.fn);
+    switch (fn) {
+    case config::CtlFn::Master:
+        cJSON_AddItemToObject(ch, "capability", ofl_cap("Intensity"));
+        break;
+    case config::CtlFn::Blackout: {
+        ofl_range(caps, 0, 127, ofl_cap("NoFunction"));
+        cJSON* c = ofl_cap("ShutterStrobe");
+        cJSON_AddStringToObject(c, "shutterEffect", "Closed");
+        ofl_range(caps, 128, 255, c);
+        break;
+    }
+    case config::CtlFn::Strobe: {
+        cJSON* c = ofl_cap("ShutterStrobe");
+        cJSON_AddStringToObject(c, "shutterEffect", "Open");
+        ofl_range(caps, 0, 0, c);
+        c = ofl_cap("ShutterStrobe");
+        cJSON_AddStringToObject(c, "shutterEffect", "Strobe");
+        cJSON_AddStringToObject(c, "speedStart", "1Hz");
+        cJSON_AddStringToObject(c, "speedEnd", "25Hz");
+        ofl_range(caps, 1, 255, c);
+        break;
+    }
+    case config::CtlFn::Scene: {
+        ofl_range(caps, 0, 7, ofl_cap("NoFunction"));
+        const size_t n = config::num_scenes();
+        for (size_t i = 0; i < n; ++i) {
+            cJSON* c = ofl_cap("Effect");
+            cJSON_AddStringToObject(c, "effectName", config::get_scene(i).name);
+            ofl_range(caps, static_cast<int>(8 * (i + 1)), static_cast<int>(8 * (i + 1) + 7), c);
+        }
+        if (8 * (n + 1) <= 255)
+            ofl_range(caps, static_cast<int>(8 * (n + 1)), 255, ofl_cap("NoFunction"));
+        break;
+    }
+    case config::CtlFn::Speed: {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        cJSON* c = ofl_cap("EffectSpeed");
+        cJSON_AddStringToObject(c, "speedStart", "slow");
+        cJSON_AddStringToObject(c, "speedEnd", "fast");
+        ofl_range(caps, 1, 255, c);
+        break;
+    }
+    case config::CtlFn::Param: {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        cJSON* c = ofl_cap("EffectParameter");
+        cJSON_AddStringToObject(c, "parameterStart", "low");
+        cJSON_AddStringToObject(c, "parameterEnd", "high");
+        ofl_range(caps, 1, 255, c);
+        break;
+    }
+    case config::CtlFn::Red:
+    case config::CtlFn::Green:
+    case config::CtlFn::Blue: {
+        cJSON* c = ofl_cap("ColorIntensity");
+        cJSON_AddStringToObject(c, "color",
+                                fn == config::CtlFn::Red     ? "Red"
+                                : fn == config::CtlFn::Green ? "Green"
+                                                             : "Blue");
+        cJSON_AddItemToObject(ch, "capability", c);
+        break;
+    }
+    case config::CtlFn::Effect: {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        int lo = 1;
+        for (int v = 1; v <= 255; ++v) {
+            const int e = dmx::effect_for_dmx_value(static_cast<uint8_t>(v));
+            if (v == 255 || dmx::effect_for_dmx_value(static_cast<uint8_t>(v + 1)) != e) {
+                cJSON* c = ofl_cap("Effect");
+                cJSON_AddStringToObject(c, "effectName",
+                                        config::scene_fx_label(static_cast<uint8_t>(e)));
+                ofl_range(caps, lo, v, c);
+                lo = v + 1;
+            }
+        }
+        break;
+    }
+    case config::CtlFn::Fade: {
+        cJSON* c = ofl_cap("Generic");
+        cJSON_AddStringToObject(c, "comment", "Scene fade time, value x 0.1 s");
+        cJSON_AddItemToObject(ch, "capability", c);
+        break;
+    }
+    case config::CtlFn::Fseq: {
+        cJSON* c = ofl_cap("Generic");
+        cJSON_AddStringToObject(c, "comment", "Stop the show file");
+        ofl_range(caps, 0, 7, c);
+        c = ofl_cap("Generic");
+        cJSON_AddStringToObject(c, "comment", "Play show file n (8 values per file)");
+        ofl_range(caps, 8, 255, c);
+        break;
+    }
+    default: break;
+    }
+    if (cJSON_GetArraySize(caps) > 0)
+        cJSON_AddItemToObject(ch, "capabilities", caps);
+    else
+        cJSON_Delete(caps);
+    return ch;
+}
+
+static const char* ofl_base_name(const config::ControlSlot& sl, char* buf, size_t cap) {
+    switch (static_cast<config::CtlFn>(sl.fn)) {
+    case config::CtlFn::Master: return "Master";
+    case config::CtlFn::Blackout: return "Blackout";
+    case config::CtlFn::Strobe: return "Strobe";
+    case config::CtlFn::Scene: return "Scene";
+    case config::CtlFn::Speed: return "Scene speed";
+    case config::CtlFn::Param: return "Scene parameter";
+    case config::CtlFn::Red:
+    case config::CtlFn::Green:
+    case config::CtlFn::Blue:
+        snprintf(buf, cap, "Colour %u %s", sl.index + 1u,
+                 sl.fn == static_cast<uint8_t>(config::CtlFn::Red)     ? "red"
+                 : sl.fn == static_cast<uint8_t>(config::CtlFn::Green) ? "green"
+                                                                       : "blue");
+        return buf;
+    case config::CtlFn::Effect: return "Effect";
+    case config::CtlFn::Fade: return "Fade time";
+    case config::CtlFn::Fseq: return "Show file";
+    default: return nullptr;
+    }
+}
+
+// "Sep 30 2026" (app description) → "2026-09-30".
+static void iso_date(char* out, size_t cap, const char* d) {
+    static const char* const kMon = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    int mon                       = 1;
+    for (int i = 0; i < 12; ++i)
+        if (strncmp(d, kMon + 3 * i, 3) == 0) mon = i + 1;
+    snprintf(out, cap, "%.4s-%02d-%02d", d + 7, mon, atoi(d + 4));
+}
+
+static cJSON* build_fixture_json() {
+    const auto& c = config::get_control();
+    cJSON* root   = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "$schema",
+                            "https://raw.githubusercontent.com/OpenLightingProject/"
+                            "open-fixture-library/master/schemas/fixture.json");
+    char name[48];
+    snprintf(name, sizeof(name), "pixfrog %s control", config::get_global().short_name);
+    cJSON_AddStringToObject(root, "name", name);
+    cJSON* cats = cJSON_CreateArray();
+    cJSON_AddItemToArray(cats, cJSON_CreateString("Other"));
+    cJSON_AddItemToObject(root, "categories", cats);
+    cJSON* meta    = cJSON_CreateObject();
+    cJSON* authors = cJSON_CreateArray();
+    cJSON_AddItemToArray(authors, cJSON_CreateString("pixfrog"));
+    cJSON_AddItemToObject(meta, "authors", authors);
+    char date[12];
+    iso_date(date, sizeof(date), esp_app_get_description()->date);
+    cJSON_AddStringToObject(meta, "createDate", date);
+    cJSON_AddStringToObject(meta, "lastModifyDate", date);
+    cJSON_AddItemToObject(root, "meta", meta);
+
+    cJSON* avail    = cJSON_CreateObject();
+    cJSON* mode_chs = cJSON_CreateArray();
+    for (size_t i = 0; i < c.count; ++i) {
+        const auto& sl = c.slots[i];
+        char buf[32], base[64], unique[80];  // sized for GCC's worst case
+        const char* b = ofl_base_name(sl, buf, sizeof(buf));
+        if (!b) {  // spare channel
+            cJSON_AddItemToArray(mode_chs, cJSON_CreateNull());
+            continue;
+        }
+        ofl_channel_name(base, sizeof(base), b, sl.mask);
+        snprintf(unique, sizeof(unique), "%s", base);
+        for (int k = 2; cJSON_GetObjectItemCaseSensitive(avail, unique); ++k)
+            snprintf(unique, sizeof(unique), "%s %d", base, k);
+        cJSON* ch = ofl_channel(sl);
+        cJSON_AddItemToArray(mode_chs, cJSON_CreateString(unique));
+        if (config::control_slot_width(sl) == 2) {
+            char fine[88];
+            snprintf(fine, sizeof(fine), "%s fine", unique);
+            cJSON* aliases = cJSON_CreateArray();
+            cJSON_AddItemToArray(aliases, cJSON_CreateString(fine));
+            cJSON_AddItemToObject(ch, "fineChannelAliases", aliases);
+            cJSON_AddItemToArray(mode_chs, cJSON_CreateString(fine));
+        }
+        cJSON_AddItemToObject(avail, unique, ch);
+    }
+    cJSON_AddItemToObject(root, "availableChannels", avail);
+    cJSON* modes = cJSON_CreateArray();
+    cJSON* mode  = cJSON_CreateObject();
+    char mname[24];
+    snprintf(mname, sizeof(mname), "%u-channel",
+             static_cast<unsigned>(config::control_footprint(c)));
+    cJSON_AddStringToObject(mode, "name", mname);
+    cJSON_AddItemToObject(mode, "channels", mode_chs);
+    cJSON_AddItemToArray(modes, mode);
+    cJSON_AddItemToObject(root, "modes", modes);
+    return root;
+}
+
+static esp_err_t handle_control_fixture(httpd_req_t* req) {
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-control.json\"");
+    return send_json(req, build_fixture_json());
+}
+
+// ── POST /api/control ───────────────────────────────────────────────────────
+
+static esp_err_t handle_post_control(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    char buf[2048];
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+    config::ControlConfig c = config::get_control();
+    const char* why         = nullptr;
+    const bool ok           = apply_control_json(j, c, &why);
+    cJSON_Delete(j);
+    if (!ok) return send_err(req, 400, why);
+    config::set_control(c);
+    dmx::mark_global_dirty();  // maps (or drops) the control universe
+    return send_json(req, build_control_json());
+}
+
+// ── POST /api/show — grand master, blackout, strobe (runtime) ───────────────
+// {"outputs":255, "master":80, "blackout":true|false|"toggle", "strobe_hz":5}
+
+static cJSON* build_show_json() {
+    cJSON* js  = cJSON_CreateObject();
+    cJSON* jm  = cJSON_CreateArray();
+    cJSON* jl  = cJSON_CreateArray();
+    cJSON* jst = cJSON_CreateArray();
+    for (size_t o = 0; o < config::kNumChannels; ++o) {
+        cJSON_AddItemToArray(
+            jm,
+            cJSON_CreateNumber((static_cast<unsigned>(dmx::master_effective(o)) * 1000u + 32767u) /
+                               65535u / 10.0));
+        cJSON_AddItemToArray(
+            jl, cJSON_CreateNumber((static_cast<unsigned>(dmx::master_local(o)) * 1000u + 32767u) /
+                                   65535u / 10.0));
+        cJSON_AddItemToArray(jst, cJSON_CreateNumber(dmx::strobe_effective(o) / 10.0));
+    }
+    cJSON_AddItemToObject(js, "master", jm);
+    cJSON_AddItemToObject(js, "master_local", jl);
+    cJSON_AddNumberToObject(js, "blackout", dmx::blackout_effective());
+    cJSON_AddNumberToObject(js, "blackout_local", dmx::blackout_local());
+    cJSON_AddItemToObject(js, "strobe_hz", jst);
+    cJSON_AddNumberToObject(js, "fade_ms", dmx::scene_fade_ms());
+    cJSON_AddStringToObject(js, "control",
+                            !config::get_control().enabled ? "off"
+                            : dmx::control_live()          ? "live"
+                                                           : "idle");
+    cJSON* jso = cJSON_CreateArray();
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        cJSON_AddItemToArray(jso, cJSON_CreateNumber(dmx::scene_on_output(o)));
+    cJSON_AddItemToObject(js, "scenes", jso);
+    return js;
+}
+
+static esp_err_t handle_post_show(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    char buf[256];
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+    uint8_t outs    = dmx::kAllOutputs;
+    const char* why = nullptr;
+    const cJSON* it = cJSON_GetObjectItemCaseSensitive(j, "outputs");
+    if (it && (!cJSON_IsNumber(it) || !(it->valuedouble >= 1 && it->valuedouble <= 255)))
+        why = "outputs: 1..255";
+    else if (it)
+        outs = static_cast<uint8_t>(it->valuedouble);
+    const cJSON* jm = cJSON_GetObjectItemCaseSensitive(j, "master");
+    const cJSON* jb = cJSON_GetObjectItemCaseSensitive(j, "blackout");
+    const cJSON* js = cJSON_GetObjectItemCaseSensitive(j, "strobe_hz");
+    if (!why && jm && (!cJSON_IsNumber(jm) || !(jm->valuedouble >= 0 && jm->valuedouble <= 100)))
+        why = "master: 0..100";
+    if (!why && jb && !cJSON_IsBool(jb) &&
+        !(cJSON_IsString(jb) && !strcmp(jb->valuestring, "toggle")))
+        why = "blackout: true|false|\"toggle\"";
+    if (!why && js && (!cJSON_IsNumber(js) || !(js->valuedouble >= 0 && js->valuedouble <= 25)))
+        why = "strobe_hz: 0..25";
+    if (why) {
+        cJSON_Delete(j);
+        return send_err(req, 400, why);
+    }
+    if (jm) dmx::master_set(outs, static_cast<uint16_t>(jm->valuedouble * 65535.0 / 100.0 + 0.5));
+    if (jb) {
+        if (cJSON_IsString(jb))
+            dmx::blackout_toggle(outs);
+        else
+            dmx::blackout_set(outs, cJSON_IsTrue(jb));
+    }
+    if (js) dmx::strobe_set(outs, static_cast<uint8_t>(js->valuedouble * 10.0 + 0.5));
+    cJSON_Delete(j);
+    return send_json(req, build_show_json());
+}
+
 // ── GET /api/config ─────────────────────────────────────────────────────────
 
 static cJSON* build_global_json() {
@@ -358,6 +786,7 @@ static cJSON* build_global_json() {
     cJSON_AddNumberToObject(jg, "boot_scene", g.boot_scene);
     cJSON_AddNumberToObject(jg, "merge_mode", g.merge_mode);
     cJSON_AddNumberToObject(jg, "lang", g.language);
+    cJSON_AddNumberToObject(jg, "scene_fade_ms", g.scene_fade_ms);
     char fscol[8];
     snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     cJSON_AddStringToObject(jg, "failsafe_color", fscol);
@@ -458,6 +887,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "global", build_global_json());
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
+    cJSON_AddItemToObject(root, "control", build_control_json());
     return send_json(req, root);
 }
 
@@ -507,6 +937,7 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
         cJSON_AddItemToArray(jchs, jc);
     }
     cJSON_AddItemToObject(root, "channels", jchs);
+    cJSON_AddItemToObject(root, "show", build_show_json());
     return send_json(req, root);
 }
 
@@ -683,6 +1114,7 @@ static esp_err_t handle_backup(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "global", build_global_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
+    cJSON_AddItemToObject(root, "control", build_control_json());
     httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-config.json\"");
     return send_json(req, root);
 }
@@ -760,6 +1192,8 @@ static void restore_global(cJSON* jg) {
     if (num("merge_mode", 0, 1, &v)) g.merge_mode = static_cast<uint8_t>(v);
     if (getb("fpp_remote", &bv)) g.fpp_remote = bv;
     if (num("lang", 0, 1, &v)) g.language = static_cast<uint8_t>(v);
+    if (num("scene_fade_ms", 0, config::kMaxSceneFadeMs, &v))
+        g.scene_fade_ms = static_cast<uint16_t>(v);
     config::set_global(g);
 }
 
@@ -889,6 +1323,13 @@ static esp_err_t handle_restore(httpd_req_t* req) {
     const config::GlobalConfig before = config::get_global();
     cJSON* jg                         = cJSON_GetObjectItemCaseSensitive(j, "global");
     if (cJSON_IsObject(jg)) restore_global(jg);
+    // Control mode: applied only when the whole object is valid.
+    cJSON* jctl = cJSON_GetObjectItemCaseSensitive(j, "control");
+    if (cJSON_IsObject(jctl)) {
+        config::ControlConfig c = config::get_control();
+        const char* why         = nullptr;
+        if (apply_control_json(jctl, c, &why)) config::set_control(c);
+    }
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
     if (cJSON_IsArray(jchs)) {
         const int n = cJSON_GetArraySize(jchs);
@@ -1017,6 +1458,8 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     if (get_u32("failsafe_timeout_s", 0, 3600, u)) g.failsafe_timeout_s = static_cast<uint16_t>(u);
     if (get_u32("merge_mode", 0, 1, u)) g.merge_mode = static_cast<uint8_t>(u);
     if (get_u32("lang", 0, 1, u)) g.language = static_cast<uint8_t>(u);
+    if (get_u32("scene_fade_ms", 0, config::kMaxSceneFadeMs, u))
+        g.scene_fade_ms = static_cast<uint16_t>(u);
     if ((s = get_str("failsafe_color"))) {
         unsigned fr, fg, fb;
         if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &fr, &fg, &fb) == 3) {
@@ -1182,11 +1625,11 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
 
 // Exchanged, not just read: one flight at a time, whatever the httpd task
 // count is configured to be.
-static std::atomic<bool> g_ota_in_progress{ false };
+static std::atomic<uint32_t> g_ota_in_progress{ 0 };  // RMW: 32-bit on the P4
 
 static esp_err_t handle_ota(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    if (g_ota_in_progress.exchange(true)) return send_err(req, 500, "OTA already in progress");
+    if (g_ota_in_progress.exchange(1)) return send_err(req, 500, "OTA already in progress");
 
     // Claimed above — every exit from here on must hand the flag back.
     const esp_partition_t* update = esp_ota_get_next_update_partition(nullptr);
@@ -1288,7 +1731,24 @@ static esp_err_t handle_post_scene(httpd_req_t* req) {
         return send_err(req, 404, "no such scene");
 
     if (strstr(tail, "/play")) {
-        dmx::scene_start(static_cast<uint8_t>(idx));
+        // Optional {"outputs": mask}: the zone to claim (∩ the scene's mask).
+        uint8_t outs = dmx::kAllOutputs;
+        if (req->content_len > 0) {
+            char pb[64];
+            if (!read_body(req, pb, sizeof(pb) - 1)) return send_err(req, 400, "body too large");
+            cJSON* pj       = cJSON_Parse(pb);
+            const cJSON* jo = pj ? cJSON_GetObjectItemCaseSensitive(pj, "outputs") : nullptr;
+            const bool bad  = !pj || (jo && (!cJSON_IsNumber(jo) ||
+                                            !(jo->valuedouble >= 1 && jo->valuedouble <= 255)));
+            if (!bad && jo) outs = static_cast<uint8_t>(jo->valuedouble);
+            cJSON_Delete(pj);
+            if (bad) return send_err(req, 400, "outputs: 1..255");
+        }
+        dmx::scene_start_on(static_cast<uint8_t>(idx), outs);
+        return send_ok(req);
+    }
+    if (strstr(tail, "/stop")) {
+        dmx::scene_stop_scene(static_cast<uint8_t>(idx));
         return send_ok(req);
     }
     if (strstr(tail, "/delete")) {
@@ -1431,7 +1891,7 @@ static esp_err_t handle_fseq_stop(httpd_req_t* req) {
 // first and is renamed on success, so an interrupted upload never leaves a
 // truncated .fseq visible to the player.
 
-static std::atomic<bool> g_fseq_upload_in_progress{ false };
+static std::atomic<uint32_t> g_fseq_upload_in_progress{ 0 };  // RMW: 32-bit
 
 // Decode %XX sequences in-place (httpd_query_key_value does not URL-decode).
 static void url_decode(char* s) {
@@ -1451,7 +1911,7 @@ static void url_decode(char* s) {
 
 static esp_err_t handle_fseq_upload(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    if (g_fseq_upload_in_progress.exchange(true))
+    if (g_fseq_upload_in_progress.exchange(1))
         return send_err(req, 500, "upload already in progress");
     // Claimed above — every exit from here on must hand the flag back.
     const auto reject = [req](int code, const char* msg) {
@@ -1693,7 +2153,7 @@ void start() {
     init_log_capture();  // ensure capture is on even if app_main didn't call it
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 28;
+    cfg.max_uri_handlers = 32;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -1738,6 +2198,18 @@ void start() {
         { .uri      = "/api/rollback/ack",
           .method   = HTTP_POST,
           .handler  = handle_rollback_ack,
+          .user_ctx = nullptr },
+        { .uri      = "/api/show",
+          .method   = HTTP_POST,
+          .handler  = handle_post_show,
+          .user_ctx = nullptr },
+        { .uri      = "/api/control",
+          .method   = HTTP_POST,
+          .handler  = handle_post_control,
+          .user_ctx = nullptr },
+        { .uri      = "/api/control/fixture",
+          .method   = HTTP_GET,
+          .handler  = handle_control_fixture,
           .user_ctx = nullptr },
         { .uri      = "/api/scenes/stop",
           .method   = HTTP_POST,

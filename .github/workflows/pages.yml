@@ -57,6 +57,7 @@ jobs:
           cp docs/ARCHITECTURE.md site/docs/architecture.md
           cp docs/HARDWARE.md     site/docs/hardware.md
           cp docs/PROTOCOLS.md    site/docs/protocols.md
+          cp docs/SHOW_CONTROL.md site/docs/show-control.md
           # Diagrams / screenshots (optional; pages hide any that are absent).
           if [ -d docs/img ]; then mkdir -p site/img && cp -r docs/img/. site/img/; fi
 

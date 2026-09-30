@@ -13,6 +13,7 @@
 - **FSEQ player**: `.fseq` sequences (xLights/FPP, zstd-compressed) from microSD with hot-plug, uploaded over the web UI, free-running or slaved to ArtTimeCode / **FPP MultiSync**
 - **Standalone scenes**: up to 30 (create / rename / reorder / delete), 11 effects (solid + strobe, chase, rainbow, blobs, gradient, fade, twinkle, fire, scanner, wave, stripes), up to 4 colours each, per-channel mask; playable at boot, from the desk (ArtTrigger), or any UI
 - **Per-line tuning**: gamma, white balance, grouping, invert, and up to 8 dead-pixel gaps anywhere on the line (sacrificial pixel, repeater chip); any refresh rate 20–120 Hz with a non-destructive pixel budget
+- **Show control**: grand master, blackout and strobe per output group; scene **zones** (several scenes at once on different outputs) with **crossfades**; a composable **DMX control universe** (master 16-bit, blackout, strobe, scene, speed, param, effect, colours, fade, FSEQ) editable from the web, TFT or UART, with an exportable **OFL fixture profile** for the desk; ArtTrigger KeyMacro blackout
 - **Signal-loss failsafe** per channel: hold / blackout / solid colour / scene after a configurable timeout
 - **Per-channel gamma + white balance**, baked into encode-time LUTs (validated bit-exact on a logic analyzer)
 - Local UI: **NV3007 428×142 colour bar TFT** (SPI, 2.79") with a live status dashboard (per-channel activity, link/services state) and natively rasterised anti-aliased fonts; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning. Two other panels are supported as build-time alternates — see [Display backend](#display-backend)
@@ -152,6 +153,7 @@ Rendered online (with the browser flasher) at **<https://lefix2.github.io/pixfro
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — task topology, frame lifecycle, memory budget
 - [docs/HARDWARE.md](docs/HARDWARE.md) — pinout, PHY, level shifters, encoder + display wiring
 - [docs/PROTOCOLS.md](docs/PROTOCOLS.md) — per-protocol timings, PCLK formula, DMA encoding
+- [docs/SHOW_CONTROL.md](docs/SHOW_CONTROL.md) — grand master / blackout / strobe, scene zones and crossfades, the DMX control universe and its fixture profile
 - [AGENT.md](AGENT.md) — conventions, module map, hard rules (humans and agents)
 - [TODO.md](TODO.md) — the living roadmap; features land only from this list
 

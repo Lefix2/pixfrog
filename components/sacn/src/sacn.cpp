@@ -66,6 +66,14 @@ size_t wanted_universes(uint16_t out[kMaxJoined]) {
             if (!dup) out[n++] = static_cast<uint16_t>(uni);
         }
     }
+    // The DMX control universe, when enabled.
+    const int ctrl = dmx::control_universe();
+    if (ctrl >= 1 && n < kMaxJoined) {
+        bool dup = false;
+        for (size_t i = 0; i < n; ++i)
+            if (out[i] == ctrl) dup = true;
+        if (!dup) out[n++] = static_cast<uint16_t>(ctrl);
+    }
     return n;
 }
 

@@ -18,6 +18,9 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 - **No allocation on the hot path**. Everything `render_task` / ISR touches is allocated at boot.
 - **ISRs are `IRAM_ATTR`** and only `xSemaphoreGiveFromISR` / increment a counter.
 - **Atomic pointer swaps** for cross-thread data, not mutexes. See `dmx_manager` for the pattern.
+- **Read-modify-write atomics are 32-bit** (`exchange`, `fetch_*`, `compare_exchange_*`): on
+  the ESP32-P4 a sub-word RMW clobbered a neighbouring variable written by the other core.
+  8/16-bit atomics are fine for plain load/store. `tools/lint_atomics.py` (CI) enforces it.
 
 ## Module map
 
@@ -28,7 +31,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/led_output`    | 16-bit LED bus output: PARLIO TX loop (default, triple-buffered PSRAM FBs) or legacy LCD_CAM RGB backend (Kconfig choice, NOT CI-built, double-buffered), calibration |
 | `components/artnet`            | UDP receiver + parser; ArtDmx/Poll/Sync/Address/IpProg  |
 | `components/sacn`              | sACN (E1.31) receiver: multicast joins, priority gate (opt-in) |
-| `components/dmx_manager`       | Universe pool, channel mapping, capacity check, sync    |
+| `components/dmx_manager`       | Universe pool, channel mapping, capacity check, sync, scene zones + crossfade, show control (master/blackout/strobe, DMX control universe — docs/SHOW_CONTROL.md) |
 | `components/config_store`      | NVS-backed `GlobalConfig` + `ChannelConfig`             |
 | `components/fseq_player`       | `.fseq` playback from microSD (SDMMC + FATFS, zstd)     |
 | `components/fpp_sync`          | FPP MultiSync receiver: slaves FSEQ playback to a master |

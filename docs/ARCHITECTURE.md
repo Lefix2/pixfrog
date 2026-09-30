@@ -65,19 +65,30 @@ A frame is the interval between two LED renders — `1/refresh_rate`, any intege
 When `render_task` wakes (t = 0), it runs, in order:
 
 1. Atomic swap `universe_front ↔ universe_back`.
-2. Per channel, fill `pixel_back_buffer(ch)` from the **first matching source**
+2. `dmx::update_show_control()`: evaluate the DMX control universe (if
+   enabled and heard within 3 s) from the bank just published — master,
+   blackout, strobe and scene overrides follow the desk continuously; scene and
+   FSEQ bands act when they change (FSEQ is posted to `fseq_player`, the render
+   task never touches the SD card).
+3. Per channel, fill `pixel_back_buffer(ch)` from the **first matching source**
    in a fixed priority chain, then `swap_pixels(ch)`:
    1. **Identify** — 2 Hz white blink (commissioning, auto-expires)
    2. **Pixel-count preview** — live ruler while the count is edited
-   3. **Standalone scene** — stateless parametric generator (11 effects, 1–4
-      colour palette, `dmx_logic.h` `fill_scene_pattern`) on the
-      scene's masked channels; overrides network until stopped
-   4. **Failsafe** — channel silent past the timeout: blackout / solid colour
-      / scene (hold = fall through to a normal decode of the stale data)
-   5. **Network decode** — universes → pixels (DMX offset, multi-universe
-      spanning)
-3. `output::render_frame()`: encode every channel into a drained back buffer in a single pass (`led::encode_frame` — pure stores, no pre-zeroing; **gamma/white-balance LUT**, color order, brightness, grouping and invert applied inline per pixel) **while previous frames are still emitting from the other FBs** (PARLIO keeps two buffers mounted in its DMA loop; the third is the one being encoded — see §4.4), `esp_cache_msync(…, DIR_C2M)` on the written region, then hand the buffer to the DMA engine (PARLIO loop remount, or draw_bitmap on the legacy LCD_CAM path). Encode (CPU) and emission (DMA) overlap; the frame rate is bounded by max of the two, not their sum.
-4. `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
+   3. **The output's source** — each output plays its own scene or the live
+      path ("zones": a scene claims the outputs of its mask, several run at
+      once):
+      - **Scene** — stateless parametric generator (11 effects, 1–4 colour
+        palette, `dmx_logic.h` `fill_scene_pattern`) with the desk's
+        overrides; overrides network until stopped
+      - **Live path** — FSEQ, else **failsafe** (channel silent past the
+        timeout: blackout / solid colour / scene; hold = decode the stale
+        data), else **network decode** (DMX offset, multi-universe spanning)
+      During a crossfade (`scene_fade_ms`, eased) the previous source renders
+      into a 4 kB SRAM scratch buffer and is blended in.
+   4. **Show control** — blackout / strobe gate, then the grand master
+      (local × desk, 16-bit) scales the bytes. Identify and the ruler bypass it.
+4. `output::render_frame()`: encode every channel into a drained back buffer in a single pass (`led::encode_frame` — pure stores, no pre-zeroing; **gamma/white-balance LUT**, color order, brightness, grouping and invert applied inline per pixel) **while previous frames are still emitting from the other FBs** (PARLIO keeps two buffers mounted in its DMA loop; the third is the one being encoded — see §4.4), `esp_cache_msync(…, DIR_C2M)` on the written region, then hand the buffer to the DMA engine (PARLIO loop remount, or draw_bitmap on the legacy LCD_CAM path). Encode (CPU) and emission (DMA) overlap; the frame rate is bounded by max of the two, not their sum.
+5. `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
 
 In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]`; an ArtSync calls `dmx::note_sync()`, which wakes `render_task` early via the semaphore.
 

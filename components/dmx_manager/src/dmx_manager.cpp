@@ -82,15 +82,47 @@ std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
 // next decode so exactly one frame carries the erase. `g_preview_emit` is the
 // physical LED count that frame emits (= max(count, erase)), published by
 // decode for the output stage to read back.
-std::atomic<uint16_t> g_preview_erase{ 0 };
+std::atomic<uint32_t> g_preview_erase{ 0 };  // RMW: 32-bit (see g_local_blackout)
 // Gap-edit override for the ruler (set from ui_task, read by render_task; a
 // torn copy costs one oddly-marked preview frame).
 led::PixelGap g_preview_gaps[led::kMaxPixelGaps]{};
 std::atomic<bool> g_preview_gaps_on{ false };
 std::atomic<uint16_t> g_preview_emit{ 0 };
 
-// Active standalone scene (-1 = none).
-std::atomic<int8_t> g_active_scene{ -1 };
+// Scene per output (-1 = live input) and its crossfade: the source it fades
+// from (-1 = live), when it started and how long it lasts. Written by any
+// task, read by render_task; a torn set costs one oddly-blended frame.
+std::atomic<int8_t> g_scene_out[config::kNumChannels];
+std::atomic<int8_t> g_fade_from[config::kNumChannels];
+std::atomic<uint32_t> g_fade_start_ms[config::kNumChannels];
+std::atomic<uint16_t> g_fade_len_ms[config::kNumChannels];
+// Crossfade source render target (render task only), internal SRAM.
+uint8_t* g_scratch = nullptr;
+
+// Local show values (web/TFT/UART/ArtTrigger).
+std::atomic<uint16_t> g_local_master[config::kNumChannels];
+// Read-modify-write atomics (exchange, fetch_*) must be 32-bit on the P4: a
+// sub-word RMW is an LR/SC on the whole word, and a concurrent store from the
+// other core to a neighbour in that word was lost (the control universe slot
+// kept reverting next to a 16-bit exchange). tools/lint_atomics.py enforces it.
+std::atomic<uint32_t> g_local_blackout{ 0 };
+std::atomic<uint8_t> g_local_strobe[config::kNumChannels];
+// Control-universe values, published by update_show_control (render task).
+std::atomic<uint16_t> g_dmx_master[config::kNumChannels];
+std::atomic<uint8_t> g_dmx_blackout{ 0 };
+std::atomic<uint8_t> g_dmx_strobe[config::kNumChannels];
+std::atomic<int32_t> g_dmx_fade_ms{ -1 };
+// Render-task-only control state.
+logic::SceneOverride g_ovr[config::kNumChannels];
+uint8_t g_ctrl_prev_band[config::kMaxControlSlots];
+int16_t g_ctrl_prev_fseq = -1;
+bool g_ctrl_was_live     = false;
+// Pool slot of the control universe (kNoSlot = disabled/unmapped) and the
+// last time a packet reached it.
+uint16_t g_ctrl_slot = 0xFFFF;
+std::atomic<int64_t> g_ctrl_last_us{ 0 };
+std::atomic<int32_t> g_fseq_request{ kFseqNoRequest };  // 32-bit: see g_local_blackout
+constexpr uint8_t kNoChannel = 0xFF;                    // a pool slot that feeds no output
 
 // FSEQ playback active flag.
 std::atomic<bool> g_fseq_active{ false };
@@ -158,6 +190,27 @@ void rebuild_universe_lut() {
                  static_cast<unsigned>(unmapped), static_cast<unsigned>(kNumUniverses),
                  static_cast<unsigned>(logic::kMaxUniverseNumber));
     }
+    // The control universe: its own slot unless an output already patched
+    // it (then both read the same data — the UI warns about the overlap).
+    g_ctrl_slot      = logic::kNoSlot;
+    const auto& ctrl = config::get_control();
+    if (ctrl.enabled && logic::universe_routable(ctrl.universe)) {
+        const uint16_t have = g_universe_to_slot[ctrl.universe];
+        if (have != logic::kNoSlot && have < g_slots_used) {
+            g_ctrl_slot = have;
+        } else if (g_slots_used < kNumUniverses) {
+            g_ctrl_slot                       = g_slots_used;
+            g_universe_to_slot[ctrl.universe] = g_slots_used;
+            g_slot_to_channel[g_slots_used]   = kNoChannel;
+            ++g_slots_used;
+        } else {
+            ESP_LOGE(TAG, "no pool slot left for the control universe %u",
+                     static_cast<unsigned>(ctrl.universe));
+        }
+    }
+    if (ctrl.enabled)
+        ESP_LOGI(TAG, "control universe %u -> pool slot %d", static_cast<unsigned>(ctrl.universe),
+                 g_ctrl_slot == logic::kNoSlot ? -1 : static_cast<int>(g_ctrl_slot));
     // Slots may now mean different universes — tracked sources are stale.
     std::memset(g_merge, 0, sizeof(g_merge));
 }
@@ -198,6 +251,21 @@ bool init() {
         return false;
     }
 
+    g_scratch = static_cast<uint8_t*>(
+        heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!g_scratch) {
+        ESP_LOGE(TAG, "SRAM alloc for the crossfade buffer failed");
+        return false;
+    }
+    for (size_t i = 0; i < config::kNumChannels; ++i) {
+        g_scene_out[i].store(-1, std::memory_order_relaxed);
+        g_fade_from[i].store(-1, std::memory_order_relaxed);
+        g_fade_len_ms[i].store(0, std::memory_order_relaxed);
+        g_local_master[i].store(kMasterFull, std::memory_order_relaxed);
+        g_local_strobe[i].store(0, std::memory_order_relaxed);
+        g_dmx_master[i].store(kMasterFull, std::memory_order_relaxed);
+        g_dmx_strobe[i].store(0, std::memory_order_relaxed);
+    }
     for (size_t i = 0; i < config::kNumChannels; ++i) {
         g_chan_bufs[i].a = static_cast<uint8_t*>(
             heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
@@ -357,24 +425,283 @@ bool fseq_is_active() {
     return g_fseq_active.load(std::memory_order_relaxed);
 }
 
+namespace {
+
+uint32_t now_ms() {
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
+
+// Points output `o` at `to` (-1 = live), crossfading from what it shows now.
+void assign_output(size_t o, int8_t to, int32_t fade_ms) {
+    const int8_t from = g_scene_out[o].load(std::memory_order_relaxed);
+    if (from == to) return;
+    const uint32_t len = fade_ms < 0 ? scene_fade_ms() : static_cast<uint32_t>(fade_ms);
+    g_fade_from[o].store(from, std::memory_order_relaxed);
+    g_fade_start_ms[o].store(now_ms(), std::memory_order_relaxed);
+    g_fade_len_ms[o].store(
+        static_cast<uint16_t>(len > config::kMaxSceneFadeMs ? config::kMaxSceneFadeMs : len),
+        std::memory_order_relaxed);
+    g_scene_out[o].store(to, std::memory_order_release);
+}
+
+}  // namespace
+
+uint32_t scene_fade_ms() {
+    const int32_t desk = g_dmx_fade_ms.load(std::memory_order_relaxed);
+    return desk >= 0 ? static_cast<uint32_t>(desk) : config::get_global().scene_fade_ms;
+}
+
 void scene_start(uint8_t scene_index) {
+    scene_start_on(scene_index, kAllOutputs);
+}
+
+void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t fade_ms) {
     if (scene_index >= config::num_scenes()) return;
-    g_active_scene.store(static_cast<int8_t>(scene_index), std::memory_order_relaxed);
+    const uint8_t mask = outputs & config::get_scene(scene_index).channel_mask;
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((mask >> o) & 1) assign_output(o, static_cast<int8_t>(scene_index), fade_ms);
 }
 
 void scene_stop() {
-    g_active_scene.store(-1, std::memory_order_relaxed);
+    scene_stop_on(kAllOutputs);
+}
+
+void scene_stop_on(uint8_t outputs, int32_t fade_ms) {
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((outputs >> o) & 1) assign_output(o, -1, fade_ms);
+}
+
+void scene_stop_scene(uint8_t scene_index) {
+    scene_stop_on(scene_outputs(scene_index));
 }
 
 void scene_list_edited(config::SceneEdit op, size_t a, size_t b) {
-    const int now = config::remap_scene_index(g_active_scene.load(std::memory_order_relaxed), op, a,
-                                              b);
-    g_active_scene.store(static_cast<int8_t>(now), std::memory_order_relaxed);
+    for (size_t o = 0; o < config::kNumChannels; ++o) {
+        g_scene_out[o].store(static_cast<int8_t>(config::remap_scene_index(
+                                 g_scene_out[o].load(std::memory_order_relaxed), op, a, b)),
+                             std::memory_order_relaxed);
+        g_fade_from[o].store(static_cast<int8_t>(config::remap_scene_index(
+                                 g_fade_from[o].load(std::memory_order_relaxed), op, a, b)),
+                             std::memory_order_relaxed);
+    }
+}
+
+int scene_on_output(size_t ch) {
+    if (ch >= config::kNumChannels) return -1;
+    return g_scene_out[ch].load(std::memory_order_relaxed);
+}
+
+uint8_t scene_outputs(uint8_t index) {
+    uint8_t mask = 0;
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if (g_scene_out[o].load(std::memory_order_relaxed) == static_cast<int8_t>(index))
+            mask |= static_cast<uint8_t>(1u << o);
+    return mask;
 }
 
 int active_scene() {
-    return g_active_scene.load(std::memory_order_relaxed);
+    for (size_t o = 0; o < config::kNumChannels; ++o) {
+        const int sc = g_scene_out[o].load(std::memory_order_relaxed);
+        if (sc >= 0) return sc;
+    }
+    return -1;
 }
+
+// ── Show control ─────────────────────────────────────────────────────────────
+
+void master_set(uint8_t outputs, uint16_t level) {
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((outputs >> o) & 1) g_local_master[o].store(level, std::memory_order_relaxed);
+}
+
+uint16_t master_local(size_t ch) {
+    return ch < config::kNumChannels ? g_local_master[ch].load(std::memory_order_relaxed)
+                                     : kMasterFull;
+}
+
+uint16_t master_effective(size_t ch) {
+    if (ch >= config::kNumChannels) return kMasterFull;
+    const uint32_t l = g_local_master[ch].load(std::memory_order_relaxed);
+    const uint32_t d = g_dmx_master[ch].load(std::memory_order_relaxed);
+    return static_cast<uint16_t>(l * d / kMasterFull);
+}
+
+void blackout_set(uint8_t outputs, bool on) {
+    if (on)
+        g_local_blackout.fetch_or(outputs, std::memory_order_relaxed);
+    else
+        g_local_blackout.fetch_and(~static_cast<uint32_t>(outputs), std::memory_order_relaxed);
+}
+
+void blackout_toggle(uint8_t outputs) {
+    const bool any_lit = (g_local_blackout.load(std::memory_order_relaxed) & outputs) != outputs;
+    blackout_set(outputs, any_lit);
+}
+
+uint8_t blackout_local() {
+    return static_cast<uint8_t>(g_local_blackout.load(std::memory_order_relaxed));
+}
+
+uint8_t blackout_effective() {
+    return static_cast<uint8_t>(g_local_blackout.load(std::memory_order_relaxed) |
+                                g_dmx_blackout.load(std::memory_order_relaxed));
+}
+
+void strobe_set(uint8_t outputs, uint8_t hz10) {
+    if (hz10 > logic::kStrobeMaxHz10) hz10 = logic::kStrobeMaxHz10;
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if ((outputs >> o) & 1) g_local_strobe[o].store(hz10, std::memory_order_relaxed);
+}
+
+uint8_t strobe_local(size_t ch) {
+    return ch < config::kNumChannels ? g_local_strobe[ch].load(std::memory_order_relaxed) : 0;
+}
+
+uint8_t strobe_effective(size_t ch) {
+    if (ch >= config::kNumChannels) return 0;
+    const uint8_t l = g_local_strobe[ch].load(std::memory_order_relaxed);
+    const uint8_t d = g_dmx_strobe[ch].load(std::memory_order_relaxed);
+    return l > d ? l : d;
+}
+
+// ── Control universe ─────────────────────────────────────────────────────────
+
+bool control_live() {
+    if (g_ctrl_slot == logic::kNoSlot || !config::get_control().enabled) return false;
+    const int64_t last = g_ctrl_last_us.load(std::memory_order_relaxed);
+    return last != 0 && esp_timer_get_time() - last < kControlTimeoutUs;
+}
+
+int control_universe() {
+    const auto& c = config::get_control();
+    return c.enabled ? static_cast<int>(c.universe) : -1;
+}
+
+int control_pool_slot() {
+    return g_ctrl_slot == logic::kNoSlot ? -1 : static_cast<int>(g_ctrl_slot);
+}
+
+int64_t control_last_rx_ms_ago() {
+    const int64_t last = g_ctrl_last_us.load(std::memory_order_relaxed);
+    return last == 0 ? -1 : (esp_timer_get_time() - last) / 1000;
+}
+
+int effect_for_dmx_value(uint8_t v) {
+    return logic::effect_from_dmx(v);
+}
+
+int16_t take_fseq_request() {
+    return static_cast<int16_t>(g_fseq_request.exchange(kFseqNoRequest, std::memory_order_acq_rel));
+}
+
+void update_show_control() {
+    const bool live = control_live();
+    if (!live) {
+        if (g_ctrl_was_live) {
+            // Never leave the rig dark or strobing because a cable came out;
+            // the fade time goes back to the configured one.
+            for (size_t o = 0; o < config::kNumChannels; ++o) {
+                g_dmx_master[o].store(kMasterFull, std::memory_order_relaxed);
+                g_dmx_strobe[o].store(0, std::memory_order_relaxed);
+            }
+            g_dmx_blackout.store(0, std::memory_order_relaxed);
+            g_dmx_fade_ms.store(-1, std::memory_order_relaxed);
+            g_ctrl_was_live = false;
+            ESP_LOGW(TAG, "control universe lost: master/blackout/strobe released");
+        }
+        // Scene overrides survive a lost signal (the look holds), but not the
+        // control universe being switched off.
+        if (!config::get_control().enabled)
+            for (auto& o : g_ovr)
+                o = logic::SceneOverride{};
+        return;
+    }
+    const auto& c        = config::get_control();
+    const uint8_t* front = g_uni_front.load(std::memory_order_acquire) +
+                           static_cast<size_t>(g_ctrl_slot) * kUniverseSize;
+    static logic::ControlEval ev;
+    logic::evaluate_control(c, front, kUniverseSize, ev);
+
+    for (size_t o = 0; o < config::kNumChannels; ++o) {
+        g_dmx_master[o].store(ev.master[o], std::memory_order_relaxed);
+        g_dmx_strobe[o].store(ev.strobe_hz10[o], std::memory_order_relaxed);
+        g_ovr[o] = ev.ovr[o];
+    }
+    g_dmx_blackout.store(ev.blackout, std::memory_order_relaxed);
+    g_dmx_fade_ms.store(ev.fade_ms, std::memory_order_relaxed);
+
+    const bool first = !g_ctrl_was_live;
+    for (uint8_t i = 0; i < ev.n_scene; ++i) {
+        const uint8_t band = ev.scene_band[i];
+        if (!first && band == g_ctrl_prev_band[i]) continue;
+        g_ctrl_prev_band[i] = band;
+        if (band == 0) {
+            if (!first) scene_stop_on(ev.scene_mask[i]);
+        } else if (band - 1u < config::num_scenes()) {
+            scene_start_on(static_cast<uint8_t>(band - 1), ev.scene_mask[i]);
+        }
+    }
+    if (ev.fseq_band >= 0 && (first || ev.fseq_band != g_ctrl_prev_fseq)) {
+        if (ev.fseq_band > 0)
+            g_fseq_request.store(static_cast<int16_t>(ev.fseq_band - 1), std::memory_order_release);
+        else if (!first)
+            g_fseq_request.store(kFseqStopRequest, std::memory_order_release);
+        g_ctrl_prev_fseq = ev.fseq_band;
+    }
+    g_ctrl_was_live = true;
+}
+
+namespace {
+
+// One source into `buf`: scene `src` (with the desk's overrides) when it is a
+// valid scene whose mask still holds the output, else the live path — FSEQ,
+// failsafe or the decoded universes.
+void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t* buf, uint32_t t) {
+    const uint8_t bpp = led::bytes_per_pixel(cc.protocol);
+    if (src >= 0 && static_cast<size_t>(src) < config::num_scenes()) {
+        config::Scene scene = config::get_scene(static_cast<size_t>(src));
+        if ((scene.channel_mask >> ch) & 1) {
+            logic::apply_scene_override(scene, g_ovr[ch]);
+            logic::fill_scene_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, scene, t);
+            return;
+        }
+    }
+
+    // FSEQ playback: data is already in the universe banks via inject_universe().
+    // Suppress the failsafe check while FSEQ is active so a seek/block-load
+    // pause doesn't momentarily blackout channels that are being played back.
+    if (g_fseq_active.load(std::memory_order_relaxed)) {
+        logic::decode_pixels(buf, kMaxBytesPerChan, cc,
+                             [](uint16_t u) { return universe_front_buffer_for(u); });
+        return;
+    }
+
+    // Signal-loss failsafe: a channel silent past the timeout stops decoding
+    // (stale) universes and emits the fallback instead. Hold mode never gets
+    // here — stale decode IS the hold.
+    const auto& g = config::get_global();
+    if (g.failsafe_mode != config::kFailsafeHold &&
+        logic::failsafe_due(g_last_activity_us[ch], esp_timer_get_time(), g.failsafe_timeout_s)) {
+        // Mode "scene": play the configured scene's effect on the lost channel —
+        // only on the channels the scene targets; the others black out.
+        const auto& scene  = config::get_scene(g.failsafe_scene);
+        const bool in_mask = (scene.channel_mask >> ch) & 1;
+        if (g.failsafe_mode == config::kFailsafeScene && in_mask) {
+            logic::fill_scene_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, scene, t);
+            return;
+        }
+        const uint8_t mode = g.failsafe_mode == config::kFailsafeScene ? config::kFailsafeBlackout
+                                                                       : g.failsafe_mode;
+        logic::fill_failsafe_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, mode, g.failsafe_r,
+                                     g.failsafe_g, g.failsafe_b);
+        return;
+    }
+
+    logic::decode_pixels(buf, kMaxBytesPerChan, cc,
+                         [](uint16_t u) { return universe_front_buffer_for(u); });
+}
+
+}  // namespace
 
 bool decode_pixels_for_channel(size_t ch) {
     if (ch >= config::kNumChannels) return false;
@@ -398,7 +725,8 @@ bool decode_pixels_for_channel(size_t ch) {
         // Consume any owed shrink-erase here so exactly this frame carries the
         // black tail; the emit count is published for the output stage to size
         // the emission so the dropped LEDs are actually clocked out once.
-        const uint16_t erase     = g_preview_erase.exchange(0, std::memory_order_relaxed);
+        const auto erase = static_cast<uint16_t>(
+            g_preview_erase.exchange(0, std::memory_order_relaxed));
         const uint16_t emit      = erase > count ? erase : count;
         const bool edit          = g_preview_gaps_on.load(std::memory_order_acquire);
         const led::PixelGap* gps = edit ? g_preview_gaps : cc.gaps;
@@ -414,53 +742,28 @@ bool decode_pixels_for_channel(size_t ch) {
         return true;
     }
 
-    // Signal-loss failsafe: a channel silent past the timeout stops decoding
-    // (stale) universes and emits the fallback instead. Hold mode never gets
-    // here — stale decode IS the hold.
-    // Standalone scene: manual override — masked channels render the effect,
-    // incoming traffic is ignored until scene_stop().
-    const int sc = g_active_scene.load(std::memory_order_relaxed);
-    if (sc >= 0) {
-        const auto& scene = config::get_scene(static_cast<size_t>(sc));
-        if ((scene.channel_mask >> ch) & 1) {
-            logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
-                                      led::bytes_per_pixel(cc.protocol), scene,
-                                      static_cast<uint32_t>(esp_timer_get_time() / 1000));
-            return true;
+    const uint32_t t   = now_ms();
+    const size_t bytes = static_cast<size_t>(cc.pixel_count) * led::bytes_per_pixel(cc.protocol);
+    render_source(ch, cc, g_scene_out[ch].load(std::memory_order_acquire), dst, t);
+
+    // Crossfade from what the output showed before its last scene change.
+    const uint16_t len = g_fade_len_ms[ch].load(std::memory_order_relaxed);
+    if (len) {
+        const uint32_t elapsed = t - g_fade_start_ms[ch].load(std::memory_order_relaxed);
+        if (elapsed < len && g_scratch) {
+            render_source(ch, cc, g_fade_from[ch].load(std::memory_order_relaxed), g_scratch, t);
+            logic::blend_into(dst, g_scratch, bytes, logic::fade_weight(elapsed, len));
+        } else {
+            g_fade_len_ms[ch].store(0, std::memory_order_relaxed);
         }
     }
 
-    // FSEQ playback: data is already in the universe banks via inject_universe().
-    // Suppress the failsafe check while FSEQ is active so a seek/block-load
-    // pause doesn't momentarily blackout channels that are being played back.
-    if (g_fseq_active.load(std::memory_order_relaxed)) {
-        return logic::decode_pixels(dst, kMaxBytesPerChan, cc,
-                                    [](uint16_t u) { return universe_front_buffer_for(u); });
-    }
-
-    const auto& g = config::get_global();
-    if (g.failsafe_mode != config::kFailsafeHold &&
-        logic::failsafe_due(g_last_activity_us[ch], esp_timer_get_time(), g.failsafe_timeout_s)) {
-        // Mode "scene": play the configured scene's effect on the lost channel —
-        // only on the channels the scene targets; the others black out.
-        const auto& scene  = config::get_scene(g.failsafe_scene);
-        const bool in_mask = (scene.channel_mask >> ch) & 1;
-        if (g.failsafe_mode == config::kFailsafeScene && in_mask) {
-            logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
-                                      led::bytes_per_pixel(cc.protocol), scene,
-                                      static_cast<uint32_t>(esp_timer_get_time() / 1000));
-            return true;
-        }
-        const uint8_t mode = g.failsafe_mode == config::kFailsafeScene ? config::kFailsafeBlackout
-                                                                       : g.failsafe_mode;
-        logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
-                                     led::bytes_per_pixel(cc.protocol), mode, g.failsafe_r,
-                                     g.failsafe_g, g.failsafe_b);
-        return true;
-    }
-
-    return logic::decode_pixels(dst, kMaxBytesPerChan, cc,
-                                [](uint16_t u) { return universe_front_buffer_for(u); });
+    // Show control last: it dims whatever the output renders.
+    if (((blackout_effective() >> ch) & 1) || !logic::strobe_lit(t, strobe_effective(ch)))
+        std::memset(dst, 0, bytes);
+    else
+        logic::apply_master(dst, bytes, master_effective(ch));
+    return true;
 }
 
 bool is_channel_capacity_ok(size_t ch) {
@@ -519,7 +822,7 @@ uint64_t frame_emit_us() {
 
 int channel_for_universe(uint16_t universe_number) {
     const uint16_t slot = slot_for_universe(universe_number);
-    if (slot == logic::kNoSlot) return -1;
+    if (slot == logic::kNoSlot || g_slot_to_channel[slot] == kNoChannel) return -1;
     return static_cast<int>(g_slot_to_channel[slot]);
 }
 
@@ -590,6 +893,8 @@ bool write_universe_from_source(uint16_t universe_number, const uint8_t* data, s
         back + static_cast<size_t>(slot) * kUniverseSize, data, len, source_id, ltp,
         esp_timer_get_time(), timeout_us);
     xSemaphoreGive(g_uni_swap_mux);
+    if (ok && slot == g_ctrl_slot)
+        g_ctrl_last_us.store(esp_timer_get_time(), std::memory_order_relaxed);
     return ok;
 }
 
@@ -638,6 +943,7 @@ bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* dat
     memcpy(g_uni_bank_a + base, data, len);
     memcpy(g_uni_bank_b + base, data, len);
     note_channel_activity(g_slot_to_channel[slot]);
+    if (slot == g_ctrl_slot) g_ctrl_last_us.store(esp_timer_get_time(), std::memory_order_relaxed);
     return true;
 }
 

@@ -186,13 +186,19 @@ def ota_flash(board, checks):
 # ── Network packet builders (ArtNet / sACN) ─────────────────────────────────
 
 def artnet_dmx(universe, data, artnet_net=0, artnet_subnet=0, seq=0):
+    """`universe` is the flat 15-bit Port-Address (what pixfrog patches), unless
+    a net/subnet is given, in which case it is the 4-bit SubUni under them."""
     pkt = bytearray(18 + len(data))
     pkt[0:8] = b"Art-Net\x00"
     pkt[8:10] = (0x5000).to_bytes(2, "little")
     pkt[11] = 14
     pkt[12] = seq
-    pkt[14] = ((artnet_subnet & 0xF) << 4) | (universe & 0xF)
-    pkt[15] = (universe >> 8) & 0x7F if artnet_net == 0 else artnet_net & 0x7F
+    if artnet_net == 0 and artnet_subnet == 0:
+        pkt[14] = universe & 0xFF
+        pkt[15] = (universe >> 8) & 0x7F
+    else:
+        pkt[14] = ((artnet_subnet & 0xF) << 4) | (universe & 0xF)
+        pkt[15] = artnet_net & 0x7F
     pkt[16] = len(data) >> 8
     pkt[17] = len(data) & 0xFF
     pkt[18:] = bytes(data)

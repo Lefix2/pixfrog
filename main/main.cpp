@@ -215,6 +215,9 @@ void render_task(void*) {
         pixfrog::dmx::handle_pending_remaps();
 
         pixfrog::dmx::swap_universes();
+        // The DMX control universe (master, blackout, strobe, scenes, fades)
+        // reads the bank just published.
+        pixfrog::dmx::update_show_control();
 
         // When the UI has selected a calibration pattern, the
         // render loop emits that pattern instead of pixel data. This
@@ -425,7 +428,8 @@ extern "C" void app_main() {
     if (pixfrog::config::get_global().sacn_enabled) pixfrog::sacn::start();
     if (pixfrog::config::get_global().fpp_remote) pixfrog::fpp::start();
     if (pixfrog::config::get_global().boot_scene > 0)
-        pixfrog::dmx::scene_start(pixfrog::config::get_global().boot_scene - 1);
+        pixfrog::dmx::scene_start_on(pixfrog::config::get_global().boot_scene - 1,
+                                     pixfrog::dmx::kAllOutputs, 0);  // lit at once
     if (pixfrog::config::get_global().web_enabled) pixfrog::web::start();
 
     xTaskCreatePinnedToCore(render_task, "render", 6144, nullptr, 20, nullptr, 1);
