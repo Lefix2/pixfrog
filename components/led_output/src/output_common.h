@@ -42,7 +42,7 @@ inline const led::PixelLut* channel_lut(size_t ch, const config::ChannelConfig& 
 
 // Build a led::ChannelDesc from the current ChannelConfig + bus bit assignment.
 inline led::ChannelDesc desc_for_channel(size_t ch) {
-    const auto& cc = config::get_channel(ch);
+    const config::ChannelConfig cc = dmx::effective_channel(ch);
     led::ChannelDesc d{};
     d.protocol         = cc.protocol;
     d.color_order      = cc.color_order;

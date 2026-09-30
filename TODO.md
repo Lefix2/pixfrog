@@ -174,7 +174,7 @@ One `docs/` PR, trivial but prevents real agent/human mistakes:
 
 From the September 2026 functional/technical review.
 
-- [ ] ★ **Refresh change truncates pixel counts for good** —
+- [x] ★ **Refresh change truncates pixel counts for good** —
       `clamp_pixel_counts()` rewrites `pixel_count` in NVS when the refresh
       rate rises (1024 px @30 Hz → 512 @60 Hz) and nothing restores it when
       going back to 30 Hz. Keep the requested count; clamp only what is
@@ -280,7 +280,7 @@ From the September 2026 functional/technical review.
       Editable from the web UI, the console (`ch N gaps 0:1,300:2`) and the
       TFT (per-channel "Dead pixels" submenu); the pixel-count ruler shows
       the gaps in their own colour. ChannelConfig grows, zero-fill = no gap.
-- [ ] ★ **Any refresh rate 20..120 Hz, step 1** — only 30|60 Hz today (web,
+- [x] ★ **Any refresh rate 20..120 Hz, step 1** — only 30|60 Hz today (web,
       console, TFT editor steps by 30). xLights commonly exports 20/40 fps
       (60 Hz rendering then judders) and Europe needs 25/50 Hz for
       camera-friendly output. The code is already rate-generic (period =

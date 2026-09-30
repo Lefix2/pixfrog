@@ -70,7 +70,7 @@
     <text x="576" y="246" font-size="12.5" fill="#167a41">3 · encode full frame → fb_back</text>
     <text x="576" y="266" font-size="12.5" fill="#167a41">4 · msync + loop remount</text>
     <text x="576" y="286" font-size="12.5" fill="#167a41">5 · wait frame retired / ArtSync</text>
-    <text x="576" y="312" font-size="12" fill="#5b6b64">wake: 30/60 Hz timer + ArtSync</text>
+    <text x="576" y="312" font-size="12" fill="#5b6b64">wake: 20–120 Hz timer + ArtSync</text>
     <text x="576" y="330" font-size="12" fill="#5b6b64">stack 6 kB · hot path · WDT subscriber</text>
 
     <rect x="556" y="562" width="388" height="40" rx="7" fill="#f6f8f7" stroke="#e4eae7"/>

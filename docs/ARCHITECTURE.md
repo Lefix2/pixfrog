@@ -58,7 +58,7 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 
 ## 4. Frame lifecycle
 
-A frame is the interval between two LED renders (33.33 ms at 30 Hz, 16.67 ms at 60 Hz).
+A frame is the interval between two LED renders — `1/refresh_rate`, any integer rate from 20 to 120 Hz (50 ms … 8.33 ms; 16.67 ms at the default 60 Hz).
 
 ![Frame lifecycle — render_task stages with GDMA and network in parallel](img/frame-pipeline.svg)
 

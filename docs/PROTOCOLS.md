@@ -204,17 +204,21 @@ All channels share the same PCLK = 16 MHz. Consequences:
 
 ### 5.1 Practical limits per protocol
 
-Each protocol's bit-rate sets a physical floor that no software optimization can bypass. The numbers below are the caps the firmware **computes and enforces** (`dmx::logic::max_pixels_for`): the largest `pixel_count` whose encoded frame fits both the emission budget (period − 1 ms encode-overlap reserve) and the DMA frame buffer, capped at 1024 px (512 slots for DMX, one universe).
+Each protocol's bit-rate sets a physical floor that no software optimization can bypass. The refresh rate is any integer from 20 to 120 Hz (`config::kMinRefreshHz..kMaxRefreshHz`). The numbers below are the caps the firmware **computes and enforces** (`dmx::logic::max_pixels_for`): the largest `pixel_count` whose encoded frame fits both the emission budget (period − 1 ms encode-overlap reserve) and the DMA frame buffer, capped at 1024 px (512 slots for DMX, one universe).
 
-| Protocol             | Useful bit rate | Bits/px | Max px @ 60 Hz | Max px @ 30 Hz |
-|----------------------|----------------:|--------:|---------------:|---------------:|
-| WS2815 (RGB)         | 800 kbps        | 24      | **512**        | 1024           |
-| WS2812B / WS2811     | 800 kbps        | 24      | **520**        | 1024           |
-| WS2814 (RGBW)        | 800 kbps        | 32      | **384**        | **801**        |
-| SK6812 (RGBW)        | 800 kbps        | 32      | **410**        | **848**        |
-| APA102 / SK9822 @ 4 MHz CLOCK | 4 Mbps | 32     | 1024*          | 1024*          |
-| LPD8806 @ 4 MHz CLOCK | 4 Mbps         | 24      | 1024*          | 1024*          |
-| DMX512               | 250 kbps        | 8/slot  | 512 (1 universe) | 512          |
+| Protocol             | Bit rate | Bits/px | 20 Hz | 30 Hz | 40 Hz | 50 Hz | 60 Hz | 120 Hz |
+|----------------------|---------:|--------:|------:|------:|------:|------:|------:|-------:|
+| WS2815 (RGB)         | 800 kbps | 24      | 1024  | 1024  | 790   | 624   | **512** | 235  |
+| WS2812B / WS2811     | 800 kbps | 24      | 1024  | 1024  | 798   | 631   | **520** | 242  |
+| WS2814 (RGBW)        | 800 kbps | 32      | 1024  | 801   | 593   | 468   | **384** | 176  |
+| SK6812 (RGBW)        | 800 kbps | 32      | 1024  | 848   | 629   | 497   | **410** | 190  |
+| APA102 / SK9822 @ 4 MHz CLOCK | 4 Mbps | 32 | 1024* | 1024* | 1024* | 1024* | 1024* | 901 |
+| LPD8806 @ 4 MHz CLOCK | 4 Mbps  | 24      | 1024* | 1024* | 1024* | 1024* | 1024* | 1024* |
+| DMX512               | 250 kbps | 8/slot  | 512   | 512   | 512   | 512   | 512   | 512    |
+
+Above 60 Hz the wire is the limit, not the CPU: measured on the board, the
+encoder spends ≈ 23 µs per pixel row for 8 WS2815 outputs, so 8 × 235 px
+encodes in ≈ 5.5 ms of the 8.3 ms 120 Hz period (encode overlaps emission).
 
 \* Clocked at 4 MHz the bus clears the frame well inside the budget, so the 1024-px hard cap is reached first. WS2815 (RGB, 280 µs reset) caps lower than WS2812B/WS2811 (50 µs reset) despite the same bit rate.
 
@@ -227,13 +231,23 @@ Formula (LED): `max_pixels = floor( (period_µs − 1000 − T_reset_µs) / (bit
 - At 60 Hz (budget 16.67 ms): **does not fit**. The per-channel cap truncates each WS2815 channel to 512 px.
 - At 30 Hz (budget 33.33 ms): comfortable, ~15 ms of slack left for encoding the next frame in parallel.
 
-### 5.3 Pixel-count is bounded to the budget
+### 5.3 The emitted count is bounded, the stored count is not
 
-`pixel_count` can never exceed what the bus can clock out in time:
+The bus never clocks out more than fits in time, but the configured
+`pixel_count` is left as set:
 
-- The UI bounds the pixel-count editor to `dmx::channel_max_pixels(ch)` (the table above); the web editor sends `max_pixels` and the server clamps on save; the console clamps too.
-- `dmx::clamp_pixel_counts()` truncates any over-budget channel when the refresh rate is raised (e.g. 800 px valid at 30 Hz → 512 at 60 Hz) or the protocol/clock changes, and once at boot so a pre-existing config is corrected.
-- `dmx_manager::validate_capacity` is the defensive check that still recomputes `t_dma = pixel_count × bits × samples / PCLK + T_reset` and flags any channel where `max(t_dma) > 1/refresh_rate − 1 ms` (`is_channel_capacity_ok(ch) = false`, `!` on HOME) — it should never fire now that the value is clamped, but it logs actual µs vs budget µs as a safety net.
+- `dmx::effective_channel(ch)` is the channel as emitted — its config with
+  `pixel_count` limited to `dmx::channel_max_pixels(ch)` (the table above).
+  Decode, scenes/failsafe, the encoder descriptor and the render pacing all go
+  through it, so raising the refresh rate (or switching to a slower protocol
+  or clock) drives fewer pixels, and lowering it again brings the full line
+  back. Nothing is rewritten in NVS.
+- `dmx::validate_capacity` flags a channel whose stored count is above its
+  budget (`is_channel_capacity_ok(ch) = false`): `!` and a red count on HOME,
+  `stored→emitted px` plus a warning in the web channel editor, a log line.
+- The TFT pixel-count editor stays bounded to `channel_max_pixels(ch)` (the
+  live ruler maps 1:1 to LEDs); the web UI and the console accept up to 1024
+  (512 DMX slots) at any rate.
 
 ---
 

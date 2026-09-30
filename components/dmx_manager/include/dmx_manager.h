@@ -231,9 +231,9 @@ bool decode_pixels_for_channel(size_t ch);
 // Capacity validation (per refresh rate)
 // ────────────────────────────────────────────────────────────────────────────
 
-// Returns true if channel `ch`'s configuration fits within one frame's
-// emission budget. Updated by validate_capacity() (called at init and
-// after every remap). Defaults to true.
+// Returns true if channel `ch`'s requested pixel count fits within one frame's
+// emission budget; false means it is emitted truncated (effective_channel).
+// Updated by validate_capacity() (called at init and after every remap).
 bool is_channel_capacity_ok(size_t ch);
 
 // Recompute per-channel capacity flags from current config + refresh rate.
@@ -245,11 +245,10 @@ void validate_capacity();
 // this as the upper bound of the pixel-count editor.
 uint16_t channel_max_pixels(size_t ch);
 
-// Truncate every channel whose pixel_count now exceeds its max (e.g. after the
-// refresh rate was raised), persisting and marking each changed channel dirty.
-// Returns true if any channel was clamped. Call from config-edit paths (UI /
-// web / console / boot) — never from the render task (it writes NVS).
-bool clamp_pixel_counts();
+// The channel as emitted: its stored config with pixel_count limited to
+// channel_max_pixels(). Every consumer that sizes or fills the output (decode,
+// effects, encoder, pacing) goes through this; the stored count stays as set.
+config::ChannelConfig effective_channel(size_t ch);
 
 // Physical emission time (µs) of the current frame: the longest configured
 // channel's wire time (all channels emit in parallel on the shared bus). The

@@ -40,9 +40,6 @@ void mark_global_dirty() {}
 uint16_t channel_max_pixels(size_t /*ch*/) {
     return static_cast<uint16_t>(led::kMaxPixelsPerChannel);
 }
-bool clamp_pixel_counts() {
-    return false;
-}
 bool auto_patch_universes(uint16_t /*base*/, uint16_t* next_free) {
     if (next_free) *next_free = 0;
     return true;

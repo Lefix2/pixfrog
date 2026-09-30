@@ -641,7 +641,7 @@ static void restore_global(cJSON* jg) {
         strncpy(g.long_name, it->valuestring, sizeof(g.long_name) - 1);
     }
     if (getb("reply_unicast", &bv)) g.artnet_poll_reply_unicast = bv;
-    if (num("refresh_hz", 30, 60, &v) && (v == 30 || v == 60))
+    if (num("refresh_hz", config::kMinRefreshHz, config::kMaxRefreshHz, &v))
         g.refresh_rate_hz = static_cast<uint8_t>(v);
     if (num("home_timeout_s", 0, 65535, &v)) g.home_timeout_s = static_cast<uint16_t>(v);
     if (num("tft_brightness", config::kTftBrightnessMin, 100, &v))
@@ -670,7 +670,6 @@ static void restore_global(cJSON* jg) {
     if (num("boot_scene", 0, config::kMaxScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
     if (num("merge_mode", 0, 1, &v)) g.merge_mode = static_cast<uint8_t>(v);
     config::set_global(g);
-    dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
 }
 
 static void restore_channel(size_t i, cJSON* jc) {
@@ -717,7 +716,6 @@ static void restore_channel(size_t i, cJSON* jc) {
         }
     }
     config::set_channel(i, c);
-    dmx::clamp_pixel_counts();  // truncate pixel_count to the protocol/refresh budget
     dmx::mark_channel_dirty(i);
 }
 
@@ -889,13 +887,8 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
         strncpy(g.long_name, s, sizeof(g.long_name) - 1);
     }
     if (get_bool("reply_unicast", b)) g.artnet_poll_reply_unicast = b;
-    {
-        cJSON* item = cJSON_GetObjectItemCaseSensitive(j, "refresh_hz");
-        if (item && cJSON_IsNumber(item)) {
-            const uint32_t v = static_cast<uint32_t>(item->valuedouble);
-            if (v == 30 || v == 60) g.refresh_rate_hz = static_cast<uint8_t>(v);
-        }
-    }
+    if (get_u32("refresh_hz", config::kMinRefreshHz, config::kMaxRefreshHz, u))
+        g.refresh_rate_hz = static_cast<uint8_t>(u);
     if (get_u32("home_timeout_s", 0, 65535, u)) g.home_timeout_s = static_cast<uint16_t>(u);
     if (get_u32("tft_brightness", config::kTftBrightnessMin, 100, u))
         g.tft_brightness = static_cast<uint8_t>(u);
@@ -943,7 +936,6 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     cJSON_Delete(j);
     config::set_global(g);
     if (password_changed) config::set_web_password(pwd);
-    dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
     dmx::mark_global_dirty();
 
     if (sacn_changed) {
@@ -1055,7 +1047,6 @@ static esp_err_t handle_post_channel(httpd_req_t* req) {
 
     cJSON_Delete(j);
     config::set_channel(static_cast<size_t>(idx), c);
-    dmx::clamp_pixel_counts();  // truncate pixel_count to the protocol/refresh budget
     dmx::mark_channel_dirty(static_cast<size_t>(idx));
     return send_ok(req);
 }

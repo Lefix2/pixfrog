@@ -591,6 +591,29 @@ static pixfrog::config::Scene with_color(pixfrog::config::Scene s, uint8_t r, ui
     return s;
 }
 
+// The stored count survives a refresh change; only the emitted count follows
+// the budget (it used to be rewritten in NVS: 1024 px @30 Hz → 512 @60 Hz for good).
+static void test_effective_pixel_count_non_destructive() {
+    pixfrog::config::ChannelConfig cc{};
+    cc.protocol         = pixfrog::led::Protocol::WS2815;
+    cc.pixel_count      = 1024;
+    const size_t buf    = pixfrog::led::kMaxSamplesPerFrame;
+    const uint32_t pclk = pixfrog::led::kPclkHz;
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 30, buf), 1024);
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 60, buf), 512);
+    EXPECT_EQ(cc.pixel_count, 1024);  // untouched
+    const uint16_t at120 = effective_pixel_count(cc, pclk, 120, buf);
+    EXPECT_TRUE(at120 > 200 && at120 < 250);                    // ≈235 px: the wire is the limit
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 20, buf), 1024);  // buffer cap
+    cc.pixel_count = 100;
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 120, buf), 100);  // under budget: as set
+    cc.protocol    = pixfrog::led::Protocol::DMX512;
+    cc.pixel_count = 600;
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 30, buf), 512);  // one universe
+    cc.protocol = pixfrog::led::Protocol::Off;
+    EXPECT_EQ(effective_pixel_count(cc, pclk, 60, buf), 600);
+}
+
 static void test_scene_solid() {
     uint8_t buf[4 * 3] = {};
     fill_scene_pattern(buf, sizeof(buf), 4, 3, mk_scene(0 /*solid*/, 10, 20, 30, 0, 0), 12345);
@@ -981,6 +1004,7 @@ int main() {
     test_failsafe_fill_color_rgb();
     test_failsafe_fill_color_rgbw_white_off();
     test_failsafe_fill_overflow_is_noop();
+    test_effective_pixel_count_non_destructive();
     test_scene_solid();
     test_scene_solid_rgbw_white_off();
     test_scene_chase_position_and_width();
