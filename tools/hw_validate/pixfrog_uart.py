@@ -96,18 +96,43 @@ class Checks:
     def __init__(self, name):
         self.name = name
         self.results = []
+        self.t0 = self.last = time.time()
         print(f"=== {name} ===")
 
     def check(self, label, cond):
-        self.results.append((label, bool(cond)))
+        now = time.time()
+        self.results.append((label, bool(cond), now - self.last))
+        self.last = now
         print(("  PASS  " if cond else "  FAIL  ") + label)
         return cond
 
     def finish(self):
-        failed = [n for n, ok in self.results if not ok]
+        failed = [n for n, ok, _ in self.results if not ok]
         print(f"\n{len(self.results) - len(failed)}/{len(self.results)} checks passed")
         print("RESULT:", "PASS" if not failed else "FAIL: " + ", ".join(failed))
+        self.write_junit(failed)
         return 0 if not failed else 1
+
+    def write_junit(self, failed):
+        """<JUNIT_DIR>/<name>.xml when JUNIT_DIR is set (run_all.py --junit)."""
+        out = os.environ.get("JUNIT_DIR")
+        if not out:
+            return
+        from xml.sax.saxutils import quoteattr
+
+        os.makedirs(out, exist_ok=True)
+        cases = []
+        for label, ok, dt in self.results:
+            case = (f'  <testcase classname={quoteattr("hw_validate." + self.name)} '
+                    f'name={quoteattr(label)} time="{dt:.3f}"')
+            cases.append(case + ("/>" if ok else '>\n    <failure message="check failed"/>\n'
+                                                 "  </testcase>"))
+        with open(os.path.join(out, f"{self.name}.xml"), "w") as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+            f.write(f'<testsuite name={quoteattr("hw_validate." + self.name)} '
+                    f'tests="{len(self.results)}" failures="{len(failed)}" '
+                    f'time="{time.time() - self.t0:.3f}">\n')
+            f.write("\n".join(cases) + "\n</testsuite>\n")
 
 
 def prime_network():

@@ -40,6 +40,27 @@ def run(board: Board):
     c.check("status has fseq block", "sd" in j.get("fseq", {}))
     c.check("heap_free plausible (> 1 MB)", j.get("heap_free", 0) > 1024 * 1024)
 
+    # ── SPA: gzipped, cached by ETag ────────────────────────────────────────
+    def head(*extra):
+        r = subprocess.run(["curl", "-s", "-m", "20", "-o", "/dev/null", "-D", "-",
+                            "-H", "Accept-Encoding: gzip", *extra, f"http://{BOARD_IP}/"],
+                           capture_output=True, text=True)
+        lines = r.stdout.splitlines()
+        hdrs = {l.split(":", 1)[0].lower(): l.split(":", 1)[1].strip()
+                for l in lines[1:] if ":" in l}
+        return (lines[0].split()[1] if lines else ""), hdrs
+
+    status, hdrs = head()
+    c.check("GET / is 200", status == "200")
+    c.check("SPA served gzip", hdrs.get("content-encoding") == "gzip")
+    c.check("SPA under 64 KB on the wire", int(hdrs.get("content-length", 1 << 30)) < 65536)
+    etag = hdrs.get("etag", "")
+    c.check("SPA has an ETag", len(etag) > 2)
+    status, _ = head("-H", f"If-None-Match: {etag}")
+    c.check("matching If-None-Match → 304", status == "304")
+    status, _ = head("-H", 'If-None-Match: "stale"')
+    c.check("stale If-None-Match → 200", status == "200")
+
     # ── mDNS announcement (toggle web off/on and watch the log) ────────────
     board.cmd("global web_enabled 0")
     board.ser.reset_input_buffer()

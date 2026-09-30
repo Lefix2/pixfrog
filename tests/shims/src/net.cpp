@@ -117,7 +117,7 @@ ssize_t shim_recvfrom(int fd, void* buf, size_t len, int, sockaddr* from, sockle
     const auto d = q.front();
     q.pop_front();
     const size_t n = std::min(len, d.bytes.size());
-    std::memcpy(buf, d.bytes.data(), n);
+    if (n) std::memcpy(buf, d.bytes.data(), n);  // an empty datagram has no data()
     if (from && fromlen && *fromlen >= sizeof(sockaddr_in)) {
         auto* sin            = reinterpret_cast<sockaddr_in*>(from);
         sin->sin_family      = AF_INET;

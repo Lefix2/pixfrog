@@ -19,6 +19,7 @@ python3 tools/coverage.py                               # whole-firmware coverag
 | `tests/harness/` | The **real** firmware sources compiled against the shims — `config_store.cpp`, `dmx_manager.cpp`, `artnet.cpp`, `sacn.cpp`, `control_console.cpp`, `web_config.cpp` — one executable per area so their static state stays apart. `fakes/` stands in for modules not built here (FSEQ player, FPP, LED output, UI). |
 | `tests/web/` | `pixfrog_api_host`: the real `web_config` handlers and gzipped SPA served over TCP on the host (`--port N [--rollback] [--password P]`), and Playwright tests driving the SPA in Chromium against it. |
 | `tests/third_party/cJSON/` | cJSON as vendored by ESP-IDF (MIT), for the web handlers. |
+| `tests/fuzz/` | libFuzzer targets (`-DPIXFROG_FUZZ=ON`, clang): the wire parsers, the real Art-Net/sACN receive loops, the console table, the REST handlers. `corpus/<target>/` holds the seeds (`make_seeds.py` regenerates them). |
 | `tools/emulator/crawl.py` | Walks every menu node of the UI emulator and compares golden screenshots (both panels). |
 
 ## REST API and SPA
@@ -60,3 +61,23 @@ TEST(failsafe_after_timeout) {
 - Prove a new test can fail: break the code it guards once (a quick mutation)
   and watch it go red — the bank-swap flicker and the failsafe-mask checks were
   verified that way.
+
+## Fuzzing
+
+```bash
+tools/fuzz.sh 60                    # every target 60 s in parallel (CI job `fuzz`)
+tools/fuzz.sh 600 fuzz_web_api      # one target, longer
+build/tests-fuzz/fuzz/fuzz_web_api build/fuzz-artifacts/fuzz_web_api/crash-…  # replay
+```
+
+A crash leaves its input in `build/fuzz-artifacts/<target>/`. Turn it into a
+harness test (see `out_of_range_numbers_are_ignored_not_wrapped` in
+`test_web.cpp`, the first bug the fuzzer found), fix, and keep the input as a
+seed. Under ctest the fuzz build only replays the seeds.
+
+| Target | Input |
+|---|---|
+| `fuzz_parsers` | one buffer through every Art-Net, sACN, FPP and FSEQ-header parser |
+| `fuzz_receivers` | byte 0 picks Art-Net/sACN and the source; datagrams split on `FF FE FD` |
+| `fuzz_console` | one console line |
+| `fuzz_web_api` | byte 0 route, byte 1 wildcard index + receive chunking, then the body |

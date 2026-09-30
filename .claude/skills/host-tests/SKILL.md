@@ -40,5 +40,8 @@ UI menu crawl + golden screenshots (CI job `emulator`, `pip install pillow`):
 `python3 tools/emulator/crawl.py tools/emulator/build/pixfrog_emu` (see the
 emulator skill; `--update-golden` after an intended UI change).
 
+Fuzzing (CI job `fuzz`, clang): `tools/fuzz.sh [SECONDS] [target…]` — see
+tests/README.md for the targets and how to turn a crash into a harness test.
+
 Each suite prints `PASS=<n> FAIL=0`. A new suite is registered in
 `tests/CMakeLists.txt` only — CI and `tools/ci-local.sh` pick it up.

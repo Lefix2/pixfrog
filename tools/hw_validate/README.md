@@ -9,6 +9,7 @@ cd tools/hw_validate
 ./run_all.py                # everything except OTA (~3 min)
 ./run_all.py --with-ota     # + OTA round-trip (flashes the inactive slot)
 ./run_all.py scenes auth    # subset
+./run_all.py --junit out/   # + out/<validator>.xml (JUnit, for a CI runner)
 PORT=/dev/ttyACM1 BOARD_IP=10.0.0.5 ./run_all.py
 ```
 
@@ -17,11 +18,13 @@ PORT=/dev/ttyACM1 BOARD_IP=10.0.0.5 ./run_all.py
 | `artnet` | ArtDmx → universe pool → pixel decode (counter + pixr) |
 | `sacn` | E1.31 unicast → pool → decode (opt-in flag honoured) |
 | `failsafe` | never-active rule, colour fill, recovery, blackout, hold |
-| `scenes` | generators, channel mask, network priority, ArtTrigger, boot scene |
+| `scenes` | generators, multi-colour blobs, solid strobe ends, channel mask, network priority, scene list add/rename/move/delete + persistence, ArtTrigger, boot scene |
+| `output` | refresh bounds 20..120 Hz and the rate actually held, pixels above the budget kept, dead-pixel gaps (merge, persistence, logical pixels untouched) |
 | `identify_gamma` | identify blink, gamma/wb readback, backup/restore round-trip |
 | `display` | backlight level + idle dim + dim delay: console ranges, NVS persistence, web round-trip |
 | `auth` | open-by-default, 401s, flat brute-force delay, UART recovery |
-| `ota` | upload → slot swap → rollback-confirmation log (needs `build/pixfrog.bin`) |
+| `webops` | `/api/status` fields, gzipped SPA + ETag/304, mDNS announce, coredump cycle |
+| `ota` | upload → slot swap → confirmation after 30 s of rendering; then a second upload reset before confirming → bootloader rollback, record on console + `/api/status`, web acknowledge (needs `build/pixfrog.bin`, ~3 min) |
 
 Conventions (see `pixfrog_uart.py`):
 - **One serial session per validator** — opening the port resets the board,
@@ -58,6 +61,10 @@ contradicts itself. That is exactly how #74 shipped.
 ./nrz_decode.py digital.csv --channel 0 --protocol ws2815 --pixels 4 \
     --expect ff0102030405060708090a0b
 ```
+
+With dead-pixel gaps configured (`ch 0 gaps 2:1`), pass the same list to
+`--gaps`: `--pixels`/`--expect` stay the logical strip and the decoder expects
+the dark LEDs at their physical positions.
 
 Which Saleae column carries which bus bit is wiring, not configuration —
 establish it with `cal 1` (walking-1 across the 16 bits) rather than assuming.

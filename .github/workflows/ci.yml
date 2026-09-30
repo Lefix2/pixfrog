@@ -149,6 +149,24 @@ jobs:
           path: /tmp/golden-*.png
           if-no-files-found: ignore
 
+  fuzz:
+    name: Fuzz (libFuzzer, parsers + receivers + console + REST)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fuzz each target for 60 s from the seed corpus
+        run: tools/fuzz.sh 60
+      - name: Replay the seed corpora (ctest)
+        run: ctest --test-dir build/tests-fuzz -R '^fuzz_' --output-on-failure
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: build/fuzz-artifacts/
+
   web-ui:
     name: Web UI (SPA in Chromium against the host API)
     needs: changes
@@ -250,7 +268,7 @@ jobs:
   ci-gate:
     name: CI gate
     if: always()
-    needs: [changes, format-check, host-tests, sanitizers, coverage, emulator, web-ui, idf-build]
+    needs: [changes, format-check, host-tests, sanitizers, coverage, emulator, web-ui, fuzz, idf-build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed
