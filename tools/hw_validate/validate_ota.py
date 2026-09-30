@@ -40,6 +40,9 @@ def run(board: Board):
     # ── rollback: reset before the confirmation ─────────────────────────────
     code, body = http("/api/ota", "--data-binary", "@" + fw_bin())
     c.check("second upload accepted", code == 200 and '"ok":true' in body)
+    # The old image answers the prompt until it restarts: wait for the ROM
+    # banner of the reboot first, or sync() talks to the image being replaced.
+    c.check("device restarts", board.watch_log("ESP-ROM", deadline=30))
     c.check("new image boots", board.sync())
     pending = board.get("version", "partition")
     c.check(f"booted the other slot ({pending})", pending and pending != good)

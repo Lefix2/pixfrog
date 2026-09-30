@@ -49,10 +49,14 @@ def run(board: Board):
     c.check("web disables idle dim", board.get("global", "tft_idle_dim") == "0")
     c.check("web sets dim delay", board.get("global", "tft_dim_delay_s") == "120")
 
-    code, g = http("/api/global")
+    code, body = http("/api/config")  # GET lives on /api/config; /api/global is POST-only
+    try:
+        g = json.loads(body).get("global", {}) if code == 200 else {}
+    except ValueError:
+        g = {}
     c.check("web GET exposes the three fields",
-            code == 200 and '"tft_brightness":65' in g and '"tft_idle_dim":0' in g
-            and '"tft_dim_delay_s":120' in g)
+            g.get("tft_brightness") == 65 and int(g.get("tft_idle_dim", -1)) == 0
+            and g.get("tft_dim_delay_s") == 120)
 
     board.cmd(f"global tft_brightness {before_bright}")
     board.cmd(f"global tft_idle_dim {before_dim}")
