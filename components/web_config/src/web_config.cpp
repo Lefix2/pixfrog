@@ -201,12 +201,14 @@ static esp_err_t send_err(httpd_req_t* req, int code, const char* msg) {
 static bool authorized(httpd_req_t* req) {
     if (!config::web_password_set()) return true;
 
-    char header[160];
+    // Room for "Basic " + base64 of a 128-byte "user:password": the longest
+    // password (kMaxWebPasswordLen) with any reasonable user name.
+    char header[192];
     if (httpd_req_get_hdr_value_str(req, "Authorization", header, sizeof(header)) != ESP_OK)
         return false;
     if (strncmp(header, "Basic ", 6) != 0) return false;
 
-    unsigned char decoded[128];
+    unsigned char decoded[136];
     size_t decoded_len = 0;
     if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &decoded_len,
                               reinterpret_cast<const unsigned char*>(header + 6),
@@ -756,6 +758,8 @@ static void restore_global(cJSON* jg) {
         g.failsafe_scene = static_cast<uint8_t>(v);
     if (num("boot_scene", 0, config::kMaxScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
     if (num("merge_mode", 0, 1, &v)) g.merge_mode = static_cast<uint8_t>(v);
+    if (getb("fpp_remote", &bv)) g.fpp_remote = bv;
+    if (num("lang", 0, 1, &v)) g.language = static_cast<uint8_t>(v);
     config::set_global(g);
 }
 
@@ -882,7 +886,8 @@ static esp_err_t handle_restore(httpd_req_t* req) {
 
     cJSON* jsc = cJSON_GetObjectItemCaseSensitive(j, "scenes");
     if (cJSON_IsArray(jsc)) restore_scenes(jsc);
-    cJSON* jg = cJSON_GetObjectItemCaseSensitive(j, "global");
+    const config::GlobalConfig before = config::get_global();
+    cJSON* jg                         = cJSON_GetObjectItemCaseSensitive(j, "global");
     if (cJSON_IsObject(jg)) restore_global(jg);
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
     if (cJSON_IsArray(jchs)) {
@@ -892,6 +897,22 @@ static esp_err_t handle_restore(httpd_req_t* req) {
     }
     cJSON_Delete(j);
     dmx::mark_global_dirty();
+
+    // Same live side effects as POST /api/global: the receivers follow their
+    // flags now, not at the next reboot.
+    const config::GlobalConfig& g = config::get_global();
+    if (g.sacn_enabled != before.sacn_enabled) {
+        if (g.sacn_enabled)
+            sacn::start();
+        else
+            sacn::stop();
+    }
+    if (g.fpp_remote != before.fpp_remote) {
+        if (g.fpp_remote)
+            fpp::start();
+        else
+            fpp::stop();
+    }
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req,
@@ -1017,13 +1038,17 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
 
     // Admin password: separate setter (hashes + persists on its own); empty
     // string clears it (auth off). Copied out before cJSON_Delete frees the
-    // backing buffer. Never echoed back.
-    char pwd[64];
+    // backing buffer. Never echoed back. Too long is refused, not truncated:
+    // a truncated hash would never match what the browser sends back.
+    char pwd[config::kMaxWebPasswordLen + 1];
     bool password_changed = false;
     if ((s = get_str("web_password"))) {
-        strncpy(pwd, s, sizeof(pwd) - 1);
-        pwd[sizeof(pwd) - 1] = '\0';
-        password_changed     = true;
+        if (strlen(s) > config::kMaxWebPasswordLen) {
+            cJSON_Delete(j);
+            return send_err(req, 400, "web_password: at most 63 characters");
+        }
+        strcpy(pwd, s);
+        password_changed = true;
     }
 
     cJSON_Delete(j);

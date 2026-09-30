@@ -385,6 +385,9 @@ bool replace_scenes(const Scene* scenes, size_t count);
 // Empty/null password clears the hash (auth disabled). Setting a password
 // generates a fresh random salt and stores SHA-256(salt || password).
 // All three are ui_task/console-context only (NVS write path).
+// Longer than kMaxWebPasswordLen is refused (false, nothing changes): every
+// path that sets or checks a password must see the same string.
+constexpr size_t kMaxWebPasswordLen = 63;
 bool set_web_password(const char* password);
 bool web_password_set();
 bool check_web_password(const char* password);

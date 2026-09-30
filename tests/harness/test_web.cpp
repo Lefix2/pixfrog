@@ -158,6 +158,24 @@ TEST(auth_gate_and_brute_force_delay) {
     EXPECT_FALSE(config::web_password_set());
 }
 
+TEST(longest_password_works_one_more_is_refused) {
+    // Was truncated to 63 bytes before hashing while the check hashed what the
+    // browser sent: a longer password locked the user out (UART recovery only).
+    const std::string too_long(64, 'p');
+    EXPECT_EQ(post("/api/global", "{\"web_password\":\"" + too_long + "\"}").status, 400);
+    EXPECT_FALSE(config::web_password_set());
+    EXPECT_FALSE(config::set_web_password(too_long.c_str()));
+
+    const std::string longest(63, 'q');
+    EXPECT_EQ(post("/api/global", "{\"web_password\":\"" + longest + "\"}").status, 200);
+    EXPECT_TRUE(config::web_password_set());
+    // A long user name as well: the Authorization header must still fit.
+    const Headers ok = { { "Authorization",
+                           "Basic " + b64(std::string(40, 'u') + ":" + longest) } };
+    EXPECT_EQ(post("/api/scenes/stop", "{}", ok).status, 200);
+    EXPECT_EQ(post("/api/global", "{\"web_password\":\"\"}", ok).status, 200);
+}
+
 TEST(cross_origin_writes_are_rejected) {
     const Headers foreign = { { "Origin", "http://evil.example" }, { "Host", "192.168.2.50" } };
     EXPECT_EQ(post("/api/scenes/stop", "{}", foreign).status, 403);
@@ -237,6 +255,26 @@ TEST(backup_then_restore_round_trips) {
     EXPECT_TRUE(cJSON_Compare(a["scenes"], b["scenes"], true));
     EXPECT_STREQ(config::get_global().short_name, "before");
     EXPECT_EQ(post("/api/restore", "garbage").status, 400);
+
+    // Every exported global field comes back, and the receivers follow.
+    Json exported(backup.body);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(exported["global"], "fpp_remote") != nullptr);
+    std::string flipped = backup.body;
+    auto swap           = [&](const char* from, const char* to) {
+        const size_t at = flipped.find(from);
+        EXPECT_TRUE(at != std::string::npos);
+        if (at != std::string::npos) flipped.replace(at, std::strlen(from), to);
+    };
+    swap("\"fpp_remote\":false", "\"fpp_remote\":true");
+    swap("\"lang\":0", "\"lang\":1");
+    const int fpp_starts = ::fake::modules().fpp_starts;
+    EXPECT_EQ(post("/api/restore", flipped).status, 200);
+    EXPECT_TRUE(config::get_global().fpp_remote);
+    EXPECT_EQ(config::get_global().language, 1);
+    EXPECT_EQ(::fake::modules().fpp_starts, fpp_starts + 1);  // started now, not at reboot
+    EXPECT_EQ(post("/api/restore", backup.body).status, 200);
+    EXPECT_FALSE(config::get_global().fpp_remote);
+    EXPECT_FALSE(::fake::modules().fpp_running);
 
     // A backup from the DMX512-output era: that channel comes back disabled.
     std::string old = backup.body;

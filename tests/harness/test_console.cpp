@@ -93,6 +93,8 @@ TEST(global_web_password_set_and_clear) {
     EXPECT_TRUE(run("global web_password hunter2"));
     EXPECT_TRUE(config::check_web_password("hunter2"));
     EXPECT_TRUE(run("global web_password -"));
+    EXPECT_FALSE(run(("global web_password " + std::string(64, 'x')).c_str()));  // > 63
+    EXPECT_FALSE(config::web_password_set());
     EXPECT_FALSE(config::web_password_set());
 }
 
