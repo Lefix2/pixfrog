@@ -343,12 +343,18 @@ bool fseq_is_active() {
 }
 
 void scene_start(uint8_t scene_index) {
-    if (scene_index >= config::kNumScenes) return;
+    if (scene_index >= config::num_scenes()) return;
     g_active_scene.store(static_cast<int8_t>(scene_index), std::memory_order_relaxed);
 }
 
 void scene_stop() {
     g_active_scene.store(-1, std::memory_order_relaxed);
+}
+
+void scene_list_edited(config::SceneEdit op, size_t a, size_t b) {
+    const int now = config::remap_scene_index(g_active_scene.load(std::memory_order_relaxed), op, a,
+                                              b);
+    g_active_scene.store(static_cast<int8_t>(now), std::memory_order_relaxed);
 }
 
 int active_scene() {

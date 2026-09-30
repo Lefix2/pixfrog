@@ -174,7 +174,10 @@ int identify_channel();  // -1 = inactive
 // instead of decoding universes — network traffic is ignored until
 // scene_stop() (manual-stop policy). Set from ui/console/web/artnet tasks,
 // read by render_task (single atomic).
-void scene_start(uint8_t scene_index);  // 0..config::kNumScenes-1
+void scene_start(uint8_t scene_index);  // 0..config::num_scenes()-1
+// Call after config::delete_scene / move_scene: the playing scene follows
+// its new position, or stops when it was the one deleted.
+void scene_list_edited(config::SceneEdit op, size_t a, size_t b = 0);
 void scene_stop();
 int active_scene();  // -1 = none
 

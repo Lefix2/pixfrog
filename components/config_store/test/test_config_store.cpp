@@ -306,7 +306,7 @@ static void test_sanitize_clamps_clock_hz() {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 // Pre-palette scene record: the scene array was stored as one NVS blob of
-// kNumScenes of these, so a grown record needs re-packing, not a tail fill.
+// kLegacyNumScenes of these, so a grown record needs re-packing, not a tail fill.
 struct SceneV1 {
     char name[kSceneNameMax];
     uint8_t channel_mask;
@@ -320,8 +320,8 @@ static_assert(sizeof(SceneV1) == kSceneV1Size, "v1 scene record is 25 bytes");
 static_assert(offsetof(Scene, param) == offsetof(SceneV1, param), "v1 prefix must not move");
 
 static void test_scene_v1_migration() {
-    SceneV1 old[kNumScenes]{};
-    for (size_t i = 0; i < kNumScenes; ++i) {
+    SceneV1 old[kLegacyNumScenes]{};
+    for (size_t i = 0; i < kLegacyNumScenes; ++i) {
         std::snprintf(old[i].name, kSceneNameMax, "Old %u", static_cast<unsigned>(i));
         old[i].channel_mask = static_cast<uint8_t>(1u << i);
         old[i].r            = static_cast<uint8_t>(10 + i);
@@ -331,9 +331,9 @@ static void test_scene_v1_migration() {
     old[1].effect = kSceneFxChase;
     old[2].effect = kSceneFxRainbow;
 
-    Scene loaded[kNumScenes];
+    Scene loaded[kLegacyNumScenes];
     EXPECT_TRUE(migrate_scenes_v1(reinterpret_cast<const uint8_t*>(old), sizeof(old), loaded));
-    for (size_t i = 0; i < kNumScenes; ++i) {
+    for (size_t i = 0; i < kLegacyNumScenes; ++i) {
         EXPECT_TRUE(std::strcmp(loaded[i].name, old[i].name) == 0);
         EXPECT_EQ(loaded[i].channel_mask, old[i].channel_mask);
         EXPECT_EQ(loaded[i].r, 10 + i);
@@ -371,6 +371,73 @@ static void test_scene_colour_accessors() {
     EXPECT_EQ(scene_num_colors(s), kSceneColorsMax);
 }
 
+static void test_scene_bank_load_all_layouts() {
+    static SceneBank bank;
+
+    // v1: 8 × 25-byte records.
+    SceneV1 v1[kLegacyNumScenes]{};
+    std::strcpy(v1[3].name, "v1");
+    EXPECT_TRUE(load_scene_bank(reinterpret_cast<const uint8_t*>(v1), sizeof(v1), bank));
+    EXPECT_EQ(bank.count, kLegacyNumScenes);
+    EXPECT_TRUE(std::strcmp(bank.scenes[3].name, "v1") == 0);
+
+    // v2: 8 fixed 34-byte records, no count byte.
+    Scene v2[kLegacyNumScenes]{};
+    std::strcpy(v2[7].name, "v2");
+    v2[7].num_colors = 3;
+    v2[7].effect     = 200;  // out of range → sanitized
+    EXPECT_TRUE(load_scene_bank(reinterpret_cast<const uint8_t*>(v2), sizeof(v2), bank));
+    EXPECT_EQ(bank.count, kLegacyNumScenes);
+    EXPECT_TRUE(std::strcmp(bank.scenes[7].name, "v2") == 0);
+    EXPECT_EQ(bank.scenes[7].num_colors, 3);
+    EXPECT_EQ(bank.scenes[7].effect, kSceneFxSolid);
+
+    // v3: count byte + that many records, any count 0..kMaxScenes.
+    static SceneBank src;
+    std::memset(&src, 0, sizeof(src));
+    src.count = 12;
+    std::strcpy(src.scenes[11].name, "twelfth");
+    EXPECT_TRUE(
+        load_scene_bank(reinterpret_cast<const uint8_t*>(&src), scene_bank_bytes(12), bank));
+    EXPECT_EQ(bank.count, 12);
+    EXPECT_TRUE(std::strcmp(bank.scenes[11].name, "twelfth") == 0);
+    src.count = 0;
+    EXPECT_TRUE(load_scene_bank(reinterpret_cast<const uint8_t*>(&src), scene_bank_bytes(0), bank));
+    EXPECT_EQ(bank.count, 0);
+
+    // Count byte disagreeing with the size, or past the capacity → rejected.
+    src.count = 5;
+    EXPECT_TRUE(
+        !load_scene_bank(reinterpret_cast<const uint8_t*>(&src), scene_bank_bytes(4), bank));
+    src.count = kMaxScenes + 1;
+    EXPECT_TRUE(!load_scene_bank(reinterpret_cast<const uint8_t*>(&src), sizeof(src), bank));
+    // The three layouts can never be mistaken for one another.
+    for (size_t k = 0; k <= kMaxScenes; ++k) {
+        EXPECT_TRUE(scene_bank_bytes(k) != kLegacyNumScenes * kSceneV1Size);
+        EXPECT_TRUE(scene_bank_bytes(k) != kLegacyNumScenes * sizeof(Scene));
+    }
+}
+
+static void test_scene_index_remap() {
+    // Delete scene 2 of [0 1 2 3 4].
+    EXPECT_EQ(remap_scene_index(1, SceneEdit::Delete, 2), 1);
+    EXPECT_EQ(remap_scene_index(2, SceneEdit::Delete, 2), -1);
+    EXPECT_EQ(remap_scene_index(3, SceneEdit::Delete, 2), 2);
+    EXPECT_EQ(remap_scene_index(-1, SceneEdit::Delete, 2), -1);
+    // Move 1 → 3: [0 2 3 1 4].
+    EXPECT_EQ(remap_scene_index(1, SceneEdit::Move, 1, 3), 3);
+    EXPECT_EQ(remap_scene_index(2, SceneEdit::Move, 1, 3), 1);
+    EXPECT_EQ(remap_scene_index(3, SceneEdit::Move, 1, 3), 2);
+    EXPECT_EQ(remap_scene_index(0, SceneEdit::Move, 1, 3), 0);
+    EXPECT_EQ(remap_scene_index(4, SceneEdit::Move, 1, 3), 4);
+    // Move 3 → 1: [0 3 1 2 4].
+    EXPECT_EQ(remap_scene_index(3, SceneEdit::Move, 3, 1), 1);
+    EXPECT_EQ(remap_scene_index(1, SceneEdit::Move, 3, 1), 2);
+    EXPECT_EQ(remap_scene_index(2, SceneEdit::Move, 3, 1), 3);
+    EXPECT_EQ(remap_scene_index(4, SceneEdit::Move, 3, 1), 4);
+    EXPECT_EQ(remap_scene_index(2, SceneEdit::Move, 2, 2), 2);
+}
+
 int main() {
     test_migrate_from_pre_web_fields_preserved();
     test_migrate_from_pre_web_new_field_is_false();
@@ -382,6 +449,8 @@ int main() {
     test_sanitize_clamps_clock_hz();
     test_scene_v1_migration();
     test_scene_colour_accessors();
+    test_scene_bank_load_all_layouts();
+    test_scene_index_remap();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

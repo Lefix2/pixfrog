@@ -630,9 +630,9 @@ struct ListItem {
 // index within the node (used by the dynamic lists: channels, scenes, files).
 using OnClick = void (*)(uint8_t idx);
 
-// Widest node: the main menu (8 channels + up to 7 entries + back). Build
-// buffers size to it.
-constexpr uint8_t kMaxRows = 18;
+// Widest node: the scene list (every scene + Stop + Back). Build buffers size
+// to it; they are static (ui_task only) so the bigger list costs no stack.
+constexpr uint8_t kMaxRows = config::kMaxScenes + 2;
 
 // A "return to the parent menu" row. Rendered with a left back-arrow glyph
 // instead of bracketed text; `label` lets Main say "HOME" and the test-pattern
@@ -1493,9 +1493,10 @@ uint8_t build_testpattern(ListItem* items, OnClick* fns) {
 // territory. The active scene is starred.
 
 uint8_t build_scenes(ListItem* items, OnClick* fns) {
-    static char marked[config::kNumScenes][kOledCols + 1];
+    static char marked[config::kMaxScenes][kOledCols + 1];
     const int active = dmx::active_scene();
-    for (uint8_t i = 0; i < config::kNumScenes; ++i) {
+    const auto count = static_cast<uint8_t>(config::num_scenes());
+    for (uint8_t i = 0; i < count; ++i) {
         const auto& sc = config::get_scene(i);
         if (active == static_cast<int>(i)) {
             std::snprintf(marked[i], sizeof(marked[i]), "%s *", sc.name);
@@ -1505,7 +1506,7 @@ uint8_t build_scenes(ListItem* items, OnClick* fns) {
         }
         fns[i] = [](uint8_t idx) { dmx::scene_start(idx); };  // stay to switch scenes
     }
-    uint8_t n = config::kNumScenes;
+    uint8_t n = count;
     items[n]  = { "[Stop]", "" };
     fns[n++]  = [](uint8_t) { dmx::scene_stop(); };
     items[n]  = back_item();
@@ -3011,8 +3012,8 @@ void open_channel(uint8_t idx) {
 }
 
 void engine_render() {
-    ListItem items[kMaxRows];
-    OnClick fns[kMaxRows];
+    static ListItem items[kMaxRows];
+    static OnClick fns[kMaxRows];
     const Node& n       = cur_node();
     const uint8_t count = n.build(items, fns);
     if (count > 0 && s.cursor >= count) s.cursor = count - 1;
@@ -3020,8 +3021,8 @@ void engine_render() {
 }
 
 void engine_dispatch(Event e) {
-    ListItem items[kMaxRows];
-    OnClick fns[kMaxRows];
+    static ListItem items[kMaxRows];
+    static OnClick fns[kMaxRows];
     const uint8_t count = cur_node().build(items, fns);
     if (count == 0) return;
     if (s.cursor >= count) s.cursor = count - 1;

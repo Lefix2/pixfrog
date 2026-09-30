@@ -70,8 +70,8 @@ opened while the flag is off — opt-in only. Toggle from the Network submenu, v
 
 REST endpoints: `GET /` (SPA), `GET /api/config`, `GET /api/status`, `GET /api/peers`,
 `GET /api/backup`, `POST /api/restore`, `POST /api/global`,
-`POST /api/channel/{0..7}[/identify]`, `POST /api/scene/{0..7}[/play]`,
-`POST /api/scenes/stop`, `POST /api/ota` (raw .bin body), `POST /api/reboot`,
+`POST /api/channel/{0..7}[/identify]`, `POST /api/scene/{n}[/play|/delete]`,
+`POST /api/scenes/add`, `POST /api/scenes/move`, `POST /api/scenes/stop`, `POST /api/ota` (raw .bin body), `POST /api/reboot`,
 `POST /api/factory-reset`. All JSON.
 
 Multi-node: `GET /api/peers` browses mDNS for sibling pixfrogs (filtered on the

@@ -159,7 +159,11 @@ static esp_err_t send_ok(httpd_req_t* req) {
 }
 
 static esp_err_t send_err(httpd_req_t* req, int code, const char* msg) {
-    httpd_resp_set_status(req, code == 400 ? "400 Bad Request" : "500 Internal Server Error");
+    const char* status = "500 Internal Server Error";
+    if (code == 400) status = "400 Bad Request";
+    if (code == 404) status = "404 Not Found";
+    if (code == 409) status = "409 Conflict";
+    httpd_resp_set_status(req, status);
     httpd_resp_set_type(req, "application/json");
     char buf[128];
     snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", msg);
@@ -306,7 +310,7 @@ static cJSON* build_global_json() {
 
 static cJSON* build_scenes_json() {
     cJSON* jscenes = cJSON_CreateArray();
-    for (size_t i = 0; i < config::kNumScenes; ++i) {
+    for (size_t i = 0; i < config::num_scenes(); ++i) {
         const auto& sc = config::get_scene(i);
         cJSON* js      = cJSON_CreateObject();
         cJSON_AddStringToObject(js, "name", sc.name);
@@ -659,9 +663,11 @@ static void restore_global(cJSON* jg) {
             g.failsafe_b = static_cast<uint8_t>(cb);
         }
     }
-    if (num("failsafe_scene", 0, config::kNumScenes - 1, &v))
+    // Bounded by the list capacity, not its current length: a reference past
+    // the end plays nothing (scene_start / get_scene bound-check at use).
+    if (num("failsafe_scene", 0, config::kMaxScenes - 1, &v))
         g.failsafe_scene = static_cast<uint8_t>(v);
-    if (num("boot_scene", 0, config::kNumScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
+    if (num("boot_scene", 0, config::kMaxScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
     if (num("merge_mode", 0, 1, &v)) g.merge_mode = static_cast<uint8_t>(v);
     config::set_global(g);
     dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
@@ -763,19 +769,30 @@ static void apply_scene_json(const cJSON* js, config::Scene& sc) {
     }
 }
 
-static void restore_scene(size_t i, cJSON* js) {
-    auto sc = config::get_scene(i);
-    apply_scene_json(js, sc);
-    config::set_scene(i, sc);
+// The backup's list replaces the current one wholesale (length included).
+static void restore_scenes(const cJSON* jsc) {
+    static config::Scene list[config::kMaxScenes];  // httpd stack is small
+    size_t n = 0;
+    for (const cJSON* js = jsc->child; js && n < config::kMaxScenes; js = js->next) {
+        list[n]              = config::Scene{};
+        list[n].channel_mask = 0xFF;
+        list[n].num_colors   = 1;
+        apply_scene_json(js, list[n++]);
+    }
+    dmx::scene_stop();  // the playing index may point elsewhere now
+    config::replace_scenes(list, n);
 }
 
 static esp_err_t handle_restore(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    static char buf[4096];  // full backup ≈ 3 kB; static keeps it off the httpd stack
+    // Full backup ≈ 3 kB + ~170 B per scene (30 max); static keeps it off the httpd stack.
+    static char buf[12288];
     if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
     cJSON* j = cJSON_Parse(buf);
     if (!j) return send_err(req, 400, "invalid JSON");
 
+    cJSON* jsc = cJSON_GetObjectItemCaseSensitive(j, "scenes");
+    if (cJSON_IsArray(jsc)) restore_scenes(jsc);
     cJSON* jg = cJSON_GetObjectItemCaseSensitive(j, "global");
     if (cJSON_IsObject(jg)) restore_global(jg);
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
@@ -783,12 +800,6 @@ static esp_err_t handle_restore(httpd_req_t* req) {
         const int n = cJSON_GetArraySize(jchs);
         for (int i = 0; i < n && i < static_cast<int>(config::kNumChannels); ++i)
             restore_channel(static_cast<size_t>(i), cJSON_GetArrayItem(jchs, i));
-    }
-    cJSON* jsc = cJSON_GetObjectItemCaseSensitive(j, "scenes");
-    if (cJSON_IsArray(jsc)) {
-        const int n = cJSON_GetArraySize(jsc);
-        for (int i = 0; i < n && i < static_cast<int>(config::kNumScenes); ++i)
-            restore_scene(static_cast<size_t>(i), cJSON_GetArrayItem(jsc, i));
     }
     cJSON_Delete(j);
     dmx::mark_global_dirty();
@@ -893,9 +904,9 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
         g.tft_dim_delay_s = static_cast<uint16_t>(u);
     if (get_bool("web_enabled", b)) g.web_enabled = b;
     if (get_u32("failsafe_mode", 0, 3, u)) g.failsafe_mode = static_cast<uint8_t>(u);
-    if (get_u32("failsafe_scene", 0, config::kNumScenes - 1, u))
+    if (get_u32("failsafe_scene", 0, config::kMaxScenes - 1, u))
         g.failsafe_scene = static_cast<uint8_t>(u);
-    if (get_u32("boot_scene", 0, config::kNumScenes, u)) g.boot_scene = static_cast<uint8_t>(u);
+    if (get_u32("boot_scene", 0, config::kMaxScenes, u)) g.boot_scene = static_cast<uint8_t>(u);
     if (get_u32("failsafe_timeout_s", 0, 3600, u)) g.failsafe_timeout_s = static_cast<uint16_t>(u);
     if (get_u32("merge_mode", 0, 1, u)) g.merge_mode = static_cast<uint8_t>(u);
     if (get_u32("lang", 0, 1, u)) g.language = static_cast<uint8_t>(u);
@@ -1139,20 +1150,29 @@ static esp_err_t handle_ota(httpd_req_t* req) {
     return ESP_OK;
 }
 
-// ── POST /api/scene/{n} (config) + /api/scene/{n}/play + /api/scenes/stop ───
+// ── Scenes ───────────────────────────────────────────────────────────────────
+// POST /api/scene/{n}          partial update (apply_scene_json)
+// POST /api/scene/{n}/play     play it
+// POST /api/scene/{n}/delete   remove it; later scenes shift down by one
+// POST /api/scenes/add         append (optional scene JSON body) → {"index":n}
+// POST /api/scenes/move        {"from":a,"to":b}
+// POST /api/scenes/stop
 
 static esp_err_t handle_post_scene(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
 
-    // URI: /api/scene/N or /api/scene/N/play
     const char* tail = req->uri + strlen("/api/scene/");
     const int idx    = atoi(tail);
-    if (idx < 0 || static_cast<size_t>(idx) >= config::kNumScenes)
-        return send_err(req, 400, "scene 0..7");
-    const bool play = strstr(tail, "/play") != nullptr;
+    if (idx < 0 || static_cast<size_t>(idx) >= config::num_scenes())
+        return send_err(req, 404, "no such scene");
 
-    if (play) {
+    if (strstr(tail, "/play")) {
         dmx::scene_start(static_cast<uint8_t>(idx));
+        return send_ok(req);
+    }
+    if (strstr(tail, "/delete")) {
+        config::delete_scene(static_cast<size_t>(idx));
+        dmx::scene_list_edited(config::SceneEdit::Delete, static_cast<size_t>(idx));
         return send_ok(req);
     }
 
@@ -1165,6 +1185,49 @@ static esp_err_t handle_post_scene(httpd_req_t* req) {
     apply_scene_json(j, sc);
     cJSON_Delete(j);
     config::set_scene(static_cast<size_t>(idx), sc);
+    return send_ok(req);
+}
+
+static esp_err_t handle_scenes_add(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    config::Scene sc{};
+    std::strncpy(sc.name, "New scene", sizeof(sc.name) - 1);
+    sc.channel_mask = 0xFF;
+    sc.num_colors   = 1;
+    sc.r = sc.g = sc.b = 255;
+    if (req->content_len > 0) {
+        char buf[384];
+        if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large");
+        cJSON* j = cJSON_Parse(buf);
+        if (!j) return send_err(req, 400, "invalid JSON");
+        apply_scene_json(j, sc);
+        cJSON_Delete(j);
+    }
+    const int idx = config::add_scene(sc);
+    if (idx < 0) return send_err(req, 409, "scene list full");
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddNumberToObject(root, "index", idx);
+    return send_json(req, root);
+}
+
+static esp_err_t handle_scenes_move(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    char buf[64];
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+    const cJSON* jf = cJSON_GetObjectItemCaseSensitive(j, "from");
+    const cJSON* jt = cJSON_GetObjectItemCaseSensitive(j, "to");
+    const int n     = static_cast<int>(config::num_scenes());
+    const bool ok   = cJSON_IsNumber(jf) && cJSON_IsNumber(jt) && jf->valueint >= 0 &&
+                    jf->valueint < n && jt->valueint >= 0 && jt->valueint < n;
+    const auto from = ok ? static_cast<size_t>(jf->valueint) : 0;
+    const auto to   = ok ? static_cast<size_t>(jt->valueint) : 0;
+    cJSON_Delete(j);
+    if (!ok) return send_err(req, 400, "from/to: existing scene indices");
+    config::move_scene(from, to);
+    dmx::scene_list_edited(config::SceneEdit::Move, from, to);
     return send_ok(req);
 }
 
@@ -1499,7 +1562,7 @@ void start() {
     init_log_capture();  // ensure capture is on even if app_main didn't call it
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 26;
+    cfg.max_uri_handlers = 28;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -1532,6 +1595,14 @@ void start() {
         { .uri      = "/api/scene/*",
           .method   = HTTP_POST,
           .handler  = handle_post_scene,
+          .user_ctx = nullptr },
+        { .uri      = "/api/scenes/add",
+          .method   = HTTP_POST,
+          .handler  = handle_scenes_add,
+          .user_ctx = nullptr },
+        { .uri      = "/api/scenes/move",
+          .method   = HTTP_POST,
+          .handler  = handle_scenes_move,
           .user_ctx = nullptr },
         { .uri      = "/api/scenes/stop",
           .method   = HTTP_POST,
