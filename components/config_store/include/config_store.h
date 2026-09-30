@@ -43,7 +43,7 @@ struct GlobalConfig {
     bool artnet_poll_reply_unicast;  // false=broadcast (default), true=unicast to poller
 
     // System
-    uint8_t refresh_rate_hz;  // 30 or 60
+    uint8_t refresh_rate_hz;  // kMinRefreshHz..kMaxRefreshHz
     uint16_t home_timeout_s;  // 30 by default
 
     // Web UI — opt-in; no TCP socket opened when false (default)
@@ -123,6 +123,12 @@ inline uint16_t tft_dim_delay_s(const GlobalConfig& g) {
 inline bool tft_dim_enabled(const GlobalConfig& g) {
     return tft_dim_delay_s(g) != 0 && tft_idle_dim_pct(g) != 0;
 }
+
+// Any integer rate in this range. The pixel budget follows it (the wire, not
+// the CPU, is the limit above 60 Hz) — see dmx::logic::max_pixels_for.
+constexpr uint8_t kMinRefreshHz     = 20;
+constexpr uint8_t kMaxRefreshHz     = 120;
+constexpr uint8_t kDefaultRefreshHz = 60;
 
 constexpr uint8_t kFailsafeHold     = 0;
 constexpr uint8_t kFailsafeBlackout = 1;

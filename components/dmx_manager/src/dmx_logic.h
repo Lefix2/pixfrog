@@ -197,6 +197,16 @@ inline uint16_t max_pixels_for(const config::ChannelConfig& cc, uint32_t pclk_hz
     return best;
 }
 
+// The pixel count actually emitted: the stored count is what the user asked
+// for and is never rewritten when the refresh rate (or the protocol / clock)
+// shrinks the budget, so going back restores the full line.
+inline uint16_t effective_pixel_count(const config::ChannelConfig& cc, uint32_t pclk_hz,
+                                      uint8_t refresh_rate_hz, size_t buffer_samples) {
+    if (led::is_off(cc.protocol)) return cc.pixel_count;
+    const uint16_t mx = max_pixels_for(cc, pclk_hz, refresh_rate_hz, buffer_samples);
+    return cc.pixel_count < mx ? cc.pixel_count : mx;
+}
+
 // ── Pixel-count preview pattern ─────────────────────────────────────────────
 //
 // Live "ruler" while the user edits a channel's pixel count. Colour encodes

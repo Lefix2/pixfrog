@@ -220,9 +220,6 @@ bool init() {
 
     for (size_t i = 0; i < config::kNumChannels; ++i)
         g_channel_capacity_ok[i] = true;
-    // Correct any stored pixel_count that exceeds the current refresh budget
-    // (e.g. a config saved at a lower refresh, or from before this cap existed).
-    clamp_pixel_counts();
     validate_capacity();
 
     ESP_LOGI(TAG, "init OK, universe LUT built");
@@ -365,10 +362,10 @@ bool decode_pixels_for_channel(size_t ch) {
     if (ch >= config::kNumChannels) return false;
     uint8_t* dst = pixel_back_buffer(ch);
     if (!dst) return false;
+    const config::ChannelConfig cc = effective_channel(ch);
 
     // Identify blink: top priority — it answers "which strip is this?".
     if (identify_channel() == static_cast<int>(ch)) {
-        const auto& cc     = config::get_channel(ch);
         const uint8_t bpp  = led::bytes_per_pixel(cc.protocol);
         const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
         const uint8_t lvl  = ((now / 250) & 1) ? 255 : 0;  // 2 Hz blink
@@ -379,7 +376,6 @@ bool decode_pixels_for_channel(size_t ch) {
 
     const uint32_t preview = g_pixel_preview.load(std::memory_order_relaxed);
     if ((preview >> 16) == ch) {
-        const auto& cc       = config::get_channel(ch);
         const uint16_t count = static_cast<uint16_t>(preview & 0xFFFFu);
         // Consume any owed shrink-erase here so exactly this frame carries the
         // black tail; the emit count is published for the output stage to size
@@ -401,7 +397,6 @@ bool decode_pixels_for_channel(size_t ch) {
     const int sc = g_active_scene.load(std::memory_order_relaxed);
     if (sc >= 0) {
         const auto& scene = config::get_scene(static_cast<size_t>(sc));
-        const auto& cc    = config::get_channel(ch);
         if (((scene.channel_mask >> ch) & 1) && !led::is_dmx(cc.protocol)) {
             logic::fill_scene_pattern(dst, kMaxBytesPerChan, cc.pixel_count,
                                       led::bytes_per_pixel(cc.protocol), scene,
@@ -414,14 +409,13 @@ bool decode_pixels_for_channel(size_t ch) {
     // Suppress the failsafe check while FSEQ is active so a seek/block-load
     // pause doesn't momentarily blackout channels that are being played back.
     if (g_fseq_active.load(std::memory_order_relaxed)) {
-        return logic::decode_pixels(dst, kMaxBytesPerChan, config::get_channel(ch),
+        return logic::decode_pixels(dst, kMaxBytesPerChan, cc,
                                     [](uint16_t u) { return universe_front_buffer_for(u); });
     }
 
     const auto& g = config::get_global();
     if (g.failsafe_mode != config::kFailsafeHold &&
         logic::failsafe_due(g_last_activity_us[ch], esp_timer_get_time(), g.failsafe_timeout_s)) {
-        const auto& cc = config::get_channel(ch);
         // Mode "scene": play the configured scene's effect on the lost channel.
         if (g.failsafe_mode == config::kFailsafeScene && !led::is_dmx(cc.protocol)) {
             const auto& scene = config::get_scene(g.failsafe_scene);
@@ -437,7 +431,7 @@ bool decode_pixels_for_channel(size_t ch) {
         return true;
     }
 
-    return logic::decode_pixels(dst, kMaxBytesPerChan, config::get_channel(ch),
+    return logic::decode_pixels(dst, kMaxBytesPerChan, cc,
                                 [](uint16_t u) { return universe_front_buffer_for(u); });
 }
 
@@ -452,19 +446,13 @@ void validate_capacity() {
 
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& cc            = config::get_channel(ch);
-        const bool ok             = logic::channel_fits_refresh(cc, led::kPclkHz, refresh);
+        const uint16_t emitted    = effective_channel(ch).pixel_count;
+        const bool ok             = emitted >= cc.pixel_count;
         g_channel_capacity_ok[ch] = ok;
         if (!ok) {
-            const uint64_t t_us = logic::channel_t_dma_us(cc, led::kPclkHz);
-            // DMX is judged at its own ~44 Hz ceiling; everything else at the
-            // configured refresh's emission budget.
-            const uint64_t budget = logic::channel_budget_us(cc, refresh);
-            ESP_LOGW(TAG,
-                     "ch %zu over capacity: t_dma=%llu µs > budget=%llu µs "
-                     "(refresh=%u Hz, %u px, proto=%d) — reduce pixel_count or refresh",
-                     ch, static_cast<unsigned long long>(t_us),
-                     static_cast<unsigned long long>(budget), static_cast<unsigned>(refresh),
-                     static_cast<unsigned>(cc.pixel_count), static_cast<int>(cc.protocol));
+            ESP_LOGW(TAG, "ch %zu: %u px requested, %u emitted at %u Hz (proto=%d)", ch,
+                     static_cast<unsigned>(cc.pixel_count), static_cast<unsigned>(emitted),
+                     static_cast<unsigned>(refresh), static_cast<int>(cc.protocol));
         }
     }
 }
@@ -476,31 +464,17 @@ uint16_t channel_max_pixels(size_t ch) {
                                  led::kMaxSamplesPerFrame);
 }
 
-bool clamp_pixel_counts() {
-    const uint8_t refresh = config::get_global().refresh_rate_hz;
-    bool changed          = false;
-    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        auto cc = config::get_channel(ch);
-        if (led::is_off(cc.protocol)) continue;
-        const uint16_t maxpx = logic::max_pixels_for(cc, led::kPclkHz, refresh,
-                                                     led::kMaxSamplesPerFrame);
-        if (cc.pixel_count > maxpx) {
-            ESP_LOGW(TAG, "ch %zu pixel_count %u → %u (refresh=%u Hz cap)", ch,
-                     static_cast<unsigned>(cc.pixel_count), static_cast<unsigned>(maxpx),
-                     static_cast<unsigned>(refresh));
-            cc.pixel_count = maxpx;
-            config::set_channel(ch, cc);
-            mark_channel_dirty(ch);
-            changed = true;
-        }
-    }
-    return changed;
+config::ChannelConfig effective_channel(size_t ch) {
+    config::ChannelConfig cc = config::get_channel(ch < config::kNumChannels ? ch : 0);
+    cc.pixel_count           = logic::effective_pixel_count(
+        cc, led::kPclkHz, config::get_global().refresh_rate_hz, led::kMaxSamplesPerFrame);
+    return cc;
 }
 
 uint64_t frame_emit_us() {
     uint64_t longest = 0;
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        const uint64_t t = logic::channel_t_dma_us(config::get_channel(ch), led::kPclkHz);
+        const uint64_t t = logic::channel_t_dma_us(effective_channel(ch), led::kPclkHz);
         if (t > longest) longest = t;
     }
     return longest;

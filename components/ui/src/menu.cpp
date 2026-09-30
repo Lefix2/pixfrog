@@ -1166,7 +1166,8 @@ void render_home() {
             std::snprintf(line, sizeof(line), "%u", cc.universe_start);
             draw_text_r(kColUniEnd, ty, line, ok ? color::Gold : color::Red, row_bg);
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
-            draw_text_r(kColPixEnd, ty, line, color::LightGray, row_bg);
+            // Red: the stored count is more than this refresh rate can drive.
+            draw_text_r(kColPixEnd, ty, line, ok ? color::LightGray : color::Red, row_bg);
             if (!led::is_dmx(cc.protocol)) {
                 std::snprintf(line, sizeof(line), "%u%%",
                               (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
@@ -1936,9 +1937,6 @@ void commit_edit() {
         auto g            = config::get_global();
         g.refresh_rate_hz = static_cast<uint8_t>(v);
         config::set_global(g);
-        // A higher refresh shrinks every channel's pixel budget — truncate any
-        // strip that no longer fits (e.g. 800 px valid at 30 Hz, not at 60 Hz).
-        dmx::clamp_pixel_counts();
         dmx::mark_global_dirty();
         break;
     }
@@ -1990,9 +1988,6 @@ void commit_edit() {
         auto c     = config::get_channel(s.edit.channel);
         c.protocol = static_cast<led::Protocol>(v);
         config::set_channel(s.edit.channel, c);
-        // New protocol → new per-pixel cost (and DMX caps at one universe);
-        // truncate the pixel count if it no longer fits.
-        dmx::clamp_pixel_counts();
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
@@ -2056,8 +2051,6 @@ void commit_edit() {
         auto c     = config::get_channel(s.edit.channel);
         c.clock_hz = static_cast<uint32_t>(v);
         config::set_channel(s.edit.channel, c);
-        // A slower clock stretches the frame → fewer pixels fit the budget.
-        dmx::clamp_pixel_counts();
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
@@ -2608,10 +2601,9 @@ uint8_t build_output(ListItem* items, OnClick* fns) {
 
     items[0] = { "Refresh", vrefresh };
     fns[0]   = [](uint8_t) {
-        // Refresh: step 30 → only [30, 60] reachable; satisfies spec §4.
         const auto& g = config::get_global();
-        enter_edit(Field::GlobalRefresh, ValueKind::Int, g.refresh_rate_hz, 30, 60, 30, "Refresh",
-                     Screen::Menu);
+        enter_edit(Field::GlobalRefresh, ValueKind::Int, g.refresh_rate_hz, config::kMinRefreshHz,
+                     config::kMaxRefreshHz, 1, "Refresh", Screen::Menu);
     };
     items[1] = { "Failsafe", vfsm };
     fns[1]   = [](uint8_t) {

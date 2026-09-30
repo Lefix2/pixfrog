@@ -240,6 +240,7 @@
                 <div>
                   <label style="display:block;font:500 11px 'DM Mono';letter-spacing:.06em;color:#a9aca4;margin-bottom:7px"><span id="cd-pixlabel">Pixels</span></label>
                   <input id="cd-pix" type="number" value="300" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'"/>
+                  <div id="cd-pixwarn" style="display:none;margin-top:6px;font:500 11.5px 'DM Mono';color:#e8b23a"></div>
                 </div>
                 <div id="cd-row-order">
                   <label style="display:block;font:500 11px 'DM Mono';letter-spacing:.06em;color:#a9aca4;margin-bottom:7px" data-i18n="Color order">Color order</label>
@@ -381,7 +382,7 @@
             <div style="background:#121412;border:1px solid #262826;border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
               <span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:#80837c" data-i18n="GENERAL">GENERAL</span>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
-                <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Frame rate (Hz)">Frame rate (Hz)</label><select id="s-refresh" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'Figtree'"><option value="30">30 Hz</option><option value="60">60 Hz</option></select></div>
+                <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Frame rate (Hz)">Frame rate (Hz)</label><input id="s-refresh" type="number" min="20" max="120" step="1" value="60" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'"/></div>
                 <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Return to home (s)">Return to home (s)</label><input id="s-home" type="number" min="0" max="65535" value="0" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'"/></div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
@@ -626,7 +627,7 @@ var ST={
   failsafe:{dot:'#d9534f',txt:'#ec8480',label:'Failsafe', chip:'rgba(217,83,79,.14)',  bd:'rgba(217,83,79,.4)'},
   off:     {dot:'#3b3c3a',txt:'#80837c',label:'Off',      chip:'rgba(255,255,255,.03)',bd:'#262826'}
 };
-var CHANS=[], SCENES=[], curScene=0, curChan=0, chanLive=[], netDhcp=true, prevStatus=null, heapMax=0;
+var REFRESH=60, CHANS=[], SCENES=[], curScene=0, curChan=0, chanLive=[], netDhcp=true, prevStatus=null, heapMax=0;
 var DEVICES=[], peerData={}, activeDev=null, EMBED=/[?&]embed=/.test(location.search);
 var dirty=new Set(), langDirty=false;
 function el(id){ return document.getElementById(id); }
@@ -669,6 +670,7 @@ var FR={
   'FILE':'FICHIER','SIZE':'TAILLE','DURATION':'DURÉE','Upload':'Téléverser','PLAYER':'LECTEUR',
   'No .fseq file on the microSD card.':'Aucun fichier .fseq sur la carte microSD.',
   'Channel':'Canal','Active':'Actif','Failsafe':'Failsafe','Off':'Désactivé',
+  'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
   'LED / DMX PROTOCOL':'PROTOCOLE LED / DMX','Pixels':'Pixels','DMX slots':'Slots DMX','Color order':'Ordre des couleurs',
   'Art-Net address':'Adresse Art-Net','= absolute universe':'= univers absolu','DMX start address':'Adresse DMX de départ',
   'Max brightness':'Luminosité max','Pixel grouping':'Groupement de pixels','Gamma ×10':'Gamma ×10',
@@ -1065,7 +1067,8 @@ function selectChan(i){
   function v(id,val){ var e=el(id); if(e) e.value=val; }
   function k(id,val){ var e=el(id); if(e) e.checked=!!val; }
   v('cd-proto',c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
-  var pe=el('cd-pix'); if(pe){ pe.max=c.maxpx; pe.min=1; }
+  var pe=el('cd-pix'); if(pe){ pe.max=c.protoRaw==='DMX512'?512:1024; pe.min=1; }
+  updatePixWarn();
   v('cd-order',c.order); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
   v('cd-clk',snapClk(c.clk)); v('cd-gam',c.gam); v('cd-wb',c.wb);
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
@@ -1095,18 +1098,32 @@ function updateChanVis(){
   show('cd-row-order',!dmx); show('cd-row-bri',!dmx); show('cd-row-grp',!dmx);
   show('cd-row-inv',!dmx); show('cd-row-clk',clk); show('cd-row-gam',!dmx); show('cd-row-wb',!dmx);
   var lbl=el('cd-pixlabel'); if(lbl){ var cc=CHANS[curChan]; var mx=cc&&cc.maxpx?cc.maxpx:1024;
-    lbl.textContent=(dmx?t('DMX slots'):t('Pixels'))+' (max '+mx+')'; }
+    lbl.textContent=(dmx?t('DMX slots'):t('Pixels'))+' (max '+mx+' @ '+REFRESH+' Hz)'; }
+  updatePixWarn();
+}
+// The stored count is kept above the budget (a lower rate brings it back);
+// say how much of it the current rate actually drives.
+function updatePixWarn(){
+  var w=el('cd-pixwarn'), c=CHANS[curChan]; if(!w||!c) return;
+  var over=c.protoRaw!=='Off' && c.pixels>c.maxpx;
+  w.style.display=over?'block':'none';
+  if(over) w.textContent=t('Only {n} driven at {hz} Hz — lower the frame rate to drive them all').replace('{n}',c.maxpx).replace('{hz}',REFRESH);
+}
+function pxLabel(c){
+  if(c.protoRaw==='Off') return 'Off';
+  var n=c.pixels>c.maxpx?(c.pixels+'→'+c.maxpx):String(c.pixels);
+  return n+(c.protoRaw==='DMX512'?' sl':' px');
 }
 function readChanEditor(){
   var c=CHANS[curChan]; if(!c) return;
   function nv(id){ var e=el(id); return e?parseInt(e.value,10)||0:0; }
   c.protoRaw=el('cd-proto').value; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
   c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx');
-  c.pixels=Math.max(1,Math.min(nv('cd-pix'),c.maxpx||1024));
+  c.pixels=Math.max(1,Math.min(nv('cd-pix'),c.protoRaw==='DMX512'?512:1024));
   c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
   c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
-  c.px=c.protoRaw==='Off'?'Off':(c.protoRaw==='DMX512'?c.pixels+' sl':c.pixels+' px');
+  c.px=pxLabel(c); updatePixWarn();
   c.uni=c.protoRaw==='Off'?'—':'U'+c.universe;
 }
 
@@ -1370,7 +1387,7 @@ function buildChan(c,i){
   var off=c.protocol==='Off', dmx=c.protocol==='DMX512';
   return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
     order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,
-    state:'off',px:off?'Off':(dmx?c.pixel_count+' sl':c.pixel_count+' px'),uni:off?'—':'U'+c.universe_start,
+    state:'off',px:pxLabel({protoRaw:c.protocol,pixels:c.pixel_count,maxpx:c.max_pixels||1024}),uni:off?'—':'U'+c.universe_start,
     dot:ST.off.dot,txt:ST.off.txt,label:ST.off.label,chip:ST.off.chip,bd:ST.off.bd};
 }
 function setDhcpUI(){
@@ -1388,6 +1405,7 @@ function reloadConfig(){
     if(el('n-ip')) el('n-ip').value=g.ip; if(el('n-mask')) el('n-mask').value=g.mask; if(el('n-gw')) el('n-gw').value=g.gw;
     if(el('n-host')) el('n-host').value=g.short_name||''; if(el('n-long')) el('n-long').value=g.long_name||'';
     setLive('node-name',g.short_name||'pixfrog');
+    REFRESH=g.refresh_hz||60;
     setLive('refresh',(g.refresh_hz||0)+' Hz');
     setLive('fps-max','/ '+(g.refresh_hz||0)+' Hz');
     if(el('a-net')) el('a-net').value=g.net; if(el('a-subnet')) el('a-subnet').value=g.subnet;
@@ -1431,7 +1449,7 @@ function buildGlobalBody(){
   var b={};
   if(dirty.has('network')){ b.dhcp=netDhcp; if(!netDhcp){ b.ip=el('n-ip').value; b.mask=el('n-mask').value; b.gw=el('n-gw').value; } b.short_name=el('n-host').value; b.long_name=el('n-long').value; }
   if(dirty.has('artnet')){ b.net=parseInt(el('a-net').value,10)||0; b.subnet=parseInt(el('a-subnet').value,10)||0; b.sacn_enabled=el('a-sacn').checked; b.fpp_remote=el('a-fpp').checked; b.merge_mode=el('a-merge').checked?1:0; b.failsafe_mode=parseInt(el('a-fsmode').value,10)||0; b.failsafe_scene=parseInt(el('a-fsscene').value,10)||0; b.failsafe_timeout_s=parseInt(el('a-fsdelay').value,10)||0; }
-  if(dirty.has('sysgen')){ b.refresh_hz=parseInt(el('s-refresh').value,10)||60; b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; b.tft_brightness=parseInt(el('s-bright').value,10)||100; b.tft_idle_dim=parseInt(el('s-dim').value,10)||0; b.tft_dim_delay_s=parseInt(el('s-dimdelay').value,10)||0; }
+  if(dirty.has('sysgen')){ b.refresh_hz=Math.max(20,Math.min(120,parseInt(el('s-refresh').value,10)||60)); b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; b.tft_brightness=parseInt(el('s-bright').value,10)||100; b.tft_idle_dim=parseInt(el('s-dim').value,10)||0; b.tft_dim_delay_s=parseInt(el('s-dimdelay').value,10)||0; }
   if(dirty.has('sysauth')){ if(!el('s-auth').checked) b.web_password=''; else if(el('s-pwd').value) b.web_password=el('s-pwd').value; }
   if(dirty.has('syslang')){ b.lang=(LANG==='fr'?1:0); }
   return b;

@@ -272,7 +272,8 @@ int cmd_global(int argc, char** argv) {
     } else if (strcmp(key, "reply_unicast") == 0) {
         if (!parse_bool(val, g.artnet_poll_reply_unicast)) return err("reply_unicast: 0|1");
     } else if (strcmp(key, "refresh_hz") == 0) {
-        if (!parse_u32(val, u) || (u != 30 && u != 60)) return err("refresh_hz: 30|60");
+        if (!parse_u32_in(val, config::kMinRefreshHz, config::kMaxRefreshHz, u))
+            return err("refresh_hz: 20..120");
         g.refresh_rate_hz = static_cast<uint8_t>(u);
     } else if (strcmp(key, "home_timeout_s") == 0) {
         if (!parse_u32_in(val, 0, 65535, u)) return err("home_timeout_s: 0..65535");
@@ -337,7 +338,6 @@ int cmd_global(int argc, char** argv) {
     }
 
     const bool persisted = config::set_global(g);
-    dmx::clamp_pixel_counts();  // a higher refresh may shrink the pixel budget
     dmx::mark_global_dirty();
     if (!persisted) printf("warn=not_persisted\n");
     if (network_changed) printf("note=network_changes_apply_after_reboot\n");
@@ -443,7 +443,6 @@ int cmd_ch(int argc, char** argv) {
     }
 
     const bool persisted = config::set_channel(ch, c);
-    dmx::clamp_pixel_counts();  // truncate pixel_count to the protocol/refresh budget
     dmx::mark_channel_dirty(ch);
     if (!persisted) printf("warn=not_persisted\n");
     return ok();

@@ -32,7 +32,7 @@ GlobalConfig make_default_global() {
     std::strncpy(g.short_name, "pixfrog", kArtnetNameShortMax - 1);
     std::strncpy(g.long_name, "pixfrog LED controller", kArtnetNameLongMax - 1);
     g.artnet_poll_reply_unicast = false;
-    g.refresh_rate_hz           = 60;
+    g.refresh_rate_hz           = kDefaultRefreshHz;
     g.home_timeout_s            = 30;
     // Fresh installs dim the panel once idle — the ER-TFT2.79-1 backlight is
     // rated 30 000 h at its typical current. A config migrated from a
@@ -247,6 +247,11 @@ void init() {
             ESP_LOGI(TAG, "global config migrated (%u→%u bytes)",
                      static_cast<unsigned>(stored_size), static_cast<unsigned>(sizeof(g_global)));
         }
+    }
+
+    if (g_global.refresh_rate_hz < kMinRefreshHz || g_global.refresh_rate_hz > kMaxRefreshHz) {
+        g_global.refresh_rate_hz = kDefaultRefreshHz;
+        nvs_save_blob(h, kKeyGlobal, &g_global, sizeof(g_global));
     }
 
     char key[8];
