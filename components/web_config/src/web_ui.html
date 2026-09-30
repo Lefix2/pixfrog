@@ -49,6 +49,9 @@
   .sw input:disabled + span{opacity:.55}
   .sc-color:hover{border-color:#4a4c48!important;background:#161816!important}
   .pf-row{transition:border-color .15s}
+  [data-sc-delcol]:hover{color:#ec8480!important}
+  [data-sc-grip]:hover{color:#edeeea!important}
+  [data-sc-grip]:active{cursor:grabbing!important}
   .pf-row:hover{border-color:#4a4c48!important}
 </style>
 </head>
@@ -569,7 +572,7 @@ var PF_ICONS = {
   'upload-cloud':'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/>',
   'x':'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   'plus':'<path d="M5 12h14"/><path d="M12 5v14"/>',
-  'minus':'<path d="M5 12h14"/>',
+  'grip-vertical':'<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
   'check':'<path d="M20 6 9 17l-5-5"/>',
   'droplet':'<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
   'triangle-alert':'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
@@ -691,7 +694,7 @@ var FR={
   'Blobs':'Blobs','Gradient':'Dégradé','Fade':'Fondu','Twinkle':'Scintillement','Fire':'Feu','Scanner':'Scanner','Wave':'Vague','Stripes':'Rayures',
   'EFFECT':'EFFET','COLORS':'COULEURS','STROBE':'STROBOSCOPE','FLICKER':'VACILLEMENT','WIDTH':'LARGEUR','REPEATS':'RÉPÉTITIONS',
   'COUNT':'NOMBRE','DENSITY':'DENSITÉ','WAVES':'VAGUES','off':'arrêt','auto':'auto',
-  'Add a color':'Ajouter une couleur','Remove the last color':'Retirer la dernière couleur',
+  'Add a color':'Ajouter une couleur','Remove this color':'Retirer cette couleur','Drag to reorder':'Glisser pour réordonner',
   'Color 2 flashes at the strobe rate':'La couleur 2 flashe au rythme du stroboscope',
   'Empty scene — click to name':'Scène vide — cliquer pour nommer','COLOR':'COULEUR','SPEED':'VITESSE','TARGET CHANNELS':'CANAUX CIBLÉS',
   'Factory reset':'Réinitialisation usine',
@@ -804,8 +807,47 @@ function speedText(sc){ if(sc.effectIdx===0) return sc.speed?(sc.speed*60/255).t
 function paramText(sc){ return sc.param?String(sc.param):t('auto'); }
 function swatchBg(cols){ return cols.length>1?'linear-gradient(135deg,'+cols.join(',')+')':cols[0]; }
 function sceneColorChip(sc,k){
-  var c=sc.colors[k];
-  return '<div data-scene-color="'+sc.n+'" data-k="'+k+'" class="sc-color" style="display:flex;align-items:center;gap:7px;background:#0d0e0d;border:1px solid #222321;border-radius:0;padding:6px 9px;cursor:pointer;transition:border-color .12s,background .12s"><span data-role="sw" style="width:16px;height:16px;border-radius:0;background:'+c+';flex:none;border:1px solid rgba(255,255,255,.1)"></span><span data-role="hex" style="font:500 12px \'DM Mono\';color:#a9aca4">'+c+'</span></div>';
+  var c=sc.colors[k], many=sc.colors.length>1;
+  return '<div data-scene-color="'+sc.n+'" data-k="'+k+'" class="sc-color" style="display:flex;align-items:center;gap:6px;background:#0d0e0d;border:1px solid #222321;border-radius:0;padding:6px 7px;cursor:pointer;transition:border-color .12s,background .12s">'
+    +(many?'<span data-sc-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:#5c5f59;cursor:grab;touch-action:none;margin:-6px 0 -6px -3px;padding:6px 0 6px 3px"><i data-lucide="grip-vertical" class="ic14"></i></span>':'')
+    +'<span data-role="sw" style="width:16px;height:16px;border-radius:0;background:'+c+';flex:none;border:1px solid rgba(255,255,255,.1)"></span><span data-role="hex" style="font:500 12px \'DM Mono\';color:#a9aca4">'+c+'</span>'
+    +(many?'<span data-sc-delcol="'+sc.n+'" data-k="'+k+'" title="'+esc(t('Remove this color'))+'" style="display:flex;color:#6f726c;cursor:pointer;margin:-6px -4px -6px 0;padding:6px 4px"><i data-lucide="x" class="ic14"></i></span>':'')
+    +'</div>';
+}
+// Pointer-driven so it also works on touch screens (HTML5 drag-and-drop does not).
+var scDrag=null;
+function scDragStart(e){
+  var g=e.target.closest('[data-sc-grip]'); if(!g) return;
+  e.preventDefault();
+  var chipEl=g.closest('[data-scene-color]');
+  scDrag={n:+chipEl.getAttribute('data-scene-color'),from:+chipEl.getAttribute('data-k'),to:-1,moved:false};
+  chipEl.style.opacity='.45';
+  document.addEventListener('pointermove',scDragMove);
+  document.addEventListener('pointerup',scDragEnd);
+  document.addEventListener('pointercancel',scDragEnd);
+}
+function scDragMove(e){
+  if(!scDrag) return;
+  var card=document.querySelector('[data-scene-card="'+scDrag.n+'"]'); if(!card) return;
+  var best=-1, bestD=Infinity;
+  card.querySelectorAll('[data-scene-color]').forEach(function(ch){
+    var r=ch.getBoundingClientRect(), dx=e.clientX-(r.left+r.width/2), dy=e.clientY-(r.top+r.height/2), d=dx*dx+dy*dy;
+    if(d<bestD){ bestD=d; best=+ch.getAttribute('data-k'); }
+  });
+  scDrag.to=best; scDrag.moved=true;
+  card.querySelectorAll('[data-scene-color]').forEach(function(ch){
+    var k=+ch.getAttribute('data-k');
+    ch.style.borderColor=(k===best&&k!==scDrag.from)?'#3fd463':'';
+  });
+}
+function scDragEnd(){
+  document.removeEventListener('pointermove',scDragMove);
+  document.removeEventListener('pointerup',scDragEnd);
+  document.removeEventListener('pointercancel',scDragEnd);
+  var d=scDrag; scDrag=null; if(!d) return;
+  var sc=SCENES[d.n-1];
+  if(sc && d.to>=0 && d.to!==d.from){ sc.colors.splice(d.to,0,sc.colors.splice(d.from,1)[0]); markDirty('scene'+(d.n-1)); }
+  renderScene(d.n);
 }
 function sqBtn(attr,icon,title){ return '<button '+attr+' title="'+esc(t(title))+'" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid #363835;color:#a9aca4;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0"><i data-lucide="'+icon+'" class="ic14"></i></button>'; }
 function slider(kind,sc,label,max,val,txt){
@@ -820,7 +862,6 @@ function sceneCardHTML(sc){
   if(!fx.nocol){
     var chips=''; for(var k=0;k<sc.colors.length;k++) chips+=sceneColorChip(sc,k);
     if(sc.colors.length<MAX_COLORS) chips+=sqBtn('data-sc-addcol="'+sc.n+'"','plus','Add a color');
-    if(sc.colors.length>1) chips+=sqBtn('data-sc-delcol="'+sc.n+'"','minus','Remove the last color');
     colsHtml='<div><div style="font:500 10px \'DM Mono\';letter-spacing:.1em;color:#80837c;margin-bottom:6px">'+t('COLORS')+'</div><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'+chips+'</div>'
       +(sc.effectIdx===0?'<div style="font:500 11px \'DM Mono\';color:#6f726c;margin-top:6px">'+t('Color 2 flashes at the strobe rate')+'</div>':'')+'</div>';
   }
@@ -1459,9 +1500,11 @@ function fseqUpload(){
 /* ─────────── click & input delegation ─────────── */
 function onClick(e){
   var act=e.target.closest('[data-action]'); if(act){ doAction(act.getAttribute('data-action')); return; }
+  if(e.target.closest('[data-sc-grip]')) return;
+  var sdel=e.target.closest('[data-sc-delcol]'); if(sdel){ var nd=+sdel.getAttribute('data-sc-delcol'), sd=SCENES[nd-1]; if(sd.colors.length>1){ sd.colors.splice(+sdel.getAttribute('data-k'),1); markDirty('scene'+(nd-1)); renderScene(nd); } return; }
   var scol=e.target.closest('[data-scene-color]'); if(scol){ openPicker(+scol.getAttribute('data-scene-color'), +scol.getAttribute('data-k'), scol); return; }
   var sadd=e.target.closest('[data-sc-addcol]'); if(sadd){ var na=+sadd.getAttribute('data-sc-addcol'), sa=SCENES[na-1]; if(sa.colors.length<MAX_COLORS){ sa.colors.push(sa.colors[sa.colors.length-1]); markDirty('scene'+(na-1)); renderScene(na); } return; }
-  var sdel=e.target.closest('[data-sc-delcol]'); if(sdel){ var nd=+sdel.getAttribute('data-sc-delcol'), sd=SCENES[nd-1]; if(sd.colors.length>1){ sd.colors.pop(); markDirty('scene'+(nd-1)); renderScene(nd); } return; }
+
   var dh=e.target.closest('[data-dhcp]'); if(dh){ netDhcp=(+dh.getAttribute('data-dhcp'))===1; setDhcpUI(); markDirty('network'); return; }
   var sch=e.target.closest('[data-sc-ch]'); if(sch){ var n2=+sch.getAttribute('data-scn'),b=+sch.getAttribute('data-sc-ch'); SCENES[n2-1].mask^=(1<<b); markDirty('scene'+(n2-1)); renderScene(n2); return; }
   var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1; api('POST','/api/scene/'+n3+'/play',{}).then(function(){ toast(t('Playing scene ')+(n3+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
@@ -1498,6 +1541,7 @@ function init(){
   initSparks(); raf=requestAnimationFrame(loop);
   var app=document.getElementById('pf-app');
   app.addEventListener('click',onClick);
+  app.addEventListener('pointerdown',scDragStart);
   app.addEventListener('input',onInput);
   app.addEventListener('change',onInput);
   el('ota-file').addEventListener('change',otaUpload);
