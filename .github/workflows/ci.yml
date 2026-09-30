@@ -97,6 +97,9 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: build/coverage/coverage.lcov
+          # Only our report: the action's own gcov search would re-add system
+          # headers and the test sources.
+          disable_search: true
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
 
