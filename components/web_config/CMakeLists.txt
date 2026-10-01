@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/web_config.cpp"
+    SRCS "src/web_config.cpp" "src/web_util.cpp" "src/api_show.cpp" "src/api_config.cpp" "src/api_status.cpp" "src/web_push.cpp" "src/api_system.cpp" "src/api_fseq.cpp" "src/web_mdns.cpp"
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
         esp_http_server
