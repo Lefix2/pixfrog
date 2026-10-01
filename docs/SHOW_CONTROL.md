@@ -31,6 +31,12 @@ so a strip can still be found during a blackout.
 
 ## Scene zones and crossfades
 
+The eleven effects, each over six seconds on a 144-pixel line (x along the
+line, time going down), rendered by the firmware's own `fill_scene_pattern`
+(`tools/effects_gallery/gallery.py`):
+
+![The eleven scene effects as space-time strips](img/effects/effects-gallery.png)
+
 Each output plays its own scene or the live input. Starting a scene claims the
 outputs of its channel mask (limited to a requested group, if one is given) and
 leaves the others alone. Two scenes with masks 1–4 and 5–8 therefore run side by
@@ -50,6 +56,8 @@ Every change of source crossfades over the scene fade time (`scene_fade_ms`,
 The fade is global, and the desk's Fade channel overrides it.
 
 ## DMX control universe
+
+![The DMX control editor in the web UI: preset, slots and their outputs](img/web-control.png)
 
 A fixture mode you compose yourself. It starts at an address in a universe
 (Art-Net port-address, or the same sACN universe), and each slot below takes
