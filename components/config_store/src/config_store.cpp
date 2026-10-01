@@ -21,11 +21,13 @@ GlobalConfig g_global{};
 ChannelConfig g_channels[kNumChannels]{};
 SceneBank g_bank{};
 ControlConfig g_control{};
+FseqPlaylist g_playlist{};
 bool g_nvs_ok = false;
 
 constexpr const char* kKeyScenes   = "scenes";
 constexpr const char* kKeyRollback = "rollback";
 constexpr const char* kKeyControl  = "control";
+constexpr const char* kKeyPlaylist = "playlist";
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
@@ -194,8 +196,9 @@ bool nvs_hard_reset() {
 }
 
 void fill_ram_defaults() {
-    g_control = default_control();
-    g_global  = make_default_global();
+    g_control  = default_control();
+    g_playlist = FseqPlaylist{};
+    g_global   = make_default_global();
     for (size_t i = 0; i < kNumChannels; ++i)
         g_channels[i] = make_default_channel(i);
     fill_default_scenes();
@@ -295,6 +298,11 @@ void init() {
     }
     sanitize_control(g_control);
     if (g_global.scene_fade_ms > kMaxSceneFadeMs) g_global.scene_fade_ms = kMaxSceneFadeMs;
+
+    // FSEQ playlist: absent before it existed — empty, nothing autostarts.
+    if (!nvs_load_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist)))
+        g_playlist = FseqPlaylist{};
+    sanitize_playlist(g_playlist);
 
     nvs_commit(h);
     nvs_close(h);
@@ -488,6 +496,7 @@ void reset_to_defaults() {
     }
     save_scenes(h);
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
+    nvs_save_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist));
     nvs_commit(h);
     nvs_close(h);
 }
@@ -503,6 +512,22 @@ bool set_control(const ControlConfig& cfg) {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
+}
+
+const FseqPlaylist& get_playlist() {
+    return g_playlist;
+}
+
+bool set_playlist(const FseqPlaylist& p) {
+    g_playlist = p;
+    sanitize_playlist(g_playlist);
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_save_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist));
     nvs_commit(h);
     nvs_close(h);
     return true;

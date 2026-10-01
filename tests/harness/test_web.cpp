@@ -81,7 +81,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 29);
+    EXPECT_EQ(shim::http_routes(), 31);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -680,6 +680,60 @@ TEST(fseq_upload_rejects_before_touching_the_card) {
 
 // play takes the same names upload writes: nothing that leaves the mount root,
 // nothing truncated into another file's name; a fragmented body still parses.
+TEST(fseq_playlist_round_trips_and_validates) {
+    EXPECT_EQ(post("/api/fseq/playlist",
+                   "{\"loop\":true,\"autostart\":true,\"items\":[{\"name\":\"intro.fseq\","
+                   "\"repeat\":2},{\"name\":\"show.fseq\"}]}")
+                  .status,
+              200);
+    const auto& p = config::get_playlist();
+    EXPECT_EQ(p.count, 2);
+    EXPECT_EQ(p.loop, 1);
+    EXPECT_EQ(p.autostart, 1);
+    EXPECT_STREQ(p.items[0].name, "intro.fseq");
+    EXPECT_EQ(p.items[0].repeat, 2);
+    EXPECT_EQ(p.items[1].repeat, 1);  // default
+    Json g(get("/api/fseq/playlist").body);
+    EXPECT_EQ(cJSON_GetArraySize(g["items"]), 2);
+    EXPECT_TRUE(cJSON_IsTrue(g["loop"]));
+    // Partial update: the list stays.
+    EXPECT_EQ(post("/api/fseq/playlist", "{\"autostart\":false}").status, 200);
+    EXPECT_EQ(config::get_playlist().count, 2);
+    EXPECT_EQ(config::get_playlist().autostart, 0);
+    // Refused bodies change nothing.
+    for (const char* bad : { "{\"loop\":1}", "{\"autostart\":\"yes\"}", "{\"items\":{}}",
+                             "{\"items\":[{\"name\":\"../x.fseq\"}]}", "{\"items\":[{\"name\":7}]}",
+                             "{\"items\":[{\"name\":\"a.fseq\",\"repeat\":0}]}", "[1]", "nope" })
+        EXPECT_EQ(post("/api/fseq/playlist", bad).status, 400);
+    std::string many = "{\"items\":[";
+    for (int i = 0; i < 17; ++i)
+        many += std::string(i ? "," : "") + "{\"name\":\"f" + std::to_string(i) + ".fseq\"}";
+    EXPECT_EQ(post("/api/fseq/playlist", many + "]}").status, 400);
+    EXPECT_EQ(config::get_playlist().count, 2);
+    // Play it, or a file in a loop.
+    const int starts = ::fake::modules().playlist_starts;
+    EXPECT_EQ(post("/api/fseq/play", "{\"playlist\":true}").status, 200);
+    EXPECT_EQ(::fake::modules().playlist_starts, starts + 1);
+    EXPECT_EQ(post("/api/fseq/play", "{\"filename\":\"show.fseq\",\"loop\":true}").status, 200);
+    EXPECT_TRUE(::fake::modules().fseq_loop);
+    EXPECT_EQ(post("/api/fseq/play", "{\"filename\":\"show.fseq\",\"loop\":\"y\"}").status, 400);
+    Json st(get("/api/status").body);
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(st["fseq"], "loop")));
+    // In the backup, and restored all or nothing.
+    const std::string backup = get("/api/backup").body;
+    EXPECT_TRUE(backup.find("\"playlist\"") != std::string::npos);
+    config::set_playlist(config::FseqPlaylist{});
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    EXPECT_EQ(config::get_playlist().count, 2);
+    std::string bad = backup;
+    bad.replace(bad.find("intro.fseq"), 10, "../x.fseq!");
+    config::set_playlist(config::FseqPlaylist{});
+    EXPECT_EQ(post("/api/restore", bad).status, 200);
+    EXPECT_EQ(config::get_playlist().count, 0);
+    EXPECT_EQ(post("/api/fseq/play", "{\"playlist\":true}").status, 409);  // empty
+    ::fake::modules().fseq_loop = false;
+}
+
 TEST(fseq_play_refuses_names_outside_the_card_root) {
     for (const char* bad :
          { "../etc/x.fseq", "dir/x.fseq", "..\\\\x.fseq", ".hidden.fseq", "show.txt", "" }) {

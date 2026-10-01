@@ -37,7 +37,22 @@ size_t list_files(char names[][kMaxNameLen], size_t max);
 // Start playing filename (null-terminated, 8.3 FAT name or short path).
 // Stops any currently playing file first.
 // Returns false if no SD card is present, or the file cannot be opened/parsed.
-bool start(const char* filename);
+// With `loop`, the file starts over at its end until stop().
+bool start(const char* filename, bool loop = false);
+
+// Play the stored playlist (config::get_playlist()) from its first item:
+// each item `repeat` times, then the next; after the last, from the top again
+// when the playlist loops, else stop. A file that fails to play is skipped
+// (a list of nothing but broken files stops with the error). Returns false
+// with no card or an empty playlist. A playlist set to autostart is played by
+// the first card mount after boot.
+bool start_playlist();
+
+// True while a file or a playlist plays in a loop.
+bool looping();
+
+// Index of the playlist item playing, -1 when no playlist plays.
+int playlist_index();
 
 // Stop playback.
 void stop();

@@ -30,6 +30,7 @@
 
 #include <dirent.h>
 
+#include "config_store.h"
 #include "dmx_manager.h"
 #include "fseq_format.h"
 
@@ -70,6 +71,15 @@ char g_error[80]                = {};
 std::atomic<bool> g_run{ false };
 TaskHandle_t g_task_handle = nullptr;
 
+// What happens when a file ends. Written by start*() before the task exists,
+// then read by the task only.
+enum class Mode : uint8_t { Once, Loop, Playlist };
+Mode g_mode = Mode::Once;
+config::FseqPlaylist g_list{};      // snapshot of the playlist being played
+std::atomic<int> g_list_idx{ -1 };  // item playing, -1 when not a playlist
+uint8_t g_repeat_left = 0;          // further plays of the current item
+bool g_autostart_done = false;      // the boot autostart is tried once
+
 // Seek/position channel between the API and the playback task.
 // g_seek_frame: target frame requested by seek_ms(), -1 when none pending.
 std::atomic<int64_t> g_seek_frame{ -1 };
@@ -107,6 +117,11 @@ static bool do_mount() {
     if (err != ESP_OK) return false;
     g_sd_state.store(SdState::Mounted, std::memory_order_release);
     ESP_LOGI(TAG, "SD card mounted at %s", kMntPath);
+    // The first mount since boot plays the playlist when it is set to.
+    if (!g_autostart_done) {
+        g_autostart_done = true;
+        if (config::get_playlist().autostart) start_playlist();
+    }
     return true;
 }
 
@@ -212,19 +227,20 @@ struct TaskArg {
     Buffers bufs;
 };
 
-void playback_task(void* arg_ptr) {
-    TaskArg* arg = static_cast<TaskArg*>(arg_ptr);
-    Buffers& buf = arg->bufs;
+enum class FileResult : uint8_t { Ended, Stopped, Failed };
 
+// Plays one file to its last frame, or until stop(). On Failed, g_status and
+// g_error say why.
+FileResult play_file(const char* filename, Buffers& buf) {
     char path[kMaxNameLen + 16];
-    snprintf(path, sizeof(path), "%s/%s", kMntPath, arg->filename);
+    snprintf(path, sizeof(path), "%s/%s", kMntPath, filename);
 
     FILE* fp = fopen(path, "rb");
     if (!fp) {
-        snprintf(g_error, sizeof(g_error), "Cannot open %s", arg->filename);
+        snprintf(g_error, sizeof(g_error), "Cannot open %s", filename);
         ESP_LOGE(TAG, "%s", g_error);
         g_status = Status::Error;
-        goto done;
+        return FileResult::Failed;
     }
 
     {
@@ -234,7 +250,7 @@ void playback_task(void* arg_ptr) {
             snprintf(g_error, sizeof(g_error), "Short read: header");
             g_status = Status::Error;
             fclose(fp);
-            goto done;
+            return FileResult::Failed;
         }
 
         Header hdr;
@@ -242,7 +258,7 @@ void playback_task(void* arg_ptr) {
             snprintf(g_error, sizeof(g_error), "Bad FSEQ header");
             g_status = Status::Error;
             fclose(fp);
-            goto done;
+            return FileResult::Failed;
         }
 
         const uint32_t frame_bytes = (hdr.channel_count > kMaxFrameBytes)
@@ -253,7 +269,7 @@ void playback_task(void* arg_ptr) {
             snprintf(g_error, sizeof(g_error), "Empty FSEQ file");
             g_status = Status::Error;
             fclose(fp);
-            goto done;
+            return FileResult::Failed;
         }
 
         // ── Read comp-block table ─────────────────────────────────────────
@@ -267,7 +283,7 @@ void playback_task(void* arg_ptr) {
                 snprintf(g_error, sizeof(g_error), "Short read: comp table");
                 g_status = Status::Error;
                 fclose(fp);
-                goto done;
+                return FileResult::Failed;
             }
         }
 
@@ -280,7 +296,7 @@ void playback_task(void* arg_ptr) {
                 snprintf(g_error, sizeof(g_error), "Short read: sparse table");
                 g_status = Status::Error;
                 fclose(fp);
-                goto done;
+                return FileResult::Failed;
             }
         }
 
@@ -288,7 +304,7 @@ void playback_task(void* arg_ptr) {
             snprintf(g_error, sizeof(g_error), "lz4 compression not supported");
             g_status = Status::Error;
             fclose(fp);
-            goto done;
+            return FileResult::Failed;
         }
 
         // ── Playback loop ─────────────────────────────────────────────────
@@ -416,8 +432,59 @@ void playback_task(void* arg_ptr) {
 
         fclose(fp);
     }
+    return g_run.load(std::memory_order_acquire) ? FileResult::Ended : FileResult::Stopped;
+}
 
-done:
+// After a file: the name of the next one to play, false when done.
+bool next_item(char* name) {
+    switch (g_mode) {
+    case Mode::Once: return false;
+    case Mode::Loop: return true;  // the same file again
+    case Mode::Playlist:
+        if (g_repeat_left > 0) {
+            --g_repeat_left;
+            return true;
+        }
+        {
+            int idx = g_list_idx.load(std::memory_order_relaxed) + 1;
+            if (idx >= g_list.count) {
+                if (!g_list.loop) return false;
+                idx = 0;
+            }
+            g_list_idx.store(idx, std::memory_order_relaxed);
+            g_repeat_left = static_cast<uint8_t>(g_list.items[idx].repeat - 1);
+            strncpy(name, g_list.items[idx].name, kMaxNameLen - 1);
+            name[kMaxNameLen - 1] = '\0';
+        }
+        return true;
+    }
+    return false;
+}
+
+void playback_task(void* arg_ptr) {
+    TaskArg* arg = static_cast<TaskArg*>(arg_ptr);
+    Buffers& buf = arg->bufs;
+    char name[kMaxNameLen];
+    strncpy(name, arg->filename, sizeof(name));
+
+    size_t failures = 0;  // in a row
+    for (;;) {
+        strncpy(g_active_file, name, kMaxNameLen - 1);
+        g_active_file[kMaxNameLen - 1] = '\0';
+        const FileResult r             = play_file(name, buf);
+        if (r == FileResult::Stopped || !g_run.load(std::memory_order_acquire)) break;
+        if (r == FileResult::Failed) {
+            // A playlist skips a broken item (and its repeats); a list made of
+            // nothing but broken items stops instead of spinning.
+            if (g_mode != Mode::Playlist || ++failures >= g_list.count) break;
+            g_repeat_left = 0;
+        } else {
+            failures = 0;
+        }
+        if (!next_item(name)) break;
+        g_status = Status::Playing;
+    }
+
     heap_caps_free(buf.frame);
     heap_caps_free(buf.comp);
     heap_caps_free(buf.decomp);
@@ -428,6 +495,7 @@ done:
     g_frame_count.store(0, std::memory_order_release);
     g_cur_frame.store(0, std::memory_order_release);
     g_seek_frame.store(-1, std::memory_order_release);
+    g_list_idx.store(-1, std::memory_order_relaxed);
     if (g_status == Status::Playing) {
         g_status         = Status::Idle;
         g_active_file[0] = '\0';
@@ -485,16 +553,9 @@ size_t list_files(char names[][kMaxNameLen], size_t max) {
     return count;
 }
 
-bool start(const char* filename) {
-    if (!filename || !filename[0]) return false;
-    if (g_sd_state.load(std::memory_order_acquire) != SdState::Mounted) {
-        snprintf(g_error, sizeof(g_error), "No SD card");
-        g_status = Status::Error;
-        return false;
-    }
-
-    stop();  // stop any running playback first
-
+namespace {
+// Starts the playback task on `filename` with the mode already chosen.
+bool launch(const char* filename) {
     // Allocate PSRAM buffers for the new playback session.
     Buffers bufs;
     bufs.frame  = static_cast<uint8_t*>(heap_caps_malloc(kMaxFrameBytes, MALLOC_CAP_SPIRAM));
@@ -546,6 +607,50 @@ bool start(const char* filename) {
     }
     ESP_LOGI(TAG, "playing %s", filename);
     return true;
+}
+
+bool card_ready() {
+    if (g_sd_state.load(std::memory_order_acquire) == SdState::Mounted) return true;
+    snprintf(g_error, sizeof(g_error), "No SD card");
+    g_status = Status::Error;
+    return false;
+}
+}  // namespace
+
+bool start(const char* filename, bool loop) {
+    if (!filename || !filename[0]) return false;
+    if (!card_ready()) return false;
+    stop();  // stop any running playback first
+    g_mode = loop ? Mode::Loop : Mode::Once;
+    g_list_idx.store(-1, std::memory_order_relaxed);
+    return launch(filename);
+}
+
+bool start_playlist() {
+    if (!card_ready()) return false;
+    const config::FseqPlaylist& pl = config::get_playlist();
+    if (pl.count == 0) {
+        snprintf(g_error, sizeof(g_error), "Empty playlist");
+        g_status = Status::Error;
+        return false;
+    }
+    stop();
+    g_list        = pl;
+    g_mode        = Mode::Playlist;
+    g_repeat_left = static_cast<uint8_t>(g_list.items[0].repeat - 1);
+    g_list_idx.store(0, std::memory_order_relaxed);
+    if (launch(g_list.items[0].name)) return true;
+    g_list_idx.store(-1, std::memory_order_relaxed);
+    return false;
+}
+
+bool looping() {
+    return g_run.load(std::memory_order_acquire) &&
+           (g_mode == Mode::Loop || (g_mode == Mode::Playlist && g_list.loop));
+}
+
+int playlist_index() {
+    return g_list_idx.load(std::memory_order_relaxed);
 }
 
 void stop() {

@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 #include "config_store.h"
@@ -117,6 +118,9 @@ void map_universes() {
     dmx::handle_pending_remaps();
 }
 
+std::string g_autostarted;  // what the boot mount started
+int g_autostart_index = -2;
+
 void setup() {
     static bool once = false;
     if (!once) {
@@ -128,8 +132,21 @@ void setup() {
         config::init();
         dmx::init();
         map_universes();
+        // Boot with an autostart playlist: the first mount must start it.
+        write_file("boot.fseq", cat(header(12, 3), frames_data(12, 3)));
+        config::FseqPlaylist pl{};
+        pl.count     = 1;
+        pl.autostart = 1;
+        std::strcpy(pl.items[0].name, "boot.fseq");
+        config::set_playlist(pl);
         fseq::InitConfig cfg{};
         fseq::init(cfg);
+        g_autostarted     = fseq::active_file() ? fseq::active_file() : "";
+        g_autostart_index = fseq::playlist_index();
+        fseq::stop();
+        shim::run_task("fseq_play");
+        config::set_playlist(config::FseqPlaylist{});
+        unlink((g_dir + "/boot.fseq").c_str());
         once = true;
     }
     shim::faults_clear();
@@ -385,6 +402,121 @@ TEST(monitor_serves_desk_requests_and_hot_plug) {
     dmx::mark_global_dirty();
     dmx::handle_pending_remaps();
     dmx::update_show_control();
+}
+
+// ── Loop, playlist, autostart ───────────────────────────────────────────────
+
+namespace {
+// First universe-1 byte per frame (= 10 × frame number of its file + 0).
+std::vector<int> g_frames;
+std::vector<int> g_items;  // playlist_index() per frame
+size_t g_stop_after = 0;   // frames before an fseq::stop(), 0 = never
+bool g_stopping     = false;
+void capture_frame() {
+    if (g_stopping) return;  // stop()'s own waits land here too
+    dmx::swap_universes();
+    g_frames.push_back(dmx::universe_front_buffer_for(1)[0]);
+    g_items.push_back(fseq::playlist_index());
+    if (g_stop_after && g_frames.size() == g_stop_after) {
+        // As another task would: the playback loop then exits on its own and
+        // frees its buffers (a budget cut would abandon them).
+        g_stopping = true;
+        fseq::stop();
+    }
+}
+// Plays until the file/playlist ends, or `stop_after` frames then stop().
+std::vector<int> play_for(size_t stop_after) {
+    g_frames.clear();
+    g_items.clear();
+    g_stop_after = stop_after;
+    g_stopping   = false;
+    shim::run_task_for("fseq_play", 5000, capture_frame);
+    g_stop_after = 0;
+    g_stopping   = false;
+    return g_frames;
+}
+config::PlaylistItem item(const char* name, uint8_t repeat) {
+    config::PlaylistItem it{};
+    std::strncpy(it.name, name, sizeof(it.name) - 1);
+    it.repeat = repeat;
+    return it;
+}
+// Distinct files: every byte of frame n of `tag` = tag + n.
+void write_tagged(const char* name, uint8_t tag, uint32_t frames) {
+    Bytes d;
+    for (uint32_t f = 0; f < frames; ++f)
+        for (int c = 0; c < 12; ++c)
+            d.push_back(static_cast<uint8_t>(tag + f));
+    write_file(name, cat(header(12, frames), d));
+}
+}  // namespace
+
+TEST(autostart_plays_the_playlist_on_the_first_mount) {
+    EXPECT_TRUE(g_autostarted == "boot.fseq");
+    EXPECT_EQ(g_autostart_index, 0);
+}
+
+TEST(a_looping_file_starts_over_until_stopped) {
+    write_tagged("a.fseq", 100, 3);
+    EXPECT_TRUE(fseq::start("a.fseq", true));
+    EXPECT_TRUE(fseq::looping());
+    EXPECT_EQ(fseq::playlist_index(), -1);
+    EXPECT_TRUE(fseq::looping());
+    const std::vector<int> f = play_for(7);
+    EXPECT_TRUE((f == std::vector<int>{ 100, 101, 102, 100, 101, 102, 100 }));
+    EXPECT_FALSE(fseq::looping());
+}
+
+TEST(a_playlist_plays_each_item_its_repeats_then_stops) {
+    write_tagged("a.fseq", 100, 2);
+    write_tagged("b.fseq", 200, 3);
+    config::FseqPlaylist pl{};
+    pl.count    = 3;
+    pl.items[0] = item("a.fseq", 2);
+    pl.items[1] = item("missing.fseq", 1);  // gone from the card: skipped
+    pl.items[2] = item("b.fseq", 1);
+    config::set_playlist(pl);
+    EXPECT_TRUE(fseq::start_playlist());
+    EXPECT_FALSE(fseq::looping());
+    const std::vector<int> f = play_for(0);  // runs out on its own
+    EXPECT_TRUE((f == std::vector<int>{ 100, 101, 100, 101, 200, 201, 202 }));
+    EXPECT_TRUE(!g_items.empty() && g_items.front() == 0 && g_items.back() == 2);
+    EXPECT_TRUE(fseq::status() == fseq::Status::Idle);  // ran out: stopped
+    EXPECT_EQ(fseq::playlist_index(), -1);
+    EXPECT_TRUE(fseq::active_file() == nullptr);
+}
+
+TEST(a_looping_playlist_starts_over_after_its_last_item) {
+    write_tagged("a.fseq", 100, 2);
+    write_tagged("b.fseq", 200, 1);
+    config::FseqPlaylist pl{};
+    pl.count    = 2;
+    pl.loop     = 1;
+    pl.items[0] = item("a.fseq", 1);
+    pl.items[1] = item("b.fseq", 1);
+    config::set_playlist(pl);
+    EXPECT_TRUE(fseq::start_playlist());
+    EXPECT_TRUE(fseq::looping());
+    const std::vector<int> f = play_for(7);
+    EXPECT_TRUE((f == std::vector<int>{ 100, 101, 200, 100, 101, 200, 100 }));
+}
+
+TEST(a_playlist_of_broken_files_stops_with_the_error) {
+    config::FseqPlaylist pl{};
+    pl.count    = 2;
+    pl.loop     = 1;  // would spin forever without the guard
+    pl.items[0] = item("gone1.fseq", 3);
+    pl.items[1] = item("gone2.fseq", 1);
+    config::set_playlist(pl);
+    EXPECT_TRUE(fseq::start_playlist());
+    play_for(0);
+    EXPECT_TRUE(fseq::status() == fseq::Status::Error);
+    // gone1's repeats were skipped, not retried: gone2 was the last attempt.
+    EXPECT_TRUE(std::strstr(fseq::error_string(), "gone2") != nullptr);
+    // Nothing to play, no card: refused up front.
+    config::set_playlist(config::FseqPlaylist{});
+    EXPECT_FALSE(fseq::start_playlist());
+    EXPECT_TRUE(std::strstr(fseq::error_string(), "Empty") != nullptr);
 }
 
 // ── FPP MultiSync ───────────────────────────────────────────────────────────

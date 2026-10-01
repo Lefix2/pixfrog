@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "config_store.h"
 #include "fpp_sync.h"
 #include "fseq_fake.h"
 #include "fseq_player.h"
@@ -72,9 +73,20 @@ bool is_link_up() {
 }
 }  // namespace ui
 namespace fseq {
-bool start(const char* filename) {
+bool start(const char* filename, bool loop) {
     ::fake::modules().fseq_started = filename;
+    ::fake::modules().fseq_loop    = loop;
     return std::strcmp(filename, "missing.fseq") != 0;
+}
+bool start_playlist() {
+    ++::fake::modules().playlist_starts;
+    return config::get_playlist().count > 0;
+}
+bool looping() {
+    return ::fake::modules().fseq_loop;
+}
+int playlist_index() {
+    return ::fake::modules().playlist_starts ? 0 : -1;
 }
 void stop() {
     ::fake::modules().fseq_stopped = true;

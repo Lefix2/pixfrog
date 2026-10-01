@@ -28,12 +28,24 @@ size_t list_files(char names[][kMaxNameLen], size_t max) {
     return n;
 }
 
-bool start(const char* filename) {
+bool start(const char* filename, bool /*loop*/) {
     if (!filename || !filename[0]) return false;
     strncpy(g_active, filename, kMaxNameLen - 1);
     g_active[kMaxNameLen - 1] = '\0';
     g_status                  = Status::Playing;
     return true;
+}
+
+bool start_playlist() {
+    return false;  // no SD card in the emulator
+}
+
+bool looping() {
+    return false;
+}
+
+int playlist_index() {
+    return -1;
 }
 
 void stop() {

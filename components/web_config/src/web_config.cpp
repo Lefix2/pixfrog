@@ -328,6 +328,8 @@ static esp_err_t handle_root(httpd_req_t* req) {
 // {"enabled":true,"universe":100,"address":1,"footprint":6,
 //  "slots":[{"fn":"master","mask":255,"index":0,"fine":true}, ...]}
 
+static cJSON* build_playlist_json();
+
 static cJSON* build_control_json() {
     const auto& c = config::get_control();
     cJSON* jc     = cJSON_CreateObject();
@@ -888,6 +890,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
     cJSON_AddItemToObject(root, "control", build_control_json());
+    cJSON_AddItemToObject(root, "playlist", build_playlist_json());
     return send_json(req, root);
 }
 
@@ -927,6 +930,8 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
     cJSON_AddBoolToObject(jf, "sd", fseq::sd_state() == fseq::SdState::Mounted);
     cJSON_AddNumberToObject(jf, "position_ms", fseq::position_ms());
     cJSON_AddNumberToObject(jf, "duration_ms", fseq::duration_ms());
+    cJSON_AddBoolToObject(jf, "loop", fseq::looping());
+    cJSON_AddNumberToObject(jf, "playlist_index", fseq::playlist_index());
     cJSON_AddItemToObject(root, "fseq", jf);
 
     cJSON* jchs = cJSON_CreateArray();
@@ -1106,6 +1111,68 @@ static esp_err_t handle_coredump_delete(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// ── FSEQ playlist JSON (GET/POST /api/fseq/playlist, config, backup) ───────
+
+static const char* fseq_name_error(const char* name);
+
+static cJSON* build_playlist_json() {
+    const config::FseqPlaylist& p = config::get_playlist();
+    cJSON* root                   = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "loop", p.loop);
+    cJSON_AddBoolToObject(root, "autostart", p.autostart);
+    cJSON* items = cJSON_AddArrayToObject(root, "items");
+    for (size_t i = 0; i < p.count; ++i) {
+        cJSON* it = cJSON_CreateObject();
+        cJSON_AddStringToObject(it, "name", p.items[i].name);
+        cJSON_AddNumberToObject(it, "repeat", p.items[i].repeat);
+        cJSON_AddItemToArray(items, it);
+    }
+    return root;
+}
+
+// Applies `j` onto `p` (fields absent keep their value; `items` replaces the
+// whole list). False with *why on the first invalid field, `p` then partial.
+static bool apply_playlist_json(const cJSON* j, config::FseqPlaylist& p, const char** why) {
+    const cJSON* it = cJSON_GetObjectItemCaseSensitive(j, "loop");
+    if (it) {
+        if (!cJSON_IsBool(it)) return *why = "loop: true|false", false;
+        p.loop = cJSON_IsTrue(it) ? 1 : 0;
+    }
+    it = cJSON_GetObjectItemCaseSensitive(j, "autostart");
+    if (it) {
+        if (!cJSON_IsBool(it)) return *why = "autostart: true|false", false;
+        p.autostart = cJSON_IsTrue(it) ? 1 : 0;
+    }
+    const cJSON* items = cJSON_GetObjectItemCaseSensitive(j, "items");
+    if (!items) return true;
+    if (!cJSON_IsArray(items)) return *why = "items: array", false;
+    if (cJSON_GetArraySize(items) > static_cast<int>(config::kPlaylistMax))
+        return *why = "items: 16 at most", false;
+    config::FseqPlaylist out = p;
+    out.count                = 0;
+    for (const cJSON* e = items->child; e; e = e->next) {
+        const cJSON* name = cJSON_GetObjectItemCaseSensitive(e, "name");
+        if (!cJSON_IsString(name) || !name->valuestring)
+            return *why = "items[].name: string", false;
+        if (const char* bad = fseq_name_error(name->valuestring)) return *why = bad, false;
+        uint8_t repeat   = 1;
+        const cJSON* rep = cJSON_GetObjectItemCaseSensitive(e, "repeat");
+        if (rep) {
+            if (!cJSON_IsNumber(rep) || !(rep->valuedouble >= 1 && rep->valuedouble <= 255))
+                return *why = "items[].repeat: 1..255", false;
+            repeat = static_cast<uint8_t>(rep->valuedouble);
+        }
+        config::PlaylistItem& dst = out.items[out.count++];
+        dst                       = config::PlaylistItem{};
+        std::strncpy(dst.name, name->valuestring, sizeof(dst.name) - 1);
+        dst.repeat = repeat;
+    }
+    for (size_t i = out.count; i < config::kPlaylistMax; ++i)
+        out.items[i] = config::PlaylistItem{};
+    p = out;
+    return true;
+}
+
 // ── GET /api/backup + POST /api/restore ─────────────────────────────────────
 // Backup = the persisted configuration only (no live status, no password
 // hash). Restore applies best-effort: unknown or invalid fields are skipped
@@ -1119,6 +1186,7 @@ static esp_err_t handle_backup(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "channels", build_channels_json());
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "control", build_control_json());
+    cJSON_AddItemToObject(root, "playlist", build_playlist_json());
     httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-config.json\"");
     return send_json(req, root);
 }
@@ -1333,6 +1401,13 @@ static esp_err_t handle_restore(httpd_req_t* req) {
         config::ControlConfig c = config::get_control();
         const char* why         = nullptr;
         if (apply_control_json(jctl, c, &why)) config::set_control(c);
+    }
+    // Playlist: likewise all or nothing.
+    cJSON* jpl = cJSON_GetObjectItemCaseSensitive(j, "playlist");
+    if (cJSON_IsObject(jpl)) {
+        config::FseqPlaylist p = config::get_playlist();
+        const char* why        = nullptr;
+        if (apply_playlist_json(jpl, p, &why)) config::set_playlist(p);
     }
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
     if (cJSON_IsArray(jchs)) {
@@ -1880,7 +1955,19 @@ static esp_err_t handle_fseq_play(httpd_req_t* req) {
         return send_err(req, 400, "body too large or empty");
     cJSON* root = cJSON_Parse(body);
     if (!root) return send_err(req, 400, "Invalid JSON");
-    cJSON* fn = cJSON_GetObjectItemCaseSensitive(root, "filename");
+    // {"playlist":true} plays the stored playlist instead of one file.
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "playlist"))) {
+        cJSON_Delete(root);
+        if (!fseq::start_playlist()) return send_err(req, 409, fseq::error_string());
+        return send_ok(req);
+    }
+    const cJSON* jloop = cJSON_GetObjectItemCaseSensitive(root, "loop");
+    if (jloop && !cJSON_IsBool(jloop)) {
+        cJSON_Delete(root);
+        return send_err(req, 400, "loop: true|false");
+    }
+    const bool loop = cJSON_IsTrue(jloop);
+    cJSON* fn       = cJSON_GetObjectItemCaseSensitive(root, "filename");
     if (!cJSON_IsString(fn) || !fn->valuestring) {
         cJSON_Delete(root);
         return send_err(req, 400, "missing filename");
@@ -1894,8 +1981,31 @@ static esp_err_t handle_fseq_play(httpd_req_t* req) {
     strncpy(filename, fn->valuestring, sizeof(filename) - 1);
     filename[sizeof(filename) - 1] = '\0';
     cJSON_Delete(root);
-    if (!fseq::start(filename)) return send_err(req, 500, fseq::error_string());
+    if (!fseq::start(filename, loop)) return send_err(req, 500, fseq::error_string());
     return send_ok(req);
+}
+
+// ── GET|POST /api/fseq/playlist ──────────────────────────────────────────────
+// POST takes {loop?, autostart?, items?:[{name, repeat?}]}; items replaces the
+// list. The playing playlist keeps its snapshot until restarted.
+
+static esp_err_t handle_get_playlist(httpd_req_t* req) {
+    return send_json(req, build_playlist_json());
+}
+
+static esp_err_t handle_post_playlist(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    static char buf[4096];  // 16 items × (64-byte name + JSON) — off the httpd stack
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+    config::FseqPlaylist p = config::get_playlist();
+    const char* why        = nullptr;
+    const bool ok          = cJSON_IsObject(j) && apply_playlist_json(j, p, &why);
+    cJSON_Delete(j);
+    if (!ok) return send_err(req, 400, why ? why : "expected an object");
+    config::set_playlist(p);
+    return send_json(req, build_playlist_json());
 }
 
 // ── POST /api/fseq/stop ──────────────────────────────────────────────────────
@@ -2169,7 +2279,7 @@ void start() {
     init_log_capture();  // ensure capture is on even if app_main didn't call it
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 32;
+    cfg.max_uri_handlers = 40;  // 31 routes today
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -2246,6 +2356,14 @@ void start() {
         { .uri      = "/api/fseq/files",
           .method   = HTTP_GET,
           .handler  = handle_fseq_files,
+          .user_ctx = nullptr },
+        { .uri      = "/api/fseq/playlist",
+          .method   = HTTP_GET,
+          .handler  = handle_get_playlist,
+          .user_ctx = nullptr },
+        { .uri      = "/api/fseq/playlist",
+          .method   = HTTP_POST,
+          .handler  = handle_post_playlist,
           .user_ctx = nullptr },
         { .uri      = "/api/fseq/play",
           .method   = HTTP_POST,
