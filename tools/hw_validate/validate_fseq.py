@@ -16,6 +16,9 @@ from pixfrog_uart import (BOARD_IP, Board, Checks, http, main_guard,
 TEST_FILE = "hwtest.fseq"
 
 
+SHORT_FILE = "hwshort.fseq"
+
+
 def make_fseq(frames=800, channels=12, step_ms=25):
     """Minimal valid FSEQ v2, uncompressed, no sparse ranges."""
     hdr = struct.pack(
@@ -104,12 +107,27 @@ def run(board: Board):
     p = position(board)
     c.check("ArtTimeCode seeks to ~5 s", 4900 <= p <= 6000)
 
-    udp_send(artnet_timecode(13, 5, 0, 0), 6454, repeat=3)  # +520 ms: inside tolerance
-    time.sleep(0.5)
-    drift_ref = position(board)
-    udp_send(artnet_timecode(0, 5, 0, 0), 6454, repeat=1)
-    time.sleep(0.3)
-    c.check("small drift does not re-seek (tolerance)", position(board) >= drift_ref - 200)
+    # Tolerance (100 ms): a timecode where the show already is must not seek;
+    # one 3 s off must. Counted on the device's own log lines, not inferred
+    # from positions (UART round trips are as long as the tolerance).
+    def seeks():
+        _, logs = http("/api/logs")
+        return logs.count("ArtTimeCode: seek")
+
+    def tc_at(ms):
+        ms = int(ms)
+        return artnet_timecode((ms % 1000) // 40, ms // 1000 % 60, ms // 60000 % 60, 0)
+
+    before = seeks()
+    t0 = time.time()
+    p = position(board)
+    now_ms = p + (time.time() - t0) * 1000 / 2  # the read took a round trip
+    udp_send(tc_at(now_ms + (time.time() - t0) * 1000 / 2 + 20), 6454, repeat=1)
+    time.sleep(0.4)
+    c.check("timecode within tolerance does not seek", seeks() == before)
+    udp_send(tc_at(position(board) + 3000), 6454, repeat=1)
+    time.sleep(0.4)
+    c.check("timecode 3 s off seeks", seeks() == before + 1)
 
     # ── FPP MultiSync ───────────────────────────────────────────────────────
     board.cmd("fseq stop")
@@ -137,6 +155,32 @@ def run(board: Board):
     c.check("FPP sync hot-joins a running show", board.get("fseq", "active") == TEST_FILE)
     p = position(board)
     c.check("hot-join position is ~8 s", 7800 <= p <= 9500)
+
+    # ── Loop + playlist (a 1 s file) ────────────────────────────────────────
+    board.cmd("fseq stop")
+    board.cmd("global fpp_remote 0")
+    with open("/tmp/hwshort.fseq", "wb") as f:
+        f.write(make_fseq(frames=40))  # 1 s
+    code, _ = http(f"/api/fseq/upload?name={SHORT_FILE}", "--data-binary", "@/tmp/hwshort.fseq")
+    c.check("short file uploaded", code == 200)
+    board.cmd(f"fseq play {SHORT_FILE} loop")
+    time.sleep(2.5)
+    c.check("a looping file is still playing past its end",
+            board.get("fseq", "status") == "playing")
+    board.cmd("fseq stop")
+    board.cmd("fseq playlist clear")
+    board.cmd(f"fseq playlist add {SHORT_FILE} 2")
+    board.cmd(f"fseq playlist add {TEST_FILE}")
+    board.cmd("fseq playlist loop off")
+    board.cmd("fseq playlist play")
+    time.sleep(0.5)
+    _, st = http("/api/status")
+    c.check("playlist starts on item 1", '"playlist_index":0' in st)
+    time.sleep(2.3)  # past the two 1 s plays
+    _, st = http("/api/status")
+    c.check("playlist moves on after the repeats", '"playlist_index":1' in st and TEST_FILE in st)
+    board.cmd("fseq stop")
+    board.cmd("fseq playlist clear")
 
     # ── Restore ─────────────────────────────────────────────────────────────
     board.cmd("fseq stop")

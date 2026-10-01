@@ -111,12 +111,21 @@ The FSEQ player reads `.fseq` shows from a microSD card on the SDMMC 4-bit bus:
 
 | Signal | GPIO | Signal | GPIO |
 |--------|-----:|--------|-----:|
-| CLK    | 39   | D0     | 41   |
-| CMD    | 40   | D1     | 42   |
-|        |      | D2     | 43   |
-|        |      | D3     | 44   |
+| CLK    | 43   | D0     | 39   |
+| CMD    | 44   | D1     | 40   |
+|        |      | D2     | 41   |
+|        |      | D3     | 42   |
 
-None of these GPIOs appear in the LED bus, SPI display, I2C, Ethernet or UART pin lists.
+The data lines do not follow the GPIO order (DEV-KIT schematic, *MicroSD Card*
+block, slot SD1). None of these GPIOs appear in the LED bus, SPI display, I2C,
+Ethernet or UART pin lists.
+
+**Card supply — GPIO 45.** The card's VDD comes from LDO VO4 through P-MOSFET
+Q1 (AO3401) whose gate is GPIO 45, pulled down by 10 kΩ: **the card is powered
+only while GPIO 45 is LOW**. `fseq::init` drives it low (`kSdPowerGpio`) and
+waits 10 ms before the first mount. GPIO 45 must carry nothing else — it used
+to be the TFT backlight, and a lit screen switched the card off (the mount then
+fails with `send_op_cond … 0x107`, visible with `loglevel debug`).
 
 ### 2.6 Pad power domains (VDD_IO_5 LDO)
 
@@ -212,9 +221,11 @@ the original GPIO 9-13 mapping, which reused the on-board ES8311 codec's I2S
 pins — those are **not** exposed on the connector/shield. All five chosen GPIOs
 are free, 3.3 V-direct and non-strapping; every signal routes through the GPIO
 matrix, so the assignment is arbitrary among the free pins. J13 also exposes
-GPIO 36 (a boot strapping pin — must read HIGH at reset) and GPIO 45 (VDD_IO_5 /
-LDO-VO4 domain), used as the backlight control pin (§5.1). There is no MISO —
-the panel is write-only.
+GPIO 36, used as the backlight control pin (§5.1), and GPIO 45, which is
+*not* free: it switches the microSD supply (§2.5). GPIO 36 is a boot strapping
+pin, harmless here — the boot mode follows GPIO 35 (the BOOT button, pulled
+high); GPIO 36 only matters with BOOT held, for the download modes. There is no
+MISO — the panel is write-only.
 
 SPI host: `SPI2_HOST`, **20 MHz** (`kDisplaySpiFreqHz`). 40 MHz is rejected by
 the P4 SPI driver (`invalid sclk speed` — the default clock source can't derive
@@ -225,17 +236,19 @@ every pixel value before writing to the DMA buffer.
 
 The encoder wiring (§4) is unchanged whichever panel is fitted.
 
-### 5.1 Backlight — GPIO 45, LEDC PWM
+### 5.1 Backlight — GPIO 36, LEDC PWM
 
 ```
-Panel LEDA ───► GPIO 45          LEDK ───► GND
+Panel LEDA ───► GPIO 36          LEDK ───► GND
 ```
+
+(It was on GPIO 45 until the microSD was brought up: GPIO 45 gates the card
+supply, §2.5. Move the BL wire to J13's GPIO 36 with this firmware.)
 
 The ER-TFT2.79-1 (NV3007 variant) brings out the **bare LED string**: 5 chips in
 parallel, **Vf ≈ 3.0 V, If typ 75 mA / max 100 mA** (datasheet §4.4). The pad
-sources that current directly, out of the **VDD_IO_5 domain fed by internal LDO
-VO4** — the same domain as the SDMMC pads (GPIO 39-44, §2.5). Three consequences
-the firmware is built around:
+sources that current directly. Three consequences the firmware is built
+around:
 
 - **Full brightness = 100 % duty**, i.e. the pad statically high, exactly how the
   pre-dimming firmware drove it. Dimming can only ever *lower* the average

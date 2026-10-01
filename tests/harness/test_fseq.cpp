@@ -140,6 +140,7 @@ void setup() {
         std::strcpy(pl.items[0].name, "boot.fseq");
         config::set_playlist(pl);
         fseq::InitConfig cfg{};
+        cfg.power_gpio = 45;  // the DEV-KIT's card supply switch
         fseq::init(cfg);
         g_autostarted     = fseq::active_file() ? fseq::active_file() : "";
         g_autostart_index = fseq::playlist_index();
@@ -453,6 +454,11 @@ void write_tagged(const char* name, uint8_t tag, uint32_t frames) {
 }
 }  // namespace
 
+TEST(the_card_supply_is_switched_on_before_the_mount) {
+    EXPECT_EQ(shim::gpio_level(45), 0u);  // active low: powered
+    EXPECT_TRUE(fseq::sd_state() == fseq::SdState::Mounted);
+}
+
 TEST(autostart_plays_the_playlist_on_the_first_mount) {
     EXPECT_TRUE(g_autostarted == "boot.fseq");
     EXPECT_EQ(g_autostart_index, 0);
@@ -577,6 +583,46 @@ TEST(fpp_start_sync_and_stop_drive_the_player) {
     shim::net_push(kFpp, fpp_sync(fpp::parser::kSyncStop, "", 0));
     pump_fpp();
     EXPECT_TRUE(fseq::status() != fseq::Status::Playing);
+}
+
+// The remote is turned off while the task waits in recvfrom; a START that
+// lands then must not play anything (lwIP's shutdown() does not wake a UDP
+// recvfrom, so the task used to read it and start the file).
+TEST(a_start_arriving_after_disable_is_ignored) {
+    shim::net_reset();
+    shim::tasks_forget();
+    fseq::stop();
+    shim::net_on_idle(kFpp, [] {
+        static bool once = false;
+        if (once) return;
+        once = true;
+        fpp::stop();  // disabled from another task, mid-wait…
+        shim::net_push(kFpp, fpp_sync(fpp::parser::kSyncStart, "lin.fseq", 0));  // …then a START
+    });
+    fpp::start();
+    EXPECT_TRUE(fpp::is_running());
+    shim::run_task("fpp_sync");
+    EXPECT_FALSE(shim::task_created("fseq_play"));  // nothing was started
+    EXPECT_FALSE(fpp::is_running());
+}
+
+// Off then on again before the task noticed: the same task keeps serving
+// (start() used to see the old task alive and return — remote silently off).
+TEST(re_enabling_before_the_task_leaves_keeps_it_serving) {
+    shim::net_reset();
+    shim::tasks_forget();
+    fseq::stop();
+    fpp::start();
+    fpp::stop();
+    fpp::start();  // as a console toggling it back on
+    EXPECT_TRUE(fpp::is_running());
+    shim::net_push(kFpp, fpp_sync(fpp::parser::kSyncStart, "lin.fseq", 0));
+    shim::net_on_idle(kFpp, [] { fpp::stop(); });
+    shim::run_task("fpp_sync");
+    EXPECT_STREQ(fseq::active_file(), "lin.fseq");  // served by the original task
+    EXPECT_FALSE(fpp::is_running());
+    fseq::stop();
+    shim::run_task("fseq_play");
 }
 
 TEST(fpp_socket_bind_and_join_failures) {

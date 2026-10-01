@@ -31,7 +31,7 @@ int gpio_calls() {
     return g_gpio_calls;
 }
 unsigned gpio_level(int pin) {
-    return g_levels.count(pin) ? g_levels[pin] : 0;
+    return g_levels.count(pin) ? g_levels[pin] : 2;  // 2 = never driven
 }
 }  // namespace shim
 

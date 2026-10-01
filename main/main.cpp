@@ -419,12 +419,13 @@ extern "C" void app_main() {
 
     {
         pixfrog::fseq::InitConfig sd_cfg;
-        sd_cfg.clk_gpio = pixfrog::board::kSdmmcClkGpio;
-        sd_cfg.cmd_gpio = pixfrog::board::kSdmmcCmdGpio;
-        sd_cfg.d0_gpio  = pixfrog::board::kSdmmcD0Gpio;
-        sd_cfg.d1_gpio  = pixfrog::board::kSdmmcD1Gpio;
-        sd_cfg.d2_gpio  = pixfrog::board::kSdmmcD2Gpio;
-        sd_cfg.d3_gpio  = pixfrog::board::kSdmmcD3Gpio;
+        sd_cfg.clk_gpio   = pixfrog::board::kSdmmcClkGpio;
+        sd_cfg.cmd_gpio   = pixfrog::board::kSdmmcCmdGpio;
+        sd_cfg.d0_gpio    = pixfrog::board::kSdmmcD0Gpio;
+        sd_cfg.d1_gpio    = pixfrog::board::kSdmmcD1Gpio;
+        sd_cfg.d2_gpio    = pixfrog::board::kSdmmcD2Gpio;
+        sd_cfg.d3_gpio    = pixfrog::board::kSdmmcD3Gpio;
+        sd_cfg.power_gpio = pixfrog::board::kSdPowerGpio;
         pixfrog::fseq::init(sd_cfg);
     }
 

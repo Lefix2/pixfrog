@@ -77,7 +77,7 @@ Flash a variant from its own directory, e.g. `idf.py -B build.oled -p /dev/ttyAC
 mounted upside down in the 1U rack).
 
 TFT SPI GPIOs live in `boards/esp32_p4_devkit.h` — CLK=0, MOSI=6, CS=20, DC=21,
-RST=27 on the shield's J13 header, backlight on GPIO 45, SPI2 at 20 MHz. See
+RST=27 on the shield's J13 header, backlight on GPIO 36, SPI2 at 20 MHz. See
 [docs/HARDWARE.md §5](docs/HARDWARE.md).
 
 ## Host unit tests

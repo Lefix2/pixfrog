@@ -20,6 +20,7 @@
 #include <cstring>
 #include <strings.h>
 
+#include "driver/gpio.h"
 #include "driver/sdmmc_host.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -512,6 +513,16 @@ bool init(const InitConfig& cfg) {
     if (g_init_done) return true;
     g_init_cfg  = cfg;
     g_init_done = true;
+
+    // Card supply (active low): on before the first mount, and let it settle —
+    // an SD card needs ~1 ms after VDD before it answers CMD0.
+    if (cfg.power_gpio >= 0) {
+        const auto pin = static_cast<gpio_num_t>(cfg.power_gpio);
+        gpio_reset_pin(pin);
+        gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+        gpio_set_level(pin, 0);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 
     // Try an immediate mount; the monitor task will retry every second if absent.
     // The driver's per-attempt errors when no card is present are demoted to

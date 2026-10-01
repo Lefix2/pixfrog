@@ -140,9 +140,11 @@ ssize_t shim_recvfrom(int fd, void* buf, size_t len, int, sockaddr* from, sockle
     if (it == g_socks.end()) return -1;
     auto& q = g_queues[it->second.port];
     if (q.empty()) {
+        // The idle hook stands for what happens while the call blocks: a
+        // datagram it queues is what the blocked recvfrom then returns.
         auto idle = g_idle.find(it->second.port);
         if (idle != g_idle.end() && idle->second) idle->second();
-        return -1;
+        if (q.empty()) return -1;
     }
     const auto d = q.front();
     q.pop_front();

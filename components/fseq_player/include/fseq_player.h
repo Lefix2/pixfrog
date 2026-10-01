@@ -19,6 +19,9 @@ struct InitConfig {
     int d1_gpio;
     int d2_gpio;
     int d3_gpio;
+    // Card supply switch, driven LOW (on) before the first mount; -1 = the
+    // card is always powered.
+    int power_gpio = -1;
 };
 
 // SD-card presence state, updated by the background monitor task.
