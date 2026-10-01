@@ -10,10 +10,6 @@ belongs to that fork.
 
 ## Bugs & small fixes
 
-- [ ] **Encoder acceleration feels wrong** — the ×10/×100 multiplier
-      (`menu.cpp` `accel_note_rotation`) only resets after 350 ms without a
-      detent. Reset the streak on a direction reversal and give ×100 a shorter
-      timeout than ×10.
 - [ ] **Network silent after a USB-flash reset (seen once, 2026-09-30)** — link
       up + static IP but no ping/HTTP for about a minute; a UART reset fixed it.
       If it comes back, capture EMAC/PHY state and ARP from the PC before
@@ -24,12 +20,6 @@ belongs to that fork.
 The web password stays optional by design: pixfrog targets private show
 networks, and a lighting operator may run without one. Items here harden what
 a password protects once set; none of them may make it mandatory.
-
-- [ ] **Strengthen the password hash** — salted single-round SHA-256 is
-      brute-forceable offline if the NVS blob leaks (via a coredump). A few
-      thousand iterations cost nothing on the P4; re-hash on the next set.
-- [ ] **Document cleartext Basic auth** — one sentence in README/AGENT.md:
-      the password crosses the LAN in clear (no TLS).
 
 ## Show control & scenes
 

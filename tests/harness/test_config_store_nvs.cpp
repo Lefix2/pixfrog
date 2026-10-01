@@ -356,6 +356,55 @@ TEST(blobs_record_their_layout_version) {
     EXPECT_EQ(shim::nvs_raw("pixfrog", "v_ch2")[0], 1);  // rewritten by this firmware
 }
 
+namespace {
+std::string hex(const uint8_t* b, size_t n) {
+    static const char* d = "0123456789abcdef";
+    std::string out;
+    for (size_t i = 0; i < n; ++i) {
+        out += d[b[i] >> 4];
+        out += d[b[i] & 15];
+    }
+    return out;
+}
+}  // namespace
+
+TEST(pbkdf2_sha256_matches_the_published_vectors) {
+    uint8_t out[32];
+    const auto* pw   = reinterpret_cast<const uint8_t*>("password");
+    const auto* salt = reinterpret_cast<const uint8_t*>("salt");
+    pbkdf2_sha256(pw, 8, salt, 4, 1, out);
+    EXPECT_TRUE(hex(out, 32) == "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
+    pbkdf2_sha256(pw, 8, salt, 4, 4096, out);
+    EXPECT_TRUE(hex(out, 32) == "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a");
+}
+
+// A password set by an older firmware (single SHA-256) still logs in, and the
+// login upgrades it to the KDF.
+TEST(a_legacy_password_hash_is_upgraded_on_login) {
+    EXPECT_TRUE(set_web_password("régie"));
+    EXPECT_EQ(get_global().web_auth_kdf, kWebAuthPbkdf2);
+    EXPECT_TRUE(check_web_password("régie"));
+    EXPECT_FALSE(check_web_password("regie"));
+    auto g         = get_global();
+    const char* pw = "lumière";
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts(&ctx, 0);
+    mbedtls_sha256_update(&ctx, g.web_auth_salt, 8);
+    mbedtls_sha256_update(&ctx, reinterpret_cast<const unsigned char*>(pw), std::strlen(pw));
+    mbedtls_sha256_finish(&ctx, g.web_auth_hash);
+    mbedtls_sha256_free(&ctx);
+    g.web_auth_kdf = kWebAuthSha256;  // as stored before the KDF
+    set_global(g);
+    EXPECT_FALSE(check_web_password("lumiere"));
+    EXPECT_EQ(get_global().web_auth_kdf, kWebAuthSha256);  // a wrong one upgrades nothing
+    EXPECT_TRUE(check_web_password(pw));
+    EXPECT_EQ(get_global().web_auth_kdf, kWebAuthPbkdf2);  // re-hashed
+    EXPECT_TRUE(check_web_password(pw));
+    EXPECT_TRUE(set_web_password(""));
+    EXPECT_FALSE(web_password_set());
+}
+
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv);
 }

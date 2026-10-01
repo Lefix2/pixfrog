@@ -9,6 +9,7 @@
 
 #include "config_store.h"
 #include "harness.h"
+#include "menu_accel.h"
 #include "menu_fake.h"
 #include "shim_control.h"
 #include "ui.h"
@@ -697,6 +698,33 @@ TEST(the_ui_dims_when_idle_and_the_first_input_only_wakes_it) {
     config::set_global(g);
 }
 #endif
+
+// ── Rotation acceleration (menu_accel.h) ────────────────────────────────────
+
+TEST(rotation_accelerates_then_a_reversal_or_a_pause_steps_back) {
+    ui::detail::RotationAccel a;
+    uint32_t t = 1000;
+    int32_t m  = 0;
+    for (int i = 0; i < 9; ++i, t += 50)
+        m = a.note(t, true);
+    EXPECT_EQ(m, 1);
+    EXPECT_EQ(a.note(t += 50, true), 10);  // 10th detent in a row
+    for (int i = 0; i < 25; ++i)
+        m = a.note(t += 50, true);
+    EXPECT_EQ(m, 10);
+    EXPECT_EQ(a.note(t += 50, true), 100);  // 36th
+    // A reversal is a correction: fine steps back over the overshoot.
+    EXPECT_EQ(a.note(t += 50, false), 1);
+    // ×100 needs close detents: a 200 ms hesitation drops to ×10, not ×1…
+    for (int i = 0; i < 40; ++i)
+        m = a.note(t += 50, false);
+    EXPECT_EQ(m, 100);
+    EXPECT_EQ(a.note(t += 200, false), 10);
+    // …and a real pause (> 350 ms) to ×1.
+    EXPECT_EQ(a.note(t += 400, false), 1);
+    a.reset();
+    EXPECT_EQ(a.note(t += 10, false), 1);  // a reset forgets the streak
+}
 
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv, setup);

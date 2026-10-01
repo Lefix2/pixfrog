@@ -295,8 +295,11 @@ Read by HOME, the UART console (`stats`) and `/api/config`.
 - ArtNet *can* reconfigure the node (ArtAddress/ArtIpProg, per Art-Net 4) and
   trigger scenes (ArtTrigger) — standard desk-side behaviour.
 - Web mutations (config, OTA, reboot) sit behind optional HTTP Basic auth;
-  the password is stored as a salted SHA-256, never in clear, and the UART
-  console is the physical recovery channel.
+  the password is stored as a salted PBKDF2-HMAC-SHA256 (4096 rounds), never
+  in clear, and the UART console is the physical recovery channel. There is
+  no TLS: the password crosses the network in clear on every request — the
+  password keeps honest mistakes out of a private show network, it is not a
+  defence against someone sniffing it.
 - OTA uses A/B slots with BOOTLOADER_APP_ROLLBACK: a new image confirms
   itself only after 30 s of a live render loop (`ota_confirm_task`), so one
   that crashes or hangs early is reverted on the next reset; a power cut

@@ -449,15 +449,42 @@ bool set_channel(size_t i, const ChannelConfig& cfg) {
 
 namespace {
 
-void web_password_hash(const uint8_t salt[8], const char* password, uint8_t out[32]) {
+void sha256(const uint8_t* a, size_t alen, const uint8_t* b, size_t blen, uint8_t out[32]) {
     mbedtls_sha256_context ctx;
     mbedtls_sha256_init(&ctx);
     mbedtls_sha256_starts(&ctx, 0);  // SHA-256 (not 224)
-    mbedtls_sha256_update(&ctx, salt, 8);
-    mbedtls_sha256_update(&ctx, reinterpret_cast<const unsigned char*>(password),
-                          std::strlen(password));
+    mbedtls_sha256_update(&ctx, a, alen);
+    if (blen) mbedtls_sha256_update(&ctx, b, blen);
     mbedtls_sha256_finish(&ctx, out);
     mbedtls_sha256_free(&ctx);
+}
+
+// HMAC-SHA256 (RFC 2104) over the SHA-256 already in use — no extra mbedtls
+// module to enable.
+void hmac_sha256(const uint8_t* key, size_t key_len, const uint8_t* msg, size_t msg_len,
+                 uint8_t out[32]) {
+    uint8_t k[64] = {};
+    if (key_len > sizeof(k))
+        sha256(key, key_len, nullptr, 0, k);
+    else
+        std::memcpy(k, key, key_len);
+    uint8_t pad[64];
+    for (size_t i = 0; i < 64; ++i)
+        pad[i] = k[i] ^ 0x36;
+    uint8_t inner[32];
+    sha256(pad, sizeof(pad), msg, msg_len, inner);
+    for (size_t i = 0; i < 64; ++i)
+        pad[i] = k[i] ^ 0x5c;
+    sha256(pad, sizeof(pad), inner, sizeof(inner), out);
+}
+
+void legacy_hash(const uint8_t salt[8], const char* password, uint8_t out[32]) {
+    sha256(salt, 8, reinterpret_cast<const uint8_t*>(password), std::strlen(password), out);
+}
+
+void kdf_hash(const uint8_t salt[8], const char* password, uint8_t out[32]) {
+    pbkdf2_sha256(reinterpret_cast<const uint8_t*>(password), std::strlen(password), salt, 8,
+                  kWebAuthIterations, out);
 }
 
 bool hash_is_zero(const uint8_t hash[32]) {
@@ -469,6 +496,26 @@ bool hash_is_zero(const uint8_t hash[32]) {
 
 }  // namespace
 
+void pbkdf2_sha256(const uint8_t* password, size_t password_len, const uint8_t* salt,
+                   size_t salt_len, uint32_t iterations, uint8_t out[32]) {
+    // T1 = U1 ^ U2 ^ … ^ Uc, U1 = HMAC(P, S || INT(1)), Ui = HMAC(P, Ui-1).
+    uint8_t block[64 + 4];
+    const size_t sl = salt_len > 64 ? 64 : salt_len;
+    std::memcpy(block, salt, sl);
+    block[sl]     = 0;
+    block[sl + 1] = 0;
+    block[sl + 2] = 0;
+    block[sl + 3] = 1;
+    uint8_t u[32];
+    hmac_sha256(password, password_len, block, sl + 4, u);
+    std::memcpy(out, u, 32);
+    for (uint32_t i = 1; i < iterations; ++i) {
+        hmac_sha256(password, password_len, u, sizeof(u), u);
+        for (size_t k = 0; k < 32; ++k)
+            out[k] ^= u[k];
+    }
+}
+
 bool set_web_password(const char* password) {
     ScopedLock lock;
     if (password && std::strlen(password) > kMaxWebPasswordLen) return false;
@@ -476,9 +523,11 @@ bool set_web_password(const char* password) {
     if (!password || password[0] == '\0') {
         std::memset(g.web_auth_salt, 0, sizeof(g.web_auth_salt));
         std::memset(g.web_auth_hash, 0, sizeof(g.web_auth_hash));
+        g.web_auth_kdf = kWebAuthSha256;
     } else {
         esp_fill_random(g.web_auth_salt, sizeof(g.web_auth_salt));
-        web_password_hash(g.web_auth_salt, password, g.web_auth_hash);
+        kdf_hash(g.web_auth_salt, password, g.web_auth_hash);
+        g.web_auth_kdf = kWebAuthPbkdf2;
     }
     return set_global(g);
 }
@@ -489,14 +538,21 @@ bool web_password_set() {
 
 bool check_web_password(const char* password) {
     if (!web_password_set()) return true;  // auth disabled
-    if (!password) return false;
+    if (!password || std::strlen(password) > kMaxWebPasswordLen) return false;
+    const bool legacy = g_global.web_auth_kdf == kWebAuthSha256;
     uint8_t candidate[32];
-    web_password_hash(g_global.web_auth_salt, password, candidate);
+    if (legacy)
+        legacy_hash(g_global.web_auth_salt, password, candidate);
+    else
+        kdf_hash(g_global.web_auth_salt, password, candidate);
     // Constant-time compare: no early exit on mismatch.
     uint8_t diff = 0;
     for (int i = 0; i < 32; ++i)
         diff |= candidate[i] ^ g_global.web_auth_hash[i];
-    return diff == 0;
+    if (diff != 0) return false;
+    // Right password, weak hash (set by an older firmware): store the KDF one.
+    if (legacy) set_web_password(password);
+    return true;
 }
 
 size_t num_scenes() {

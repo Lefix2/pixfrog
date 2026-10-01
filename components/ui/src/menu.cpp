@@ -8,6 +8,7 @@
 //   Click on a "[Back]" entry = return one level.
 //   Idle timeout → HOME.
 
+#include "menu_accel.h"
 #include "ui_internal.h"
 
 #include <cstdio>
@@ -521,32 +522,17 @@ constexpr uint8_t kFseqMenuMaxFiles = 8;
 static char g_fseq_names[kFseqMenuMaxFiles][fseq::kMaxNameLen];
 static uint8_t g_fseq_file_count = 0;
 
-// ── Rotation acceleration ───────────────────────────────────────────────────
-// Sustained rotation escalates the per-detent step ×10 then ×100, whatever
-// the direction (the streak counts detents, not displacement). A short pause
-// drops back to ×1. Tuned for ~20 detents/s on a fast flick: ×10 after about
-// half a turn, ×100 after roughly two seconds of continuous spinning.
+// ── Rotation acceleration (menu_accel.h) ─────────────────────────────────────
 
-constexpr uint32_t kAccelResetMs    = 350;
-constexpr uint16_t kAccelTensAt     = 10;
-constexpr uint16_t kAccelHundredsAt = 36;
-
-uint32_t g_accel_last_ms = 0;
-uint16_t g_accel_streak  = 0;
+RotationAccel g_accel;
 
 void accel_reset() {
-    g_accel_streak = 0;
+    g_accel.reset();
 }
 
 // Call on every rotation detent; returns the step multiplier to apply.
-int32_t accel_note_rotation() {
-    const uint32_t now = now_ms();
-    if (now - g_accel_last_ms > kAccelResetMs) g_accel_streak = 0;
-    if (g_accel_streak < UINT16_MAX) g_accel_streak++;
-    g_accel_last_ms = now;
-    if (g_accel_streak >= kAccelHundredsAt) return 100;
-    if (g_accel_streak >= kAccelTensAt) return 10;
-    return 1;
+int32_t accel_note_rotation(Event e) {
+    return g_accel.note(now_ms(), e == Event::RotateRight);
 }
 
 // ── Alphabet for string editing ─────────────────────────────────────────────
@@ -2223,7 +2209,7 @@ void dispatch_edit_value(Event e) {
         }
         // Acceleration only makes sense for plain integers; enums/bools have
         // tiny ranges where a ×10 jump would just slam into the clamp.
-        const int32_t mult  = (s.edit.kind == ValueKind::Int) ? accel_note_rotation() : 1;
+        const int32_t mult  = (s.edit.kind == ValueKind::Int) ? accel_note_rotation(e) : 1;
         const int32_t step  = s.edit.step * mult;
         s.edit.current     += (e == Event::RotateRight) ? step : -step;
         if (s.edit.current < s.edit.min) s.edit.current = s.edit.min;
@@ -2547,7 +2533,7 @@ void commit_edit_ip() {
 void dispatch_edit_ip(Event e) {
     if (s.ip_edit.cursor < 4) {
         if (e == Event::RotateLeft || e == Event::RotateRight) {
-            const int32_t step  = accel_note_rotation();
+            const int32_t step  = accel_note_rotation(e);
             const int shift     = (3 - s.ip_edit.cursor) * 8;
             int32_t oct         = (s.ip_edit.value >> shift) & 0xFF;
             oct                += (e == Event::RotateRight) ? step : -step;
@@ -2673,7 +2659,7 @@ void commit_edit_uni() {
 void dispatch_edit_uni(Event e) {
     if (s.uni_edit.cursor < 3) {
         if (e == Event::RotateLeft || e == Event::RotateRight) {
-            const int32_t step   = accel_note_rotation();
+            const int32_t step   = accel_note_rotation(e);
             const uint8_t shift  = kUniShift[s.uni_edit.cursor];
             const int32_t max    = kUniMax[s.uni_edit.cursor];
             int32_t seg          = (s.uni_edit.value >> shift) & max;
