@@ -760,6 +760,7 @@ static cJSON* build_global_json() {
     const auto& g = config::get_global();
     cJSON* jg     = cJSON_CreateObject();
     cJSON_AddBoolToObject(jg, "dhcp", g.use_dhcp);
+    cJSON_AddStringToObject(jg, "ip_fallback", config::ip_fallback_id(g.ip_fallback));
 
     char ip[16], mask[16], gw[16];
     fmt_ip(ip, sizeof(ip), g.static_ip);
@@ -1218,6 +1219,9 @@ static void restore_global(cJSON* jg) {
     double v;
     bool bv;
     if (getb("dhcp", &bv)) g.use_dhcp = bv;
+    it = cJSON_GetObjectItemCaseSensitive(jg, "ip_fallback");
+    if (cJSON_IsString(it) && config::ip_fallback_from_id(it->valuestring) >= 0)
+        g.ip_fallback = static_cast<uint8_t>(config::ip_fallback_from_id(it->valuestring));
     getip("ip", &g.static_ip);
     getip("mask", &g.static_mask);
     getip("gw", &g.static_gateway);
@@ -1509,6 +1513,15 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
             return send_err(req, 400, "bad gw");
         }
         network_changed = true;
+    }
+    // Read when the fallback is taken: no reboot needed.
+    if ((s = get_str("ip_fallback"))) {
+        const int fb = config::ip_fallback_from_id(s);
+        if (fb < 0) {
+            cJSON_Delete(j);
+            return send_err(req, 400, "ip_fallback: linklocal|artnet");
+        }
+        g.ip_fallback = static_cast<uint8_t>(fb);
     }
     if (get_u32("net", 0, 127, u)) g.artnet_net = static_cast<uint8_t>(u);
     if (get_u32("subnet", 0, 15, u)) g.artnet_subnet = static_cast<uint8_t>(u);

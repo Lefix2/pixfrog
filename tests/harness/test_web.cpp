@@ -680,6 +680,20 @@ TEST(fseq_upload_rejects_before_touching_the_card) {
 
 // play takes the same names upload writes: nothing that leaves the mount root,
 // nothing truncated into another file's name; a fragmented body still parses.
+TEST(ip_fallback_is_set_shown_and_restored) {
+    EXPECT_EQ(post("/api/global", "{\"ip_fallback\":\"artnet\"}").status, 200);
+    EXPECT_EQ(config::get_global().ip_fallback, config::kIpFallbackArtnet);
+    Json c(get("/api/config").body);
+    EXPECT_STREQ(cJSON_GetObjectItemCaseSensitive(c["global"], "ip_fallback")->valuestring,
+                 "artnet");
+    EXPECT_EQ(post("/api/global", "{\"ip_fallback\":\"10.x\"}").status, 400);
+    const std::string backup = get("/api/backup").body;
+    EXPECT_EQ(post("/api/global", "{\"ip_fallback\":\"linklocal\"}").status, 200);
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    EXPECT_EQ(config::get_global().ip_fallback, config::kIpFallbackArtnet);
+    post("/api/global", "{\"ip_fallback\":\"linklocal\"}");
+}
+
 TEST(fseq_playlist_round_trips_and_validates) {
     EXPECT_EQ(post("/api/fseq/playlist",
                    "{\"loop\":true,\"autostart\":true,\"items\":[{\"name\":\"intro.fseq\","
