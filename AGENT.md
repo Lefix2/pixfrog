@@ -85,7 +85,9 @@ behind the optional password):
 - FSEQ: `GET /api/fseq/files`, `POST /api/fseq/play` (`{filename, loop?}` or
   `{playlist:true}`), `POST /api/fseq/stop|upload`, `GET|POST /api/fseq/playlist`
   (`{loop, autostart, items:[{name, repeat}]}`, 16 items, own NVS blob, in the backup)
-- system: `GET /api/status`, `GET /api/diag`, `GET /api/logs`, `POST /api/loglevel`,
+- system: `GET /api/status`, `GET /api/ws` (WebSocket: the status JSON at 1 Hz
+  as `{"type":"status",…}` text frames + a 5 Hz binary output preview — `'P'`,
+  output count, per output n + n RGB triplets, n ≤ 64), `GET /api/diag`, `GET /api/logs`, `POST /api/loglevel`,
   `GET|DELETE /api/coredump`, `POST /api/rollback/ack`, `POST /api/ota` (raw .bin body),
   `POST /api/reboot`, `POST /api/factory-reset`, `GET /api/peers`, `GET /` (SPA)
 

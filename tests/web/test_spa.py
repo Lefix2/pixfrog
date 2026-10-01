@@ -394,7 +394,8 @@ def test_fseq_play_a_file_in_a_loop(page, device):
 
 def test_status_arrives_over_the_websocket_and_polling_stands_down(page, device):
     frames = []
-    page.on("websocket", lambda ws: ws.on("framereceived", lambda f: frames.append(f)))
+    page.on("websocket", lambda ws: ws.on(
+        "framereceived", lambda f: frames.append(f) if isinstance(f, str) else None))
     page.reload()
     expect(page.locator("[data-screen-title]")).to_have_text("Dashboard")
     for _ in range(60):
@@ -407,3 +408,21 @@ def test_status_arrives_over_the_websocket_and_polling_stands_down(page, device)
     page.on("request", lambda r: polls.append(r.url) if r.url.endswith("/api/status") else None)
     page.wait_for_timeout(3500)
     assert len(polls) <= 1, f"polling kept going while pushes arrive: {polls}"
+
+
+@pytest.mark.device_args("--demo")
+def test_dashboard_tiles_draw_the_pushed_output_preview(page, device):
+    # --demo plays Rainbow on outputs 5-6 and renders it: their tiles' strips
+    # fill with colour; output 8 is Off and has no strip.
+    lit = page.locator('canvas[data-preview="4"]')
+    for _ in range(50):
+        if lit.evaluate("c => c.width") > 1:
+            break
+        page.wait_for_timeout(100)
+    px = lit.evaluate("""c => {
+        const d = c.getContext('2d').getImageData(0, 0, c.width, 1).data;
+        let sum = 0; for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+        return {w: c.width, sum: sum};
+    }""")
+    assert px["w"] > 1 and px["sum"] > 0, px
+    expect(page.locator('canvas[data-preview="7"]')).to_have_count(0)

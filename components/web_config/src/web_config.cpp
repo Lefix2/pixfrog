@@ -954,8 +954,9 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
 
 // ── GET /api/ws — live status pushed over a WebSocket ───────────────────────
 // The SPA opens one and stops polling /api/status: web_push_task builds the
-// same JSON once a second ({"type":"status", …}) and the httpd task sends it
-// to every WebSocket client (httpd_queue_work: sends happen in the server's
+// same JSON once a second ({"type":"status", …}) plus a 5 Hz binary preview
+// of every output (push_preview), and the httpd task sends them to every
+// WebSocket client (httpd_queue_work: sends happen in the server's
 // own task). Read-only and unauthenticated, like the GET it replaces.
 
 namespace {
@@ -980,12 +981,16 @@ static esp_err_t handle_ws(httpd_req_t* req) {
     return httpd_ws_recv_frame(req, &f, f.len);
 }
 
+// A frame for every WebSocket client; `data` is malloc'ed (cJSON's allocator
+// for text) and freed by ws_broadcast.
 struct WsPush {
     httpd_handle_t server;
-    char* text;
+    uint8_t* data;
+    size_t len;
+    httpd_ws_type_t type;
 };
 
-// Runs in the httpd task: send `text` to every WebSocket client.
+// Runs in the httpd task: send the frame to every WebSocket client.
 static void ws_broadcast(void* arg) {
     auto* p  = static_cast<WsPush*>(arg);
     size_t n = kMaxWsClients;
@@ -994,37 +999,72 @@ static void ws_broadcast(void* arg) {
         for (size_t i = 0; i < n; ++i) {
             if (httpd_ws_get_fd_info(p->server, fds[i]) != HTTPD_WS_CLIENT_WEBSOCKET) continue;
             httpd_ws_frame_t f{};
-            f.type    = HTTPD_WS_TYPE_TEXT;
-            f.payload = reinterpret_cast<uint8_t*>(p->text);
-            f.len     = std::strlen(p->text);
+            f.type    = p->type;
+            f.payload = p->data;
+            f.len     = p->len;
             httpd_ws_send_frame_async(p->server, fds[i], &f);
         }
     }
-    cJSON_free(p->text);
+    if (p->type == HTTPD_WS_TYPE_TEXT)
+        cJSON_free(p->data);
+    else
+        free(p->data);
     delete p;
 }
 
+// Hand a frame to the httpd task; takes ownership of `data`.
+static void ws_queue(uint8_t* data, size_t len, httpd_ws_type_t type) {
+    auto* p     = new (std::nothrow) WsPush{ nullptr, data, len, type };
+    bool queued = false;
+    xSemaphoreTake(g_server_mux, portMAX_DELAY);
+    if (p && g_server) {
+        p->server = g_server;
+        queued    = httpd_queue_work(g_server, ws_broadcast, p) == ESP_OK;
+    }
+    xSemaphoreGive(g_server_mux);
+    if (queued) return;
+    if (type == HTTPD_WS_TYPE_TEXT)
+        cJSON_free(data);
+    else
+        free(data);
+    delete p;
+}
+
+// Live output preview, a binary frame: 'P', the output count, then per output
+// its sample count n and n RGB triplets (dmx::output_preview; n = 0 when Off).
+constexpr size_t kPreviewSamples = 64;
+constexpr size_t kPreviewBytes   = 2 + config::kNumChannels * (1 + kPreviewSamples * 3);
+
+static void push_preview() {
+    auto* buf = static_cast<uint8_t*>(malloc(kPreviewBytes));
+    if (!buf) return;
+    size_t len = 0;
+    buf[len++] = 'P';
+    buf[len++] = static_cast<uint8_t>(config::kNumChannels);
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        const size_t n  = dmx::output_preview(ch, buf + len + 1, kPreviewSamples);
+        buf[len]        = static_cast<uint8_t>(n);
+        len            += 1 + n * 3;
+    }
+    ws_queue(buf, len, HTTPD_WS_TYPE_BINARY);
+}
+
+static void push_status() {
+    cJSON* root = build_status_json();
+    cJSON_AddStringToObject(root, "type", "status");
+    char* text = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (text) ws_queue(reinterpret_cast<uint8_t*>(text), std::strlen(text), HTTPD_WS_TYPE_TEXT);
+}
+
+// 5 Hz preview, 1 Hz status, once a client has connected.
 static void web_push_task(void*) {
+    uint32_t tick = 0;
     while (g_push_run.load(std::memory_order_acquire)) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(200));
         if (!g_ws_seen.load(std::memory_order_relaxed)) continue;  // nobody listening yet
-        cJSON* root = build_status_json();
-        cJSON_AddStringToObject(root, "type", "status");
-        char* text = cJSON_PrintUnformatted(root);
-        cJSON_Delete(root);
-        if (!text) continue;
-        auto* p     = new (std::nothrow) WsPush{ nullptr, text };
-        bool queued = false;
-        xSemaphoreTake(g_server_mux, portMAX_DELAY);
-        if (p && g_server) {
-            p->server = g_server;
-            queued    = httpd_queue_work(g_server, ws_broadcast, p) == ESP_OK;
-        }
-        xSemaphoreGive(g_server_mux);
-        if (!queued) {
-            cJSON_free(text);
-            delete p;
-        }
+        push_preview();
+        if (++tick % 5 == 0) push_status();
     }
     vTaskDelete(nullptr);
 }
@@ -2392,6 +2432,18 @@ void init_log_capture() {
     ESP_LOGI(TAG, "log capture ring installed (%u B)", static_cast<unsigned>(kLogRing));
 }
 
+// One route, every other httpd_uri_t field zero (the WebSocket build adds
+// some), so the table below stays clean under -Wmissing-field-initializers.
+static httpd_uri_t route(const char* uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t*),
+                         bool websocket = false) {
+    httpd_uri_t r{};
+    r.uri          = uri;
+    r.method       = method;
+    r.handler      = handler;
+    r.is_websocket = websocket;
+    return r;
+}
+
 void start() {
     if (g_server) return;
     if (!g_server_mux) g_server_mux = xSemaphoreCreateMutex();
@@ -2411,120 +2463,38 @@ void start() {
     }
 
     const httpd_uri_t routes[] = {
-        { .uri = "/", .method = HTTP_GET, .handler = handle_root, .user_ctx = nullptr },
-        { .uri      = "/api/config",
-          .method   = HTTP_GET,
-          .handler  = handle_get_config,
-          .user_ctx = nullptr },
-        { .uri      = "/api/global",
-          .method   = HTTP_POST,
-          .handler  = handle_post_global,
-          .user_ctx = nullptr },
-        { .uri      = "/api/channel/*",
-          .method   = HTTP_POST,
-          .handler  = handle_post_channel,
-          .user_ctx = nullptr },
-        { .uri = "/api/ota", .method = HTTP_POST, .handler = handle_ota, .user_ctx = nullptr },
-        { .uri = "/api/backup", .method = HTTP_GET, .handler = handle_backup, .user_ctx = nullptr },
-        { .uri      = "/api/restore",
-          .method   = HTTP_POST,
-          .handler  = handle_restore,
-          .user_ctx = nullptr },
-        { .uri      = "/api/scene/*",
-          .method   = HTTP_POST,
-          .handler  = handle_post_scene,
-          .user_ctx = nullptr },
-        { .uri      = "/api/scenes/add",
-          .method   = HTTP_POST,
-          .handler  = handle_scenes_add,
-          .user_ctx = nullptr },
-        { .uri      = "/api/scenes/move",
-          .method   = HTTP_POST,
-          .handler  = handle_scenes_move,
-          .user_ctx = nullptr },
-        { .uri      = "/api/rollback/ack",
-          .method   = HTTP_POST,
-          .handler  = handle_rollback_ack,
-          .user_ctx = nullptr },
-        { .uri      = "/api/show",
-          .method   = HTTP_POST,
-          .handler  = handle_post_show,
-          .user_ctx = nullptr },
-        { .uri      = "/api/control",
-          .method   = HTTP_POST,
-          .handler  = handle_post_control,
-          .user_ctx = nullptr },
-        { .uri      = "/api/control/fixture",
-          .method   = HTTP_GET,
-          .handler  = handle_control_fixture,
-          .user_ctx = nullptr },
-        { .uri      = "/api/scenes/stop",
-          .method   = HTTP_POST,
-          .handler  = handle_scenes_stop,
-          .user_ctx = nullptr },
-        { .uri      = "/api/reboot",
-          .method   = HTTP_POST,
-          .handler  = handle_reboot,
-          .user_ctx = nullptr },
-        { .uri      = "/api/factory-reset",
-          .method   = HTTP_POST,
-          .handler  = handle_factory_reset,
-          .user_ctx = nullptr },
-        { .uri      = "/api/autopatch",
-          .method   = HTTP_POST,
-          .handler  = handle_autopatch,
-          .user_ctx = nullptr },
-        { .uri      = "/api/fseq/files",
-          .method   = HTTP_GET,
-          .handler  = handle_fseq_files,
-          .user_ctx = nullptr },
-        { .uri      = "/api/fseq/playlist",
-          .method   = HTTP_GET,
-          .handler  = handle_get_playlist,
-          .user_ctx = nullptr },
-        { .uri      = "/api/fseq/playlist",
-          .method   = HTTP_POST,
-          .handler  = handle_post_playlist,
-          .user_ctx = nullptr },
-        { .uri      = "/api/fseq/play",
-          .method   = HTTP_POST,
-          .handler  = handle_fseq_play,
-          .user_ctx = nullptr },
-        { .uri      = "/api/fseq/stop",
-          .method   = HTTP_POST,
-          .handler  = handle_fseq_stop,
-          .user_ctx = nullptr },
-        { .uri      = "/api/fseq/upload",
-          .method   = HTTP_POST,
-          .handler  = handle_fseq_upload,
-          .user_ctx = nullptr },
-        { .uri      = "/api/status",
-          .method   = HTTP_GET,
-          .handler  = handle_get_status,
-          .user_ctx = nullptr },
-        { .uri          = "/api/ws",
-          .method       = HTTP_GET,
-          .handler      = handle_ws,
-          .user_ctx     = nullptr,
-          .is_websocket = true },
-        { .uri      = "/api/peers",
-          .method   = HTTP_GET,
-          .handler  = handle_get_peers,
-          .user_ctx = nullptr },
-        { .uri      = "/api/coredump",
-          .method   = HTTP_GET,
-          .handler  = handle_coredump_get,
-          .user_ctx = nullptr },
-        { .uri      = "/api/coredump",
-          .method   = HTTP_DELETE,
-          .handler  = handle_coredump_delete,
-          .user_ctx = nullptr },
-        { .uri = "/api/diag", .method = HTTP_GET, .handler = handle_get_diag, .user_ctx = nullptr },
-        { .uri = "/api/logs", .method = HTTP_GET, .handler = handle_get_logs, .user_ctx = nullptr },
-        { .uri      = "/api/loglevel",
-          .method   = HTTP_POST,
-          .handler  = handle_post_loglevel,
-          .user_ctx = nullptr },
+        route("/", HTTP_GET, handle_root),
+        route("/api/config", HTTP_GET, handle_get_config),
+        route("/api/global", HTTP_POST, handle_post_global),
+        route("/api/channel/*", HTTP_POST, handle_post_channel),
+        route("/api/ota", HTTP_POST, handle_ota),
+        route("/api/backup", HTTP_GET, handle_backup),
+        route("/api/restore", HTTP_POST, handle_restore),
+        route("/api/scene/*", HTTP_POST, handle_post_scene),
+        route("/api/scenes/add", HTTP_POST, handle_scenes_add),
+        route("/api/scenes/move", HTTP_POST, handle_scenes_move),
+        route("/api/rollback/ack", HTTP_POST, handle_rollback_ack),
+        route("/api/show", HTTP_POST, handle_post_show),
+        route("/api/control", HTTP_POST, handle_post_control),
+        route("/api/control/fixture", HTTP_GET, handle_control_fixture),
+        route("/api/scenes/stop", HTTP_POST, handle_scenes_stop),
+        route("/api/reboot", HTTP_POST, handle_reboot),
+        route("/api/factory-reset", HTTP_POST, handle_factory_reset),
+        route("/api/autopatch", HTTP_POST, handle_autopatch),
+        route("/api/fseq/files", HTTP_GET, handle_fseq_files),
+        route("/api/fseq/playlist", HTTP_GET, handle_get_playlist),
+        route("/api/fseq/playlist", HTTP_POST, handle_post_playlist),
+        route("/api/fseq/play", HTTP_POST, handle_fseq_play),
+        route("/api/fseq/stop", HTTP_POST, handle_fseq_stop),
+        route("/api/fseq/upload", HTTP_POST, handle_fseq_upload),
+        route("/api/status", HTTP_GET, handle_get_status),
+        route("/api/ws", HTTP_GET, handle_ws, true),
+        route("/api/peers", HTTP_GET, handle_get_peers),
+        route("/api/coredump", HTTP_GET, handle_coredump_get),
+        route("/api/coredump", HTTP_DELETE, handle_coredump_delete),
+        route("/api/diag", HTTP_GET, handle_get_diag),
+        route("/api/logs", HTTP_GET, handle_get_logs),
+        route("/api/loglevel", HTTP_POST, handle_post_loglevel),
     };
     for (const auto& r : routes)
         httpd_register_uri_handler(g_server, &r);

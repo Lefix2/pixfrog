@@ -75,7 +75,8 @@ void seed_demo() {
     pixfrog::fseq::fake::set(pixfrog::fseq::Status::Playing, 42'000);
 }
 
-// Art-Net traffic, 60 FPS and per-line activity, as a live rig shows them.
+// Art-Net traffic, 60 FPS, per-line activity and rendered pixels, as a live
+// rig shows them.
 void keep_demo_alive() {
     for (;;) {
         for (size_t ch = 0; ch < 7; ++ch)
@@ -83,6 +84,12 @@ void keep_demo_alive() {
         for (int i = 0; i < 25; ++i)
             pixfrog::dmx::note_packet_rx();
         pixfrog::dmx::set_current_fps(60);
+        // Render as render_task does, so the dashboard's live preview moves.
+        pixfrog::dmx::swap_universes();
+        for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch) {
+            pixfrog::dmx::decode_pixels_for_channel(ch);
+            pixfrog::dmx::swap_pixels(ch);
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }

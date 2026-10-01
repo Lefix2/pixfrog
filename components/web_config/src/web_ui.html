@@ -49,6 +49,8 @@
   .sw input:disabled + span{opacity:.55}
   .sc-color:hover{border-color:#4a4c48!important;background:#161816!important}
   .pf-row{transition:border-color .15s}
+  /* Live output preview strip (pushed over /api/ws, drawn by drawPreview). */
+  .pf-preview{display:block;width:100%;height:6px;background:#050605;image-rendering:pixelated}
   [data-sc-delcol]:hover{color:#ec8480!important}
   [data-sc-grip]:hover{color:#edeeea!important}
   [data-sc-grip]:active{cursor:grabbing!important}
@@ -921,7 +923,8 @@ function dashTile(c){
     +'<div style="display:flex;align-items:center;justify-content:space-between"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:0;background:#121412;border:1px solid #363835;font:500 11px \'DM Mono\';color:#a9aca4">'+c.n+'</span><span style="width:8px;height:8px;border-radius:50%;background:'+c.dot+'"></span></div>'
     +'<div style="font:500 13px \'DM Mono\';color:#edeeea">'+c.proto+'</div>'
     +'<div style="font:500 11px \'DM Mono\';color:#8e9189">'+c.px+' · '+c.uni+'</div>'
-    +'<div style="font:500 10.5px \'DM Mono\';letter-spacing:.04em;color:'+c.txt+'">'+t(c.label)+'</div></div>';
+    +'<div style="font:500 10.5px \'DM Mono\';letter-spacing:.04em;color:'+c.txt+'">'+t(c.label)+'</div>'
+    +(c.protoRaw==='Off'?'':'<canvas class="pf-preview" data-preview="'+c.idx+'" width="1" height="1"></canvas>')+'</div>';
 }
 function chanRow(c){
   return '<div data-chan="'+c.idx+'" style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:0;cursor:pointer;background:#0d0e0d;border:1px solid #222321">'
@@ -1326,9 +1329,37 @@ function connectStatusWs(){
   if(!('WebSocket' in window)) return;
   var ws;
   try{ ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/ws'); }catch(e){ return; }
-  ws.onmessage=function(ev){ var d; try{ d=JSON.parse(ev.data); }catch(e){ return; } if(d&&d.type==='status'){ wsLastMsg=Date.now(); applyStatus(d); } };
+  ws.binaryType='arraybuffer';
+  ws.onmessage=function(ev){
+    if(typeof ev.data!=='string'){ drawPreview(new Uint8Array(ev.data)); return; }
+    var d; try{ d=JSON.parse(ev.data); }catch(e){ return; } if(d&&d.type==='status'){ wsLastMsg=Date.now(); applyStatus(d); } };
   ws.onclose=function(){ wsLastMsg=0; clearTimeout(wsRetry); wsRetry=setTimeout(connectStatusWs,5000); };
   ws.onerror=function(){ try{ ws.close(); }catch(e){} };
+}
+/* Live output preview, 5 Hz binary frame: 'P', output count, then per output
+   n and n RGB triplets (the strip shrunk to ≤64 samples, n=0 when Off). Each
+   dashboard tile's canvas is n pixels wide, stretched by CSS; the last frame
+   is kept so a tile rebuilt by renderLists() is repainted at once. */
+var previewRGB=[];
+function drawPreview(b){
+  if(b.length<2||b[0]!==80) return;
+  var off=2;
+  for(var i=0;i<b[1]&&off<b.length;i++){
+    var n=b[off++]; if(off+n*3>b.length) break;
+    previewRGB[i]=b.subarray(off,off+n*3); off+=n*3;
+  }
+  paintPreviews();
+}
+function paintPreviews(){
+  for(var i=0;i<previewRGB.length;i++){
+    var cv=document.querySelector('canvas[data-preview="'+i+'"]'), rgb=previewRGB[i]; if(!cv||!rgb) continue;
+    var n=rgb.length/3;
+    if(!n){ if(cv.width!==1) cv.width=1; continue; }
+    if(cv.width!==n) cv.width=n;
+    var cx=cv.getContext('2d'), img=cx.createImageData(n,1);
+    for(var p=0;p<n;p++){ img.data[p*4]=rgb[p*3]; img.data[p*4+1]=rgb[p*3+1]; img.data[p*4+2]=rgb[p*3+2]; img.data[p*4+3]=255; }
+    cx.putImageData(img,0,0);
+  }
 }
 function applyStatus(s){
   {
@@ -1455,7 +1486,7 @@ function applyChanStates(){
   if(changed) renderLists();
 }
 function renderLists(){
-  var d=el('dash-chan-mount'); if(d){ if(!EMBED && DEVICES.length>1) renderDashGrid(); else { d.innerHTML=CHANS.map(dashTile).join(''); createIcons(d); } }
+  var d=el('dash-chan-mount'); if(d){ if(!EMBED && DEVICES.length>1) renderDashGrid(); else { d.innerHTML=CHANS.map(dashTile).join(''); createIcons(d); paintPreviews(); } }
   var l=el('chan-list-mount'); if(l){ l.innerHTML=CHANS.map(chanRow).join(''); createIcons(l); }
   var cur=CHANS[curChan]; if(cur){ document.querySelectorAll('[data-chan]').forEach(function(r){ var on=+r.getAttribute('data-chan')===curChan; r.style.borderColor=on?'rgba(63,212,99,.45)':'#222321'; r.style.background=on?'rgba(63,212,99,.07)':'#0d0e0d'; }); }
 }

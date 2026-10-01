@@ -306,6 +306,31 @@ inline void fill_failsafe_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pi
     }
 }
 
+// ── Live preview ────────────────────────────────────────────────────────────
+//
+// Shrink `count` pixels of `bpp` bytes (canonical RGB(W)) to at most `max_out`
+// RGB triplets for the web dashboard: each output sample averages its bucket,
+// W is folded into all three colours (clipped). Returns triplets written.
+inline size_t downsample_rgb(const uint8_t* px, uint32_t count, uint8_t bpp, uint8_t* out,
+                             size_t max_out) {
+    if (!px || bpp < 3 || count == 0 || max_out == 0) return 0;
+    const size_t n = count < max_out ? count : max_out;
+    for (size_t i = 0; i < n; ++i) {
+        const uint32_t a = static_cast<uint32_t>(i * count / n);
+        const uint32_t b = static_cast<uint32_t>((i + 1) * count / n);
+        uint32_t sum[3]  = { 0, 0, 0 };
+        for (uint32_t p = a; p < b; ++p) {
+            const uint8_t* q = px + static_cast<size_t>(p) * bpp;
+            const uint32_t w = bpp > 3 ? q[3] : 0;
+            for (int k = 0; k < 3; ++k)
+                sum[k] += q[k] + w > 255 ? 255 : q[k] + w;
+        }
+        for (int k = 0; k < 3; ++k)
+            out[i * 3 + k] = static_cast<uint8_t>(sum[k] / (b - a));
+    }
+    return n;
+}
+
 // ── Standalone scene generators ─────────────────────────────────────────────
 //
 // Parametric effects rendered straight into the channel's pixel back buffer

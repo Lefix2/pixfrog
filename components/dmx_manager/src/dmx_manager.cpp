@@ -1038,6 +1038,14 @@ const uint8_t* pixel_front_buffer(size_t ch) {
     return g_chan_bufs[ch].front.load(std::memory_order_acquire);
 }
 
+size_t output_preview(size_t ch, uint8_t* rgb, size_t max_samples) {
+    if (ch >= config::kNumChannels) return 0;
+    const config::ChannelConfig cc = effective_channel(ch);
+    return logic::downsample_rgb(pixel_front_buffer(ch), cc.pixel_count,
+                                 static_cast<uint8_t>(led::bytes_per_pixel(cc.protocol)), rgb,
+                                 max_samples);
+}
+
 void swap_pixels(size_t ch) {
     if (ch >= config::kNumChannels) return;
     uint8_t* new_front   = g_chan_bufs[ch].back;

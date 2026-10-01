@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "config_store.h"
+#include "dmx_logic.h"
 #include "dmx_manager.h"
 #include "harness.h"
 #include "shim_control.h"
@@ -656,4 +657,27 @@ TEST(an_exhausted_pool_is_reported_not_overrun) {
     EXPECT_EQ(dmx::channel_for_universe(0x7FFF), 7);
     reset_show();
     one_channel();
+}
+
+// The dashboard preview reads the front buffer: averaged buckets, W folded
+// into every colour, nothing for an Off output.
+TEST(output_preview_shrinks_the_front_buffer_to_rgb) {
+    one_channel(4);
+    const uint8_t d[12] = { 10, 20, 30, 30, 40, 50, 200, 0, 0, 100, 0, 0 };
+    frame(1, d, sizeof(d));
+    dmx::swap_pixels(0);
+    uint8_t rgb[12]{};
+    EXPECT_EQ(dmx::output_preview(0, rgb, 4), 4u);
+    EXPECT_TRUE(std::memcmp(rgb, d, 12) == 0);
+    EXPECT_EQ(dmx::output_preview(0, rgb, 2), 2u);
+    const uint8_t halves[6] = { 20, 30, 40, 150, 0, 0 };
+    EXPECT_TRUE(std::memcmp(rgb, halves, 6) == 0);
+    EXPECT_EQ(dmx::output_preview(1, rgb, 4), 0u);  // Off
+
+    const uint8_t rgbw[8] = { 10, 250, 0, 20, 0, 0, 0, 0 };
+    uint8_t out[3];
+    EXPECT_EQ(dmx::logic::downsample_rgb(rgbw, 1, 4, out, 1), 1u);
+    EXPECT_EQ(out[0], 30);
+    EXPECT_EQ(out[1], 255);  // clipped
+    EXPECT_EQ(out[2], 20);
 }
