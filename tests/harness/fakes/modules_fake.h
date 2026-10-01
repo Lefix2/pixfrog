@@ -14,6 +14,7 @@ struct Modules {
     int web_starts   = 0;
     std::string fseq_started;  // last fseq::start() argument
     bool fseq_stopped = false;
+    bool sd_mounted   = true;  // fseq::sd_state()
 };
 Modules& modules();
 void reset_modules();

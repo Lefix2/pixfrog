@@ -10,3 +10,5 @@ void emu_dmx_set_stats(uint32_t fps, uint64_t pkts);
 void emu_dmx_set_pkts(uint64_t pkts);
 void emu_dmx_set_active(int ch, bool on);
 void emu_dmx_set_failsafe(int ch, bool on);
+// Fake microSD: `n` files show1.fseq..showN.fseq (0 = no card).
+void emu_fseq_set_files(int n);

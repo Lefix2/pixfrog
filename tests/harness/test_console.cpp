@@ -298,3 +298,130 @@ TEST(scene_play_on_a_zone_and_stop_one_scene) {
     EXPECT_TRUE(run("scene stop"));
     EXPECT_EQ(dmx::active_scene(), -1);
 }
+
+// ── Every key, every usage error ────────────────────────────────────────────
+
+TEST(global_keys_set_every_field) {
+    const auto before      = config::get_global();
+    const char* ok_lines[] = {
+        "global dhcp 0",
+        "global mask 255.255.0.0",
+        "global gw 10.0.0.1",
+        "global net 3",
+        "global subnet 4",
+        "global long_name A-long-box",
+        "global reply_unicast 1",
+        "global home_timeout_s 45",
+        "global tft_brightness 40",
+        "global tft_idle_dim 20",
+        "global tft_dim_delay_s 90",
+        "global failsafe_mode color",
+        "global failsafe_scene 1",
+        "global boot_scene 2",
+        "global failsafe_timeout_s 12",
+        "global merge_mode LTP",
+    };
+    for (const char* l : ok_lines)
+        EXPECT_TRUE(run(l));
+    const auto& g = config::get_global();
+    EXPECT_FALSE(g.use_dhcp);
+    EXPECT_EQ(g.static_mask, 0xFFFF0000u);
+    EXPECT_EQ(g.static_gateway, 0x0A000001u);
+    EXPECT_EQ(g.artnet_net, 3);
+    EXPECT_EQ(g.artnet_subnet, 4);
+    EXPECT_STREQ(g.long_name, "A-long-box");
+    EXPECT_TRUE(g.artnet_poll_reply_unicast);
+    EXPECT_EQ(g.home_timeout_s, 45);
+    EXPECT_EQ(g.tft_brightness, 40);
+    EXPECT_EQ(g.tft_idle_dim, 20);
+    EXPECT_EQ(g.tft_dim_delay_s, 90);
+    EXPECT_EQ(g.failsafe_mode, config::kFailsafeColor);
+    EXPECT_EQ(g.failsafe_scene, 1);
+    EXPECT_EQ(g.boot_scene, 2);
+    EXPECT_EQ(g.failsafe_timeout_s, 12);
+    EXPECT_EQ(g.merge_mode, config::kMergeLtp);
+    const char* bad_lines[] = {
+        "global dhcp maybe",
+        "global mask 1.2.3",
+        "global gw x",
+        "global net 128",
+        "global subnet 16",
+        "global reply_unicast 2",
+        "global home_timeout_s 70000",
+        "global tft_brightness 5",
+        "global tft_idle_dim 101",
+        "global tft_dim_delay_s 4000",
+        "global failsafe_mode sparkle",
+        "global failsafe_scene 99",
+        "global boot_scene 99",
+        "global failsafe_timeout_s 4000",
+        "global merge_mode XTP",
+    };
+    for (const char* l : bad_lines)
+        EXPECT_FALSE(run(l));
+    config::set_global(before);
+}
+
+TEST(channel_keys_set_every_field) {
+    const auto before = config::get_channel(2);
+    EXPECT_TRUE(run("ch 2 protocol APA102"));
+    EXPECT_TRUE(run("ch 2 dmx_start 7"));
+    EXPECT_TRUE(run("ch 2 brightness 80"));
+    EXPECT_TRUE(run("ch 2 grouping 3"));
+    EXPECT_TRUE(run("ch 2 invert 1"));
+    EXPECT_TRUE(run("ch 2 gamma_x10 22"));
+    EXPECT_TRUE(run("ch 2 clock_hz 2000000"));
+    const auto& c = config::get_channel(2);
+    EXPECT_EQ(c.dmx_start, 7);
+    EXPECT_EQ(c.brightness, 80);
+    EXPECT_EQ(c.grouping, 3);
+    EXPECT_TRUE(c.invert_direction);
+    EXPECT_EQ(c.gamma_x10, 22);
+    EXPECT_EQ(c.clock_hz, 2000000u);
+    for (const char* l : { "ch 2 dmx_start 0", "ch 2 brightness 256", "ch 2 grouping 9",
+                           "ch 2 invert x", "ch 2 gamma_x10 9", "ch 2 sparkle 1" })
+        EXPECT_FALSE(run(l));
+    config::set_channel(2, before);
+}
+
+TEST(cal_loglevel_identify_and_usage_errors) {
+    EXPECT_TRUE(run("cal"));
+    EXPECT_TRUE(has("cal="));
+    for (const char* l : { "loglevel none", "loglevel error", "loglevel info", "loglevel debug",
+                           "loglevel verbose", "loglevel warn" })
+        EXPECT_TRUE(run(l));
+    EXPECT_TRUE(run("identify 1 2"));
+    EXPECT_TRUE(run("identify stop"));
+    EXPECT_EQ(dmx::identify_channel(), -1);
+    const char* bad[] = { "identify",      "identify 9",        "crash",
+                          "scene name 0",  "scene set 0 solid", "scene move 0",
+                          "fseq bogus",    "show blackout",     "show sparkle",
+                          "ctrl universe", "ctrl preset huge",  "ctrl del",
+                          "ctrl sparkle" };
+    for (const char* l : bad)
+        EXPECT_FALSE(run(l));
+}
+
+TEST(fseq_status_and_list) {
+    fseq::fake::set(fseq::Status::Playing, 1500);
+    EXPECT_TRUE(run("fseq"));
+    EXPECT_TRUE(has("status=playing"));
+    EXPECT_TRUE(has("position_ms="));
+    fseq::fake::set(fseq::Status::Error, 0);
+    EXPECT_TRUE(run("fseq"));
+    EXPECT_TRUE(has("error="));
+    EXPECT_TRUE(run("fseq list"));
+    fseq::fake::set(fseq::Status::Idle, 0);
+}
+
+TEST(show_reports_a_live_control_universe) {
+    EXPECT_TRUE(run("ctrl universe 1"));
+    EXPECT_TRUE(run("ctrl enable 1"));
+    dmx::handle_pending_remaps();
+    const uint8_t u[6] = { 0xFF, 0xFF, 0, 0, 0, 0 };
+    dmx::write_universe_from_source(1, u, sizeof(u), 0x0A000001, dmx::kArtnetMergeTimeoutUs);
+    EXPECT_TRUE(run("show"));
+    EXPECT_TRUE(has("control=live"));
+    EXPECT_TRUE(run("ctrl enable 0"));
+    EXPECT_TRUE(run("ctrl universe 100"));
+}

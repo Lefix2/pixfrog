@@ -44,17 +44,24 @@ def build_and_run():
         stdout=subprocess.DEVNULL)
     run(["cmake", "--build", BUILD_TESTS, "--parallel"], cwd=REPO, stdout=subprocess.DEVNULL)
     run(["ctest", "--test-dir", BUILD_TESTS, "--output-on-failure"], cwd=REPO)
-    # The emulator compiles the real menu/canvas code: its scenarios count too.
-    run(["cmake", "-S", "tools/emulator", "-B", BUILD_EMU, "-DCMAKE_BUILD_TYPE=Debug",
-         "-DCMAKE_CXX_FLAGS=--coverage -O0", "-DCMAKE_EXE_LINKER_FLAGS=--coverage"], cwd=REPO,
-        stdout=subprocess.DEVNULL)
-    run(["cmake", "--build", BUILD_EMU, "--parallel"], cwd=REPO, stdout=subprocess.DEVNULL)
+    # The emulator compiles the real menu/canvas code: its scenarios count too,
+    # on both panel layouts (each compiles its own branches of menu.cpp).
     env = dict(os.environ, SDL_VIDEODRIVER=os.environ.get("SDL_VIDEODRIVER", "dummy"))
-    emu = os.path.join(BUILD_EMU, "pixfrog_emu")
-    for script in sorted(os.listdir(os.path.join(REPO, "tools", "emulator"))):
-        if script == "smoke.sh" or (script.startswith("scenario_") and script.endswith(".sh")):
-            run(["bash", os.path.join("tools", "emulator", script), emu], cwd=REPO, env=env)
-    run([sys.executable, "tools/emulator/crawl.py", emu, "--no-golden"], cwd=REPO, env=env)
+    emu_dir = os.path.join(REPO, "tools", "emulator")
+    for panel, build in (("nv3007", BUILD_EMU), ("st7789", BUILD_EMU + "-st7789")):
+        run(["cmake", "-S", "tools/emulator", "-B", build, "-DCMAKE_BUILD_TYPE=Debug",
+             f"-DPIXFROG_EMU_PANEL={panel}", "-DCMAKE_CXX_FLAGS=--coverage -O0",
+             "-DCMAKE_EXE_LINKER_FLAGS=--coverage"], cwd=REPO, stdout=subprocess.DEVNULL)
+        run(["cmake", "--build", build, "--parallel"], cwd=REPO, stdout=subprocess.DEVNULL)
+        emu = os.path.join(build, "pixfrog_emu")
+        for script in sorted(os.listdir(emu_dir)):
+            path = os.path.join("tools", "emulator", script)
+            if script == "smoke.sh" or (script.startswith("scenario_") and script.endswith(".sh")):
+                run(["bash", path, emu], cwd=REPO, env=env)
+            elif script.startswith("scenario_") and script.endswith(".py"):
+                run([sys.executable, path, emu], cwd=REPO, env=env)
+        run([sys.executable, "tools/emulator/crawl.py", emu, "--no-golden", "--panel", panel],
+            cwd=REPO, env=env)
 
 
 def code_lines(path):
@@ -89,7 +96,8 @@ def report():
               "--exclude", r".*/test/.*", "--exclude", r".*third_party.*",
               "--exclude", r".*(font_data|font_oled|splash_anim|splash_oled)\.cpp",
               "--gcov-ignore-parse-errors=negative_hits.warn_once_per_file",
-              BUILD_TESTS, BUILD_EMU]
+              "--gcov-ignore-parse-errors=suspicious_hits.warn_once_per_file",
+              BUILD_TESTS, BUILD_EMU, BUILD_EMU + "-st7789"]
     run([sys.executable, "-m", "gcovr", *common, "--lcov", lcov,
          "--html-details", os.path.join(OUT, "html", "index.html")], cwd=REPO)
 

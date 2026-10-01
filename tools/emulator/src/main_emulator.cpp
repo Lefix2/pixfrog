@@ -216,6 +216,9 @@ bool exec_cmd(const std::string& line) {
             std::printf("error: usage: set gaps <idx> [<pos0>:<len> ...]\n");
             std::fflush(stdout);
         }
+    } else if (line.rfind("set sd ", 0) == 0) {
+        // set sd <n> — fake a microSD holding n .fseq files (0 = no card)
+        emu_fseq_set_files(std::atoi(line.c_str() + 7));
     } else if (line.rfind("set net ", 0) == 0) {
         // set net <disconnected|acquiring|connected|error>
         const char* p = line.c_str() + 8;

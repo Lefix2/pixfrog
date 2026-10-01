@@ -60,8 +60,39 @@ const esp_partition_t* esp_ota_get_running_partition() {
 void esp_restart() {
     ++g_restarts;
 }
+namespace {
+int g_fault[static_cast<int>(shim::Fault::Count)] = {};
+int g_skip[static_cast<int>(shim::Fault::Count)]  = {};
+int g_reset_reason                                = ESP_RST_POWERON;
+}  // namespace
+namespace shim {
+void fail_next(Fault f, int count, int skip) {
+    g_fault[static_cast<int>(f)] = count;
+    g_skip[static_cast<int>(f)]  = skip;
+}
+bool should_fail(Fault f) {
+    int& n = g_fault[static_cast<int>(f)];
+    if (n > 0 && g_skip[static_cast<int>(f)] > 0) {
+        --g_skip[static_cast<int>(f)];
+        return false;
+    }
+    if (n <= 0) return false;
+    --n;
+    return true;
+}
+void faults_clear() {
+    for (int& n : g_fault)
+        n = 0;
+    for (int& n : g_skip)
+        n = 0;
+}
+void set_reset_reason(int reason) {
+    g_reset_reason = reason;
+}
+}  // namespace shim
+
 esp_reset_reason_t esp_reset_reason() {
-    return ESP_RST_POWERON;
+    return static_cast<esp_reset_reason_t>(g_reset_reason);
 }
 void esp_log_level_set(const char* tag, esp_log_level_t level) {
     if (tag && std::strcmp(tag, "*") == 0) g_log_level = level;
@@ -71,7 +102,13 @@ esp_log_level_t esp_log_level_get(const char*) {
 }
 
 namespace {
-vprintf_like_t g_vprintf = nullptr;
+// Like the target, where the default sink is the UART vprintf: never null, so
+// a code path that saves "the previous hook" always gets a real one. Here it
+// swallows the line (stderr echo is log_write's job).
+int default_vprintf(const char*, va_list) {
+    return 0;
+}
+vprintf_like_t g_vprintf = default_vprintf;
 int call_hook(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -102,7 +139,7 @@ void log_write(char level, const char* tag, const char* fmt, ...) {
     char line[320];
     std::snprintf(line, sizeof(line), "%c (%lld) %s: %s\n", level,
                   static_cast<long long>(shim::now_us() / 1000), tag, msg);
-    if (g_vprintf) call_hook("%s", line);
+    call_hook("%s", line);
     static const bool echo = std::getenv("PIXFROG_TEST_LOG") != nullptr;
     if (echo) std::fputs(line, stderr);
 }

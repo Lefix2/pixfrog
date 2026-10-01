@@ -77,9 +77,11 @@ const char* esp_err_to_name(esp_err_t code) {
 // ── Heap ─────────────────────────────────────────────────────────────────────
 
 void* heap_caps_calloc(size_t n, size_t size, uint32_t) {
+    if (shim::should_fail(shim::Fault::HeapCaps)) return nullptr;
     return std::calloc(n, size);
 }
 void* heap_caps_malloc(size_t size, uint32_t) {
+    if (shim::should_fail(shim::Fault::HeapCaps)) return nullptr;
     return std::malloc(size);
 }
 void heap_caps_free(void* p) {
@@ -220,9 +222,11 @@ struct shim_eg {
 };
 
 SemaphoreHandle_t xSemaphoreCreateMutex() {
+    if (shim::should_fail(shim::Fault::Semaphore)) return nullptr;
     return new shim_sem{ true, 1 };
 }
 SemaphoreHandle_t xSemaphoreCreateBinary() {
+    if (shim::should_fail(shim::Fault::Semaphore)) return nullptr;
     return new shim_sem{ false, 0 };
 }
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s, TickType_t ticks) {
@@ -243,6 +247,7 @@ void vSemaphoreDelete(SemaphoreHandle_t s) {
     delete s;
 }
 EventGroupHandle_t xEventGroupCreate() {
+    if (shim::should_fail(shim::Fault::EventGroup)) return nullptr;
     return new shim_eg{ 0 };
 }
 EventBits_t xEventGroupSetBits(EventGroupHandle_t g, EventBits_t bits) {

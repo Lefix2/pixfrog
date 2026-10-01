@@ -82,11 +82,13 @@ esp_err_t esp_read_mac(uint8_t* mac, esp_mac_type_t) {
 }
 
 int shim_socket(int, int, int) {
+    if (shim::should_fail(shim::Fault::Socket)) return -1;
     const int fd = g_next_fd++;
     g_socks[fd]  = Sock{};
     return fd;
 }
 int shim_bind(int fd, const sockaddr* addr, socklen_t) {
+    if (shim::should_fail(shim::Fault::Bind)) return -1;
     auto it = g_socks.find(fd);
     if (it == g_socks.end()) return -1;
     it->second.port = ntohs(reinterpret_cast<const sockaddr_in*>(addr)->sin_port);
@@ -96,6 +98,7 @@ int shim_setsockopt(int fd, int level, int opt, const void* val, socklen_t) {
     auto it = g_socks.find(fd);
     if (it == g_socks.end()) return -1;
     if (level == IPPROTO_IP && (opt == IP_ADD_MEMBERSHIP || opt == IP_DROP_MEMBERSHIP)) {
+        if (opt == IP_ADD_MEMBERSHIP && shim::should_fail(shim::Fault::Join)) return -1;
         const uint32_t grp = ntohl(static_cast<const ip_mreq*>(val)->imr_multiaddr.s_addr);
         auto& gs           = it->second.groups;
         if (opt == IP_ADD_MEMBERSHIP)
@@ -127,6 +130,7 @@ ssize_t shim_recvfrom(int fd, void* buf, size_t len, int, sockaddr* from, sockle
     return static_cast<ssize_t>(n);
 }
 ssize_t shim_sendto(int, const void* buf, size_t len, int, const sockaddr* to, socklen_t) {
+    if (shim::should_fail(shim::Fault::SendTo)) return -1;
     const auto* sin = reinterpret_cast<const sockaddr_in*>(to);
     const auto* p   = static_cast<const uint8_t*>(buf);
     g_sent.push_back(
