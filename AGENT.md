@@ -71,7 +71,8 @@ Controlled by `GlobalConfig::web_enabled` (NVS-backed, default **off**). No TCP 
 opened while the flag is off — opt-in only. Toggle from the Network submenu, via
 `global web_enabled 0|1` in the UART console, or via POST `/api/global`.
 
-REST endpoints (all JSON; every POST/DELETE behind the optional password):
+REST endpoints (all JSON; every POST/DELETE, plus `GET /api/logs` and `GET /api/coredump`,
+behind the optional password):
 - config: `GET /api/config`, `POST /api/global`, `POST /api/channel/{0..7}[/identify]`,
   `POST /api/autopatch`, `GET /api/backup`, `POST /api/restore`
 - scenes: `POST /api/scene/{n}[/play|/stop|/delete]` (play takes `{"outputs":mask}`),
@@ -90,10 +91,11 @@ UI in an `iframe` (`/?embed=1` hides the device bar in the framed child) — no
 cross-origin writes. All JSON GET responses carry `Access-Control-Allow-Origin: *`
 (simple read-only requests, no preflight); writes stay behind Basic auth.
 
-Auth: HTTP Basic on every POST (GETs stay open), enabled by setting an admin
+Auth: HTTP Basic on every POST/DELETE and on the two GETs that may leak a
+secret (`/api/logs`, `/api/coredump` — raw RAM); other GETs stay open. Enabled by setting an admin
 password (`web_password` via the SPA, `/api/global`, or UART
 `global web_password <pwd|->` — `-` clears). No password set (the default) =
-no auth. Stored as salted SHA-256 in GlobalConfig; UART is the physical
+no auth — optional by design (private show networks). Stored as salted SHA-256 in GlobalConfig; UART is the physical
 recovery channel.
 
 This is the only TCP surface beyond ArtNet UDP — the strict "no extra network surface" rule

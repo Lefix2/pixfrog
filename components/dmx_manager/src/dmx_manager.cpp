@@ -947,6 +947,35 @@ bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* dat
     return true;
 }
 
+namespace {
+bool g_in_frame = false;  // inside inject_frame_begin()/end() (the FSEQ task's only)
+}  // namespace
+
+void inject_frame_begin() {
+    if (!g_uni_swap_mux) return;
+    xSemaphoreTake(g_uni_swap_mux, portMAX_DELAY);
+    g_in_frame = true;
+}
+
+bool inject_frame_universe(uint16_t universe_number, size_t offset, const uint8_t* data,
+                           size_t len) {
+    if (!g_in_frame || !data || offset + len > kUniverseSize) return false;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return false;
+    uint8_t* back = back_bank_locked();
+    prepare_back_slot(slot, back);
+    memcpy(back + static_cast<size_t>(slot) * kUniverseSize + offset, data, len);
+    note_channel_activity(g_slot_to_channel[slot]);
+    if (slot == g_ctrl_slot) g_ctrl_last_us.store(esp_timer_get_time(), std::memory_order_relaxed);
+    return true;
+}
+
+void inject_frame_end() {
+    if (!g_in_frame) return;
+    g_in_frame = false;
+    xSemaphoreGive(g_uni_swap_mux);
+}
+
 void note_packet_rx() {
     __atomic_add_fetch(&g_stats.artnet_packets_rx, 1, __ATOMIC_RELAXED);
 }

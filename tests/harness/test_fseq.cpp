@@ -88,9 +88,11 @@ Bytes cat(Bytes a, const Bytes& b) {
     return a;
 }
 
-// Universe-1 bytes seen at every frame boundary of a playback.
+// Universe-1 bytes seen at every frame boundary of a playback, after the
+// bank swap the render task would do.
 std::vector<Bytes> g_seen;
 void capture() {
+    dmx::swap_universes();
     const uint8_t* u = dmx::universe_front_buffer_for(1);
     if (u) g_seen.push_back(Bytes(u, u + 3));
 }
@@ -162,6 +164,47 @@ TEST(uncompressed_file_plays_every_frame_into_the_banks) {
     EXPECT_TRUE(fseq::status() == fseq::Status::Idle);  // ran to its end
     EXPECT_FALSE(dmx::fseq_is_active());
     EXPECT_TRUE(fseq::active_file() == nullptr);
+}
+
+namespace {
+// Per frame: universe 1 and 2 first bytes in the front bank before the render
+// swap, then after it.
+struct Pub {
+    int u1_before, u2_before, u1_after, u2_after;
+};
+std::vector<Pub> g_pubs;
+void check_publish() {
+    const uint8_t* u1 = dmx::universe_front_buffer_for(1);
+    const uint8_t* u2 = dmx::universe_front_buffer_for(2);
+    Pub p{ u1[0], u2[0], 0, 0 };
+    dmx::swap_universes();
+    u1         = dmx::universe_front_buffer_for(1);
+    u2         = dmx::universe_front_buffer_for(2);
+    p.u1_after = u1[0];
+    p.u2_after = u2[0];
+    g_pubs.push_back(p);
+}
+}  // namespace
+
+// A frame spanning two universes reaches the front bank whole, on the render
+// task's swap — never one universe ahead of the other (the old path wrote both
+// banks universe by universe, so a swap mid-frame showed half a frame).
+TEST(a_multi_universe_frame_is_published_by_one_swap) {
+    write_file("two.fseq", cat(header(600, 3), frames_data(600, 3)));
+    g_pubs.clear();
+    EXPECT_TRUE(fseq::start("two.fseq"));
+    shim::run_task_for("fseq_play", 1000, check_publish);
+    EXPECT_EQ(g_pubs.size(), 3u);
+    for (size_t n = 0; n < g_pubs.size(); ++n) {
+        const int f = static_cast<int>(10 * (n + 1));
+        EXPECT_EQ(g_pubs[n].u1_after, f);      // channel 0
+        EXPECT_EQ(g_pubs[n].u2_after, f + 2);  // channel 512, same frame
+        if (n > 0) {  // until the swap, the front still shows the previous frame
+            EXPECT_EQ(g_pubs[n].u1_before, f - 10);
+            EXPECT_EQ(g_pubs[n].u2_before, f - 8);
+        }
+    }
+    EXPECT_FALSE(dmx::inject_frame_universe(1, 0, reinterpret_cast<const uint8_t*>("x"), 1));
 }
 
 namespace {
