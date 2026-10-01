@@ -793,6 +793,50 @@ int cmd_scene(int argc, char** argv) {
 
 // ── FSEQ player ─────────────────────────────────────────────────────────────
 
+// fseq playlist [play | clear | add <file> [repeat] | loop on|off | autostart on|off]
+int cmd_fseq_playlist(int argc, char** argv) {
+    config::FseqPlaylist p = config::get_playlist();
+    if (argc == 1) {
+        printf("count=%u loop=%u autostart=%u playing=%d\n", p.count, p.loop, p.autostart,
+               fseq::playlist_index());
+        for (size_t i = 0; i < p.count; ++i)
+            printf("item%u=%s x%u\n", static_cast<unsigned>(i), p.items[i].name, p.items[i].repeat);
+        return ok();
+    }
+    const char* sub = argv[1];
+    if (strcmp(sub, "play") == 0 && argc == 2) {
+        if (!fseq::start_playlist()) {
+            printf("ERR %s\n", fseq::error_string());
+            return 1;
+        }
+        return ok();
+    }
+    if (strcmp(sub, "clear") == 0 && argc == 2) {
+        p.count = 0;
+    } else if (strcmp(sub, "add") == 0 && (argc == 3 || argc == 4)) {
+        if (p.count >= config::kPlaylistMax) return err("playlist full (16)");
+        uint32_t repeat = 1;
+        if (argc == 4 && !parse_u32_in(argv[3], 1, 255, repeat)) return err("repeat: 1..255");
+        if (strlen(argv[2]) >= config::kPlaylistNameLen || strchr(argv[2], '/'))
+            return err("bad filename");
+        config::PlaylistItem& it = p.items[p.count++];
+        it                       = config::PlaylistItem{};
+        strncpy(it.name, argv[2], sizeof(it.name) - 1);
+        it.repeat = static_cast<uint8_t>(repeat);
+    } else if ((strcmp(sub, "loop") == 0 || strcmp(sub, "autostart") == 0) && argc == 3 &&
+               (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "off") == 0)) {
+        const uint8_t on                                  = strcmp(argv[2], "on") == 0;
+        (strcmp(sub, "loop") == 0 ? p.loop : p.autostart) = on;
+    } else {
+        return err("usage: fseq playlist [play | clear | add <file> [repeat] | loop on|off | "
+                   "autostart on|off]");
+    }
+    config::set_playlist(p);
+    printf("count=%u loop=%u autostart=%u\n", config::get_playlist().count,
+           config::get_playlist().loop, config::get_playlist().autostart);
+    return ok();
+}
+
 int cmd_fseq(int argc, char** argv) {
     if (argc == 1) {
         const char* f = fseq::active_file();
@@ -810,8 +854,9 @@ int cmd_fseq(int argc, char** argv) {
         return ok();
     }
     if (strcmp(argv[1], "play") == 0) {
-        if (argc != 3) return err("usage: fseq play <filename>");
-        if (!fseq::start(argv[2])) {
+        const bool loop = argc == 4 && strcmp(argv[3], "loop") == 0;
+        if (argc != 3 && !loop) return err("usage: fseq play <filename> [loop]");
+        if (!fseq::start(argv[2], loop)) {
             printf("ERR %s\n", fseq::error_string());
             return 1;
         }
@@ -837,7 +882,8 @@ int cmd_fseq(int argc, char** argv) {
             printf("file%u=%s\n", static_cast<unsigned>(i), names[i]);
         return ok();
     }
-    return err("usage: fseq [list | play <filename> | stop | seek <ms>]");
+    if (strcmp(argv[1], "playlist") == 0) return cmd_fseq_playlist(argc - 1, argv + 1);
+    return err("usage: fseq [list | play <filename> [loop] | stop | seek <ms> | playlist ...]");
 }
 
 // ── show / ctrl ─────────────────────────────────────────────────────────────
@@ -1063,8 +1109,10 @@ void start() {
                  cmd_show);
     register_cmd("ctrl", "ctrl [enable|universe|address|preset|add|set|del|clear] — DMX control",
                  cmd_ctrl);
-    register_cmd("fseq", "fseq [list | play <file> | stop | seek <ms>] — FSEQ show player",
-                 cmd_fseq);
+    register_cmd(
+        "fseq",
+        "fseq [list | play <file> [loop] | stop | seek <ms> | playlist ...] — FSEQ show player",
+        cmd_fseq);
     register_cmd("cal", "cal [-1|0|1|2|3] — get/set calibration pattern (3 = GPIO bit-bang probe)",
                  cmd_cal);
     register_cmd("loglevel", "loglevel <none..verbose> — set global log level", cmd_loglevel);

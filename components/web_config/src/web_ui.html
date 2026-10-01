@@ -225,7 +225,21 @@
                 <div style="position:relative;height:8px;background:#0d0e0d;border:1px solid #222321;border-radius:0"><div data-live="fseq-fill" style="position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,#2e9e52,#3fd463);border-radius:0"></div></div>
                 <div style="display:flex;justify-content:space-between;margin-top:8px;font:500 12px 'DM Mono';color:#a9aca4"><span data-live="fseq-pos">0:00</span><span style="color:#80837c" data-live="fseq-dur">0:00</span></div>
               </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;font:500 12px 'DM Mono';color:#a9aca4">
+                <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="fseq-loop" type="checkbox"/><span data-i18n="Loop the file played">Loop the file played</span></label>
+                <span data-live="fseq-mode" style="color:#3fd463"></span>
+              </div>
               <div style="display:flex;gap:8px"><button data-action="fseq-stop" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="square" class="ic16"></i><span data-i18n="Stop">Stop</span></button></div>
+            </div>
+
+            <div style="background:#121412;border:1px solid #262826;border-radius:0;padding:18px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:#80837c" data-i18n="PLAYLIST">PLAYLIST</span>
+                <button data-action="pl-play" style="display:inline-flex;align-items:center;gap:7px;background:#3fd463;border:1px solid #3fd463;color:#08170d;border-radius:0;padding:6px 11px;font:600 12px 'DM Mono';cursor:pointer"><i data-lucide="list-video" class="ic14"></i><span data-i18n="Play">Play</span></button></div>
+              <div id="pl-mount"></div>
+              <div style="display:flex;flex-direction:column;gap:8px;font:500 12px 'DM Mono';color:#a9aca4">
+                <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="pl-loop" type="checkbox"/><span data-i18n="Start over after the last file">Start over after the last file</span></label>
+                <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="pl-auto" type="checkbox"/><span data-i18n="Play at boot (as soon as the card is mounted)">Play at boot (as soon as the card is mounted)</span></label>
+              </div>
             </div>
           </div>
         </div>
@@ -630,6 +644,10 @@ var PF_ICONS = {
   'upload-cloud':'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/>',
   'x':'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   'plus':'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  'arrow-up':'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  'arrow-down':'<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  'list-plus':'<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>',
+  'list-video':'<path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/><path d="m16 12 5 3-5 3v-6Z"/>',
   'copy':'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   'grip-vertical':'<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
   'check':'<path d="M20 6 9 17l-5-5"/>',
@@ -741,6 +759,14 @@ var FR={
   'Live update · every 1 s':'Mise à jour live · toutes les 1 s',
   'Up to 30 scenes · 11 effects · up to 4 colors':'Jusqu’à 30 scènes · 11 effets · jusqu’à 4 couleurs',
   'Play .fseq sequences from the microSD card':'Lecture de séquences .fseq depuis la carte microSD',
+  'Loop the file played':'Lire le fichier en boucle','PLAYLIST':'PLAYLIST',
+  'Start over after the last file':'Reprendre au début après le dernier fichier',
+  'Play at boot (as soon as the card is mounted)':'Lire au démarrage (dès la carte montée)',
+  'Add to the playlist':'Ajouter à la playlist','Plays in a row':'Lectures d’affilée',
+  'Move up':'Monter','Move down':'Descendre','Playlist saved':'Playlist enregistrée',
+  'Empty — add files with the + of the list':'Vide — ajoutez des fichiers avec le + de la liste',
+  'The playlist holds 16 files':'La playlist contient 16 fichiers au plus',
+  'Playing the playlist':'Lecture de la playlist','playlist':'playlist','loop':'boucle',
   '8 lines · 2 outputs (DATA + CLOCK) per channel':'8 lignes · 2 sorties (DATA + CLOCK) par canal',
   'IP addressing — applied after reboot':'Adressage IP — appliqué après redémarrage',
   'ArtNet 4 + sACN E1.31 reception · merge & failsafe':'Réception ArtNet 4 + sACN E1.31 · merge & failsafe',
@@ -1125,7 +1151,7 @@ function fseqRow(name,active){
     +'<span style="display:inline-flex;align-items:center;gap:10px;font:500 13px \'DM Mono\';color:#edeeea;min-width:0"><i data-lucide="file-video" class="ic16" style="color:'+(on?'#3fd463':'#6f726c')+'"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</span></span>'
     +'<span style="padding:0 18px;font:500 12px \'DM Mono\';color:#8e9189">—</span>'
     +'<span style="padding:0 18px;font:500 12px \'DM Mono\';color:#8e9189">—</span>'
-    +'<span style="display:flex;gap:6px"><button data-fseq-play="'+esc(name)+'" style="width:30px;height:30px;border-radius:0;background:#3fd463;border:1px solid #3fd463;color:#08170d;display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="play" class="ic14"></i></button></span></div>';
+    +'<span style="display:flex;gap:6px"><button data-fseq-add="'+esc(name)+'" title="'+esc(t('Add to the playlist'))+'" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="list-plus" class="ic14"></i></button><button data-fseq-play="'+esc(name)+'" style="width:30px;height:30px;border-radius:0;background:#3fd463;border:1px solid #3fd463;color:#08170d;display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="play" class="ic14"></i></button></span></div>';
 }
 function chanSlots(c){ return c.pixels*3; }
 function chanSpan(c){ return Math.max(1,Math.ceil(chanSlots(c)/512)); }
@@ -1162,7 +1188,7 @@ function go(name){
   var tt=document.querySelector('[data-screen-title]'); if(tt) tt.textContent=t(TITLES[name]||'');
   var sb=document.querySelector('[data-screen-sub]'); if(sb) sb.textContent=t(SUBS[name]||'');
   var sc=document.getElementById('pf-scroll'); if(sc) sc.scrollTop=0;
-  if(name==='fseq') loadFseq();
+  if(name==='fseq'){ loadFseq(); loadPlaylist(); }
   if(diagTimer){ clearInterval(diagTimer); diagTimer=null; }
   if(name==='diag'){ pollDiag(); diagTimer=setInterval(pollDiag,1500); }
 }
@@ -1310,6 +1336,7 @@ function pollStatus(){
     var scn=(s.active_scene!=null && s.active_scene>=0)?s.active_scene:-1;
     if(playing){
       setLive('now-name',f.active); setLive('fseq-name',f.active);
+      setLive('fseq-mode',f.playlist_index>=0?(t('playlist')+' '+(f.playlist_index+1)+(f.loop?' ↻':'')):(f.loop?t('loop')+' ↻':''));
       setLive('now-sub',t('FSEQ sequence')+(f.duration_ms?(' · '+fmtMs(f.duration_ms)):''));
       setBadge(true,t('playing'));
       var pct=f.duration_ms?Math.min(100,f.position_ms/f.duration_ms*100):0;
@@ -1319,13 +1346,13 @@ function pollStatus(){
     } else if(scn>=0){
       var nm=(SCENES[scn]&&SCENES[scn].name)?SCENES[scn].name:'';
       setLive('now-name',t('Scene')+' '+(scn+1)+(nm?(' · '+nm):'')); setLive('now-sub',t('Built-in scene active'));
-      setLive('fseq-name','—'); setBadge(true,t('scene active'));
+      setLive('fseq-name','—'); setBadge(true,t('scene active')); setLive('fseq-mode','');
       document.querySelectorAll('[data-live="fseq-fill"]').forEach(function(e){ e.style.width='0'; });
       document.querySelectorAll('[data-live="fseq-handle"]').forEach(function(e){ e.style.left='0'; });
       setLive('fseq-pos','0:00'); setLive('fseq-dur','0:00');
     } else {
       setLive('now-name',t('No playback')); setLive('now-sub',t('No active scene or sequence'));
-      setLive('fseq-name','—'); setBadge(false,t('stopped'));
+      setLive('fseq-name','—'); setBadge(false,t('stopped')); setLive('fseq-mode','');
       document.querySelectorAll('[data-live="fseq-fill"]').forEach(function(e){ e.style.width='0'; });
       document.querySelectorAll('[data-live="fseq-handle"]').forEach(function(e){ e.style.left='0'; });
       setLive('fseq-pos','0:00'); setLive('fseq-dur','0:00');
@@ -1579,6 +1606,32 @@ function loadFseq(){
     m.innerHTML=files.map(function(n){ return fseqRow(n,d.active); }).join(''); createIcons(m);
   }).catch(function(){});
 }
+/* ─────────── fseq playlist ─────────── */
+var PL={loop:false,autostart:false,items:[]};
+function loadPlaylist(){
+  api('GET','/api/fseq/playlist').then(function(d){ PL=d; PL.items=PL.items||[]; renderPlaylist(); }).catch(function(){});
+}
+function plBtn(attr,i,icon,title){
+  return '<button '+attr+'="'+i+'" title="'+esc(t(title))+'" style="width:26px;height:26px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid #363835;color:#edeeea;border-radius:0;display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="'+icon+'" class="ic14"></i></button>';
+}
+function renderPlaylist(){
+  var m=el('pl-mount'); if(!m) return;
+  el('pl-loop').checked=!!PL.loop; el('pl-auto').checked=!!PL.autostart;
+  if(!PL.items.length){ m.innerHTML='<div style="font:500 12px \'DM Mono\';color:#80837c">'+esc(t('Empty — add files with the + of the list'))+'</div>'; return; }
+  m.innerHTML=PL.items.map(function(it,i){
+    return '<div data-pl-row="'+i+'" style="display:grid;grid-template-columns:18px 1fr 52px auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #1c1d1b;font:500 12px \'DM Mono\'">'
+      +'<span style="color:#80837c">'+(i+1)+'</span>'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#edeeea">'+esc(it.name)+'</span>'
+      +'<input data-pl-repeat="'+i+'" type="number" min="1" max="255" value="'+it.repeat+'" title="'+esc(t('Plays in a row'))+'" style="width:52px;background:#0d0e0d;border:1px solid #363835;color:#edeeea;padding:4px;font:500 12px \'DM Mono\'"/>'
+      +'<span style="display:flex;gap:4px">'+plBtn('data-pl-up',i,'arrow-up','Move up')+plBtn('data-pl-down',i,'arrow-down','Move down')+plBtn('data-pl-del',i,'x','Remove')+'</span></div>';
+  }).join('');
+  createIcons(m);
+}
+function savePlaylist(){
+  return api('POST','/api/fseq/playlist',{loop:!!PL.loop,autostart:!!PL.autostart,items:PL.items.map(function(it){ return {name:it.name,repeat:it.repeat}; })})
+    .then(function(d){ PL=d; PL.items=PL.items||[]; renderPlaylist(); toast(t('Playlist saved')); })
+    .catch(function(e){ toast(t('Error: ')+e.message,true); loadPlaylist(); });
+}
 
 /* ─────────── save ─────────── */
 function buildGlobalBody(){
@@ -1815,6 +1868,7 @@ function doAction(a){
   else if(a==='import'){ el('restore-file').click(); }
   else if(a==='ota'){ el('ota-file').click(); }
   else if(a==='fseq-upload'){ el('fseq-file').click(); }
+  else if(a==='pl-play'){ api('POST','/api/fseq/play',{playlist:true}).then(function(){ toast(t('Playing the playlist')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='fseq-stop'){ api('POST','/api/fseq/stop',{}).then(function(){ toast(t('Sequence stopped')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
 }
 function uploadXhr(path,file,bar,prog,onok){
@@ -1872,7 +1926,15 @@ function onClick(e){
     api('POST','/api/scene/'+sn2+'/stop',{}).then(function(){ toast(t('Stopped scene ')+(sn2+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1, stop=!!PLAYING[n3];
     api('POST','/api/scene/'+n3+(stop?'/stop':'/play'),{}).then(function(){ toast(t(stop?'Stopped scene ':'Playing scene ')+(n3+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
-  var fpl=e.target.closest('[data-fseq-play]'); if(fpl){ var fn=fpl.getAttribute('data-fseq-play'); api('POST','/api/fseq/play',{filename:fn}).then(function(){ toast(t('Playing: ')+fn); loadFseq(); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
+  var fad=e.target.closest('[data-fseq-add]'); if(fad){ if(PL.items.length>=16){ toast(t('The playlist holds 16 files'),true); return; } PL.items.push({name:fad.getAttribute('data-fseq-add'),repeat:1}); savePlaylist(); return; }
+  var pup=e.target.closest('[data-pl-up]'), pdn=e.target.closest('[data-pl-down]'), pdl=e.target.closest('[data-pl-del]');
+  if(pup||pdn||pdl){
+    var i=parseInt((pup||pdn||pdl).getAttribute(pup?'data-pl-up':pdn?'data-pl-down':'data-pl-del'),10);
+    if(pdl) PL.items.splice(i,1);
+    else { var j=pup?i-1:i+1; if(j<0||j>=PL.items.length) return; var tmp=PL.items[i]; PL.items[i]=PL.items[j]; PL.items[j]=tmp; }
+    savePlaylist(); return;
+  }
+  var fpl=e.target.closest('[data-fseq-play]'); if(fpl){ var fn=fpl.getAttribute('data-fseq-play'); api('POST','/api/fseq/play',{filename:fn,loop:el('fseq-loop').checked}).then(function(){ toast(t('Playing: ')+fn); loadFseq(); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var reboot=e.target.closest('[data-reboot]'); if(reboot){ openModal('reboot'); return; }
   var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
   var dev=e.target.closest('[data-dev]'); if(dev){ selectDevice(dev.getAttribute('data-dev'), dev.getAttribute('data-dev-self')==='1'); return; }
@@ -1923,6 +1985,9 @@ function init(){
   el('ota-file').addEventListener('change',otaUpload);
   el('restore-file').addEventListener('change',restoreUpload);
   el('fseq-file').addEventListener('change',fseqUpload);
+  el('pl-loop').addEventListener('change',function(){ PL.loop=this.checked; savePlaylist(); });
+  el('pl-auto').addEventListener('change',function(){ PL.autostart=this.checked; savePlaylist(); });
+  el('pl-mount').addEventListener('change',function(e){ var r=e.target.closest('[data-pl-repeat]'); if(!r) return; var i=parseInt(r.getAttribute('data-pl-repeat'),10); PL.items[i].repeat=Math.max(1,Math.min(255,parseInt(r.value,10)||1)); savePlaylist(); });
   var ll=el('d-loglevel'); if(ll) ll.addEventListener('change',function(){
     api('POST','/api/loglevel',{level:ll.value}).then(function(){ toast(t('Log level: ')+ll.value); fetchLogs(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
   });

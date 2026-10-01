@@ -338,3 +338,52 @@ def test_play_on_offers_only_the_scene_target_channels(page, device):
             break
         time.sleep(0.05)
     assert device.get("/api/status")["show"]["scenes"][:3] == [0, 0, -1]
+
+
+# ── FSEQ playlist ────────────────────────────────────────────────────────────
+
+
+def _playlist(device):
+    return device.get("/api/fseq/playlist")
+
+
+def _wait(pred):
+    for _ in range(40):
+        if pred():
+            return True
+        time.sleep(0.05)
+    return pred()
+
+
+def test_fseq_playlist_build_reorder_and_options(page, device):
+    nav(page, "fseq")
+    expect(page.locator("#pl-mount")).to_contain_text("Empty")
+    page.locator('[data-fseq-add="show.fseq"]').click()
+    page.locator('[data-fseq-add="loop.fseq"]').click()
+    assert _wait(lambda: len(_playlist(device)["items"]) == 2)
+    page.locator('[data-pl-up="1"]').click()  # loop.fseq first
+    assert _wait(lambda: _playlist(device)["items"][0]["name"] == "loop.fseq")
+    # The list re-renders from the save's answer: edit the new rows, not the old.
+    expect(page.locator('[data-pl-row="0"]')).to_contain_text("loop.fseq")
+    rep = page.locator('[data-pl-repeat="1"]')
+    rep.fill("3")
+    rep.dispatch_event("change")
+    assert _wait(lambda: _playlist(device)["items"][1]["repeat"] == 3)
+    expect(page.locator('[data-pl-repeat="1"]')).to_have_value("3")
+    page.locator("#pl-loop").check()
+    expect(page.locator("#pl-loop")).to_be_checked()
+    assert _wait(lambda: _playlist(device)["loop"])
+    page.locator("#pl-auto").check()
+    assert _wait(lambda: _playlist(device)["loop"] and _playlist(device)["autostart"])
+    page.locator('[data-pl-del="0"]').click()
+    assert _wait(lambda: [i["name"] for i in _playlist(device)["items"]] == ["show.fseq"])
+    page.locator('[data-action="pl-play"]').click()
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("playlist")
+
+
+def test_fseq_play_a_file_in_a_loop(page, device):
+    nav(page, "fseq")
+    page.locator("#fseq-loop").check()
+    page.locator('[data-fseq-play="show.fseq"]').click()
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("show.fseq")
+    assert device.get("/api/status")["fseq"]["loop"] is True

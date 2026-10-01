@@ -554,6 +554,50 @@ inline void sanitize_control(ControlConfig& c) {
 const ControlConfig& get_control();
 bool set_control(const ControlConfig& cfg);
 
+// ── FSEQ playlist ───────────────────────────────────────────────────────────
+// Files of the SD card played in order, each `repeat` times; `loop` starts
+// over after the last one; `autostart` plays it as soon as the card mounts at
+// boot. A file to loop at boot = a one-item looping playlist. Own NVS blob,
+// absent on an upgrade (= empty, nothing autostarts).
+constexpr size_t kPlaylistMax     = 16;
+constexpr size_t kPlaylistNameLen = 64;  // = fseq::kMaxNameLen
+struct PlaylistItem {
+    char name[kPlaylistNameLen];  // file in the card root, NUL-terminated
+    uint8_t repeat;               // plays in a row, 1..255
+    uint8_t reserved[3];
+};
+struct FseqPlaylist {
+    uint8_t count;  // items in use
+    uint8_t loop;
+    uint8_t autostart;
+    uint8_t reserved;
+    PlaylistItem items[kPlaylistMax];
+};
+
+// Booleans to 0/1, count capped, repeat at least 1, names terminated, empty
+// names dropped (the rest close up), unused items zeroed.
+inline void sanitize_playlist(FseqPlaylist& p) {
+    p.loop      = p.loop ? 1 : 0;
+    p.autostart = p.autostart ? 1 : 0;
+    p.reserved  = 0;
+    if (p.count > kPlaylistMax) p.count = kPlaylistMax;
+    size_t keep = 0;
+    for (size_t i = 0; i < p.count; ++i) {
+        PlaylistItem it               = p.items[i];
+        it.name[kPlaylistNameLen - 1] = '\0';
+        if (!it.name[0]) continue;
+        if (it.repeat == 0) it.repeat = 1;
+        std::memset(it.reserved, 0, sizeof(it.reserved));
+        p.items[keep++] = it;
+    }
+    for (size_t i = keep; i < kPlaylistMax; ++i)
+        p.items[i] = PlaylistItem{};
+    p.count = static_cast<uint8_t>(keep);
+}
+
+const FseqPlaylist& get_playlist();
+bool set_playlist(const FseqPlaylist& p);
+
 // Restore defaults (factory reset). Does NOT reboot.
 void reset_to_defaults();
 

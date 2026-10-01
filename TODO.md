@@ -96,9 +96,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## FSEQ / standalone playback
 
-- [ ] ★ **Loop / playlist / autostart** — loop a file, chain several with
-      per-item repeat, start a file or playlist at boot (sibling of
-      `boot_scene`). Today a sequence plays once and stops.
 - [ ] **Configurable FSEQ start universe** — `kUniverseBase = 1` is hard-coded
       in `fseq_player.cpp`; expose it or map absolute channels onto the
       channel configs.

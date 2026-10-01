@@ -161,6 +161,37 @@ TEST(scene_commands_manage_the_list) {
     EXPECT_TRUE(run("scene stop"));
 }
 
+TEST(fseq_playlist_commands_edit_and_play_it) {
+    EXPECT_TRUE(run("fseq playlist clear"));
+    EXPECT_TRUE(run("fseq playlist add intro.fseq 3"));
+    EXPECT_TRUE(run("fseq playlist add show.fseq"));
+    EXPECT_TRUE(run("fseq playlist loop on"));
+    EXPECT_TRUE(run("fseq playlist autostart on"));
+    const auto& p = config::get_playlist();
+    EXPECT_EQ(p.count, 2);
+    EXPECT_EQ(p.items[0].repeat, 3);
+    EXPECT_EQ(p.loop, 1);
+    EXPECT_EQ(p.autostart, 1);
+    EXPECT_TRUE(run("fseq playlist"));
+    EXPECT_TRUE(has("item1=show.fseq x1"));
+    EXPECT_FALSE(run("fseq playlist add x.fseq 0"));  // repeat 1..255
+    EXPECT_FALSE(run("fseq playlist add a/b.fseq"));  // card root only
+    EXPECT_FALSE(run("fseq playlist loop maybe"));
+    EXPECT_FALSE(run("fseq playlist shuffle"));
+    for (int i = 0; i < 14; ++i)
+        EXPECT_TRUE(run("fseq playlist add f.fseq"));
+    EXPECT_FALSE(run("fseq playlist add one-too-many.fseq"));  // 16 max
+    const int starts = fake::modules().playlist_starts;
+    EXPECT_TRUE(run("fseq playlist play"));
+    EXPECT_EQ(fake::modules().playlist_starts, starts + 1);
+    EXPECT_TRUE(run("fseq playlist clear"));
+    EXPECT_FALSE(run("fseq playlist play"));  // empty
+    EXPECT_TRUE(run("fseq playlist autostart off"));
+    EXPECT_TRUE(run("fseq play show.fseq loop"));
+    EXPECT_TRUE(fake::modules().fseq_loop);
+    EXPECT_FALSE(run("fseq play show.fseq twice"));
+}
+
 TEST(fseq_commands_drive_the_player) {
     EXPECT_TRUE(run("fseq list"));
     EXPECT_TRUE(has("show.fseq"));
