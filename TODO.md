@@ -10,16 +10,6 @@ belongs to that fork.
 
 ## Bugs & small fixes
 
-- [ ] ★ **FSEQ playback tears** — `fseq_player` injects through
-      `dmx::inject_universe()`, which writes *both* banks while `render_task`
-      reads the front one (documented as a bench path). Route FSEQ frames
-      through the back bank + dirty mask like network data, published
-      atomically per FSEQ frame, with a host integration test (fake SD file →
-      banks → decoded pixels).
-- [ ] **`/api/fseq/play` doesn't validate the filename** — it goes straight
-      into `snprintf("%s/%s", mount, filename)`; reuse the upload endpoint's
-      filter (`/`, `\`, leading `.`). Same handler: a single `httpd_req_recv`
-      instead of the `read_body` loop truncates a fragmented body.
 - [ ] **`POST /api/global web_enabled:false` silently does nothing** — the
       flag persists but the server keeps running (a handler can't stop its own
       server) and the response has no "applies after reboot" note. Minimum: the
@@ -73,14 +63,10 @@ belongs to that fork.
 
 ## Security
 
-- [ ] ★ **Passwordless default leaves OTA / factory reset / reboot open to the
-      LAN** once the web UI is on. Options: a persistent SPA banner while no
-      password is set; require a password when enabling `web_enabled`; or gate
-      `/api/ota` + `/api/factory-reset` behind a token shown on the display.
-- [ ] ★ **Auth on `GET /api/coredump`** (and `/api/logs`) — a core dump is raw
-      RAM and may hold a cleartext password from a previous Basic-auth
-      request; the multi-node dashboard never reads it, so it needn't stay
-      open like the other GETs.
+The web password stays optional by design: pixfrog targets private show
+networks, and a lighting operator may run without one. Items here harden what
+a password protects once set; none of them may make it mandatory.
+
 - [ ] **Strengthen the password hash** — salted single-round SHA-256 is
       brute-forceable offline if the NVS blob leaks (via a coredump). A few
       thousand iterations cost nothing on the P4; re-hash on the next set.
@@ -198,10 +184,6 @@ belongs to that fork.
 
 ## Hardware & bench
 
-- [ ] ★ **NV3007 bring-up on the real 2.79" module** — rotation (flip with
-      `PIXFROG_NV3007_ROT180`), the 0x0C GRAM column offset, colours vs ST7789,
-      SPI headroom (20 MHz default, vendor demos 40+), and that the 20 kHz
-      backlight PWM does not disturb the SDMMC pads sharing VDD_IO_5.
 - [ ] **Bench SD card for FSEQ** — `hw_validate fseq` needs a microSD in the
       board (every other validator passes on the bench).
 - [ ] **Scope the first LED** — confirm on the wire (Saleae on GPIO2 +

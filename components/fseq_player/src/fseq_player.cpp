@@ -169,7 +169,7 @@ void inject_linear_frame(const uint8_t* data, uint32_t channel_count) {
     uint32_t uni       = kUniverseBase;
     while (remaining > 0 && uni <= dmx::kMaxUniverseNumber) {
         const size_t chunk = remaining < 512 ? remaining : 512;
-        dmx::inject_universe(static_cast<uint16_t>(uni), 0, data, chunk);
+        dmx::inject_frame_universe(static_cast<uint16_t>(uni), 0, data, chunk);
         data      += chunk;
         remaining -= static_cast<uint32_t>(chunk);
         ++uni;
@@ -197,7 +197,7 @@ void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges, uint8_t
                 p += remaining;
                 break;
             }
-            dmx::inject_universe(uni, slot, p, static_cast<size_t>(chunk));
+            dmx::inject_frame_universe(uni, slot, p, static_cast<size_t>(chunk));
             p         += chunk;
             ch_abs    += chunk;
             remaining -= chunk;
@@ -399,12 +399,16 @@ void playback_task(void* arg_ptr) {
                 memcpy(buf.frame, src, frame_bytes);
             }
 
-            // ── Inject frame into universe back-buffers ───────────────────
+            // ── Inject frame into the universe back bank ──────────────────
+            // One lock for the whole frame: the render task's next swap
+            // publishes every universe of it together (no torn frame).
+            dmx::inject_frame_begin();
             if (hdr.num_sparse_ranges > 0) {
                 inject_sparse_frame(buf.frame, ranges, hdr.num_sparse_ranges);
             } else {
                 inject_linear_frame(buf.frame, frame_bytes);
             }
+            dmx::inject_frame_end();
 
             ++fn;
             vTaskDelayUntil(&last_wake, frame_period);

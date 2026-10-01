@@ -1014,6 +1014,8 @@ static esp_err_t handle_get_diag(httpd_req_t* req) {
 // a log view and avoids an 8 kB copy on the httpd task stack.
 
 static esp_err_t handle_get_logs(httpd_req_t* req) {
+    // Logs can carry addresses and names of the show network: same gate as writes.
+    if (!require_auth(req)) return ESP_OK;
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
     portENTER_CRITICAL(&g_log_mux);
     const size_t head  = g_log_head;
@@ -1068,6 +1070,8 @@ static esp_err_t handle_post_loglevel(httpd_req_t* req) {
 // is stored (or the partition is absent — pre-coredump tables in the field).
 
 static esp_err_t handle_coredump_get(httpd_req_t* req) {
+    // Raw RAM: may hold a cleartext password from an earlier Basic-auth request.
+    if (!require_auth(req)) return ESP_OK;
     size_t addr = 0, size = 0;
     if (esp_core_dump_image_get(&addr, &size) != ESP_OK || size == 0) {
         httpd_resp_set_status(req, "404 Not Found");
@@ -1857,18 +1861,34 @@ static esp_err_t handle_fseq_files(httpd_req_t* req) {
 
 // ── POST /api/fseq/play ──────────────────────────────────────────────────────
 
+// A file name the card may be asked for: a plain `name.fseq` in the mount
+// root — no path separator, no hidden/relative name, no silent truncation.
+// nullptr when acceptable, else the reason.
+static const char* fseq_name_error(const char* name) {
+    if (!name[0]) return "missing filename";
+    if (strchr(name, '/') || strchr(name, '\\') || name[0] == '.') return "bad filename";
+    const size_t nl = strlen(name);
+    if (nl >= fseq::kMaxNameLen) return "filename too long";
+    if (nl < 6 || strcasecmp(name + nl - 5, ".fseq") != 0) return "filename must end in .fseq";
+    return nullptr;
+}
+
 static esp_err_t handle_fseq_play(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    char body[fseq::kMaxNameLen + 32];
-    const int len = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (len <= 0) return send_err(req, 400, "Empty body");
-    body[len]   = '\0';
+    char body[fseq::kMaxNameLen + 64];
+    if (!read_body(req, body, sizeof(body) - 1))
+        return send_err(req, 400, "body too large or empty");
     cJSON* root = cJSON_Parse(body);
     if (!root) return send_err(req, 400, "Invalid JSON");
     cJSON* fn = cJSON_GetObjectItemCaseSensitive(root, "filename");
-    if (!cJSON_IsString(fn) || !fn->valuestring || !fn->valuestring[0]) {
+    if (!cJSON_IsString(fn) || !fn->valuestring) {
         cJSON_Delete(root);
-        return send_err(req, 400, "Missing filename");
+        return send_err(req, 400, "missing filename");
+    }
+    const char* why = fseq_name_error(fn->valuestring);
+    if (why) {
+        cJSON_Delete(root);
+        return send_err(req, 400, why);
     }
     char filename[fseq::kMaxNameLen];
     strncpy(filename, fn->valuestring, sizeof(filename) - 1);
@@ -1928,11 +1948,7 @@ static esp_err_t handle_fseq_upload(httpd_req_t* req) {
         return reject(400, "missing ?name=<file.fseq>");
     url_decode(name);
 
-    if (strchr(name, '/') || strchr(name, '\\') || name[0] == '.')
-        return reject(400, "bad filename");
-    const size_t nl = strlen(name);
-    if (nl < 6 || strcasecmp(name + nl - 5, ".fseq") != 0)
-        return reject(400, "filename must end in .fseq");
+    if (const char* why = fseq_name_error(name)) return reject(400, why);
 
     const int total = req->content_len;
     if (total <= 0) return reject(400, "empty body");

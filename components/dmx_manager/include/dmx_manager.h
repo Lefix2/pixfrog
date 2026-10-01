@@ -145,6 +145,18 @@ bool auto_patch_universes(uint16_t base, uint16_t* next_free = nullptr);
 // offset+len exceeds kUniverseSize.
 bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* data, size_t len);
 
+// Frame injection (FSEQ playback): a frame spanning several universes must be
+// published by ONE bank swap, never half old / half new. begin() takes the
+// swap lock, each universe() write goes to the back bank (seeded from the
+// front, marked dirty), end() releases the lock — the render task's next
+// swap_universes() then presents the whole frame at once. universe() returns
+// false outside a begin()/end() pair, for an unmapped universe, or when
+// offset+len exceeds kUniverseSize.
+void inject_frame_begin();
+bool inject_frame_universe(uint16_t universe_number, size_t offset, const uint8_t* data,
+                           size_t len);
+void inject_frame_end();
+
 // ── Pixel-count preview (UI: ChPixels edit screen) ─────────────────────────
 // While active, decode_pixels_for_channel(ch) fills the channel's pixel
 // buffer with a coloured ruler (1..N-1 green, decades yellow, centades pink,

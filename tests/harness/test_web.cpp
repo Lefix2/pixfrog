@@ -157,7 +157,12 @@ TEST(auth_gate_and_brute_force_delay) {
               401);
     const Headers ok = { { "Authorization", "Basic " + b64("anyone:pa55") } };
     EXPECT_EQ(post("/api/scenes/stop", "{}", ok).status, 200);
-    EXPECT_EQ(get("/api/config").status, 200);  // reads stay open
+    EXPECT_EQ(get("/api/config").status, 200);  // reads stay open…
+    // …except raw RAM and the log ring, which may hold a password or show data.
+    EXPECT_EQ(get("/api/logs").status, 401);
+    EXPECT_EQ(get("/api/coredump").status, 401);
+    EXPECT_EQ(shim::http_request("GET", "/api/logs", "", ok).status, 200);
+    EXPECT_EQ(shim::http_request("GET", "/api/coredump", "", ok).status, 404);  // none stored
     EXPECT_EQ(post("/api/global", "{\"web_password\":\"\"}", ok).status, 200);
     EXPECT_FALSE(config::web_password_set());
 }
@@ -671,6 +676,24 @@ TEST(fseq_upload_rejects_before_touching_the_card) {
     EXPECT_EQ(post("/api/fseq/upload?name=show.txt", "data").status, 400);
     EXPECT_EQ(post("/api/fseq/upload?name=show+2.fseq", "").status, 400);  // empty body
     EXPECT_EQ(post("/api/fseq/play", "{}").status, 400);                   // missing filename
+}
+
+// play takes the same names upload writes: nothing that leaves the mount root,
+// nothing truncated into another file's name; a fragmented body still parses.
+TEST(fseq_play_refuses_names_outside_the_card_root) {
+    for (const char* bad :
+         { "../etc/x.fseq", "dir/x.fseq", "..\\\\x.fseq", ".hidden.fseq", "show.txt", "" }) {
+        const std::string body = std::string("{\"filename\":\"") + bad + "\"}";
+        EXPECT_EQ(post("/api/fseq/play", body).status, 400);
+    }
+    const std::string longname(fseq::kMaxNameLen + 4, 'a');
+    EXPECT_EQ(post("/api/fseq/play", "{\"filename\":\"" + longname + ".fseq\"}").status, 400);
+    EXPECT_EQ(post("/api/fseq/play", "{\"filename\":42}").status, 400);
+    EXPECT_EQ(post("/api/fseq/play", "not json").status, 400);
+    shim::http_recv_chunk(5);  // the body arrives in 5-byte pieces
+    EXPECT_EQ(post("/api/fseq/play", "{\"filename\":\"show.fseq\"}").status, 200);
+    shim::http_recv_chunk(0);
+    EXPECT_TRUE(::fake::modules().fseq_started == "show.fseq");
 }
 
 TEST(peers_fall_back_to_the_instance_name) {
