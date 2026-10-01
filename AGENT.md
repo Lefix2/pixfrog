@@ -21,6 +21,10 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 - **Read-modify-write atomics are 32-bit** (`exchange`, `fetch_*`, `compare_exchange_*`): on
   the ESP32-P4 a sub-word RMW clobbered a neighbouring variable written by the other core.
   8/16-bit atomics are fine for plain load/store. `tools/lint_atomics.py` (CI) enforces it.
+- **Config writes take the config lock** (every `config::set_*` does); a read-modify-write
+  wraps `get → change → set` in `config::ScopedLock`. Never hold it around a service
+  start/stop (`web::stop` waits for httpd handlers that may want the lock). `render_task`
+  never takes it: scenes are read with `config::copy_scene()` (seqlock). See ARCHITECTURE §6.
 
 ## Module map
 

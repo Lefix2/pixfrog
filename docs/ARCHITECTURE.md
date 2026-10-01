@@ -147,19 +147,24 @@ The standard 24 kB NVS partition is plenty.
 
 pixfrog deliberately avoids mutexes on the hot path. All data-plane handoffs are **atomic pointer swaps**.
 
-### 6.1 Pointer swap (universe_pool)
+### 6.1 Universe banks (front / back + dirty mask)
 
-```cpp
-std::atomic<UniverseBank*> universe_front;   // read by render_task
-UniverseBank*              universe_back;    // written by artnet_rx_task
+Two universe banks; `g_uni_front` (atomic pointer) is the one `render_task`
+reads, the *back* bank is simply the other one — derived, never stored, so it
+cannot go stale. Receivers write a slot into the back bank (seeded from the
+front the first time it is touched since the last swap) and set its bit in
+`g_uni_dirty`; `render_task` swaps once per frame, only when something is
+dirty, so a universe nobody updated keeps its value (hold-last-look).
 
-// render_task once per frame:
-UniverseBank* new_front = universe_back;
-universe_back = universe_front.exchange(new_front, std::memory_order_acq_rel);
-// new_front is now the consistent snapshot for this frame
-```
-
-No locks. With one writer (`artnet_rx_task`) and one reader (`render_task` after swap), acquire/release ordering provides correctness.
+Resolving the back bank and writing into it must not straddle a swap, so both
+sides take **`g_uni_swap_mux`**: the receivers (`artnet_rx` / `sacn_rx`,
+priority 10), the FSEQ player for a whole frame (`inject_frame_begin/end`,
+so a multi-universe frame is published by one swap), and `render_task`
+(priority 20) for the pointer flip. That is a **priority inversion by design**:
+the render task can wait for a lower-priority holder. It is bounded — a holder
+does at most one universe's merge + 512-byte copy (an FSEQ frame: its
+universes' copies), microseconds — and FreeRTOS mutexes inherit priority, so
+the holder cannot be preempted by middle-priority work meanwhile.
 
 ### 6.2 Buffer-free wait (end of DMA emission)
 
@@ -186,9 +191,21 @@ frame proceeds anyway — no error cascade.
 
 UI commits set bits in `g_remap_eg` (bit `n` per channel, bit 8 for global). `render_task` consumes them at the start of every frame via `dmx::handle_pending_remaps()`, which rebuilds the universe → channel LUT when needed.
 
-### 6.5 NVS
+### 6.5 Config store and NVS
 
-NVS writes happen only from `ui_task` (low-prio, core 0). They can block for a few ms; the UI tolerates that latency. `render_task` reads the config via `config::get_channel()` which returns a reference to the RAM cache — never blocks.
+Config writes come from several tasks: `ui_task`, the UART console, `httpd`,
+and `artnet_rx` (ArtAddress / ArtIpProg). Every setter takes one **recursive
+config lock**, so writers never interleave inside a struct; a caller's
+read-modify-write (`get_*` → change a field → `set_*`) holds a
+`config::ScopedLock` across it so another task's write cannot be lost in
+between. Writes go through to NVS under the lock and can take a few ms.
+
+`render_task` never takes that lock: it reads the RAM cache by reference, and
+copies the scenes it draws with `config::copy_scene()`, a **seqlock** over the
+scene bank — a list edit (memmove) bumps a counter around the RAM change and
+the reader retries if it overlapped, falling back to the lock only if a writer
+keeps getting in the way. NVS blobs carry a layout version (`v_<key>`) next to
+them; one written by a newer firmware is ignored rather than misread.
 
 ---
 

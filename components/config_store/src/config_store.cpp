@@ -1,10 +1,13 @@
 #include "config_store.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 
 #include "esp_log.h"
 #include "esp_random.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "mbedtls/sha256.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -23,6 +26,20 @@ SceneBank g_bank{};
 ControlConfig g_control{};
 FseqPlaylist g_playlist{};
 bool g_nvs_ok = false;
+
+// The config lock (see ScopedLock). Created by init(); before that (and if
+// creation failed) locking is a no-op — boot is single-threaded until then.
+SemaphoreHandle_t g_mux = nullptr;
+
+// Seqlock over the scene bank's RAM image, for copy_scene(): odd while an edit
+// is in flight. Writers already hold the config lock; 32-bit for the P4.
+std::atomic<uint32_t> g_bank_seq{ 0 };
+struct BankEdit {
+    BankEdit() { g_bank_seq.fetch_add(1, std::memory_order_acq_rel); }
+    ~BankEdit() { g_bank_seq.fetch_add(1, std::memory_order_release); }
+    BankEdit(const BankEdit&)            = delete;
+    BankEdit& operator=(const BankEdit&) = delete;
+};
 
 constexpr const char* kKeyScenes   = "scenes";
 constexpr const char* kKeyRollback = "rollback";
@@ -69,6 +86,7 @@ ChannelConfig make_default_channel(size_t idx) {
 
 // Usable starter set: one slot per showcase effect.
 void fill_default_scenes() {
+    BankEdit edit;
     std::memset(&g_bank, 0, sizeof(g_bank));
     struct Def {
         const char* name;
@@ -109,7 +127,40 @@ void fill_default_scenes() {
 // the stored blob is smaller than size (struct grew), the tail is zero-filled
 // so new fields get their safe zero default. Returns false only on hard error
 // or if the stored blob is *larger* than expected (downgrade scenario).
+// Layout version of each blob, kept in its own one-byte "v_<key>" entry.
+// Bump a version when a struct's *layout* changes (fields moved, resized):
+// the loader can then tell old and new images apart without relying on
+// their sizes never colliding. A struct that only grows at the end keeps its
+// version — the shorter image loads zero-filled. An entry written before
+// versioning has no "v_" key: its layout is inferred from its size, as
+// before, and the next save records the version.
+uint8_t layout_version(const char* key) {
+    if (std::strcmp(key, kKeyScenes) == 0) return 3;  // v1 8×25 B, v2 8×34 B, v3 count+N×34 B
+    return 1;                                         // global, ch*, control, playlist, rollback
+}
+
+void version_key(const char* key, char out[16]) {
+    std::snprintf(out, 16, "v_%s", key);
+}
+
+// The stored layout version of `key`, -1 when none was recorded.
+int stored_version(nvs_handle_t handle, const char* key) {
+    char vk[16];
+    version_key(key, vk);
+    uint8_t v = 0;
+    size_t n  = 1;
+    if (nvs_get_blob(handle, vk, &v, &n) != ESP_OK || n != 1) return -1;
+    return v;
+}
+
 bool nvs_load_blob(nvs_handle_t handle, const char* key, void* dst, size_t size) {
+    // Written by a newer firmware with another layout (a downgrade): ignore it
+    // rather than misread it — the caller falls back to its defaults.
+    if (stored_version(handle, key) > layout_version(key)) {
+        ESP_LOGW(TAG, "%s: layout v%d is newer than this firmware's v%u — defaults", key,
+                 stored_version(handle, key), layout_version(key));
+        return false;
+    }
     size_t actual = 0;
     esp_err_t err = nvs_get_blob(handle, key, nullptr, &actual);
     if (err != ESP_OK) return false;
@@ -122,6 +173,10 @@ bool nvs_load_blob(nvs_handle_t handle, const char* key, void* dst, size_t size)
 void nvs_save_blob(nvs_handle_t handle, const char* key, const void* src, size_t size) {
     esp_err_t err = nvs_set_blob(handle, key, src, size);
     if (err != ESP_OK) ESP_LOGE(TAG, "nvs_set_blob(%s) failed: %d", key, err);
+    char vk[16];
+    version_key(key, vk);
+    const uint8_t ver = layout_version(key);
+    if (stored_version(handle, key) != ver) nvs_set_blob(handle, vk, &ver, 1);
 }
 
 void save_scenes(nvs_handle_t h) {
@@ -207,6 +262,8 @@ void fill_ram_defaults() {
 }  // namespace
 
 void init() {
+    if (!g_mux) g_mux = xSemaphoreCreateRecursiveMutex();
+    ScopedLock lock;
     esp_err_t err = nvs_flash_init();
     if (err != ESP_OK) {
         // Any first-init error → erase + retry (covers NO_FREE_PAGES,
@@ -277,8 +334,14 @@ void init() {
         // v1/v2 images are smaller than the bank; anything larger is unknown.
         static uint8_t raw[sizeof(SceneBank)];
         size_t n = sizeof(raw);
-        if (exist && size <= sizeof(raw) && nvs_get_blob(h, kKeyScenes, raw, &n) == ESP_OK &&
-            load_scene_bank(raw, n, g_bank)) {
+        // A layout newer than this firmware (a downgrade) is not read. An
+        // older or unrecorded one goes through the size-based migration: a
+        // downgrade to a pre-versioning firmware rewrites the blob but not
+        // its "v_" entry, so the recorded version alone cannot be trusted.
+        const int ver    = stored_version(h, kKeyScenes);
+        const bool known = ver <= static_cast<int>(layout_version(kKeyScenes));
+        if (exist && known && size <= sizeof(raw) &&
+            nvs_get_blob(h, kKeyScenes, raw, &n) == ESP_OK && load_scene_bank(raw, n, g_bank)) {
             if (n != scene_bank_bytes(g_bank.count)) {
                 save_scenes(h);
                 ESP_LOGI(TAG, "scene list migrated (%u→%u bytes)", static_cast<unsigned>(n),
@@ -332,6 +395,7 @@ bool get_rollback(RollbackRecord& out) {
 }
 
 bool set_rollback(const RollbackRecord& rec) {
+    ScopedLock lock;
     if (!g_nvs_ok) return false;
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
@@ -339,6 +403,13 @@ bool set_rollback(const RollbackRecord& rec) {
     nvs_commit(h);
     nvs_close(h);
     return true;
+}
+
+ScopedLock::ScopedLock() {
+    if (g_mux) xSemaphoreTakeRecursive(g_mux, portMAX_DELAY);
+}
+ScopedLock::~ScopedLock() {
+    if (g_mux) xSemaphoreGiveRecursive(g_mux);
 }
 
 const GlobalConfig& get_global() {
@@ -349,6 +420,7 @@ const ChannelConfig& get_channel(size_t i) {
 }
 
 bool set_global(const GlobalConfig& cfg) {
+    ScopedLock lock;
     g_global = cfg;
     if (!g_nvs_ok) return false;  // RAM-only: cache updated, no persistence
     nvs_handle_t h;
@@ -360,6 +432,7 @@ bool set_global(const GlobalConfig& cfg) {
 }
 
 bool set_channel(size_t i, const ChannelConfig& cfg) {
+    ScopedLock lock;
     if (i >= kNumChannels) return false;
     g_channels[i] = cfg;
     sanitize_channel(g_channels[i]);
@@ -397,6 +470,7 @@ bool hash_is_zero(const uint8_t hash[32]) {
 }  // namespace
 
 bool set_web_password(const char* password) {
+    ScopedLock lock;
     if (password && std::strlen(password) > kMaxWebPasswordLen) return false;
     GlobalConfig g = g_global;
     if (!password || password[0] == '\0') {
@@ -434,57 +508,102 @@ const Scene& get_scene(size_t i) {
     return i < g_bank.count ? g_bank.scenes[i] : kBlank;
 }
 
+// Lock-free for the render path: a config write (NVS included) can take tens
+// of ms, a frame cannot wait for it. Retry while a bank edit is in flight; if
+// a writer keeps getting in the way, wait on the lock (priority inheritance).
+bool copy_scene(size_t i, Scene& out) {
+    for (int tries = 0; tries < 64; ++tries) {
+        const uint32_t before = g_bank_seq.load(std::memory_order_acquire);
+        if (before & 1) continue;
+        const bool ok   = i < g_bank.count;
+        const Scene tmp = ok ? g_bank.scenes[i] : Scene{};
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (g_bank_seq.load(std::memory_order_relaxed) == before) {
+            out = tmp;
+            return ok;
+        }
+    }
+    ScopedLock lock;
+    const bool ok = i < g_bank.count;
+    out           = ok ? g_bank.scenes[i] : Scene{};
+    return ok;
+}
+
 bool set_scene(size_t i, const Scene& scene) {
+    ScopedLock lock;
     if (i >= g_bank.count) return false;
-    g_bank.scenes[i] = scene;
-    sanitize_scene(g_bank.scenes[i]);
+    {
+        BankEdit edit;
+        g_bank.scenes[i] = scene;
+        sanitize_scene(g_bank.scenes[i]);
+    }
     return persist_scenes(false);
 }
 
 int add_scene(const Scene& scene) {
+    ScopedLock lock;
     if (g_bank.count >= kMaxScenes) return -1;
-    Scene& sc = g_bank.scenes[g_bank.count];
-    sc        = scene;
-    sanitize_scene(sc);
-    const int idx = g_bank.count++;
+    int idx;
+    {
+        BankEdit edit;
+        Scene& sc = g_bank.scenes[g_bank.count];
+        sc        = scene;
+        sanitize_scene(sc);
+        idx = g_bank.count++;
+    }
     persist_scenes(false);
     return idx;
 }
 
 bool delete_scene(size_t i) {
+    ScopedLock lock;
     if (i >= g_bank.count) return false;
-    std::memmove(&g_bank.scenes[i], &g_bank.scenes[i + 1], (g_bank.count - i - 1) * sizeof(Scene));
-    --g_bank.count;
-    std::memset(&g_bank.scenes[g_bank.count], 0, sizeof(Scene));
+    {
+        BankEdit edit;
+        std::memmove(&g_bank.scenes[i], &g_bank.scenes[i + 1],
+                     (g_bank.count - i - 1) * sizeof(Scene));
+        --g_bank.count;
+        std::memset(&g_bank.scenes[g_bank.count], 0, sizeof(Scene));
+    }
     persist_scenes(remap_global_scene_refs(SceneEdit::Delete, i, 0));
     return true;
 }
 
 bool move_scene(size_t from, size_t to) {
+    ScopedLock lock;
     if (from >= g_bank.count || to >= g_bank.count) return false;
     if (from == to) return true;
-    const Scene moved = g_bank.scenes[from];
-    if (from < to)
-        std::memmove(&g_bank.scenes[from], &g_bank.scenes[from + 1], (to - from) * sizeof(Scene));
-    else
-        std::memmove(&g_bank.scenes[to + 1], &g_bank.scenes[to], (from - to) * sizeof(Scene));
-    g_bank.scenes[to] = moved;
+    {
+        BankEdit edit;
+        const Scene moved = g_bank.scenes[from];
+        if (from < to)
+            std::memmove(&g_bank.scenes[from], &g_bank.scenes[from + 1],
+                         (to - from) * sizeof(Scene));
+        else
+            std::memmove(&g_bank.scenes[to + 1], &g_bank.scenes[to], (from - to) * sizeof(Scene));
+        g_bank.scenes[to] = moved;
+    }
     persist_scenes(remap_global_scene_refs(SceneEdit::Move, from, to));
     return true;
 }
 
 bool replace_scenes(const Scene* scenes, size_t count) {
+    ScopedLock lock;
     if (count > kMaxScenes) count = kMaxScenes;
-    std::memset(&g_bank, 0, sizeof(g_bank));
-    for (size_t i = 0; i < count; ++i) {
-        g_bank.scenes[i] = scenes[i];
-        sanitize_scene(g_bank.scenes[i]);
+    {
+        BankEdit edit;
+        std::memset(&g_bank, 0, sizeof(g_bank));
+        for (size_t i = 0; i < count; ++i) {
+            g_bank.scenes[i] = scenes[i];
+            sanitize_scene(g_bank.scenes[i]);
+        }
+        g_bank.count = static_cast<uint8_t>(count);
     }
-    g_bank.count = static_cast<uint8_t>(count);
     return persist_scenes(false);
 }
 
 void reset_to_defaults() {
+    ScopedLock lock;
     fill_ram_defaults();
     if (!g_nvs_ok) return;
     nvs_handle_t h;
@@ -507,6 +626,7 @@ const ControlConfig& get_control() {
 }
 
 bool set_control(const ControlConfig& cfg) {
+    ScopedLock lock;
     g_control = cfg;
     sanitize_control(g_control);
     if (!g_nvs_ok) return false;
@@ -523,6 +643,7 @@ const FseqPlaylist& get_playlist() {
 }
 
 bool set_playlist(const FseqPlaylist& p) {
+    ScopedLock lock;
     g_playlist = p;
     sanitize_playlist(g_playlist);
     if (!g_nvs_ok) return false;

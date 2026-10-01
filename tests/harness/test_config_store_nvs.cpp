@@ -317,6 +317,45 @@ TEST(ip_fallback_ids_and_the_artnet_address) {
     EXPECT_EQ(get_global().ip_fallback, kIpFallbackLinkLocal);
 }
 
+TEST(copy_scene_and_the_config_lock) {
+    Scene sc{};
+    EXPECT_TRUE(copy_scene(0, sc));
+    EXPECT_STREQ(sc.name, get_scene(0).name);
+    Scene past{};
+    std::strcpy(past.name, "x");
+    EXPECT_FALSE(copy_scene(num_scenes(), past));  // past the end: blanked
+    EXPECT_EQ(past.name[0], 0);
+    {
+        // A caller's read-modify-write holds the lock across the setter (the
+        // lock is recursive); an unbalanced unlock would abort the shim.
+        ScopedLock lock;
+        auto g           = get_global();
+        g.home_timeout_s = 42;
+        EXPECT_TRUE(set_global(g));
+        ScopedLock nested;
+        EXPECT_TRUE(move_scene(0, 1));
+        EXPECT_TRUE(move_scene(1, 0));
+    }
+    EXPECT_EQ(get_global().home_timeout_s, 42);
+}
+
+// Every blob records its layout version; one written by a newer firmware
+// (a downgrade) is not misread — defaults instead.
+TEST(blobs_record_their_layout_version) {
+    for (const char* k : { "v_global", "v_ch0", "v_ch7", "v_scenes", "v_control", "v_playlist" })
+        EXPECT_TRUE(shim::nvs_has("pixfrog", k));
+    EXPECT_EQ(shim::nvs_raw("pixfrog", "v_scenes")[0], 3);
+    EXPECT_EQ(shim::nvs_raw("pixfrog", "v_global")[0], 1);
+    auto c        = get_channel(2);
+    c.pixel_count = 77;
+    set_channel(2, c);
+    const uint8_t newer = 9;
+    shim::nvs_put_raw("pixfrog", "v_ch2", &newer, 1);
+    init();
+    EXPECT_TRUE(get_channel(2).pixel_count != 77);       // not read: a future layout
+    EXPECT_EQ(shim::nvs_raw("pixfrog", "v_ch2")[0], 1);  // rewritten by this firmware
+}
+
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv);
 }

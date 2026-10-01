@@ -19,26 +19,6 @@ belongs to that fork.
       If it comes back, capture EMAC/PHY state and ARP from the PC before
       resetting.
 
-## Concurrency & robustness
-
-- [ ] **Serialize config writes** — `config::set_*` (whole-struct
-      read-modify-write + NVS) are called from `ui_task`, the UART console,
-      `httpd` and `artnet_rx` (ArtAddress/ArtIpProg) with no lock: concurrent
-      writers lose each other's fields, readers can see torn structs. Scene
-      list edits `memmove` the bank while `render_task` reads it. Cheapest fix:
-      a mutex inside the setters (none is hot-path) and a per-frame copy of the
-      scenes being rendered; update AGENT.md's concurrency rule.
-- [ ] **Torn 64-bit activity timestamps** — `g_last_activity_us[]` (int64,
-      written on core 0, read on core 1) is not atomic on RV32: a reader can
-      see mixed halves at a 2³² µs rollover → one spurious failsafe frame.
-      Store 32-bit ms or use `std::atomic<int64_t>`.
-- [ ] **Versioned NVS blobs** — layouts are told apart by size (the scene
-      v1/v2/v3 migration relies on sizes never colliding). Prefix each blob
-      with a version byte.
-- [ ] **Document the swap-mutex priority inversion** — `g_uni_swap_mux` is
-      shared by `render_task` (prio 20) and the receivers (prio 10); bounded by
-      one 512-byte memcpy, fine, but say so in ARCHITECTURE.md §6.
-
 ## Security
 
 The web password stays optional by design: pixfrog targets private show
