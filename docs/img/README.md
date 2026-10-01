@@ -27,8 +27,8 @@ docs viewer hide any image that fails to load, so adding/replacing one is safe.
 | `rack-full.jpg`             | JPG  | Complete 1U rack, eight XLR outputs across the front           | Landing page §01 |
 | `web-dashboard[-fr].png`    | PNG  | Web UI dashboard, EN / FR — `tools/screenshots`                | Landing page §02 |
 | `web-scenes[-fr].png`       | PNG  | Web UI scene editor, EN / FR — `tools/screenshots`             | Landing page §02 |
-| `web-control[-fr].png`      | PNG  | Web UI DMX control editor, EN / FR — `tools/screenshots`       | Landing §03, SHOW_CONTROL |
-| `effects/effects-gallery.png` | PNG | The 11 scene effects as space-time strips — `tools/effects_gallery` | Landing §03, SHOW_CONTROL |
+| `web-control.png`           | PNG  | Web UI DMX control editor — `tools/screenshots`                | SHOW_CONTROL |
+| `effects/effects-gallery.png` | PNG | The 11 scene effects, time → x, pixel → y — `tools/effects_gallery` | SHOW_CONTROL |
 | `og-cover.png`              | PNG  | Social / link-preview cover (rendered from `og-cover.svg`)    | `og:image` |
 | `logo.svg`                  | SVG  | Frog mark — nav brand + favicon                               | Site |
 | `frog-anim.svg`             | SVG  | Animated frog logo (self-contained CSS); baked into the splash | About page + `tools/splashgen` |

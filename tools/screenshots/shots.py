@@ -30,8 +30,9 @@ EMULATORS = {
     "st7789": os.path.join(REPO, "tools", "emulator", "build.st7789", "pixfrog_emu"),
 }
 
-# What the site shows (index-{en,fr}.html); --all takes every screen below.
-SITE_WEB    = {"dashboard", "scenes", "control"}
+# What the site and the docs show, per UI language (index-{en,fr}.html,
+# docs/SHOW_CONTROL.md); --all takes every screen below.
+SITE_WEB    = {"en": {"dashboard", "scenes", "control"}, "fr": {"dashboard", "scenes"}}
 SITE_DEVICE = {("nv3007", "home")}
 
 # Web screens: (file stem, nav target, optional action before the shot).
@@ -99,7 +100,7 @@ def shoot_web(out, langs, every):
                 page.wait_for_selector("[data-screen-title]")
                 time.sleep(8)  # status polls: live numbers and the sparklines filled
                 for stem, nav, action in WEB:
-                    if not every and stem not in SITE_WEB:
+                    if not every and stem not in SITE_WEB[lang]:
                         continue
                     page.locator(f'div[data-nav="{nav}"]').click()
                     if action == "open_scene":

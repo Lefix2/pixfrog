@@ -1,6 +1,7 @@
 // Effects gallery: renders every scene effect with the firmware's own
-// fill_scene_pattern() as a space-time strip — x = pixel along the line,
-// y = time going down — one binary PPM per effect, for the documentation.
+// fill_scene_pattern() as a space-time strip — x = time going right, y = pixel
+// along the line (pixel 0 at the top) — one binary PPM per effect, for the
+// documentation.
 // Driven by gallery.py (compile, run, convert to PNG, compose the sheet).
 //
 //   gallery <out_dir>   →  <out_dir>/<effect>.ppm
@@ -17,7 +18,7 @@ using namespace pixfrog;
 namespace {
 
 constexpr uint16_t kPixels = 144;  // one 1 m WS2812B strip
-constexpr int kRows        = 240;  // frames, top to bottom
+constexpr int kFrames      = 240;  // columns, left to right
 constexpr int kFrameMs     = 25;   // 40 fps → 6 s of animation
 
 struct Look {
@@ -47,7 +48,7 @@ const Look kLooks[config::kSceneFxCount] = {
 bool write_ppm(const std::string& path, const std::vector<uint8_t>& rgb) {
     FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) return false;
-    std::fprintf(f, "P6\n%u %d\n255\n", kPixels, kRows);
+    std::fprintf(f, "P6\n%d %u\n255\n", kFrames, kPixels);
     std::fwrite(rgb.data(), 1, rgb.size(), f);
     return std::fclose(f) == 0;
 }
@@ -68,13 +69,14 @@ int main(int argc, char** argv) {
             config::set_scene_color(s, k, l.rgb[k][0], l.rgb[k][1], l.rgb[k][2]);
         s.num_colors = l.n;
 
-        std::vector<uint8_t> img;
-        img.reserve(static_cast<size_t>(kPixels) * 3 * kRows);
-        uint8_t row[kPixels * 3];
-        for (int y = 0; y < kRows; ++y) {
-            dmx::logic::fill_scene_pattern(row, sizeof(row), kPixels, 3, s,
-                                           static_cast<uint64_t>(y) * kFrameMs + 10'000);
-            img.insert(img.end(), row, row + sizeof(row));
+        // One frame per column: frame f's pixel p lands at row p, column f.
+        std::vector<uint8_t> img(static_cast<size_t>(kPixels) * kFrames * 3);
+        uint8_t frame[kPixels * 3];
+        for (int f = 0; f < kFrames; ++f) {
+            dmx::logic::fill_scene_pattern(frame, sizeof(frame), kPixels, 3, s,
+                                           static_cast<uint64_t>(f) * kFrameMs + 10'000);
+            for (uint16_t p = 0; p < kPixels; ++p)
+                std::memcpy(&img[(static_cast<size_t>(p) * kFrames + f) * 3], &frame[p * 3], 3);
         }
         std::string name = config::scene_fx_label(l.fx);
         for (char& c : name)
