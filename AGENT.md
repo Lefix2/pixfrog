@@ -70,7 +70,9 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 
 ## Web configuration UI
 
-`components/web_config`: optional HTTP server (port 80) with an embedded SPA + REST API.
+`components/web_config`: optional HTTP server (port 80) with an embedded SPA + REST API,
+one source per API area (`api_config/show/status/fseq/system.cpp`, `web_push.cpp`,
+`web_mdns.cpp`; the map is at the top of `web_internal.h`).
 Controlled by `GlobalConfig::web_enabled` (NVS-backed, default **off**). No TCP socket is
 opened while the flag is off — opt-in only. Toggle from the Network submenu, via
 `global web_enabled 0|1` in the UART console, or via POST `/api/global`.

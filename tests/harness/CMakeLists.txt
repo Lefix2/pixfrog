@@ -160,6 +160,14 @@ set(WEB_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/fakes/fseq_fake.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fakes/modules_fake.cpp
     ${REPO}/components/web_config/src/web_config.cpp
+    ${REPO}/components/web_config/src/web_util.cpp
+    ${REPO}/components/web_config/src/api_show.cpp
+    ${REPO}/components/web_config/src/api_config.cpp
+    ${REPO}/components/web_config/src/api_status.cpp
+    ${REPO}/components/web_config/src/web_push.cpp
+    ${REPO}/components/web_config/src/api_system.cpp
+    ${REPO}/components/web_config/src/api_fseq.cpp
+    ${REPO}/components/web_config/src/web_mdns.cpp
     ${REPO}/components/sacn/src/sacn.cpp
     ${REPO}/components/dmx_manager/src/dmx_manager.cpp
     ${REPO}/components/config_store/src/config_store.cpp
@@ -219,6 +227,14 @@ pixfrog_harness(harness_boot
     ${REPO}/components/fseq_player/third_party/zstddeclib.c
     ${REPO}/components/control_console/src/control_console.cpp
     ${REPO}/components/web_config/src/web_config.cpp
+    ${REPO}/components/web_config/src/web_util.cpp
+    ${REPO}/components/web_config/src/api_show.cpp
+    ${REPO}/components/web_config/src/api_config.cpp
+    ${REPO}/components/web_config/src/api_status.cpp
+    ${REPO}/components/web_config/src/web_push.cpp
+    ${REPO}/components/web_config/src/api_system.cpp
+    ${REPO}/components/web_config/src/api_fseq.cpp
+    ${REPO}/components/web_config/src/web_mdns.cpp
     ${REPO}/components/dmx_manager/src/dmx_manager.cpp
     ${REPO}/components/config_store/src/config_store.cpp
     ${LED_OUTPUT_SRC}
