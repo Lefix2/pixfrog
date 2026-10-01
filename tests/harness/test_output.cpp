@@ -144,6 +144,40 @@ TEST(pixels_reach_the_wire_in_colour_order) {
     EXPECT_TRUE(output::fb_bytes() > 0);
 }
 
+TEST(gamma_and_white_balance_go_through_the_channel_lut) {
+    channel0(led::Protocol::WS2815, 1);
+    auto c = config::get_channel(0);
+    c.wb_r = 128;  // red halved, the rest identity
+    config::set_channel(0, c);
+    dmx::mark_channel_dirty(0);
+    dmx::handle_pending_remaps();
+    shim::parlio_reset();
+    EXPECT_TRUE(output::init(cfg()));
+    pixels({ 200, 200, 200 });
+    EXPECT_TRUE(output::render_frame(100));
+    const Bytes wire = decode_nrz(shim::parlio_log().last_samples, 0);
+    EXPECT_EQ(wire.size(), 3u);
+    if (wire.size() == 3) {
+        EXPECT_EQ(wire[0], 200);                     // G untouched
+        EXPECT_TRUE(wire[1] < 110 && wire[1] > 90);  // R through the white balance
+    }
+    EXPECT_TRUE(output::render_frame(100));  // same settings: the cached LUT
+}
+
+TEST(the_pixel_count_preview_emits_the_ruler_count) {
+    channel0(led::Protocol::WS2815, 4);
+    shim::parlio_reset();
+    EXPECT_TRUE(output::init(cfg()));
+    dmx::set_pixel_preview(0, 9);       // the UI's ChPixels editor at 9 LEDs
+    dmx::decode_pixels_for_channel(0);  // paints the ruler, publishes the emit count
+    dmx::swap_pixels(0);
+    EXPECT_TRUE(output::render_frame(100));
+    EXPECT_EQ(decode_nrz(shim::parlio_log().last_samples, 0).size(),
+              static_cast<size_t>(dmx::preview_emit_count()) * 3);
+    EXPECT_EQ(dmx::preview_emit_count(), 9);  // past the configured 4
+    dmx::clear_pixel_preview();
+}
+
 TEST(three_buffers_rotate_and_a_reused_one_waits_a_frame) {
     channel0(led::Protocol::WS2815, 200);
     shim::parlio_reset();

@@ -497,6 +497,43 @@ TEST(fixture_profile_matches_the_control_mode) {
     post("/api/control", "{\"preset\":\"simple\"}");
 }
 
+// The remaining functions: overrides (speed/param/colour), fade, a coarse
+// master — ranged channels still gapless, the others a single capability.
+TEST(fixture_profile_covers_every_control_function) {
+    post("/api/control", "{\"preset\":\"full\"}");
+    EXPECT_EQ(post("/api/control",
+                   "{\"slots\":[{\"fn\":\"master\"},{\"fn\":\"speed\"},{\"fn\":\"param\"},"
+                   "{\"fn\":\"red\",\"index\":1},{\"fn\":\"green\"},{\"fn\":\"blue\"},"
+                   "{\"fn\":\"fade\"},{\"fn\":\"scene\"}]}")
+                  .status,
+              200);
+    EXPECT_EQ(post("/api/control", "{\"address\":0}").status, 400);
+    EXPECT_EQ(post("/api/control", "{\"slots\":[{\"fn\":\"red\",\"index\":9}]}").status, 400);
+    Json f(get("/api/control/fixture").body);
+    const cJSON* avail = f["availableChannels"];
+    int gapless = 0, single = 0;
+    for (const cJSON* ch = avail->child; ch; ch = ch->next) {
+        const cJSON* caps = cJSON_GetObjectItemCaseSensitive(ch, "capabilities");
+        if (!caps) {
+            ++single;
+            continue;
+        }
+        int next = 0;
+        for (const cJSON* cap = caps->child; cap; cap = cap->next) {
+            const cJSON* r = cJSON_GetObjectItemCaseSensitive(cap, "dmxRange");
+            EXPECT_EQ(static_cast<int>(cJSON_GetArrayItem(r, 0)->valuedouble), next);
+            next = static_cast<int>(cJSON_GetArrayItem(r, 1)->valuedouble) + 1;
+        }
+        EXPECT_EQ(next, 256);
+        ++gapless;
+    }
+    EXPECT_EQ(single, 5);   // master, red, green, blue (intensities), fade (a time)
+    EXPECT_EQ(gapless, 3);  // speed, param, scene
+    const cJSON* fade = cJSON_GetObjectItemCaseSensitive(avail, "Fade time");
+    EXPECT_TRUE(fade != nullptr);
+    post("/api/control", "{\"preset\":\"simple\"}");
+}
+
 TEST(backup_restore_carries_the_control_mode_and_fade) {
     post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":55,\"address\":7}");
     post("/api/global", "{\"scene_fade_ms\":2500}");
