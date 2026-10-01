@@ -17,7 +17,7 @@
 - **Signal-loss failsafe** per channel: hold / blackout / solid colour / scene after a configurable timeout
 - **Per-channel gamma + white balance**, baked into encode-time LUTs (validated bit-exact on a logic analyzer)
 - Local UI: **NV3007 428×142 colour bar TFT** (SPI, 2.79") with a live status dashboard (per-channel activity, link/services state) and natively rasterised anti-aliased fonts; Adafruit seesaw rotary encoder (4-wire I2C, time-polled); pixel-count live preview and strip-identify blink for commissioning. Two other panels are supported as build-time alternates — see [Display backend](#display-backend)
-- **Web UI** (opt-in, port 80): full configuration SPA + REST API, live `/api/status` telemetry, **OTA firmware update** (A/B slots with boot-failure rollback), config **backup/restore** as JSON, crash **coredump download**, mDNS discovery while enabled, optional HTTP Basic auth on every mutation (no TLS: the password crosses the network in clear)
+- **Web UI** (opt-in, port 80): full configuration SPA + REST API, live status and per-output pixel preview pushed over a WebSocket (`/api/status` polling as fallback), **OTA firmware update** (A/B slots with boot-failure rollback), config **backup/restore** as JSON, crash **coredump download**, mDNS discovery while enabled, optional HTTP Basic auth on every mutation (no TLS: the password crosses the network in clear)
 - **UART control console**: every config field, telemetry, DMX injection, buffer readback (`tools/uartctl.sh`)
 - All configuration **persisted** in NVS with forward migration; network surfaces beyond ArtNet are **strictly opt-in** (no socket while disabled)
 

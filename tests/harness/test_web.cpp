@@ -4,6 +4,7 @@
 
 #include <string>
 #include <sys/stat.h>
+#include <vector>
 
 #include "cJSON.h"
 #include "config_store.h"
@@ -81,7 +82,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 31);
+    EXPECT_EQ(shim::http_routes(), 32);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -416,6 +417,39 @@ TEST(turning_the_web_ui_off_from_it_stops_the_server) {
     EXPECT_FALSE(config::get_global().web_enabled);
     web::start();  // the next cases need it
     EXPECT_TRUE(shim::http_running());
+}
+
+// The SPA's live status: once a WebSocket client is on /api/ws, the push task
+// sends the /api/status JSON (typed "status") to it every second.
+TEST(status_is_pushed_to_websocket_clients) {
+    EXPECT_EQ(shim::ws_open("/api/nope"), -1);
+    const int fd = shim::ws_open("/api/ws");
+    EXPECT_TRUE(fd >= 0);
+    EXPECT_TRUE(shim::ws_frames(fd).empty());
+    shim::run_task_for("web_push", 11, [] {});  // ten 200 ms ticks
+    std::vector<std::string> status, preview;
+    for (const auto& f : shim::ws_frames(fd))
+        (f[0] == '{' ? status : preview).push_back(f);
+    EXPECT_EQ(status.size(), 2u);    // 1 Hz
+    EXPECT_EQ(preview.size(), 10u);  // 5 Hz
+    if (!status.empty()) {
+        Json j(status.back());
+        EXPECT_STREQ(j["type"]->valuestring, "status");
+        EXPECT_TRUE(cJSON_IsNumber(j["fps"]));
+        EXPECT_TRUE(cJSON_IsArray(j["channels"]));
+        EXPECT_TRUE(cJSON_IsObject(j["fseq"]));
+    }
+    if (!preview.empty()) {
+        // 'P', the output count, then per output n + n RGB triplets.
+        const std::string& p = preview.back();
+        EXPECT_EQ(p[0], 'P');
+        EXPECT_EQ(static_cast<size_t>(p[1]), config::kNumChannels);
+        size_t len = 2;
+        for (size_t ch = 0; ch < config::kNumChannels && len < p.size(); ++ch)
+            len += 1 + static_cast<uint8_t>(p[len]) * 3;
+        EXPECT_EQ(len, p.size());
+    }
+    shim::ws_close(fd);
 }
 
 TEST(unknown_route_is_404) {

@@ -106,10 +106,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Web UI
 
-- [ ] **Push live status** — every tab polls `/api/status` each second; a
-      WebSocket or SSE push scales better with several clients.
-- [ ] **Live output preview** — low-resolution read-back of the pixel front
-      buffers (`pixr`-like endpoint) drawn as strips, for remote commissioning.
 - [ ] **Expose `persist_ok` in `/api/status`** — degraded-NVS mode is only
       visible over UART; the SPA should warn when settings no longer persist.
 - [ ] **Backup filename** — include the date and `short_name` in the
@@ -121,8 +117,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Hardware & bench
 
-- [ ] **Bench SD card for FSEQ** — `hw_validate fseq` needs a microSD in the
-      board (every other validator passes on the bench).
 - [ ] **Multi-board validation** — the aggregated multi-node web UI and
       PTP/sync work need ≥ 2 boards on one LAN.
 - [ ] **Physical DMX input** — RS-485 receive on the shield to drive the box

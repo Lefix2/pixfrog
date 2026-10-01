@@ -287,6 +287,11 @@ void swap_pixels(size_t ch);
 // Read-only access to the front pixel buffer for channel `ch`.
 const uint8_t* pixel_front_buffer(size_t ch);
 
+// Live preview for the web dashboard: channel `ch`'s front buffer shrunk to at
+// most `max_samples` RGB triplets in `rgb` (see logic::downsample_rgb). Any
+// task; a frame swapped mid-read only tears the preview. 0 for an Off channel.
+size_t output_preview(size_t ch, uint8_t* rgb, size_t max_samples);
+
 // Copy DMX bytes for channel `ch` from the front universe bank into
 // `pixel_back_buffer(ch)`. Spans multiple universes if a channel's pixel
 // data straddles a universe boundary. Applies `dmx_start` as the per-channel

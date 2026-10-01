@@ -84,6 +84,11 @@ size_t http_routes();  // handlers registered (esp_http_server caps it)
 // Serves the registered handlers on a real TCP port until *stop is set
 // (browser tests); requests are dispatched on the calling thread.
 void http_serve(uint16_t port, volatile bool* stop);
+// WebSocket clients (esp_http_server WS subset): open one on a websocket
+// route (its handler sees the handshake GET), read the frames pushed to it.
+int ws_open(const std::string& uri);  // -1: no websocket route there
+std::vector<std::string> ws_frames(int fd);
+void ws_close(int fd);
 
 // ── Fault injection ─────────────────────────────────────────────────────────
 // The next `count` calls of that API fail (error paths of the code under test).
