@@ -97,6 +97,9 @@ def report():
               "--exclude", r".*(font_data|font_oled|splash_anim|splash_oled)\.cpp",
               "--gcov-ignore-parse-errors=negative_hits.warn_once_per_file",
               "--gcov-ignore-parse-errors=suspicious_hits.warn_once_per_file",
+              # One function, several Kconfig builds: splash_render() is on a
+              # different line in the OLED and TFT variants of splash.cpp.
+              "--merge-mode-functions=separate",
               BUILD_TESTS, BUILD_EMU, BUILD_EMU + "-st7789"]
     run([sys.executable, "-m", "gcovr", *common, "--lcov", lcov,
          "--html-details", os.path.join(OUT, "html", "index.html")], cwd=REPO)
