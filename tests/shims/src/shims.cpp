@@ -90,8 +90,31 @@ void heap_caps_free(void* p) {
 size_t heap_caps_get_free_size(uint32_t) {
     return 24u << 20;
 }
+namespace {
+bool g_psram          = true;
+size_t g_psram_blocks = 0;
+}  // namespace
+namespace shim {
+void psram_present(bool present) {
+    g_psram = present;
+}
+void psram_largest_block(size_t bytes) {
+    g_psram_blocks = bytes;
+}
+}  // namespace shim
+size_t heap_caps_get_largest_free_block(uint32_t) {
+    return g_psram_blocks ? g_psram_blocks : 16u << 20;
+}
 size_t heap_caps_get_total_size(uint32_t) {
-    return 32u << 20;
+    return g_psram ? 32u << 20 : 0;
+}
+void* heap_caps_aligned_calloc(size_t alignment, size_t n, size_t size, uint32_t) {
+    if (shim::should_fail(shim::Fault::HeapCaps)) return nullptr;
+    void* p         = nullptr;
+    const size_t sz = (n * size + alignment - 1) / alignment * alignment;
+    if (posix_memalign(&p, alignment, sz) != 0) return nullptr;
+    std::memset(p, 0, sz);
+    return p;
 }
 size_t heap_caps_get_minimum_free_size(uint32_t) {
     return 23u << 20;
@@ -242,6 +265,11 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t s) {
     if (s->count == 1) return pdFALSE;  // binary / mutex saturate at 1
     s->count = 1;
     return pdTRUE;
+}
+BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t s, BaseType_t* woken) {
+    const BaseType_t r = xSemaphoreGive(s);
+    if (woken && r == pdTRUE) *woken = pdTRUE;
+    return r;
 }
 void vSemaphoreDelete(SemaphoreHandle_t s) {
     delete s;

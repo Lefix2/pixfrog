@@ -88,20 +88,32 @@ void http_serve(uint16_t port, volatile bool* stop);
 // ── Fault injection ─────────────────────────────────────────────────────────
 // The next `count` calls of that API fail (error paths of the code under test).
 enum class Fault {
-    Socket,       // socket() → -1
-    Bind,         // bind() → -1
-    Join,         // setsockopt(IP_ADD_MEMBERSHIP) → -1
-    SendTo,       // sendto() → -1
-    HeapCaps,     // heap_caps_calloc/malloc → nullptr
-    Semaphore,    // xSemaphoreCreate* → nullptr
-    EventGroup,   // xEventGroupCreate → nullptr
-    OtaNoTarget,  // esp_ota_get_next_update_partition → nullptr
-    OtaBegin,     // esp_ota_begin → ESP_FAIL
-    OtaWrite,     // esp_ota_write → ESP_FAIL
-    OtaSetBoot,   // esp_ota_set_boot_partition → ESP_FAIL
-    HttpdStart,   // httpd_start → ESP_FAIL
-    TaskCreate,   // xTaskCreate* → pdFAIL
-    MdnsInit,     // mdns_init → ESP_FAIL
+    Socket,          // socket() → -1
+    Bind,            // bind() → -1
+    Join,            // setsockopt(IP_ADD_MEMBERSHIP) → -1
+    SendTo,          // sendto() → -1
+    HeapCaps,        // heap_caps_calloc/malloc → nullptr
+    Semaphore,       // xSemaphoreCreate* → nullptr
+    EventGroup,      // xEventGroupCreate → nullptr
+    OtaNoTarget,     // esp_ota_get_next_update_partition → nullptr
+    OtaBegin,        // esp_ota_begin → ESP_FAIL
+    OtaWrite,        // esp_ota_write → ESP_FAIL
+    OtaSetBoot,      // esp_ota_set_boot_partition → ESP_FAIL
+    HttpdStart,      // httpd_start → ESP_FAIL
+    TaskCreate,      // xTaskCreate* → pdFAIL
+    ParlioNew,       // parlio_new_tx_unit → ESP_FAIL
+    ParlioEnable,    // parlio_tx_unit_enable → ESP_FAIL
+    ParlioTransmit,  // parlio_tx_unit_transmit → ESP_FAIL
+    MdnsInit,        // mdns_init → ESP_FAIL
+    LcdNewPanel,     // esp_lcd_new_rgb_panel / _st7789 → ESP_FAIL
+    LcdPanelReset,   // esp_lcd_panel_reset → ESP_FAIL
+    LcdPanelInit,    // esp_lcd_panel_init → ESP_FAIL
+    LcdFrameBuffer,  // esp_lcd_rgb_panel_get_frame_buffer → ESP_FAIL
+    LcdDraw,         // esp_lcd_panel_draw_bitmap → ESP_FAIL
+    LcdRefresh,      // esp_lcd_rgb_panel_refresh → ESP_FAIL
+    LcdNewIo,        // esp_lcd_new_panel_io_spi → ESP_FAIL
+    SpiBus,          // spi_bus_initialize → ESP_FAIL
+    CacheMsync,      // esp_cache_msync → ESP_FAIL
     Count,
 };
 // `skip` calls succeed first (fail the Nth allocation, not the first).
@@ -113,6 +125,42 @@ void set_reset_reason(int reason);  // esp_reset_reason() value
 // ── SD card (driver/sdmmc_host.h, esp_vfs_fat.h, vfs_redirect.h) ────────────
 void sd_root(const std::string& host_dir);  // files of the card
 void sd_insert(bool inserted);              // mount succeeds / status OK only when in
+
+// ── LED output hardware (driver/parlio_tx.h, driver/gpio.h) ─────────────────
+struct ParlioLog {
+    int units_created = 0, units_deleted = 0, transmits = 0;
+    size_t max_transfer_size = 0;
+    uint32_t clk_hz          = 0;
+    int data_gpios[16]       = {};  // the bus pin map of the last unit
+    bool loop                = false;
+    const void* last_buffer  = nullptr;
+    std::vector<uint16_t> last_samples;  // the frame of the last transmit
+};
+ParlioLog& parlio_log();
+void parlio_reset();
+int gpio_calls();
+unsigned gpio_level(int pin);
+void psram_present(bool present);        // heap_caps_get_total_size(SPIRAM)
+void psram_largest_block(size_t bytes);  // heap_caps_get_largest_free_block (0 = default)
+
+// ── LCD (esp_lcd_panel_rgb.h, esp_lcd_panel_io.h, esp_lcd_panel_vendor.h) ───
+struct LcdLog {
+    int panels_created = 0, panels_deleted = 0, draws = 0, refreshes = 0, vsyncs = 0;
+    uint32_t pclk_hz = 0, h_res = 0, v_res = 0;  // RGB panel geometry
+    int data_gpios[16]     = {};
+    const void* last_drawn = nullptr;  // buffer of the last draw_bitmap
+    int last_x1 = 0, last_y1 = 0, last_x2 = 0, last_y2 = 0;
+    std::vector<uint16_t> last_frame;  // RGB: the frame of the last refresh
+    // SPI panel IO / vendor panels
+    int ios_created = 0, spi_buses = 0, color_tx = 0;
+    std::vector<int> commands;  // every tx_param / tx_color command, in order
+    bool display_on = false, swap_xy = false, mirror_x = false, mirror_y = false;
+    bool inverted = false;
+};
+LcdLog& lcd_log();
+void lcd_reset();
+// false: refresh never raises on_vsync (an emission that never completes).
+void lcd_auto_vsync(bool on);
 
 // ── OTA / core dump / mDNS ──────────────────────────────────────────────────
 std::vector<uint8_t>& ota_image();                     // bytes esp_ota_write() received

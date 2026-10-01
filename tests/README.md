@@ -15,8 +15,8 @@ python3 tools/coverage.py                               # whole-firmware coverag
 | Path | What |
 |---|---|
 | `components/*/test/` | Pure-logic suites (encoders, parsers, `dmx_logic.h`, layouts). Each still builds standalone. |
-| `tests/shims/` | Host implementations of the IDF APIs the portable components call: fake clock (`esp_timer`, FreeRTOS ticks), in-memory NVS with fault injection, single-threaded FreeRTOS, real SHA-256, an in-process UDP fabric behind `lwip/sockets.h`, `esp_console` command table. Tests steer them through `shim_control.h`. |
-| `tests/harness/` | The **real** firmware sources compiled against the shims — `config_store.cpp`, `dmx_manager.cpp`, `artnet.cpp`, `sacn.cpp`, `control_console.cpp`, `web_config.cpp` — one executable per area so their static state stays apart. `fakes/` stands in for modules not built here (FSEQ player, FPP, LED output, UI). |
+| `tests/shims/` | Host implementations of the IDF APIs the portable components call: fake clock (`esp_timer`, FreeRTOS ticks), in-memory NVS with fault injection, single-threaded FreeRTOS, real SHA-256, an in-process UDP fabric behind `lwip/sockets.h`, `esp_console` command table, an SD card backed by a host directory (`vfs_redirect.h` maps `/sdcard`), and recording LED/LCD drivers (PARLIO TX, esp_lcd RGB + SPI panels, GPIO). Tests steer them through `shim_control.h`, including one-shot fault injection (`shim::fail_next`). |
+| `tests/harness/` | The **real** firmware sources compiled against the shims — `config_store.cpp`, `dmx_manager.cpp`, `artnet.cpp`, `sacn.cpp`, `control_console.cpp`, `web_config.cpp`, `fseq_player.cpp` + `fpp_sync.cpp`, both LED output backends — one executable per area so their static state stays apart. `fakes/` stands in for modules a harness does not build. |
 | `tests/web/` | `pixfrog_api_host`: the real `web_config` handlers and gzipped SPA served over TCP on the host (`--port N [--rollback] [--password P]`), and Playwright tests driving the SPA in Chromium against it. |
 | `tests/third_party/cJSON/` | cJSON as vendored by ESP-IDF (MIT), for the web handlers. |
 | `tests/fuzz/` | libFuzzer targets (`-DPIXFROG_FUZZ=ON`, clang): the wire parsers, the real Art-Net/sACN receive loops, the console table, the REST handlers. `corpus/<target>/` holds the seeds (`make_seeds.py` regenerates them). |
@@ -58,6 +58,12 @@ TEST(failsafe_after_timeout) {
   the test registered `shim::net_on_idle(port, stop_fn)`.
 - `shim::console_exec("ch 0 pixels 60", &out)` runs a console line as the UART
   REPL would and captures its output.
+- `shim::run_task_for("sd_mon", n, step)` runs an endless task for `n` delays,
+  calling `step` at each one — how the SD monitor and playback loops are driven.
+- `shim::fail_next(shim::Fault::LcdDraw)` makes the next matching IDF call fail
+  (`count`, `skip` to target the Nth); every error path is reachable that way.
+- The LED backends are checked on what reaches the wire: `shim::parlio_log()` /
+  `shim::lcd_log()` hold the last frame, decoded back to bytes by the tests.
 - Prove a new test can fail: break the code it guards once (a quick mutation)
   and watch it go red — the bank-swap flicker and the failsafe-mask checks were
   verified that way.

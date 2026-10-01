@@ -313,6 +313,9 @@ bool ensure_frame_capacity(size_t needed_samples) {
     }
     destroy_panel();
     const bool ok = create_panel(h_res, v_res);
+    // A half-built panel (reset/init/FB lookup failed) must not pass the
+    // geometry check above on the next frame and get encoded into.
+    if (!ok) destroy_panel();
     xSemaphoreGive(g_done_sem);
     return ok;
 }
