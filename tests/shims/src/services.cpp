@@ -2,6 +2,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -21,10 +22,19 @@ const esp_partition_t kOta1 = { "ota_1", 0x720000, 0x700000 };
 const esp_partition_t kCore = { "coredump", 0xE20000, 0x10000 };
 
 struct Peer {
-    std::string instance, product, node, fw;
+    std::string instance, product, node, fw, mac, hub;
     uint32_t ip;
+    uint16_t port;
 };
 std::vector<Peer> g_peers;
+std::string g_mdns_host;
+std::map<std::string, uint32_t> g_delegates;  // host-order IPv4
+std::map<std::string, std::string> g_txt;
+
+uint32_t host_order(const mdns_ip_addr_t* a) {
+    const uint32_t n = a ? a->addr.u_addr.ip4.addr : 0;
+    return ((n & 0xFF) << 24) | ((n & 0xFF00) << 8) | ((n >> 8) & 0xFF00) | (n >> 24);
+}
 }  // namespace
 
 namespace shim {
@@ -41,8 +51,20 @@ void coredump_set(const std::vector<uint8_t>& image) {
     g_coredump = image;
 }
 void mdns_add_peer(const char* instance, uint32_t ip, const char* product, const char* node,
-                   const char* fw) {
-    g_peers.push_back({ instance, product ? product : "", node ? node : "", fw ? fw : "", ip });
+                   const char* fw, const char* mac, const char* hub, uint16_t port) {
+    g_peers.push_back({ instance, product ? product : "", node ? node : "", fw ? fw : "",
+                        mac ? mac : "", hub ? hub : "", ip, port });
+}
+std::string mdns_hostname() {
+    return g_mdns_host;
+}
+uint32_t mdns_delegate_ip(const char* hostname) {
+    auto it = g_delegates.find(hostname);
+    return it == g_delegates.end() ? 0 : it->second;
+}
+std::string mdns_txt(const char* key) {
+    auto it = g_txt.find(key);
+    return it == g_txt.end() ? std::string() : it->second;
 }
 void mdns_reset() {
     g_peers.clear();
@@ -116,28 +138,54 @@ esp_err_t mdns_init() {
     if (shim::should_fail(shim::Fault::MdnsInit)) return ESP_FAIL;
     return ESP_OK;
 }
-void mdns_free() {}
-esp_err_t mdns_hostname_set(const char*) {
+void mdns_free() {
+    g_delegates.clear();
+    g_txt.clear();
+}
+esp_err_t mdns_hostname_set(const char* name) {
+    g_mdns_host = name;
+    return ESP_OK;
+}
+esp_err_t mdns_delegate_hostname_add(const char* hostname, const mdns_ip_addr_t* a) {
+    if (g_delegates.count(hostname)) return ESP_ERR_INVALID_ARG;
+    g_delegates[hostname] = host_order(a);
+    return ESP_OK;
+}
+esp_err_t mdns_delegate_hostname_set_address(const char* hostname, const mdns_ip_addr_t* a) {
+    if (!g_delegates.count(hostname)) return ESP_ERR_NOT_FOUND;
+    g_delegates[hostname] = host_order(a);
+    return ESP_OK;
+}
+esp_err_t mdns_delegate_hostname_remove(const char* hostname) {
+    g_delegates.erase(hostname);
+    return ESP_OK;
+}
+esp_err_t mdns_service_txt_item_set(const char*, const char*, const char* key, const char* value) {
+    g_txt[key] = value;
     return ESP_OK;
 }
 esp_err_t mdns_instance_name_set(const char*) {
     return ESP_OK;
 }
-esp_err_t mdns_service_add(const char*, const char*, const char*, uint16_t, mdns_txt_item_t*,
-                           size_t) {
+esp_err_t mdns_service_add(const char*, const char*, const char*, uint16_t, mdns_txt_item_t* txt,
+                           size_t n) {
+    for (size_t i = 0; i < n; ++i)
+        g_txt[txt[i].key] = txt[i].value;
     return ESP_OK;
 }
 esp_err_t mdns_query_ptr(const char*, const char*, uint32_t, size_t, mdns_result_t** results) {
     mdns_result_t* head = nullptr;
     for (auto it = g_peers.rbegin(); it != g_peers.rend(); ++it) {
         auto* r = new mdns_result_t{};
-        r->port = 80;
+        r->port = it->port;
         // An empty node/fw is left out of the TXT record, as a peer without them would.
-        r->txt                 = new mdns_txt_item_t[3]{};
+        r->txt                 = new mdns_txt_item_t[5]{};
         r->txt_count           = 0;
         r->txt[r->txt_count++] = { "product", it->product.c_str() };
         if (!it->node.empty()) r->txt[r->txt_count++] = { "node", it->node.c_str() };
         if (!it->fw.empty()) r->txt[r->txt_count++] = { "fw", it->fw.c_str() };
+        if (!it->mac.empty()) r->txt[r->txt_count++] = { "mac", it->mac.c_str() };
+        if (!it->hub.empty()) r->txt[r->txt_count++] = { "hub", it->hub.c_str() };
         r->instance_name   = it->instance.empty() ? nullptr : it->instance.c_str();
         r->addr            = new mdns_ip_addr_t{};
         r->addr->addr.type = ESP_IPADDR_TYPE_V4;

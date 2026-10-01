@@ -74,9 +74,15 @@ def run(board: Board):
     board.cmd("global web_enabled 0")
     board.ser.reset_input_buffer()
     board.ser.write(b"global web_enabled 1\r\n")
-    c.check("mDNS announced on web start", board.watch_log("mDNS: pixfrog.local", deadline=10))
+    c.check("mDNS announced on web start", board.watch_log("mDNS: pixfrog-", deadline=10))
+    c.check("alone, it takes pixfrog.local",
+            board.watch_log("pixfrog.local now points here", deadline=10))
     board.sync(deadline=5)
     time.sleep(1)
+    st = json.loads(http("/api/status").stdout or "{}")
+    c.check("status names the box pixfrog-xxxx",
+            str(st.get("host", "")).startswith("pixfrog-") and len(st.get("host", "")) == 12)
+    c.check("status says it holds the alias", st.get("alias") is True)
 
     # ── Coredump cycle ──────────────────────────────────────────────────────
     http("/api/coredump", "-X", "DELETE")  # clear any leftover dump

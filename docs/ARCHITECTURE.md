@@ -42,7 +42,9 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 | `fpp_sync`           | 0    | 9    | 4 kB  | blocking `recvfrom`           | **Opt-in.** FPP MultiSync remote: master start/stop/seek of local FSEQ files |
 | `fseq_play`          | 0    | 5    | 8 kB  | `vTaskDelayUntil` (step_time) | Per-playback: read/decompress FSEQ frames, inject into `universe_pool[back]` |
 | `sd_mon`             | 0    | 2    | 4 kB  | 1 s tick                      | microSD hot-plug mount/unmount |
-| `httpd`              | 0    | 5    | 8 kB  | TCP accept                    | **Opt-in.** Web SPA + REST API + OTA + backup/restore + live status (esp_http_server); mDNS `pixfrog.local` while running |
+| `httpd`              | 0    | 5    | 8 kB  | TCP accept                    | **Opt-in.** Web SPA + REST API + OTA + backup/restore + live status (esp_http_server); mDNS `pixfrog-<mac4>.local` while running |
+| `web_push`           | 0    | 3    | 4 kB  | 200 ms tick                   | **Opt-in** (web). `/api/ws` frames: 5 Hz output preview, 1 Hz status |
+| `web_hub`            | 0    | 2    | 4 kB  | 1 s tick, browse every 15 s   | **Opt-in** (web). Sibling browse + election of the shared `pixfrog.local` alias |
 | `render_task`        | 1    | 20   | 6 kB  | refresh timer + `ArtSync`     | Swap universes, decode/generate pixels, encode full frame, kick DMA |
 | `ui_task`            | 0    | 4    | 4 kB  | 33 ms tick                    | Boot splash, **time-polled** seesaw encoder (no IRQ — 4-wire harness), render display, persist NVS |
 | `idle_0` / `idle_1`  | 0/1  | 0    | 1 kB  | (FreeRTOS)                    | Power-save hooks                                  |

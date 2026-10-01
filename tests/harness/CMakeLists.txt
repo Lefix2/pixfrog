@@ -27,6 +27,7 @@ set(FIRMWARE_INCLUDES
     ${REPO}/components/led_output/include
     ${REPO}/components/ui/include
     ${REPO}/components/web_config/include
+    ${REPO}/components/web_config/src
     ${REPO}/components/config_store/include
     ${REPO}/components/led_protocols/include
     ${REPO}/components/led_protocols/src

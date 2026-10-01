@@ -11,6 +11,7 @@ Needs `pip install pytest playwright && python3 -m playwright install chromium`.
 """
 import json
 import os
+import re
 import socket
 import subprocess
 import time
@@ -64,7 +65,8 @@ def browser():
     if not os.path.exists(HOST_BIN):
         pytest.skip(f"api host not built: {HOST_BIN}")
     with sync_playwright() as p:
-        b = p.chromium.launch()
+        # pixfrog.local → this machine, so the hub tests can open the alias.
+        b = p.chromium.launch(args=["--host-resolver-rules=MAP pixfrog.local 127.0.0.1"])
         yield b
         b.close()
 
@@ -426,3 +428,70 @@ def test_dashboard_tiles_draw_the_pushed_output_preview(page, device):
     }""")
     assert px["w"] > 1 and px["sum"] > 0, px
     expect(page.locator('canvas[data-preview="7"]')).to_have_count(0)
+
+
+def test_pixfrog_local_opens_the_hub_with_every_box(browser):
+    # Two siblings, then the box that answers pixfrog.local and sees them.
+    rack_b, rack_c = Device("--mac", "30eda0000002"), Device("--mac", "30eda0000003")
+    rack_b.post("/api/global", {"short_name": "Rack B"})
+    rack_c.post("/api/global", {"short_name": "Rack C"})
+    hub = Device("--mac", "30eda0000001",
+                 "--peer", f"Rack B,{rack_b.port},30eda0000002,0",
+                 "--peer", f"Rack C,{rack_c.port},30eda0000003,0")
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    try:
+        pg = ctx.new_page()
+        pg.goto(f"http://pixfrog.local:{hub.port}/")
+        cards = pg.locator("#pf-hub .hub-card")
+        expect(cards).to_have_count(3)
+        expect(pg.locator("#pf-scroll")).to_be_hidden()
+        expect(cards.nth(1)).to_contain_text("Rack B")
+        expect(cards.nth(1)).to_contain_text("pixfrog-0002.local")
+        expect(cards.nth(1)).to_contain_text("fps")  # its live status arrived
+        expect(cards.nth(0)).to_contain_text("pixfrog.local")  # lowest MAC holds the alias
+        expect(cards.nth(1).locator(".hub-tag.alias")).to_have_count(0)
+
+        # A sibling opens in the iframe, "All boxes" comes back to the hub.
+        cards.nth(2).click()
+        expect(pg.locator("#pf-iframe")).to_be_visible()
+        assert str(rack_c.port) in pg.locator("#pf-iframe").get_attribute("src")
+        expect(pg.locator("#pf-hub")).to_be_hidden()
+        pg.locator('[data-dev="hub"]').click()
+        expect(pg.locator("#pf-hub")).to_be_visible()
+        expect(pg.locator("#pf-iframe")).to_be_hidden()
+
+        # The sidebar drives this box: it leaves the hub.
+        pg.locator('div[data-nav="scenes"]').click()
+        expect(pg.locator("#pf-hub")).to_be_hidden()
+        expect(pg.locator("#pf-scroll")).to_be_visible()
+        pg.locator('[data-dev="hub"]').click()
+
+        # A sibling that stops answering is shown offline, not dropped.
+        rack_c.close()
+        expect(cards.nth(2)).to_have_class(re.compile(r"\boff\b"), timeout=8000)
+
+        # This box's own card is its usual UI.
+        cards.nth(0).click()
+        expect(pg.locator("#pf-scroll")).to_be_visible()
+        expect(pg.locator("[data-screen-title]")).to_have_text("Scenes")  # where it was
+
+        # Reached by IP, the same box is just itself.
+        pg.goto(f"http://127.0.0.1:{hub.port}/")
+        expect(pg.locator("[data-screen-title]")).to_have_text("Dashboard")
+        expect(pg.locator('[data-dev="hub"]')).to_have_count(0)
+        expect(pg.locator("#pf-hub")).to_be_hidden()
+    finally:
+        ctx.close()
+        hub.close()
+        rack_b.close()
+        try:
+            rack_c.close()
+        except Exception:
+            pass
+
+
+def test_a_lone_box_on_pixfrog_local_is_its_usual_ui(page, device):
+    page.goto(device.url.replace("127.0.0.1", "pixfrog.local") + "/")
+    expect(page.locator("[data-screen-title]")).to_have_text("Dashboard")
+    expect(page.locator("#pf-hub")).to_be_hidden()
+    expect(page.locator('[data-live="mdns-host"]').first).to_have_text("pixfrog-3456.local")

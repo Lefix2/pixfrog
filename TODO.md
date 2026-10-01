@@ -60,8 +60,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Network & protocols
 
-- [ ] **Unique mDNS hostname** — the fixed `pixfrog` collides on `.local`
-      with several boxes; derive `pixfrog-XXXX` from the MAC.
 - [ ] **ArtSync / sACN sync mode** — banks are published on the first dirty
       slot, so a channel spanning several universes can show two source frames
       at once. Once a sync is seen, hold publication until the next one
@@ -120,7 +118,8 @@ a password protects once set; none of them may make it mandatory.
 ## Hardware & bench
 
 - [ ] **Multi-board validation** — the aggregated multi-node web UI and
-      PTP/sync work need ≥ 2 boards on one LAN.
+      PTP/sync work need ≥ 2 boards on one LAN — incl. the pixfrog.local
+      hand-over (holder unplugged → next box within ~45 s) and the hub.
 - [ ] **Physical DMX input** — RS-485 receive on the shield to drive the box
       without a network (hardware work).
 

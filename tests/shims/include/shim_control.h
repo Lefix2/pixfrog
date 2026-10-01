@@ -37,8 +37,10 @@ int nvs_writes();                // nvs_set_blob calls since the last wipe
 bool run_task(const char* name);
 // Runs a task that never returns (a monitor loop) until it has blocked
 // `max_delays` times (vTaskDelay / vTaskDelayUntil), then unwinds back here.
-// `on_delay`, when set, runs at every one of those blocking points.
-bool run_task_for(const char* name, int max_delays, void (*on_delay)() = nullptr);
+// `on_delay`, when set, runs at every one of those blocking points. `keep`
+// leaves the task registered so a test can run it again (from the top).
+bool run_task_for(const char* name, int max_delays, void (*on_delay)() = nullptr,
+                  bool keep = false);
 bool task_created(const char* name);
 void tasks_forget();
 
@@ -231,8 +233,15 @@ std::vector<uint8_t>& ota_image();                     // bytes esp_ota_write() 
 bool ota_boot_switched();                              // esp_ota_set_boot_partition() called
 void ota_fail_validation(bool fail);                   // esp_ota_end() rejects the image
 void coredump_set(const std::vector<uint8_t>& image);  // empty = none
+// `mac` (12 hex) and `hub` ("1"/"0") are the election TXT items; nullptr
+// leaves them out, as an older firmware would.
 void mdns_add_peer(const char* instance, uint32_t ip, const char* product, const char* node,
-                   const char* fw);
-void mdns_reset();
+                   const char* fw, const char* mac = nullptr, const char* hub = nullptr,
+                   uint16_t port = 80);
+void set_mac(const uint8_t mac[6]);  // what esp_read_mac answers (default 30:ed:a0:12:34:56)
+void mdns_reset();                   // forget the registered peers
+std::string mdns_hostname();         // last mdns_hostname_set
+uint32_t mdns_delegate_ip(const char* hostname);  // host order, 0 = not published
+std::string mdns_txt(const char* key);            // the _http._tcp TXT item ("" = none)
 
 }  // namespace shim
