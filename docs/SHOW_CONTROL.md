@@ -31,8 +31,8 @@ so a strip can still be found during a blackout.
 
 ## Scene zones and crossfades
 
-The eleven effects, each over six seconds on a 144-pixel line (x along the
-line, time going down), rendered by the firmware's own `fill_scene_pattern`
+The eleven effects, each over six seconds on a 144-pixel line (time going
+right, pixel 0 at the top), rendered by the firmware's own `fill_scene_pattern`
 (`tools/effects_gallery/gallery.py`):
 
 ![The eleven scene effects as space-time strips](img/effects/effects-gallery.png)

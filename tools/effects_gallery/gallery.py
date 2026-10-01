@@ -5,7 +5,7 @@ firmware's own renderer (fill_scene_pattern), for the docs and the site.
     tools/effects_gallery/gallery.py                 # → docs/img/effects/effects-gallery.png
     tools/effects_gallery/gallery.py --strips        # + one PNG per effect
 
-x = pixel along a 144-px line, y = time going down (6 s at 40 fps). Writes
+x = time going right (6 s at 40 fps), y = pixel along a 144-px line. Writes
 effects-gallery.png, the labelled sheet (--strips: one PNG per effect too). Needs a C++17
 compiler and pillow.
 """
@@ -18,7 +18,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 COMP = os.path.join(REPO, "components")
-SCALE_X, SCALE_Y = 3, 1  # 144×240 strips → 432×240
+SCALE_X, SCALE_Y = 2, 2  # 240×144 strips → 480×288
 
 
 def build(tmp):
