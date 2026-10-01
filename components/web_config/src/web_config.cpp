@@ -1443,6 +1443,14 @@ static esp_err_t handle_restore(httpd_req_t* req) {
                               "{\"ok\":true,\"note\":\"network/web changes apply after reboot\"}");
 }
 
+// A handler cannot stop the server it runs in (httpd_stop waits for it):
+// answer first, then stop from a short-lived task.
+static void web_stop_task(void*) {
+    vTaskDelay(pdMS_TO_TICKS(300));
+    stop();
+    vTaskDelete(nullptr);
+}
+
 // ── POST /api/global ─────────────────────────────────────────────────────────
 
 static esp_err_t handle_post_global(httpd_req_t* req) {
@@ -1542,7 +1550,11 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     if (get_u32("tft_idle_dim", 0, 100, u)) g.tft_idle_dim = static_cast<uint8_t>(u);
     if (get_u32("tft_dim_delay_s", 0, config::kTftDimDelayMaxS, u))
         g.tft_dim_delay_s = static_cast<uint16_t>(u);
-    if (get_bool("web_enabled", b)) g.web_enabled = b;
+    bool web_off = false;  // this request turns the web UI off
+    if (get_bool("web_enabled", b)) {
+        g.web_enabled = b;
+        web_off       = !b;
+    }
     if (get_u32("failsafe_mode", 0, 3, u)) g.failsafe_mode = static_cast<uint8_t>(u);
     if (get_u32("failsafe_scene", 0, config::kMaxScenes - 1, u))
         g.failsafe_scene = static_cast<uint8_t>(u);
@@ -1604,11 +1616,17 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
             fpp::stop();
     }
 
+    // Turning the web UI off from the web UI: this server stops right after
+    // the answer (it used to keep serving until a reboot).
     cJSON* resp = cJSON_CreateObject();
     cJSON_AddBoolToObject(resp, "ok", true);
     if (network_changed)
         cJSON_AddStringToObject(resp, "note", "network_changes_apply_after_reboot");
-    return send_json(req, resp);
+    if (web_off) cJSON_AddBoolToObject(resp, "web_stopping", true);
+    const esp_err_t r = send_json(req, resp);
+    if (web_off && xTaskCreate(web_stop_task, "web_stop", 3072, nullptr, 5, nullptr) != pdPASS)
+        ESP_LOGE(TAG, "web_stop task create failed: the server runs until reboot");
+    return r;
 }
 
 // ── POST /api/channel/{n} ────────────────────────────────────────────────────
@@ -2119,13 +2137,19 @@ static esp_err_t handle_fseq_upload(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// Factory reset then reboot (what the SPA announces): the defaults turn the
+// opt-in services (web, sACN, FPP, control universe) off, and only a reboot
+// stops them all, the server answering this request included.
 static esp_err_t handle_factory_reset(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
     config::reset_to_defaults();
-    dmx::mark_global_dirty();
-    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
-        dmx::mark_channel_dirty(ch);
-    return send_ok(req);
+    cJSON* resp = cJSON_CreateObject();
+    cJSON_AddBoolToObject(resp, "ok", true);
+    cJSON_AddBoolToObject(resp, "rebooting", true);
+    send_json(req, resp);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_restart();
+    return ESP_OK;
 }
 
 // ── mDNS ────────────────────────────────────────────────────────────────────

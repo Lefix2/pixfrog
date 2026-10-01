@@ -491,7 +491,7 @@ inline uint32_t bounce256(uint64_t travel256, uint32_t span) {
 namespace fx {
 
 inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                  uint32_t t) {
+                  uint64_t t) {
     const uint64_t pos = static_cast<uint64_t>(t) * speed * 60 % 255000;
     const bool flash   = pos < static_cast<uint64_t>(speed) * 1000;
     const Rgb c        = flash ? (p.n > 1 ? p.c[1] : Rgb{ 0, 0, 0 }) : p.c[0];
@@ -500,7 +500,7 @@ inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
 }
 
 inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                  uint8_t param, uint32_t t) {
+                  uint8_t param, uint64_t t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint16_t width = param ? param : 1;
     const uint32_t head  = (static_cast<uint64_t>(t) * speed / 1000) % n;
@@ -511,7 +511,7 @@ inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
     }
 }
 
-inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t param, uint32_t t) {
+inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t param, uint64_t t) {
     const uint32_t repeats = param ? param : 1;
     const uint32_t offset  = (static_cast<uint64_t>(t) * speed / 100) % 360;
     for (uint16_t i = 0; i < n; ++i) {
@@ -523,7 +523,7 @@ inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t 
 }
 
 inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                  uint8_t param, uint32_t t) {
+                  uint8_t param, uint64_t t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint32_t count = param ? (param > 16 ? 16 : param) : 3;
     const uint32_t span  = n > 1 ? n - 1u : 1u;
@@ -549,7 +549,7 @@ inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
 }
 
 inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                     uint8_t param, uint32_t t) {
+                     uint8_t param, uint64_t t) {
     const uint32_t repeats = param ? param : 1;
     const uint32_t offset  = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000);
     for (uint16_t i = 0; i < n; ++i)
@@ -559,7 +559,7 @@ inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint
                               offset));
 }
 
-inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint32_t t) {
+inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint64_t t) {
     const Rgb c = palette_at(p,
                              static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000));
     for (uint16_t i = 0; i < n; ++i)
@@ -567,15 +567,15 @@ inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
 }
 
 inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                    uint8_t param, uint32_t t) {
+                    uint8_t param, uint64_t t) {
     const uint32_t density = param ? param : 64;
-    const uint32_t ticks   = static_cast<uint32_t>(static_cast<uint64_t>(t) * (speed + 4u) / 64);
+    const uint64_t ticks   = t * (speed + 4u) / 64;  // 64-bit: no wrap in a lifetime
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t h      = hash32(i * 2654435761u ^ 0x5bd1e995u);
         const uint32_t period = 512 + (h & 1023);
-        const uint32_t u      = ticks + (h >> 12);
-        const uint32_t cycle  = u / period;
-        const uint32_t local  = u % period;
+        const uint64_t u      = ticks + (h >> 12);
+        const uint32_t cycle  = static_cast<uint32_t>(u / period);  // only hashed
+        const uint32_t local  = static_cast<uint32_t>(u % period);
         const uint32_t roll   = hash32(h ^ (cycle * 0x27d4eb2du));
         if (local < 256 && (roll & 255) < density)
             set_px(d, bpp, i,
@@ -585,8 +585,10 @@ inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
     }
 }
 
-inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint32_t t) {
-    const uint32_t y    = static_cast<uint32_t>(static_cast<uint64_t>(t) * (speed + 8u) / 32);
+inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint64_t t) {
+    // The noise coordinate wraps at 2^32 (every ~6 days at full speed): one
+    // reseed of a chaotic field, invisible in flames.
+    const uint32_t y    = static_cast<uint32_t>(t * (speed + 8u) / 32);
     const uint32_t span = n > 1 ? n - 1u : 1u;
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t u    = static_cast<uint32_t>(i) * 65535u / span;  // 0 at the base
@@ -602,7 +604,7 @@ inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
 }
 
 inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                    uint8_t param, uint32_t t) {
+                    uint8_t param, uint64_t t) {
     const uint32_t span   = n > 1 ? n - 1u : 1u;
     const uint32_t width  = param ? param : (n / 20 ? n / 20 : 1);
     const uint32_t half   = width * 128;
@@ -629,7 +631,7 @@ inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
 }
 
 inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                 uint8_t param, uint32_t t) {
+                 uint8_t param, uint64_t t) {
     const uint32_t waves = param ? param : 2;
     const uint32_t shift = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 512 / 1000);
     for (uint16_t i = 0; i < n; ++i) {
@@ -641,7 +643,7 @@ inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
 }
 
 inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
-                    uint8_t param, uint32_t t) {
+                    uint8_t param, uint64_t t) {
     const uint32_t width  = param ? param : 4;
     const uint32_t bands  = p.n > 1 ? p.n : 2;  // a lone colour alternates with black
     const uint32_t period = width * bands;
@@ -655,11 +657,12 @@ inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
 }  // namespace fx
 
 // Renders one frame of `scene` at wall-clock time `phase_ms` (animation speed
-// is refresh-rate independent). Canonical RGB(W) order; colour order and
-// brightness apply at encode time.
+// is refresh-rate independent). 64-bit: a 32-bit ms clock wraps after 49.7
+// days, and every effect would jump at that instant on a permanent install. Canonical RGB(W) order;
+// colour order and brightness apply at encode time.
 inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
                                uint8_t bytes_per_pixel, const config::Scene& scene,
-                               uint32_t phase_ms) {
+                               uint64_t phase_ms) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
     const Palette p = scene_palette(scene);
@@ -847,7 +850,7 @@ inline uint8_t strobe_hz10_from_dmx(uint8_t v) {
 
 // Whether a strobing output is lit at `now_ms`: a short flash (≤ 30 ms, at
 // most half the period) at the start of every period. 0 Hz = always lit.
-inline bool strobe_lit(uint32_t now_ms, uint8_t hz10) {
+inline bool strobe_lit(uint64_t now_ms, uint8_t hz10) {
     if (hz10 == 0) return true;
     const uint32_t period = 10000u / hz10;
     const uint32_t on     = period / 2 < 30 ? period / 2 : 30;
