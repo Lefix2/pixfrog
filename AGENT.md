@@ -101,8 +101,11 @@ Auth: HTTP Basic on every POST/DELETE and on the two GETs that may leak a
 secret (`/api/logs`, `/api/coredump` — raw RAM); other GETs stay open. Enabled by setting an admin
 password (`web_password` via the SPA, `/api/global`, or UART
 `global web_password <pwd|->` — `-` clears). No password set (the default) =
-no auth — optional by design (private show networks). Stored as salted SHA-256 in GlobalConfig; UART is the physical
-recovery channel.
+no auth — optional by design (private show networks). Stored as a salted
+PBKDF2-HMAC-SHA256 (4096 rounds) in GlobalConfig — a hash from an older firmware
+(single SHA-256) still checks and is upgraded on the next login; UART is the physical
+recovery channel. There is no TLS: Basic auth sends the password in clear on
+every request, readable by anyone on the show network.
 
 This is the only TCP surface beyond ArtNet UDP — the strict "no extra network surface" rule
 applies to *always-on* listeners; this one is opt-in and user-controlled.

@@ -65,7 +65,7 @@ struct GlobalConfig {
     // Web UI admin password — salted SHA-256, never stored in clear.
     // hash all-zero = no password set = auth disabled (the default).
     uint8_t web_auth_salt[8];
-    uint8_t web_auth_hash[32];  // SHA-256(salt || password)
+    uint8_t web_auth_hash[32];  // see web_auth_kdf
 
     // Signal-loss failsafe — global setting, triggered per channel when no
     // packet touched any of its universes for failsafe_timeout_s. Zero-fill
@@ -106,7 +106,18 @@ struct GlobalConfig {
     // Address taken in DHCP mode when no DHCP server answers. Zero-fill
     // migration = link-local, the behaviour it shipped with.
     uint8_t ip_fallback;  // kIpFallback*
+
+    // How web_auth_hash was derived. Zero-fill migration = the original
+    // single-round SHA-256(salt || password), re-hashed with the KDF on the
+    // next successful login or set.
+    uint8_t web_auth_kdf;  // kWebAuthSha256 / kWebAuthPbkdf2
 };
+
+constexpr uint8_t kWebAuthSha256 = 0;  // legacy: SHA-256(salt || password)
+constexpr uint8_t kWebAuthPbkdf2 = 1;  // PBKDF2-HMAC-SHA256, kWebAuthIterations
+// Enough to make an offline guess (from a leaked NVS image or core dump) cost
+// thousands of hashes, little enough for a login on the P4 to stay quick.
+constexpr uint32_t kWebAuthIterations = 4096;
 
 // DHCP mode without a DHCP server:
 //  link-local — 169.254.x.x (RFC 3927, lwIP AutoIP): what a laptop without
@@ -456,7 +467,9 @@ bool replace_scenes(const Scene* scenes, size_t count);
 
 // ── Web UI admin password ───────────────────────────────────────────────────
 // Empty/null password clears the hash (auth disabled). Setting a password
-// generates a fresh random salt and stores SHA-256(salt || password).
+// generates a fresh random salt and stores PBKDF2-HMAC-SHA256(password, salt,
+// kWebAuthIterations). A hash from an older firmware (single SHA-256) still
+// checks, and is upgraded on the first successful check.
 // All three are ui_task/console-context only (NVS write path).
 // Longer than kMaxWebPasswordLen is refused (false, nothing changes): every
 // path that sets or checks a password must see the same string.
@@ -464,6 +477,10 @@ constexpr size_t kMaxWebPasswordLen = 63;
 bool set_web_password(const char* password);
 bool web_password_set();
 bool check_web_password(const char* password);
+
+// PBKDF2-HMAC-SHA256 with a 32-byte output (one block), exposed for tests.
+void pbkdf2_sha256(const uint8_t* password, size_t password_len, const uint8_t* salt,
+                   size_t salt_len, uint32_t iterations, uint8_t out[32]);
 
 // ────────────────────────────────────────────────────────────────────────────
 // DMX control universe ("personality")
