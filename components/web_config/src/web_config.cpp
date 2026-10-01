@@ -794,6 +794,7 @@ static cJSON* build_global_json() {
     cJSON_AddNumberToObject(jg, "lang", g.language);
     cJSON_AddBoolToObject(jg, "hub_preferred", g.hub_preferred);
     cJSON_AddNumberToObject(jg, "scene_fade_ms", g.scene_fade_ms);
+    cJSON_AddNumberToObject(jg, "fseq_universe", config::fseq_universe(g));
     char fscol[8];
     snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     cJSON_AddStringToObject(jg, "failsafe_color", fscol);
@@ -937,6 +938,8 @@ static cJSON* build_status_json() {
     cJSON_AddNumberToObject(root, "identify_channel", dmx::identify_channel());
     if (const auto* rb = rollback_record(); rb && !rb->acknowledged)
         cJSON_AddItemToObject(root, "rollback", rollback_json(*rb));
+    // false = NVS failed at boot: changes apply but are lost at the next restart.
+    cJSON_AddBoolToObject(root, "persist_ok", config::is_persistence_ok());
     cJSON_AddBoolToObject(root, "sacn_running", sacn::is_running());
     cJSON_AddBoolToObject(root, "fpp_running", fpp::is_running());
 
@@ -1315,6 +1318,35 @@ static bool apply_playlist_json(const cJSON* j, config::FseqPlaylist& p, const c
 // hash). Restore applies best-effort: unknown or invalid fields are skipped
 // so a backup from a different firmware degrades gracefully.
 
+// pixfrog-<short name>[-<date>].json, so the backups of several boxes do not
+// collide. The box has no clock: the SPA passes ?date=YYYY-MM-DD from the
+// browser; anything but digits and dashes is ignored.
+static void backup_filename(httpd_req_t* req, char* out, size_t cap) {
+    char slug[24] = "";
+    size_t n      = 0;
+    bool dash     = false;
+    for (const char* p = config::get_global().short_name; *p && n + 1 < sizeof(slug); ++p) {
+        const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(*p)));
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            if (dash && n) slug[n++] = '-';
+            if (n + 1 < sizeof(slug)) slug[n++] = c;
+            dash = false;
+        } else {
+            dash = true;  // runs of anything else become one dash
+        }
+    }
+    slug[n] = '\0';
+    if (std::strcmp(slug, "pixfrog") == 0) slug[0] = '\0';  // the default: no pixfrog-pixfrog
+    char query[48] = "", date[12] = "";
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+        httpd_query_key_value(query, "date", date, sizeof(date)) == ESP_OK) {
+        for (const char* p = date; *p; ++p)
+            if (!std::isdigit(static_cast<unsigned char>(*p)) && *p != '-') date[0] = '\0';
+    }
+    std::snprintf(out, cap, "attachment; filename=\"pixfrog%s%s%s%s.json\"", slug[0] ? "-" : "",
+                  slug, date[0] ? "-" : "", date);
+}
+
 static esp_err_t handle_backup(httpd_req_t* req) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "backup_version", 1);
@@ -1324,7 +1356,9 @@ static esp_err_t handle_backup(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "control", build_control_json());
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
-    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"pixfrog-config.json\"");
+    static char disposition[96];  // httpd keeps the pointer until the send
+    backup_filename(req, disposition, sizeof(disposition));
+    httpd_resp_set_hdr(req, "Content-Disposition", disposition);
     return send_json(req, root);
 }
 
@@ -1407,6 +1441,8 @@ static void restore_global(cJSON* jg) {
     if (getb("hub_preferred", &bv)) g.hub_preferred = bv;
     if (num("scene_fade_ms", 0, config::kMaxSceneFadeMs, &v))
         g.scene_fade_ms = static_cast<uint16_t>(v);
+    if (num("fseq_universe", 1, dmx::kMaxUniverseNumber, &v))
+        g.fseq_universe = static_cast<uint16_t>(v);
     config::set_global(g);
 }
 
@@ -1702,6 +1738,8 @@ static esp_err_t handle_post_global(httpd_req_t* req) {
     if (get_bool("hub_preferred", b)) g.hub_preferred = b;
     if (get_u32("scene_fade_ms", 0, config::kMaxSceneFadeMs, u))
         g.scene_fade_ms = static_cast<uint16_t>(u);
+    if (get_u32("fseq_universe", 1, dmx::kMaxUniverseNumber, u))
+        g.fseq_universe = static_cast<uint16_t>(u);
     if ((s = get_str("failsafe_color"))) {
         unsigned fr, fg, fb;
         if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &fr, &fg, &fb) == 3) {

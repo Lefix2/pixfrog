@@ -250,6 +250,24 @@ TEST(scene_endpoints_manage_the_list) {
     EXPECT_EQ(config::num_scenes(), n);
 }
 
+// Several boxes' backups must not collide: the file is named after the box
+// and the browser's date (the box has no clock).
+TEST(backup_file_is_named_after_the_box_and_the_date) {
+    auto name = [](const std::string& uri) { return get(uri).headers.at("Content-Disposition"); };
+    post("/api/global", "{\"short_name\":\"Rack 2 / Cour\"}");
+    EXPECT_STREQ(name("/api/backup?date=2026-10-01").c_str(),
+                 "attachment; filename=\"pixfrog-rack-2-cour-2026-10-01.json\"");
+    EXPECT_STREQ(name("/api/backup").c_str(), "attachment; filename=\"pixfrog-rack-2-cour.json\"");
+    EXPECT_STREQ(name("/api/backup?date=..%2Fetc").c_str(),
+                 "attachment; filename=\"pixfrog-rack-2-cour.json\"");  // not a date: dropped
+    post("/api/global", "{\"short_name\":\"***\"}");
+    EXPECT_STREQ(name("/api/backup?date=2026-10-01").c_str(),
+                 "attachment; filename=\"pixfrog-2026-10-01.json\"");
+    post("/api/global", "{\"short_name\":\"pixfrog\"}");
+    EXPECT_STREQ(name("/api/backup?date=2026-10-01").c_str(),
+                 "attachment; filename=\"pixfrog-2026-10-01.json\"");  // not pixfrog-pixfrog
+}
+
 TEST(backup_then_restore_round_trips) {
     post("/api/channel/3", "{\"protocol\":\"APA102\",\"pixel_count\":77,\"gaps\":[[5,1]]}");
     post("/api/global", "{\"short_name\":\"before\"}");
@@ -598,7 +616,9 @@ TEST(fixture_profile_covers_every_control_function) {
 
 TEST(backup_restore_carries_the_control_mode_and_fade) {
     post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":55,\"address\":7}");
-    post("/api/global", "{\"scene_fade_ms\":2500,\"hub_preferred\":true}");
+    post("/api/global", "{\"scene_fade_ms\":2500,\"hub_preferred\":true,\"fseq_universe\":9}");
+    EXPECT_EQ(post("/api/global", "{\"fseq_universe\":0}").status, 200);  // out of range: kept
+    EXPECT_EQ(config::get_global().fseq_universe, 9);
     const std::string backup = get("/api/backup").body;
     config::reset_to_defaults();
     EXPECT_EQ(config::get_control().universe, config::kDefaultControlUniverse);
@@ -608,6 +628,7 @@ TEST(backup_restore_carries_the_control_mode_and_fade) {
     EXPECT_EQ(config::get_control().count, 15);
     EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
     EXPECT_EQ(config::get_global().hub_preferred, 1);
+    EXPECT_EQ(config::get_global().fseq_universe, 9);
     // A malformed control object is skipped, the rest still restores.
     std::string bad       = backup;
     const std::string key = "\"fn\":\"master\"";
@@ -616,7 +637,7 @@ TEST(backup_restore_carries_the_control_mode_and_fade) {
     EXPECT_EQ(post("/api/restore", bad).status, 200);
     EXPECT_EQ(config::get_control().universe, config::kDefaultControlUniverse);
     EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
-    post("/api/global", "{\"scene_fade_ms\":0,\"hub_preferred\":false}");
+    post("/api/global", "{\"scene_fade_ms\":0,\"hub_preferred\":false,\"fseq_universe\":1}");
     post("/api/control", "{\"enabled\":false}");
 }
 
@@ -1005,4 +1026,20 @@ TEST(a_renamed_box_republishes_its_txt_name) {
     post("/api/global", "{\"short_name\":\"Rack 2\"}");
     run_hub(1);
     EXPECT_TRUE(shim::mdns_txt("node") == "Rack 2");
+}
+
+// Kept last: it re-initialises the config store on a dead NVS.
+TEST(status_tells_when_settings_no_longer_persist) {
+    Json ok(get("/api/status").body);
+    EXPECT_TRUE(cJSON_IsTrue(ok["persist_ok"]));
+    shim::nvs_wipe();
+    shim::nvs_fail_init(5);
+    shim::nvs_fail_erase(5);
+    config::init();
+    Json bad(get("/api/status").body);
+    EXPECT_TRUE(cJSON_IsFalse(bad["persist_ok"]));
+    shim::nvs_fail_init(0);
+    shim::nvs_fail_erase(0);
+    shim::nvs_wipe();
+    config::init();
 }

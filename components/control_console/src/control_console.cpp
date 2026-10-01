@@ -253,6 +253,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("merge_mode=%s\n", g.merge_mode == config::kMergeLtp ? "LTP" : "HTP");
     printf("language=%s\n", g.language == config::kLangFrench ? "fr" : "en");
     printf("hub_preferred=%d\n", g.hub_preferred ? 1 : 0);
+    printf("fseq_universe=%u\n", config::fseq_universe(g));
 }
 
 int cmd_global(int argc, char** argv) {
@@ -282,6 +283,10 @@ int cmd_global(int argc, char** argv) {
         bool b = false;
         if (!parse_bool(val, b)) return err("hub_preferred: 0|1");
         g.hub_preferred = b ? 1 : 0;
+    } else if (strcmp(key, "fseq_universe") == 0) {  // universe of FSEQ byte 0
+        if (!parse_u32_in(val, 1, dmx::kMaxUniverseNumber, u))
+            return err("fseq_universe: 1..32767");
+        g.fseq_universe = static_cast<uint16_t>(u);
     } else if (strcmp(key, "ip_fallback") == 0) {
         const int fb = config::ip_fallback_from_id(val);
         if (fb < 0) return err("ip_fallback: linklocal|artnet");
@@ -367,7 +372,8 @@ int cmd_global(int argc, char** argv) {
         printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
         return ok();
     } else {
-        return err("unknown key (dhcp ip_fallback language hub_preferred ip mask gw net subnet "
+        return err("unknown key (dhcp ip_fallback language hub_preferred fseq_universe ip mask gw "
+                   "net subnet "
                    "short_name long_name "
                    "reply_unicast "
                    "refresh_hz home_timeout_s tft_brightness tft_idle_dim tft_dim_delay_s "

@@ -495,3 +495,15 @@ def test_a_lone_box_on_pixfrog_local_is_its_usual_ui(page, device):
     expect(page.locator("[data-screen-title]")).to_have_text("Dashboard")
     expect(page.locator("#pf-hub")).to_be_hidden()
     expect(page.locator('[data-live="mdns-host"]').first).to_have_text("pixfrog-3456.local")
+
+
+@pytest.mark.device_args("--no-persist")
+def test_a_dead_nvs_raises_the_not_saved_banner(page, device):
+    expect(page.locator("#nv-banner")).to_be_visible()
+    expect(page.locator("#nv-banner")).to_contain_text("not being saved")
+
+
+def test_settings_that_persist_show_no_banner(page, device):
+    expect(page.locator("#rb-banner")).to_be_hidden()
+    page.wait_for_timeout(1500)  # a status has been applied
+    expect(page.locator("#nv-banner")).to_be_hidden()

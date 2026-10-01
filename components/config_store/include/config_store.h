@@ -115,6 +115,10 @@ struct GlobalConfig {
     // This box answers pixfrog.local (the multi-box hub) ahead of the others;
     // without one marked, the lowest MAC does. Zero-fill migration = 0 = no.
     uint8_t hub_preferred;
+
+    // Universe of an FSEQ sequence's first byte (xLights' "start universe").
+    // Zero-fill migration = 0 = unset = 1, the xLights default.
+    uint16_t fseq_universe;
 };
 
 constexpr uint8_t kWebAuthSha256 = 0;  // legacy: SHA-256(salt || password)
@@ -162,6 +166,11 @@ constexpr uint8_t kLangFrench  = 1;
 // Below ~10 % the panel is barely readable, so that is the floor the UI, the
 // web form and the console all clamp to — dimming should never cost the screen.
 constexpr uint8_t kTftBrightnessMin = 10;
+
+// Universe FSEQ byte 0 lands on (0 = unset = 1).
+inline uint16_t fseq_universe(const GlobalConfig& g) {
+    return g.fseq_universe ? g.fseq_universe : 1;
+}
 
 // Effective backlight level, in percent of full brightness. 0 (a config written
 // by a pre-dimming firmware, zero-filled on migration) means "unset" = 100 %.

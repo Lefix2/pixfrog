@@ -155,6 +155,10 @@
           <div style="flex:1;min-width:0"><div style="font:700 14px 'Figtree';color:var(--fg)" data-i18n="Firmware update rolled back">Firmware update rolled back</div><div id="rb-text" style="font:500 12px 'DM Mono';color:var(--warn);margin-top:3px"></div></div>
           <button class="btn-sec" data-action="rollback-ack" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 13px;font:500 12.5px 'DM Mono';cursor:pointer;flex:none" data-i18n="Acknowledge">Acknowledge</button>
         </div>
+        <div id="nv-banner" style="display:none;align-items:center;gap:12px;margin-bottom:13px;background:rgba(217,83,79,.1);border:1px solid rgba(217,83,79,.4);border-radius:0;padding:12px 16px;color:var(--danger)">
+          <i data-lucide="triangle-alert" class="ic20"></i>
+          <div style="flex:1;min-width:0"><div style="font:700 14px 'Figtree';color:var(--fg)" data-i18n="Settings are not being saved">Settings are not being saved</div><div style="font:500 12px 'DM Mono';color:var(--danger);margin-top:3px" data-i18n="The settings memory (NVS) failed at boot: changes apply now but are lost at the next restart.">The settings memory (NVS) failed at boot: changes apply now but are lost at the next restart.</div></div>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:13px">
           <div style="grid-column:span 3;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
             <div class="row-between-c"><span class="eyebrow" data-i18n="NETWORK LINK">NETWORK LINK</span><span style="color:var(--fg-5);display:flex"><i data-lucide="network" class="ic16"></i></span></div>
@@ -272,6 +276,10 @@
               <div style="display:flex;align-items:center;justify-content:space-between;font:500 12px 'DM Mono';color:var(--fg-2)">
                 <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="fseq-loop" type="checkbox"/><span data-i18n="Loop the file played">Loop the file played</span></label>
                 <span class="fg-accent" data-live="fseq-mode"></span>
+              </div>
+              <div class="row-between-c" style="gap:12px;font:500 12px 'DM Mono';color:var(--fg-2)">
+                <label for="fseq-uni" data-i18n="Universe of the sequence's first channel">Universe of the sequence's first channel</label>
+                <input id="fseq-uni" type="number" min="1" max="32767" value="1" style="width:90px;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 9px;font:500 13px 'DM Mono'"/>
               </div>
               <div style="display:flex;gap:8px"><button class="btn-sec" data-action="fseq-stop" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:10px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="square" class="ic16"></i><span data-i18n="Stop">Stop</span></button></div>
             </div>
@@ -833,6 +841,9 @@ var FR={
   'Preferred hub':'Hub préféré','With several boxes, this one answers pixfrog.local':'Avec plusieurs boîtes, celle-ci répond à pixfrog.local',
   'Answers pixfrog.local':'Répond à pixfrog.local','Answers pixfrog.local for {n} boxes':'Répond à pixfrog.local pour {n} boîtes',
   'pixfrog.local is answered by another box':'pixfrog.local est servi par une autre boîte',
+  'Universe of the sequence\'s first channel':'Univers du premier canal de la séquence',
+  'Settings are not being saved':'Les réglages ne sont pas sauvegardés',
+  'The settings memory (NVS) failed at boot: changes apply now but are lost at the next restart.':'La mémoire des réglages (NVS) a échoué au démarrage : les changements s\'appliquent mais seront perdus au prochain redémarrage.',
   'Connected · 100 Mb/s full-duplex':'Connecté · 100 Mb/s full-duplex','Disconnected':'Déconnecté',
   'NETWORK LINK':'LIEN RÉSEAU','FRAMES / S':'IMAGES / S','FREE HEAP':'HEAP LIBRE','UPTIME':'UPTIME',
   'NOW PLAYING':'LECTURE EN COURS','stopped':'à l’arrêt','playing':'en lecture','scene active':'scène active',
@@ -1414,6 +1425,7 @@ function applyStatus(s){
   {
     var link=!!s.link;
     var rbb=el('rb-banner');
+    var nvb=el('nv-banner'); if(nvb) nvb.style.display=(s.persist_ok===false)?'flex':'none';
     if(rbb){ var rb=s.rollback; rbb.style.display=rb?'flex':'none';
       if(rb) el('rb-text').textContent=t('{v} on {slot} was rejected ({why}) — running {run}').replace('{v}',rb.rejected_version).replace('{slot}',rb.rejected_slot).replace('{why}',rb.reset_reason).replace('{run}',rb.running_version); }
     setLive('fps',s.fps);
@@ -1730,7 +1742,7 @@ function reloadConfig(){
     netDhcp=!!g.dhcp; setDhcpUI(); if(el('n-fallback')) el('n-fallback').value=g.ip_fallback||'linklocal';
     if(g.lang!=null && !langDirty){ LANG=(g.lang===1?'fr':'en'); var ls=el('s-lang'); if(ls) ls.value=LANG; applyI18n(); go(curScreen); }
     if(el('n-ip')) el('n-ip').value=g.ip; if(el('n-mask')) el('n-mask').value=g.mask; if(el('n-gw')) el('n-gw').value=g.gw;
-    if(el('n-host')) el('n-host').value=g.short_name||''; if(el('n-long')) el('n-long').value=g.long_name||''; if(el('n-hub')) el('n-hub').checked=!!g.hub_preferred;
+    if(el('fseq-uni')) el('fseq-uni').value=g.fseq_universe||1; if(el('n-host')) el('n-host').value=g.short_name||''; if(el('n-long')) el('n-long').value=g.long_name||''; if(el('n-hub')) el('n-hub').checked=!!g.hub_preferred;
     setLive('node-name',g.short_name||'pixfrog');
     REFRESH=g.refresh_hz||60;
     setLive('refresh',(g.refresh_hz||0)+' Hz');
@@ -2031,7 +2043,7 @@ function doAction(a){
   else if(a==='autopatch'){ api('POST','/api/autopatch',{base:0}).then(function(r){ toast(t('Patch — next free universe U')+r.next_free); reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='logs-refresh'){ fetchLogs(); }
   else if(a==='logs-download'){ downloadLogs(); }
-  else if(a==='export'){ location.href='/api/backup'; }
+  else if(a==='export'){ var d=new Date(); location.href='/api/backup?date='+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
   else if(a==='import'){ el('restore-file').click(); }
   else if(a==='ota'){ el('ota-file').click(); }
   else if(a==='fseq-upload'){ el('fseq-file').click(); }
@@ -2123,6 +2135,7 @@ function onInput(e){
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }
   if(['s-refresh','s-home','s-boot','s-bright','s-dim','s-dimdelay','s-fade'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
+  if(t.id==='fseq-uni'){ var fu=parseInt(t.value,10); if(e.type==='change' && fu>=1 && fu<=32767) api('POST','/api/global',{fseq_universe:fu}).then(function(){ toast(t('✓ saved')); }).catch(function(er){ toast(er.message,true); }); return; }
   if(t.id==='sh-master'){ setLive2('sh-master-val',t.value+'%'); if(e.type==='change') api('POST','/api/show',{master:+t.value}).then(applyShow); return; }
   if(t.id==='sh-strobe'){ setLive2('sh-strobe-val',+t.value?t.value+' Hz':'—'); if(e.type==='change') api('POST','/api/show',{strobe_hz:+t.value}).then(applyShow); return; }
   if(t.id==='ct-en'){ CTL.enabled=t.checked; markDirty('control'); renderControl(); return; }
