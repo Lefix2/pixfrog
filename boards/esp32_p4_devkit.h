@@ -158,10 +158,10 @@ constexpr uint8_t kEncoderI2cAddr = 0x36;  // Adafruit seesaw 4991 default
 // Routed to the shield's J13 break-out header. The ES8311 codec I2S pins
 // (GPIO9-13) the display used to share are NOT exposed on J13, so the SPI
 // display moved to the free, 3.3 V-direct, non-strapping GPIOs available
-// there: 0/6/20/21/27. (J13 also exposes GPIO36 — a boot strapping pin, must
-// read HIGH at reset — and GPIO45 — VDD_IO_5/LDO-VO4 domain; both left as
-// spares.) SPI2 (HSPI) is used; every signal is routed through the GPIO
-// matrix so any free GPIO is valid.
+// there: 0/6/20/21/27. J13 also exposes GPIO36 (now the backlight, below) and
+// GPIO45, which is NOT free: it gates the microSD supply (see kSdPowerGpio).
+// SPI2 (HSPI) is used; every signal is routed through the GPIO matrix so any
+// free GPIO is valid.
 
 constexpr int kDisplaySpiHost  = 1;  // SPI2 / HSPI
 constexpr int kDisplayClkGpio  = 0;
@@ -174,13 +174,14 @@ constexpr int kDisplayRstGpio  = 27;
 // well within the GPIO-matrix routing limit. Plenty for the 320×240 panel.
 constexpr uint32_t kDisplaySpiFreqHz = 20'000'000;
 
-// Backlight enable, on J13's last spare. Driven LOW (off) from boot and raised
-// HIGH (on) only once the first UI frame has been pushed, so the panel never
-// shows its white power-on state. 3.3 V logic drives the module's BL/LED pin
-// directly (VDD_IO_5 domain, brought to 3.3 V at boot by power_vdd_io5_pads).
-// -1 disables backlight control (BL hard-wired on). GPIO36 (the other spare) is
-// a boot strapping pin, so it is left unused.
-constexpr int kDisplayBacklightGpio = 45;
+// Backlight enable (LEDC PWM), on J13's GPIO36. Off from boot, raised only
+// once the first UI frame has been pushed, so the panel never shows its white
+// power-on state. -1 disables backlight control (BL hard-wired on).
+// GPIO36 is a boot strapping pin, but the boot mode is decided by GPIO35 (the
+// BOOT button, pulled high: flash boot); GPIO36 only matters with BOOT held,
+// for the download modes. It was on GPIO45 until the microSD showed that pin
+// gates the card supply: lighting the panel switched the card off.
+constexpr int kDisplayBacklightGpio = 36;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Miscellaneous
@@ -195,12 +196,20 @@ constexpr int kDisplayBacklightGpio = 45;
 // None of these GPIOs appear in the LED bus, SPI display, I2C, ETH, or UART
 // pin lists, so they are freely available for the SD slot.
 
-constexpr int kSdmmcClkGpio = 39;
-constexpr int kSdmmcCmdGpio = 40;
-constexpr int kSdmmcD0Gpio  = 41;
-constexpr int kSdmmcD1Gpio  = 42;
-constexpr int kSdmmcD2Gpio  = 43;
-constexpr int kSdmmcD3Gpio  = 44;
+// Per the DEV-KIT schematic (MicroSD block, TF slot SD1): the data lines do
+// not follow the GPIO order — D0/D1 are 39/40, D2/D3 41/42, CLK 43, CMD 44.
+// (The previous 39..44 = CLK, CMD, D0..D3 mapping never reached a card.)
+constexpr int kSdmmcClkGpio = 43;
+constexpr int kSdmmcCmdGpio = 44;
+constexpr int kSdmmcD0Gpio  = 39;
+constexpr int kSdmmcD1Gpio  = 40;
+constexpr int kSdmmcD2Gpio  = 41;
+constexpr int kSdmmcD3Gpio  = 42;
+
+// The card supply goes through P-MOSFET Q1 (AO3401) from LDO VO4, gate on
+// GPIO45 with a 10 k pull-down: the card is powered while GPIO45 is LOW.
+// fseq::init drives it low before the first mount.
+constexpr int kSdPowerGpio = 45;  // active low
 
 // ────────────────────────────────────────────────────────────────────────────
 // Miscellaneous

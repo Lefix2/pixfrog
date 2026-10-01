@@ -14,6 +14,7 @@
 #include "sacn.h"
 #include "sacn_parser.h"
 
+#include <atomic>
 #include <cstring>
 
 #include "esp_log.h"
@@ -35,9 +36,17 @@ constexpr const char* TAG = "SACN";
 constexpr uint32_t kMembershipRefreshMs = 5000;
 constexpr size_t kMaxJoined             = dmx::kNumUniverses;
 
-TaskHandle_t g_task = nullptr;
-int g_sock          = -1;
-bool g_run          = false;
+// Receiver lifecycle, shared by the task and start()/stop() (other tasks):
+// a stop() only asks; the task leaves by moving Stopping → Off itself, so a
+// start() landing meanwhile turns Stopping back into Running and the same
+// task carries on. 32-bit: the P4 only does word-sized atomic RMW.
+enum : uint32_t { kOff, kRunning, kStopping };
+std::atomic<uint32_t> g_state{ kOff };
+int g_sock = -1;
+
+bool running() {
+    return g_state.load(std::memory_order_acquire) == kRunning;
+}
 
 uint16_t g_joined[kMaxJoined];
 size_t g_joined_count = 0;
@@ -159,7 +168,7 @@ void task_main(void*) {
     g_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (g_sock < 0) {
         ESP_LOGE(TAG, "socket() failed");
-        g_task = nullptr;
+        g_state.store(kOff, std::memory_order_release);
         vTaskDelete(nullptr);
         return;
     }
@@ -178,7 +187,7 @@ void task_main(void*) {
         ESP_LOGE(TAG, "bind() failed");
         close(g_sock);
         g_sock = -1;
-        g_task = nullptr;
+        g_state.store(kOff, std::memory_order_release);
         vTaskDelete(nullptr);
         return;
     }
@@ -189,26 +198,31 @@ void task_main(void*) {
              static_cast<unsigned>(g_joined_count));
 
     uint8_t buf[700];  // E1.31 data packet max = 638 bytes
-    while (g_run) {
-        sockaddr_in from{};
-        socklen_t fl = sizeof(from);
-        int n = recvfrom(g_sock, buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&from), &fl);
+    for (;;) {
+        while (running()) {
+            sockaddr_in from{};
+            socklen_t fl = sizeof(from);
+            int n = recvfrom(g_sock, buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&from), &fl);
 
-        if (now_ms() - last_refresh >= kMembershipRefreshMs) {
-            refresh_memberships();
-            last_refresh = now_ms();
-        }
-        if (n <= 0) continue;
+            if (now_ms() - last_refresh >= kMembershipRefreshMs) {
+                refresh_memberships();
+                last_refresh = now_ms();
+            }
+            if (n <= 0 || !running()) continue;  // disabled: data no longer lands
 
-        const uint32_t root = parser::parse_root(buf, n);
-        if (root == parser::kRootVectorData) {
-            handle_data(buf, n);
-        } else if (root == parser::kRootVectorExtended) {
-            uint16_t sync_addr = 0;
-            if (parser::parse_sync(buf, n, &sync_addr)) dmx::note_sync();
-        } else {
-            dmx::note_packet_bad();
+            const uint32_t root = parser::parse_root(buf, n);
+            if (root == parser::kRootVectorData) {
+                handle_data(buf, n);
+            } else if (root == parser::kRootVectorExtended) {
+                uint16_t sync_addr = 0;
+                if (parser::parse_sync(buf, n, &sync_addr)) dmx::note_sync();
+            } else {
+                dmx::note_packet_bad();
+            }
         }
+        uint32_t expected = kStopping;
+        if (g_state.compare_exchange_strong(expected, kOff, std::memory_order_acq_rel)) break;
+        // Re-enabled before we left: keep serving with the same socket.
     }
 
     for (size_t i = 0; i < g_joined_count; ++i)
@@ -216,25 +230,35 @@ void task_main(void*) {
     g_joined_count = 0;
     close(g_sock);
     g_sock = -1;
-    g_task = nullptr;
     vTaskDelete(nullptr);
 }
 
 }  // namespace
 
 void start() {
-    if (g_task) return;
-    g_run = true;
-    xTaskCreatePinnedToCore(task_main, "sacn_rx", 4096, nullptr, 10, &g_task, 0);
+    uint32_t s = g_state.load(std::memory_order_acquire);
+    for (;;) {
+        if (s == kRunning) return;
+        if (s == kStopping) {
+            // Cancel the pending stop: the live task keeps serving.
+            if (g_state.compare_exchange_weak(s, kRunning, std::memory_order_acq_rel)) return;
+            continue;
+        }
+        if (g_state.compare_exchange_weak(s, kRunning, std::memory_order_acq_rel)) break;
+    }
+    if (xTaskCreatePinnedToCore(task_main, "sacn_rx", 4096, nullptr, 10, nullptr, 0) != pdPASS) {
+        ESP_LOGE(TAG, "task create failed");
+        g_state.store(kOff, std::memory_order_release);
+    }
 }
 
 void stop() {
-    g_run = false;
-    if (g_sock >= 0) shutdown(g_sock, SHUT_RDWR);
+    uint32_t expected = kRunning;
+    g_state.compare_exchange_strong(expected, kStopping, std::memory_order_acq_rel);
 }
 
 bool is_running() {
-    return g_task != nullptr;
+    return running();
 }
 
 }  // namespace pixfrog::sacn

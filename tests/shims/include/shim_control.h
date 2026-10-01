@@ -153,7 +153,7 @@ struct ParlioLog {
 ParlioLog& parlio_log();
 void parlio_reset();
 int gpio_calls();
-unsigned gpio_level(int pin);
+unsigned gpio_level(int pin);            // last level driven, 2 if never driven
 void psram_present(bool present);        // heap_caps_get_total_size(SPIRAM)
 void psram_largest_block(size_t bytes);  // heap_caps_get_largest_free_block (0 = default)
 

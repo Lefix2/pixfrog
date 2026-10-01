@@ -859,7 +859,8 @@ int cmd_fseq_playlist(int argc, char** argv) {
 int cmd_fseq(int argc, char** argv) {
     if (argc == 1) {
         const char* f = fseq::active_file();
-        printf("status=%s active=%s\n",
+        // One key per line, as every other command: tools parse key=value lines.
+        printf("status=%s\nactive=%s\n",
                fseq::status() == fseq::Status::Playing ? "playing" : "idle", f ? f : "none");
         if (fseq::status() == fseq::Status::Playing)
             printf("position_ms=%u\nduration_ms=%u\n", static_cast<unsigned>(fseq::position_ms()),
