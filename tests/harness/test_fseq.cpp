@@ -325,8 +325,17 @@ TEST(monitor_serves_desk_requests_and_hot_plug) {
     config::set_control(c);
     dmx::mark_global_dirty();
     dmx::handle_pending_remaps();
+    // A card holding one good file: band 1 is then lin.fseq whatever order
+    // the host filesystem lists the shared directory in.
+    const std::string shared  = g_dir;
+    g_dir                    += "/desk";
+    mkdir(g_dir.c_str(), 0700);
+    write_file("lin.fseq", cat(header(12, 3), frames_data(12, 3)));
+    shim::sd_root(g_dir);
     g_mon = 0;
     EXPECT_TRUE(shim::run_task_for("sd_mon", 25, monitor_script));
+    shim::sd_root(shared);
+    g_dir = shared;
     EXPECT_TRUE(fseq::sd_state() == fseq::SdState::Mounted);  // re-inserted, re-mounted
     EXPECT_TRUE(fseq::active_file() == nullptr);              // the desk stopped it
     config::set_control(config::default_control());
