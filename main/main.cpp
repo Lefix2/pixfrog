@@ -61,6 +61,10 @@ esp_eth_handle_t g_eth_handle = nullptr;
 // static IP to the UI/ArtNet after a cable replug.
 uint32_t g_static_ip = 0;
 
+// DHCP mode: which fallback replaced a missing lease (see on_got_ip).
+bool g_dhcp_mode              = false;
+bool g_artnet_fallback_active = false;
+
 // Single derivation point for the address the UI and ArtNet see.
 // `host_order_ip` is the address usable on the wire, 0 for none. A configured
 // static IP is not an address while the cable is out, so link state gates it:
@@ -75,12 +79,37 @@ void publish_ip(uint32_t host_order_ip) {
                                                     : pixfrog::ui::NetState::Acquiring);
 }
 
-// IP_EVENT_ETH_GOT_IP handler — DHCP path only; lwIP never raises it for a
+// No DHCP server answered and lwIP AutoIP took a link-local address, but the
+// user chose the Art-Net convention: stop the DHCP client (AutoIP with it) and
+// take 2.x.y.z/8 from the MAC instead. DHCP is retried at the next link-up.
+void apply_artnet_fallback() {
+    uint8_t mac[6] = {};
+    esp_read_mac(mac, ESP_MAC_ETH);
+    const uint32_t ip = pixfrog::config::artnet_fallback_ip(mac);
+    esp_netif_dhcpc_stop(g_eth_netif);
+    esp_netif_ip_info_t info{};
+    info.ip.addr      = lwip_htonl(ip);
+    info.netmask.addr = lwip_htonl(pixfrog::config::kArtnetFallbackMask);
+    esp_netif_set_ip_info(g_eth_netif, &info);
+    g_artnet_fallback_active = true;
+    publish_ip(ip);
+    ESP_LOGW(TAG, "no DHCP server: Art-Net fallback %u.%u.%u.%u/8", static_cast<unsigned>(ip >> 24),
+             static_cast<unsigned>((ip >> 16) & 0xFFu), static_cast<unsigned>((ip >> 8) & 0xFFu),
+             static_cast<unsigned>(ip & 0xFFu));
+}
+
+// IP_EVENT_ETH_GOT_IP handler — DHCP path only (a lease, or the link-local
+// fallback lwIP takes without one); lwIP never raises it for a configured
 // static address (see g_static_ip).
 extern "C" void on_got_ip(void* /*arg*/, esp_event_base_t /*base*/, int32_t /*id*/,
                           void* event_data) {
     auto* event            = static_cast<ip_event_got_ip_t*>(event_data);
     const uint32_t host_ip = lwip_ntohl(event->ip_info.ip.addr);
+    if (g_dhcp_mode && pixfrog::config::is_link_local(host_ip) &&
+        pixfrog::config::get_global().ip_fallback == pixfrog::config::kIpFallbackArtnet) {
+        apply_artnet_fallback();
+        return;
+    }
     publish_ip(host_ip);
     ESP_LOGI(TAG, "GOT_IP %u.%u.%u.%u", static_cast<unsigned>((host_ip >> 24) & 0xFFu),
              static_cast<unsigned>((host_ip >> 16) & 0xFFu),
@@ -95,6 +124,11 @@ extern "C" void on_eth_event(void* /*arg*/, esp_event_base_t /*base*/, int32_t e
     case ETHERNET_EVENT_CONNECTED: {
         ESP_LOGI(TAG, "Ethernet link UP");
         pixfrog::ui::set_link_up(true);
+        // A replugged cable may lead to a DHCP server now: ask again.
+        if (g_artnet_fallback_active) {
+            g_artnet_fallback_active = false;
+            esp_netif_dhcpc_start(g_eth_netif);
+        }
         // Static mode: the address is usable the instant the link is. DHCP mode
         // passes 0, which lands on Acquiring until IP_EVENT_ETH_GOT_IP fires.
         publish_ip(g_static_ip);
@@ -173,7 +207,9 @@ void init_network() {
                  static_cast<unsigned>((g.static_ip >> 8) & 0xFFu),
                  static_cast<unsigned>(g.static_ip & 0xFFu));
     } else {
-        ESP_LOGI(TAG, "DHCP enabled, awaiting lease");
+        g_dhcp_mode = true;
+        ESP_LOGI(TAG, "DHCP enabled, awaiting lease (fallback: %s)",
+                 pixfrog::config::ip_fallback_id(g.ip_fallback));
     }
 
     esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, on_got_ip, nullptr);

@@ -226,6 +226,7 @@ void print_global(const config::GlobalConfig& g) {
     fmt_ip(g.static_mask, mask, sizeof(mask));
     fmt_ip(g.static_gateway, gw, sizeof(gw));
     printf("dhcp=%d\n", g.use_dhcp ? 1 : 0);
+    printf("ip_fallback=%s\n", config::ip_fallback_id(g.ip_fallback));
     printf("ip=%s\n", ip);
     printf("mask=%s\n", mask);
     printf("gw=%s\n", gw);
@@ -268,6 +269,10 @@ int cmd_global(int argc, char** argv) {
     if (strcmp(key, "dhcp") == 0) {
         if (!parse_bool(val, g.use_dhcp)) return err("dhcp: 0|1");
         network_changed = true;
+    } else if (strcmp(key, "ip_fallback") == 0) {
+        const int fb = config::ip_fallback_from_id(val);
+        if (fb < 0) return err("ip_fallback: linklocal|artnet");
+        g.ip_fallback = static_cast<uint8_t>(fb);
     } else if (strcmp(key, "ip") == 0) {
         if (!parse_ip(val, g.static_ip)) return err("ip: a.b.c.d");
         network_changed = true;
@@ -349,7 +354,8 @@ int cmd_global(int argc, char** argv) {
         printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
         return ok();
     } else {
-        return err("unknown key (dhcp ip mask gw net subnet short_name long_name reply_unicast "
+        return err("unknown key (dhcp ip_fallback ip mask gw net subnet short_name long_name "
+                   "reply_unicast "
                    "refresh_hz home_timeout_s tft_brightness tft_idle_dim tft_dim_delay_s "
                    "web_enabled "
                    "sacn_enabled fpp_remote web_password "

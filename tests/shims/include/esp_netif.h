@@ -38,4 +38,5 @@ esp_err_t esp_netif_init();
 esp_netif_t* esp_netif_new(const esp_netif_config_t* cfg);
 esp_err_t esp_netif_attach(esp_netif_t* netif, esp_netif_iodriver_handle glue);
 esp_err_t esp_netif_dhcpc_stop(esp_netif_t* netif);
+esp_err_t esp_netif_dhcpc_start(esp_netif_t* netif);
 esp_err_t esp_netif_set_ip_info(esp_netif_t* netif, const esp_netif_ip_info_t* info);

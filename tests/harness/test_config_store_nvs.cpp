@@ -296,6 +296,27 @@ TEST(factory_reset_restores_defaults_in_nvs) {
     EXPECT_EQ(num_scenes(), kLegacyNumScenes);
 }
 
+TEST(ip_fallback_ids_and_the_artnet_address) {
+    EXPECT_EQ(ip_fallback_from_id("linklocal"), kIpFallbackLinkLocal);
+    EXPECT_EQ(ip_fallback_from_id("artnet"), kIpFallbackArtnet);
+    EXPECT_EQ(ip_fallback_from_id("dhcp"), -1);
+    EXPECT_STREQ(ip_fallback_id(kIpFallbackArtnet), "artnet");
+    EXPECT_STREQ(ip_fallback_id(7), "linklocal");
+    const uint8_t mac[6] = { 0x30, 0xED, 0xA0, 0xEA, 0x7A, 0x6F };
+    EXPECT_EQ(artnet_fallback_ip(mac), 0x02EA7A6Fu);  // the bench board: 2.234.122.111
+    const uint8_t zero[6] = {}, ones[6] = { 0, 0, 0, 0xFF, 0xFF, 0xFF };
+    EXPECT_EQ(artnet_fallback_ip(zero), 0x02000001u);  // never the /8 network
+    EXPECT_EQ(artnet_fallback_ip(ones), 0x02FFFFFEu);  // nor its broadcast
+    EXPECT_TRUE(is_link_local(0xA9FE0001));
+    EXPECT_FALSE(is_link_local(0xA9FF0001));
+    // An out-of-range stored value reads back as link-local.
+    auto g        = get_global();
+    g.ip_fallback = 9;
+    set_global(g);
+    init();
+    EXPECT_EQ(get_global().ip_fallback, kIpFallbackLinkLocal);
+}
+
 int main(int argc, char** argv) {
     return harness::run_all(argc, argv);
 }

@@ -161,6 +161,16 @@ TEST(scene_commands_manage_the_list) {
     EXPECT_TRUE(run("scene stop"));
 }
 
+TEST(global_ip_fallback) {
+    EXPECT_TRUE(run("global ip_fallback artnet"));
+    EXPECT_EQ(config::get_global().ip_fallback, config::kIpFallbackArtnet);
+    EXPECT_TRUE(run("global"));
+    EXPECT_TRUE(has("ip_fallback=artnet"));
+    EXPECT_FALSE(run("global ip_fallback 2.x"));
+    EXPECT_TRUE(run("global ip_fallback linklocal"));
+    EXPECT_EQ(config::get_global().ip_fallback, config::kIpFallbackLinkLocal);
+}
+
 TEST(fseq_playlist_commands_edit_and_play_it) {
     EXPECT_TRUE(run("fseq playlist clear"));
     EXPECT_TRUE(run("fseq playlist add intro.fseq 3"));

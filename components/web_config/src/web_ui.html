@@ -336,6 +336,11 @@
                 <div><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Gateway">Gateway</label><input id="n-gw" value="192.168.1.1" style="width:100%;background:#0d0e0d;border:1px solid #262826;color:#8e9189;border-radius:0;padding:10px 12px;font:500 13px 'DM Mono'" disabled/></div>
               </div>
             </div>
+            <div data-fallback-row><label style="display:block;font:500 11px 'DM Mono';color:#a9aca4;margin-bottom:7px" data-i18n="Without a DHCP server">Without a DHCP server</label>
+              <select id="n-fallback" style="width:100%;background:#0d0e0d;border:1px solid #363835;color:#edeeea;border-radius:0;padding:10px 12px;font:500 13px 'Figtree'">
+                <option value="linklocal" data-i18n="Link-local 169.254.x.x (a laptop meets it with no setup)">Link-local 169.254.x.x (a laptop meets it with no setup)</option>
+                <option value="artnet" data-i18n="Art-Net 2.x.x.x/8 (the desk convention)">Art-Net 2.x.x.x/8 (the desk convention)</option>
+              </select></div>
             <div style="display:flex;align-items:center;gap:9px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.2);border-radius:0;padding:11px 13px;font:500 12px 'Figtree';color:#e8b23a"><i data-lucide="info" class="ic16"></i><span data-i18n="Changing IP mode requires a reboot.">Changing IP mode requires a reboot.</span></div>
           </div>
 
@@ -769,6 +774,9 @@ var FR={
   'Playing the playlist':'Lecture de la playlist','playlist':'playlist','loop':'boucle',
   '8 lines · 2 outputs (DATA + CLOCK) per channel':'8 lignes · 2 sorties (DATA + CLOCK) par canal',
   'IP addressing — applied after reboot':'Adressage IP — appliqué après redémarrage',
+  'Without a DHCP server':'Sans serveur DHCP',
+  'Link-local 169.254.x.x (a laptop meets it with no setup)':'Link-local 169.254.x.x (un portable la joint sans réglage)',
+  'Art-Net 2.x.x.x/8 (the desk convention)':'Art-Net 2.x.x.x/8 (la convention des consoles)',
   'ArtNet 4 + sACN E1.31 reception · merge & failsafe':'Réception ArtNet 4 + sACN E1.31 · merge & failsafe',
   'Contiguous re-addressing of every channel':'Ré-adressage contigu de tous les canaux',
   'General · security · firmware · maintenance':'Général · sécurité · firmware · maintenance',
@@ -1552,6 +1560,7 @@ function buildChan(c,i){
 }
 function setDhcpUI(){
   document.querySelectorAll('[data-dhcp]').forEach(function(d){ var on=(+d.getAttribute('data-dhcp'))===(netDhcp?1:0); d.style.background=on?'#3fd463':'transparent'; d.style.color=on?'#08170d':'#a9aca4'; });
+  var fr=document.querySelector('[data-fallback-row]'); if(fr) fr.style.display=netDhcp?'':'none';
   ['n-ip','n-mask','n-gw'].forEach(function(id){ var e=el(id); if(!e) return; e.disabled=netDhcp; e.style.color=netDhcp?'#8e9189':'#edeeea'; e.style.background=netDhcp?'#0d0e0d':'#0d0e0d'; });
 }
 function setAuthUI(){
@@ -1560,7 +1569,7 @@ function setAuthUI(){
 function reloadConfig(){
   return api('GET','/api/config').then(function(d){
     var g=d.global;
-    netDhcp=!!g.dhcp; setDhcpUI();
+    netDhcp=!!g.dhcp; setDhcpUI(); if(el('n-fallback')) el('n-fallback').value=g.ip_fallback||'linklocal';
     if(g.lang!=null && !langDirty){ LANG=(g.lang===1?'fr':'en'); var ls=el('s-lang'); if(ls) ls.value=LANG; applyI18n(); go(curScreen); }
     if(el('n-ip')) el('n-ip').value=g.ip; if(el('n-mask')) el('n-mask').value=g.mask; if(el('n-gw')) el('n-gw').value=g.gw;
     if(el('n-host')) el('n-host').value=g.short_name||''; if(el('n-long')) el('n-long').value=g.long_name||'';
@@ -1636,7 +1645,7 @@ function savePlaylist(){
 /* ─────────── save ─────────── */
 function buildGlobalBody(){
   var b={};
-  if(dirty.has('network')){ b.dhcp=netDhcp; if(!netDhcp){ b.ip=el('n-ip').value; b.mask=el('n-mask').value; b.gw=el('n-gw').value; } b.short_name=el('n-host').value; b.long_name=el('n-long').value; }
+  if(dirty.has('network')){ b.dhcp=netDhcp; b.ip_fallback=el('n-fallback').value; if(!netDhcp){ b.ip=el('n-ip').value; b.mask=el('n-mask').value; b.gw=el('n-gw').value; } b.short_name=el('n-host').value; b.long_name=el('n-long').value; }
   if(dirty.has('artnet')){ b.net=parseInt(el('a-net').value,10)||0; b.subnet=parseInt(el('a-subnet').value,10)||0; b.sacn_enabled=el('a-sacn').checked; b.fpp_remote=el('a-fpp').checked; b.merge_mode=el('a-merge').checked?1:0; b.failsafe_mode=parseInt(el('a-fsmode').value,10)||0; b.failsafe_scene=parseInt(el('a-fsscene').value,10)||0; b.failsafe_timeout_s=parseInt(el('a-fsdelay').value,10)||0; }
   if(dirty.has('sysgen')){ b.refresh_hz=Math.max(20,Math.min(120,parseInt(el('s-refresh').value,10)||60)); b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; b.tft_brightness=parseInt(el('s-bright').value,10)||100; b.tft_idle_dim=parseInt(el('s-dim').value,10)||0; b.tft_dim_delay_s=parseInt(el('s-dimdelay').value,10)||0; b.scene_fade_ms=Math.max(0,Math.min(25500,Math.round((parseFloat(el('s-fade').value)||0)*10)*100)); }
   if(dirty.has('sysauth')){ if(!el('s-auth').checked) b.web_password=''; else if(el('s-pwd').value) b.web_password=el('s-pwd').value; }
@@ -1952,7 +1961,7 @@ function onInput(e){
   if(t.hasAttribute&&t.hasAttribute('data-sc-param')){ var pn=+t.getAttribute('data-sc-param'); SCENES[pn-1].param=parseInt(t.value,10)||0; var pv=document.querySelector('[data-sc-paramval="'+pn+'"]'); if(pv) pv.textContent=paramText(SCENES[pn-1]); markDirty('scene'+(pn-1)); return; }
   if(t.hasAttribute&&t.hasAttribute('data-sc-fxsel')){ var fn=+t.getAttribute('data-sc-fxsel'); SCENES[fn-1].effectIdx=parseInt(t.value,10)||0; markDirty('scene'+(fn-1)); renderScene(fn); return; }
   if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); return; }
-  if(['n-ip','n-mask','n-gw','n-host','n-long'].indexOf(t.id)>=0){ markDirty('network'); return; }
+  if(['n-ip','n-mask','n-gw','n-host','n-long','n-fallback'].indexOf(t.id)>=0){ markDirty('network'); return; }
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }
   if(['s-refresh','s-home','s-boot','s-bright','s-dim','s-dimdelay','s-fade'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
