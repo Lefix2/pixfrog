@@ -72,6 +72,13 @@ CONFIG_LWIP_IPV4=y
 CONFIG_LWIP_IPV6=n
 CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
 CONFIG_LWIP_MAX_UDP_PCBS=8
+# DHCP mode with no DHCP server (a laptop plugged straight in, a show network
+# without one): self-assign a link-local 169.254.x.x after a few unanswered
+# DHCP probes instead of sitting at 0.0.0.0. The DHCP client keeps probing and
+# a later lease replaces it; each change raises IP_EVENT_ETH_GOT_IP, which
+# main.cpp already publishes to the UI / Art-Net.
+CONFIG_LWIP_AUTOIP=y
+CONFIG_LWIP_AUTOIP_TRIES=3
 
 #
 # Logging
