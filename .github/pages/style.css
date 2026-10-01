@@ -656,23 +656,95 @@ esp-web-install-button {
   line-height: 1.55;
   color: #9ea098;
 }
-/* Two-up hardware renders: the wide shot leads, the detail sits beside it. */
-.media-pair {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 18px;
-  /* Stretched, not start-aligned: both cards take the row height and the
-     wells soak up the difference, so unequal captions cannot leave one
-     card short of the other. */
+/* Before/after rack (landing §01): the closed render underneath, the open
+   one clipped to the left of --pos (set by compare.js). A transparent range
+   input over the image does the dragging and the keyboard. */
+.figure .well.compare {
+  --pos: 30%;
+  aspect-ratio: 16 / 9;
+  cursor: ew-resize;
+  touch-action: pan-y;
 }
-.media-pair .well {
-  aspect-ratio: auto;
-  flex: 1;
-  min-height: clamp(190px, 22vw, 340px);
+.figure .well.compare img {
+  position: absolute;
+  inset: 0;
+}
+.compare .compare-top {
+  clip-path: inset(0 calc(100% - var(--pos)) 0 0);
+}
+.compare-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--pos);
+  width: 2px;
+  margin-left: -1px;
+  background: var(--green);
+  box-shadow: 0 0 14px rgba(63, 212, 99, 0.55);
+  pointer-events: none;
+}
+.compare-grip {
+  position: absolute;
+  top: 50%;
+  left: var(--pos);
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: #0e0f0e;
+  border: 2px solid var(--green);
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  transition: transform 0.2s ease;
+}
+/* The idle bounce also pulses the grip a little. */
+.compare.compare-hint .compare-grip {
+  transform: scale(1.08);
+}
+.compare-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+}
+.compare:has(.compare-range:focus-visible) .compare-grip {
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+}
+.compare-tag {
+  position: absolute;
+  top: 14px;
+  padding: 5px 9px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #edeeea;
+  background: rgba(8, 9, 8, 0.72);
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
+.compare-tag.open {
+  left: 14px;
+}
+.compare-tag.closed {
+  right: 14px;
+}
+.compare-caption {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 40px;
 }
 @media (max-width: 860px) {
-  .media-pair {
-    grid-template-columns: minmax(0, 520px);
+  .compare-caption {
+    grid-template-columns: 1fr;
   }
 }
 
