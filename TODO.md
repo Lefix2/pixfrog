@@ -170,20 +170,10 @@ a password protects once set; none of them may make it mandatory.
 
 ## Documentation & website
 
-The site (`.github/pages`, published by `pages.yml`) still shows the
-pre-September UI and feature set. *(owner)* items need the hardware or CAD.
+UI captures and the effects sheet are generated (`tools/screenshots`,
+`tools/effects_gallery`): re-run them after a UI or effect change. *(owner)*
+items need the hardware or CAD.
 
-- [ ] ★ **Reproducible web UI screenshots** — `tools/screenshots/`: the host API
-      server (`pixfrog_api_host`) with a demo config + headless Chrome, one
-      command → PNGs, so every UI change refreshes the visuals.
-- [ ] ★ **New visuals** — dashboard (SHOW card), channels, scenes (list,
-      editor, PLAY ON), DMX control screen; TFT screens from the emulator
-      goldens (`tools/emulator/crawl.py`).
-- [ ] **Effects gallery** — one space-time strip per scene effect (x = pixel,
-      y = time), rendered on the host from `fill_scene_pattern`.
-- [ ] **Content pass** — site home/about/docs pages (FR + EN) for what shipped
-      since the last refresh: 30 scenes / 11 effects / palettes, the new web
-      UI, refresh 20-120 Hz, pixel gaps, show control and zones.
 - [ ] *(owner)* **Mechanical renders, board renders, photos** — rack 1U and
       satellite renders, `pixfrog-shield.png` / `pixfrog-sat.png` from current
       KiCad, rack photos, site hero and `og-cover.png`, in-use shots.

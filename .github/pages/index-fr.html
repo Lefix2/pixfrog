@@ -82,8 +82,9 @@
         <div class="statbar">
           <div class="wrap">
             <span><b>8</b> sorties</span>
-            <span><b>48</b> univers</span>
+            <span><b>64</b> univers</span>
             <span><b>9</b> protocoles pixel</span>
+            <span><b class="amber">30</b> scènes</span>
             <span><b class="amber">FSEQ</b> microSD</span>
             <span><b>OTA</b> A/B</span>
             <span>licence <b class="amber">MIT</b></span>
@@ -161,7 +162,7 @@
             <figure class="figure">
               <div class="well contain">
                 <img
-                  src="./img/web-dashboard.png"
+                  src="./img/web-dashboard-fr.png"
                   alt="Tableau de bord de l'interface web embarquée pixfrog"
                   loading="lazy"
                   onerror="this.closest('figure').remove()"
@@ -169,15 +170,14 @@
               </div>
               <figcaption>
                 <b>Interface web embarquée</b>
-                <p>Lien, FPS, trafic Art-Net et sACN, scènes et séquences —
-                  servie par le boîtier lui-même.</p>
+                <p>Lien, FPS, trafic, le master du spectacle et les huit lignes en direct — servie par le boîtier lui-même.</p>
               </figcaption>
             </figure>
             <figure class="figure">
               <div class="well pixel">
                 <img
-                  src="./img/ui-home.png"
-                  alt="Écran embarqué pixfrog : IP, services, fps et les huit canaux"
+                  src="./img/ui-nv3007-home.png"
+                  alt="Écran embarqué pixfrog : IP, services, FPS et les huit canaux"
                   width="428"
                   height="142"
                   loading="lazy"
@@ -186,21 +186,64 @@
               </div>
               <figcaption>
                 <b>Le même état, sans ordinateur</b>
-                <p>IP, protocole actif, FPS et les huit canaux d'un coup d'œil.</p>
+                <p>IP, protocoles, FPS et les huit lignes sur l'écran barre 2,79".</p>
               </figcaption>
             </figure>
             <figure class="figure">
               <div class="well contain">
                 <img
-                  src="./img/web-channels.png"
-                  alt="Page canaux de l'interface web pixfrog"
+                  src="./img/web-scenes-fr.png"
+                  alt="Éditeur de scènes de l'interface web pixfrog"
                   loading="lazy"
                   onerror="this.closest('figure').remove()"
                 />
               </div>
               <figcaption>
-                <b>Patch complet des 8 lignes</b>
-                <p>Chaque sortie, champ par champ, sauvegardée en NVS.</p>
+                <b>30 scènes, jouées partout</b>
+                <p>Un effet, jusqu'à quatre couleurs, les lignes visées — et lecture sur n'importe quelle sortie.</p>
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- Effects + show control -->
+      <section class="band paper" id="effects">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="sec-num">03</span>
+            <h2>Onze effets, rendus par le firmware lui-même.</h2>
+          </div>
+          <p class="sub">
+            Chaque bande ci-dessous montre un effet pendant six secondes sur une ligne de 144 pixels — x le long de la ligne, le temps vers le bas — rendu sur PC par le code même qui tourne dans le boîtier. Les scènes se jouent seules, au démarrage, en failsafe, ou depuis n'importe quelle console via l'univers de pilotage DMX.
+          </p>
+          <div class="media-grid">
+            <figure class="figure">
+              <div class="well contain">
+                <img
+                  src="./img/effects/effects-gallery.png"
+                  alt="Bandes espace-temps des onze effets de scène"
+                  loading="lazy"
+                  onerror="this.closest('figure').remove()"
+                />
+              </div>
+              <figcaption>
+                <b>Fixe, chase, arc-en-ciel, blobs, dégradé, fondu, scintillement, feu, scanner, vague, rayures</b>
+                <p>Vitesse, un paramètre propre à chaque effet et une palette jusqu'à quatre couleurs ; fondus enchaînés entre scènes.</p>
+              </figcaption>
+            </figure>
+            <figure class="figure">
+              <div class="well contain">
+                <img
+                  src="./img/web-control-fr.png"
+                  alt="Éditeur de pilotage DMX de l'interface web pixfrog"
+                  loading="lazy"
+                  onerror="this.closest('figure').remove()"
+                />
+              </div>
+              <figcaption>
+                <b>Piloté depuis la console</b>
+                <p>Composez les canaux DMX du boîtier — master, blackout, strobe, scènes par zone, fondus, séquences — et exportez le profil de fixture (OFL) pour la console.</p>
               </figcaption>
             </figure>
           </div>
@@ -208,76 +251,57 @@
       </section>
 
       <!-- Fonctionnalités -->
-      <section class="band paper" id="features">
+      <section class="band" id="features">
         <div class="wrap">
           <div class="sec-head">
-            <span class="sec-num">03</span>
+            <span class="sec-num">04</span>
             <h2>Natif ESP-IDF, taillé pour un timing déterministe.</h2>
           </div>
           <div class="grid">
             <div class="card">
               <span class="ic">Protocoles</span>
-              <h3>9 protocoles pixels</h3>
-              <p>WS2815, WS2812B, WS2811, SK6812, WS2814, APA102, SK9822,
-                LPD8806 — avec ordre de couleurs, gamma et luminosité par
-                canal.</p>
+              <h3>9 protocoles pixel</h3>
+              <p>WS2815, WS2812B, WS2811, SK6812, WS2814, APA102, SK9822, LPD8806 — ordre des couleurs, gamma, balance des blancs, luminosité et pixels morts par canal.</p>
             </div>
             <div class="card">
               <span class="ic">Réseau</span>
               <h3>Art-Net 4 + sACN</h3>
-              <p>ArtDmx, Sync, Trigger, TimeCode et configuration à distance
-                sur Ethernet ; sACN (E1.31) opt-in avec priorités et fusion
-                HTP/LTP 2 sources — jusqu'à 48 univers.</p>
+              <p>ArtDmx, Sync, Trigger, TimeCode et configuration à distance ; sACN (E1.31) optionnel avec priorités et fusion HTP/LTP 2 sources — jusqu'à 64 univers. DHCP, IP fixe, ou repli link-local / Art-Net 2.x.</p>
             </div>
             <div class="card">
               <span class="ic">PARLIO / DMA</span>
               <h3>Sortie DMA parallèle</h3>
-              <p>Le périphérique PARLIO de l'ESP32-P4 cadence les 8 canaux en
-                parallèle depuis des doubles tampons PSRAM via DMA pour un
-                rafraîchissement stable et sans jitter.</p>
+              <p>Le périphérique PARLIO de l'ESP32-P4 cadence les 8 lignes en parallèle depuis un triple tampon en PSRAM — de 20 à 120 Hz, stable et sans jitter.</p>
             </div>
             <div class="card">
               <span class="ic">Écran</span>
               <h3>Interface embarquée</h3>
-              <p>Tableau de bord TFT couleur (ou OLED classique) piloté par
-                un encodeur rotatif — FPS en direct, lien, activité par canal
-                et configuration complète, sans ordinateur.</p>
+              <p>Écran barre TFT couleur (ou OLED classique) et encodeur rotatif — FPS, lien, activité par ligne et configuration complète, sans ordinateur.</p>
             </div>
             <div class="card">
               <span class="ic amber">Web / OTA</span>
               <h3>Interface web &amp; OTA</h3>
-              <p>Application web embarquée opt-in : configuration complète,
-                état en direct, mises à jour OTA avec rollback A/B,
-                sauvegarde/restauration JSON, téléchargement de coredump,
-                authentification optionnelle.</p>
+              <p>Application web embarquée optionnelle, en français et en anglais : configuration, état en direct, OTA avec retour arrière A/B, sauvegarde JSON, coredump, mot de passe optionnel.</p>
             </div>
             <div class="card">
               <span class="ic">microSD</span>
               <h3>Lecteur FSEQ</h3>
-              <p>Lit les spectacles xLights/FPP <code>.fseq</code> depuis
-                microSD (zstd, hot-plug), autonome ou esclave de ArtTimeCode
-                et FPP MultiSync.</p>
+              <p>Spectacles xLights/FPP <code>.fseq</code> depuis la microSD (zstd, hot-plug) : une fois, en boucle, ou en playlist avec répétitions et démarrage auto — autonome ou calé sur ArtTimeCode et FPP MultiSync.</p>
             </div>
             <div class="card">
               <span class="ic amber">Scènes</span>
-              <h3>Scènes &amp; failsafe</h3>
-              <p>8 scènes autonomes (solide / chase / arc-en-ciel) jouables
-                au démarrage, depuis la console ou n'importe quelle interface
-                — plus un failsafe perte de signal par canal.</p>
+              <h3>Scènes &amp; zones</h3>
+              <p>30 scènes, 11 effets, palettes 4 couleurs, fondus ; des scènes différentes sur des sorties différentes, au démarrage ou en failsafe perte de signal.</p>
+            </div>
+            <div class="card">
+              <span class="ic amber">Pilotage</span>
+              <h3>Univers de pilotage DMX</h3>
+              <p>N'importe quelle console pilote master, blackout, strobe, scènes par zone, vitesse, couleurs, durée de fondu et séquences sur les canaux que vous choisissez — avec un profil de fixture OFL.</p>
             </div>
             <div class="card">
               <span class="ic amber">NVS</span>
               <h3>Config persistante</h3>
-              <p>Chaque paramètre est stocké en NVS et survit aux
-                redémarrages, avec un avertissement visible sur l'écran
-                d'accueil si la flash est défaillante.</p>
-            </div>
-            <div class="card">
-              <span class="ic">PSRAM</span>
-              <h3>PSRAM octal</h3>
-              <p>200&nbsp;MHz de PSRAM octal contient les trames en double
-                tampon pendant que la SRAM compatible DMA maintient la
-                rapidité du chemin de sortie.</p>
+              <p>Chaque réglage est stocké en NVS et survit aux redémarrages et aux mises à jour, avec une alerte bien visible à l'accueil si la flash est défaillante.</p>
             </div>
           </div>
           <p style="margin: 28px 0 0">

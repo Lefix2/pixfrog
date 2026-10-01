@@ -21,18 +21,26 @@ docs viewer hide any image that fails to load, so adding/replacing one is safe.
 | `peripherals-wiring.svg`    | SVG  | OLED + seesaw encoder on the shared I²C bus                    | HARDWARE §4 |
 | `oled-ui.svg`               | SVG  | SSD1306 home-screen mockup                                     | HARDWARE §6 |
 | `board-hero.jpg`            | JPG  | Photo of the ESP32-P4 DEV-KIT                                  | HARDWARE §1 |
-| `ui-home.png`               | PNG  | NV3007 bar display home screen: IP, services, the 8 channels   | Landing page §02 |
+| `ui-nv3007-home.png`        | PNG  | NV3007 bar display home screen (emulator), `tools/screenshots` | Landing page §02 |
 | `rack-closeup.jpg`          | JPG  | 1U rack front panel — screen and rotary encoder                | Landing hero |
 | `rack-open.jpg`             | JPG  | Rack with the lid off: daughterboard, supply, vent panels      | Landing page §01 |
 | `rack-full.jpg`             | JPG  | Complete 1U rack, eight XLR outputs across the front           | Landing page §01 |
-| `web-dashboard.png`         | PNG  | Embedded web UI dashboard                                      | Landing page §02 |
-| `web-channels.png`          | PNG  | Embedded web UI channel patch page                             | Landing page §02 |
+| `web-dashboard[-fr].png`    | PNG  | Web UI dashboard, EN / FR — `tools/screenshots`                | Landing page §02 |
+| `web-scenes[-fr].png`       | PNG  | Web UI scene editor, EN / FR — `tools/screenshots`             | Landing page §02 |
+| `web-control[-fr].png`      | PNG  | Web UI DMX control editor, EN / FR — `tools/screenshots`       | Landing §03, SHOW_CONTROL |
+| `effects/effects-gallery.png` | PNG | The 11 scene effects as space-time strips — `tools/effects_gallery` | Landing §03, SHOW_CONTROL |
 | `og-cover.png`              | PNG  | Social / link-preview cover (rendered from `og-cover.svg`)    | `og:image` |
 | `logo.svg`                  | SVG  | Frog mark — nav brand + favicon                               | Site |
 | `frog-anim.svg`             | SVG  | Animated frog logo (self-contained CSS); baked into the splash | About page + `tools/splashgen` |
 
 `*.svg` sources for the rasterised covers (`og-cover.svg`) are kept alongside
 so they can be re-exported with `rsvg-convert`.
+
+The UI captures and the effects sheet are generated, never edited by hand:
+`tools/screenshots/shots.py` (the real web UI against `pixfrog_api_host --demo`
+in headless Chromium, and the device screens from the emulator) and
+`tools/effects_gallery/gallery.py` (the firmware's own effect renderer). Re-run
+them after a UI or effect change and commit the result.
 
 The landing hero is cropped with `object-fit: cover` at `object-position: 56% 50%`
 under a left-to-right dark gradient, so it wants a wide frame with the subject
