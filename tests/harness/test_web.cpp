@@ -264,6 +264,8 @@ TEST(backup_file_is_named_after_the_box_and_the_date) {
     EXPECT_STREQ(name("/api/backup?date=2026-10-01").c_str(),
                  "attachment; filename=\"pixfrog-2026-10-01.json\"");
     post("/api/global", "{\"short_name\":\"pixfrog\"}");
+    EXPECT_STREQ(name("/api/backup?date=2026-10-01").c_str(),
+                 "attachment; filename=\"pixfrog-2026-10-01.json\"");  // not pixfrog-pixfrog
 }
 
 TEST(backup_then_restore_round_trips) {

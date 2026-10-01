@@ -1335,7 +1335,8 @@ static void backup_filename(httpd_req_t* req, char* out, size_t cap) {
             dash = true;  // runs of anything else become one dash
         }
     }
-    slug[n]        = '\0';
+    slug[n] = '\0';
+    if (std::strcmp(slug, "pixfrog") == 0) slug[0] = '\0';  // the default: no pixfrog-pixfrog
     char query[48] = "", date[12] = "";
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
         httpd_query_key_value(query, "date", date, sizeof(date)) == ESP_OK) {
