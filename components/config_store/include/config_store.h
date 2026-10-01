@@ -111,6 +111,10 @@ struct GlobalConfig {
     // single-round SHA-256(salt || password), re-hashed with the KDF on the
     // next successful login or set.
     uint8_t web_auth_kdf;  // kWebAuthSha256 / kWebAuthPbkdf2
+
+    // This box answers pixfrog.local (the multi-box hub) ahead of the others;
+    // without one marked, the lowest MAC does. Zero-fill migration = 0 = no.
+    uint8_t hub_preferred;
 };
 
 constexpr uint8_t kWebAuthSha256 = 0;  // legacy: SHA-256(salt || password)

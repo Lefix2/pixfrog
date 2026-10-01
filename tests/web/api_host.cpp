@@ -19,6 +19,7 @@
 #include "dmx_manager.h"
 #include "fakes/fseq_fake.h"
 #include "fseq_player.h"
+#include "hub_election.h"
 #include "shim_control.h"
 #include "web_config.h"
 
@@ -112,6 +113,17 @@ int main(int argc, char** argv) {
             password = argv[++i];
         else if (!std::strcmp(argv[i], "--demo"))
             demo = true;
+        else if (!std::strcmp(argv[i], "--mac") && i + 1 < argc) {
+            uint8_t mac[6];
+            if (pixfrog::web::hub::parse_mac(argv[++i], mac)) shim::set_mac(mac);
+        } else if (!std::strcmp(argv[i], "--peer") && i + 1 < argc) {
+            // name,port,mac[,hub]: a sibling box served on 127.0.0.1:port.
+            char name[32] = "", mac[16] = "", hub[4] = "0";
+            unsigned peer_port = 0;
+            if (std::sscanf(argv[++i], "%31[^,],%u,%15[^,],%3s", name, &peer_port, mac, hub) >= 3)
+                shim::mdns_add_peer(name, 0x7F000001, "pixfrog", name, "v0.0.0-host", mac, hub,
+                                    static_cast<uint16_t>(peer_port));
+        }
     }
     std::signal(SIGTERM, on_signal);
     std::signal(SIGINT, on_signal);
@@ -139,8 +151,10 @@ int main(int argc, char** argv) {
         std::thread(keep_demo_alive).detach();
     }
     pixfrog::web::start();
-    // The status push task, on its own thread as on the device (WebSocket).
+    // The status push and mDNS election tasks, on their own threads as on the
+    // device.
     std::thread([] { shim::run_task("web_push"); }).detach();
+    std::thread([] { shim::run_task("web_hub"); }).detach();
     std::printf("pixfrog_api_host listening on http://127.0.0.1:%u\n", port);
     std::fflush(stdout);
     shim::http_serve(port, &g_stop);

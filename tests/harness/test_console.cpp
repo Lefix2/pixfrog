@@ -266,6 +266,16 @@ TEST(global_language) {
     EXPECT_FALSE(run("global language de"));
 }
 
+TEST(global_hub_preferred) {
+    EXPECT_TRUE(run("global hub_preferred 1"));
+    EXPECT_EQ(config::get_global().hub_preferred, 1);
+    EXPECT_TRUE(run("global"));
+    EXPECT_TRUE(has("hub_preferred=1"));
+    EXPECT_TRUE(run("global hub_preferred 0"));
+    EXPECT_EQ(config::get_global().hub_preferred, 0);
+    EXPECT_FALSE(run("global hub_preferred maybe"));
+}
+
 // A failed play answers ERR and a zero code: a non-zero one makes esp_console
 // print its own "command returned non-zero" line after ours.
 TEST(fseq_failures_keep_the_ok_err_protocol) {

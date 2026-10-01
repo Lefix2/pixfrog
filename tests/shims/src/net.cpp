@@ -70,11 +70,11 @@ void task_delay_point() {
     if (g_delay_budget < 0 || !g_task_jmp) return;
     if (--g_delay_budget <= 0) std::longjmp(*g_task_jmp, 1);
 }
-bool run_task_for(const char* name, int max_delays, void (*on_delay)()) {
+bool run_task_for(const char* name, int max_delays, void (*on_delay)(), bool keep) {
     auto it = g_tasks.find(name);
     if (it == g_tasks.end()) return false;
     const Task t = it->second;
-    g_tasks.erase(it);
+    if (!keep) g_tasks.erase(it);
     std::jmp_buf env;
     g_task_jmp     = &env;
     g_delay_budget = max_delays;
@@ -102,9 +102,14 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t fn, const char* name, uint32_t
     return pdPASS;
 }
 
+namespace {
+uint8_t g_mac[6] = { 0x30, 0xED, 0xA0, 0x12, 0x34, 0x56 };
+}
+void shim::set_mac(const uint8_t mac[6]) {
+    std::memcpy(g_mac, mac, 6);
+}
 esp_err_t esp_read_mac(uint8_t* mac, esp_mac_type_t) {
-    static const uint8_t kMac[6] = { 0x30, 0xED, 0xA0, 0x12, 0x34, 0x56 };
-    std::memcpy(mac, kMac, 6);
+    std::memcpy(mac, g_mac, 6);
     return ESP_OK;
 }
 

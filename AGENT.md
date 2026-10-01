@@ -91,8 +91,18 @@ behind the optional password):
   `GET|DELETE /api/coredump`, `POST /api/rollback/ack`, `POST /api/ota` (raw .bin body),
   `POST /api/reboot`, `POST /api/factory-reset`, `GET /api/peers`, `GET /` (SPA)
 
-Multi-node: `GET /api/peers` browses mDNS for sibling pixfrogs (filtered on the
-`product=pixfrog` TXT record, self listed first). With several boxes the SPA
+Multi-node: every box is `pixfrog-<last 4 hex of MAC>.local`; the alias
+`pixfrog.local` is published (delegated hostname) by one box at a time —
+`web_hub` browses `_http._tcp` every 15 s and the election in `hub_election.h`
+picks a box marked `hub_preferred` (Network screen, `global hub_preferred`),
+else the lowest MAC; a sibling unseen for 45 s is forgotten, so a dead holder
+is replaced. The TXT record carries `product=pixfrog`, `node`, `fw`, `mac`,
+`hub`; a box without `mac` (older firmware) takes no part. Opened as
+`pixfrog.local` with several boxes, the SPA starts on the hub (one card per
+box: status, playback, alerts; a click opens that box), by a unique name or IP
+it is that box's UI. `GET /api/peers` browses mDNS for sibling pixfrogs (filtered on the
+`product=pixfrog` TXT record, self listed first, each with `host`/`mac`/`hub`,
+`alias:true` on the holder). With several boxes the SPA
 shows a device bar, an aggregated channel grid on the dashboard (cross-origin
 `GET /api/status`+`/api/config`), and configures each remote box through its own
 UI in an `iframe` (`/?embed=1` hides the device bar in the framed child) — no

@@ -1,5 +1,5 @@
-// mDNS subset: announcements are recorded, browse results come from peers the
-// test registers (shim::mdns_add_peer).
+// mDNS subset: hostname, delegated hostnames and TXT items are recorded,
+// browse results come from peers the test registers (shim::mdns_add_peer).
 #pragma once
 #include "esp_err.h"
 #include <cstddef>
@@ -41,3 +41,9 @@ esp_err_t mdns_service_add(const char* instance, const char* service, const char
 esp_err_t mdns_query_ptr(const char* service, const char* proto, uint32_t timeout,
                          size_t max_results, mdns_result_t** results);
 void mdns_query_results_free(mdns_result_t* results);
+esp_err_t mdns_delegate_hostname_add(const char* hostname, const mdns_ip_addr_t* address_list);
+esp_err_t mdns_delegate_hostname_set_address(const char* hostname,
+                                             const mdns_ip_addr_t* address_list);
+esp_err_t mdns_delegate_hostname_remove(const char* hostname);
+esp_err_t mdns_service_txt_item_set(const char* service_type, const char* proto, const char* key,
+                                    const char* value);

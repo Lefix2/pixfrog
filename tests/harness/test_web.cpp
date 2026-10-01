@@ -14,6 +14,7 @@
 #include "fakes/fseq_fake.h"
 #include "fakes/modules_fake.h"
 #include "harness.h"
+#include "hub_election.h"
 #include "sacn.h"
 #include "shim_control.h"
 #include "web_config.h"
@@ -597,7 +598,7 @@ TEST(fixture_profile_covers_every_control_function) {
 
 TEST(backup_restore_carries_the_control_mode_and_fade) {
     post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":55,\"address\":7}");
-    post("/api/global", "{\"scene_fade_ms\":2500}");
+    post("/api/global", "{\"scene_fade_ms\":2500,\"hub_preferred\":true}");
     const std::string backup = get("/api/backup").body;
     config::reset_to_defaults();
     EXPECT_EQ(config::get_control().universe, config::kDefaultControlUniverse);
@@ -606,6 +607,7 @@ TEST(backup_restore_carries_the_control_mode_and_fade) {
     EXPECT_EQ(config::get_control().address, 7);
     EXPECT_EQ(config::get_control().count, 15);
     EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
+    EXPECT_EQ(config::get_global().hub_preferred, 1);
     // A malformed control object is skipped, the rest still restores.
     std::string bad       = backup;
     const std::string key = "\"fn\":\"master\"";
@@ -614,7 +616,7 @@ TEST(backup_restore_carries_the_control_mode_and_fade) {
     EXPECT_EQ(post("/api/restore", bad).status, 200);
     EXPECT_EQ(config::get_control().universe, config::kDefaultControlUniverse);
     EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
-    post("/api/global", "{\"scene_fade_ms\":0}");
+    post("/api/global", "{\"scene_fade_ms\":0,\"hub_preferred\":false}");
     post("/api/control", "{\"enabled\":false}");
 }
 
@@ -872,4 +874,135 @@ TEST(fseq_upload_writes_the_file_and_handles_card_errors) {
     shim::sd_root(dir + "/missing");
     EXPECT_EQ(post("/api/fseq/upload?name=x.fseq", "abc").status, 500);
     shim::sd_root("");
+}
+
+// ── pixfrog.local with several boxes (hub_election.h + web_hub task) ───────
+
+namespace {
+void tick() {
+    shim::advance_ms(1000);
+}
+// The hub task for `seconds` of fake time (one loop per second); each run
+// starts the task from the top, so it browses at once.
+void run_hub(int seconds) {
+    shim::run_task_for("web_hub", seconds + 1, tick, true);
+}
+// A clean roster: every sibling a previous case left behind has expired.
+void hub_fresh() {
+    shim::mdns_reset();
+    shim::advance_ms(60'000);
+    run_hub(1);
+}
+constexpr uint32_t kSelfIp = 0xC0A80232;
+}  // namespace
+
+TEST(hub_election_prefers_the_marked_box_then_the_lowest_mac) {
+    using web::hub::Candidate;
+    const Candidate low{ { 0, 0, 0, 0, 0, 1 }, false }, high{ { 0, 0, 0, 0, 0, 9 }, false },
+        high_pref{ { 0, 0, 0, 0, 0, 9 }, true };
+    EXPECT_TRUE(web::hub::outranks(low, high));
+    EXPECT_FALSE(web::hub::outranks(high, low));
+    EXPECT_TRUE(web::hub::outranks(high_pref, low));
+    EXPECT_FALSE(web::hub::outranks(low, low));  // a tie is no win: one holder
+
+    uint8_t mac[6];
+    EXPECT_TRUE(web::hub::parse_mac("30EDa0123456", mac));
+    EXPECT_EQ(mac[0], 0x30);
+    EXPECT_EQ(mac[5], 0x56);
+    EXPECT_FALSE(web::hub::parse_mac("30eda012345", mac));
+    EXPECT_FALSE(web::hub::parse_mac("30eda012345g", mac));
+    EXPECT_FALSE(web::hub::parse_mac(nullptr, mac));
+    char host[web::hub::kHostnameMax];
+    web::hub::hostname_for(mac, host, sizeof(host));
+    EXPECT_STREQ(host, "pixfrog-3456");
+}
+
+TEST(roster_keeps_a_sibling_through_a_missed_browse_then_forgets_it) {
+    web::hub::Roster r;
+    const web::hub::Candidate self{ { 0, 0, 0, 0, 0, 5 }, false },
+        sib{ { 0, 0, 0, 0, 0, 1 }, false };
+    EXPECT_TRUE(r.holds_alias(self, 0));
+    r.saw(sib, 1000);
+    EXPECT_FALSE(r.holds_alias(self, 1000));
+    EXPECT_FALSE(r.holds_alias(self, 1000 + web::hub::kPeerTtlMs));  // still within the TTL
+    EXPECT_EQ(r.live(1000 + web::hub::kPeerTtlMs), 1u);
+    EXPECT_TRUE(r.holds_alias(self, 1001 + web::hub::kPeerTtlMs));  // gone silent
+    EXPECT_EQ(r.live(1001 + web::hub::kPeerTtlMs), 0u);
+    r.saw(self, 2000);  // our own answer never outranks us
+    EXPECT_TRUE(r.holds_alias(self, 2000));
+    // A full roster replaces its stalest entry.
+    for (uint8_t i = 0; i < web::hub::kMaxPeers + 2; ++i)
+        r.saw({ { 1, 0, 0, 0, 0, i }, false }, 3000 + i);
+    EXPECT_EQ(r.live(3000 + web::hub::kMaxPeers + 2), web::hub::kMaxPeers);
+}
+
+TEST(a_lone_box_has_its_own_name_and_answers_pixfrog_local) {
+    hub_fresh();
+    EXPECT_TRUE(shim::task_created("web_hub"));
+    EXPECT_TRUE(shim::mdns_hostname() == "pixfrog-3456");
+    EXPECT_TRUE(shim::mdns_txt("mac") == "30eda0123456");
+    EXPECT_TRUE(shim::mdns_txt("hub") == "0");
+    EXPECT_TRUE(shim::mdns_txt("product") == "pixfrog");
+    EXPECT_EQ(shim::mdns_delegate_ip("pixfrog"), kSelfIp);
+    Json s(get("/api/status").body);
+    EXPECT_STREQ(s["host"]->valuestring, "pixfrog-3456");
+    EXPECT_TRUE(cJSON_IsTrue(s["alias"]));
+    EXPECT_EQ(s["siblings"]->valueint, 0);
+}
+
+TEST(a_lower_mac_sibling_takes_pixfrog_local_until_it_goes_silent) {
+    hub_fresh();
+    shim::mdns_add_peer("rig-a", 0xC0A80233, "pixfrog", "rig-a", "v1", "30eda0000001", "0");
+    shim::mdns_add_peer("old-box", 0xC0A80234, "pixfrog", "old", "v0");  // no MAC: no vote
+    run_hub(16);                                                         // the next browse
+    EXPECT_EQ(shim::mdns_delegate_ip("pixfrog"), 0u);
+    Json s(get("/api/status").body);
+    EXPECT_FALSE(cJSON_IsTrue(s["alias"]));
+    EXPECT_EQ(s["siblings"]->valueint, 1);
+
+    shim::advance_ms(6000);  // past the peers cache
+    Json peers(get("/api/peers").body);
+    EXPECT_EQ(cJSON_GetArraySize(peers.j), 3);
+    const cJSON* me  = cJSON_GetArrayItem(peers.j, 0);
+    const cJSON* sib = cJSON_GetArrayItem(peers.j, 1);
+    const cJSON* old = cJSON_GetArrayItem(peers.j, 2);
+    EXPECT_STREQ(cJSON_GetObjectItem(me, "host")->valuestring, "pixfrog-3456");
+    EXPECT_STREQ(cJSON_GetObjectItem(sib, "host")->valuestring, "pixfrog-0001");
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(sib, "alias")));
+    EXPECT_TRUE(cJSON_GetObjectItem(me, "alias") == nullptr);
+    EXPECT_TRUE(cJSON_GetObjectItem(old, "host") == nullptr);
+
+    shim::mdns_reset();  // the holder dies (last seen at most 22 s ago)
+    run_hub(10);
+    EXPECT_EQ(shim::mdns_delegate_ip("pixfrog"), 0u);  // a missed browse is not enough
+    run_hub(50);
+    EXPECT_EQ(shim::mdns_delegate_ip("pixfrog"), kSelfIp);
+}
+
+TEST(the_preferred_box_holds_pixfrog_local_whatever_its_mac) {
+    hub_fresh();
+    shim::mdns_add_peer("rig-a", 0xC0A80233, "pixfrog", "rig-a", "v1", "30eda0000001", "0");
+    run_hub(16);
+    EXPECT_EQ(shim::mdns_delegate_ip("pixfrog"), 0u);
+    EXPECT_TRUE(post("/api/global", "{\"hub_preferred\":true}").status == 200);
+    Json c(get("/api/config").body);
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(c["global"], "hub_preferred")));
+    run_hub(2);
+    EXPECT_TRUE(shim::mdns_txt("hub") == "1");
+    EXPECT_EQ(shim::mdns_delegate_ip("pixfrog"), kSelfIp);
+    // Two preferred boxes: back to the lowest MAC among them.
+    shim::mdns_reset();
+    shim::mdns_add_peer("rig-a", 0xC0A80233, "pixfrog", "rig-a", "v1", "30eda0000001", "1");
+    run_hub(16);
+    EXPECT_EQ(shim::mdns_delegate_ip("pixfrog"), 0u);
+    post("/api/global", "{\"hub_preferred\":false}");
+    run_hub(1);
+    EXPECT_TRUE(shim::mdns_txt("hub") == "0");
+}
+
+TEST(a_renamed_box_republishes_its_txt_name) {
+    hub_fresh();
+    post("/api/global", "{\"short_name\":\"Rack 2\"}");
+    run_hub(1);
+    EXPECT_TRUE(shim::mdns_txt("node") == "Rack 2");
 }
