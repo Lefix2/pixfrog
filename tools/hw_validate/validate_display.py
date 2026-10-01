@@ -34,6 +34,7 @@ def run(board: Board):
     c.check("idle dim persisted", board.get("global", "tft_idle_dim") == "80")
     c.check("dim delay persisted", board.get("global", "tft_dim_delay_s") == "45")
 
+    web_was_on = board.get("global", "web_enabled") == "1"  # restored at the end
     board.cmd("global web_enabled 1")
     c.check("link up", board.wait_link())
     body = json.dumps({"tft_brightness": 65, "tft_idle_dim": 0, "tft_dim_delay_s": 120})
@@ -61,7 +62,8 @@ def run(board: Board):
     board.cmd(f"global tft_brightness {before_bright}")
     board.cmd(f"global tft_idle_dim {before_dim}")
     board.cmd(f"global tft_dim_delay_s {before_delay}")
-    board.cmd("global web_enabled 0")
+    if not web_was_on:
+        board.cmd("global web_enabled 0")
     return c.finish()
 
 
