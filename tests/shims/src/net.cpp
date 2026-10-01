@@ -1,5 +1,6 @@
 // In-process datagram fabric + task registry for the harness.
 #include <algorithm>
+#include <csetjmp>
 #include <cstring>
 #include <deque>
 #include <map>
@@ -59,6 +60,31 @@ bool run_task(const char* name) {
     t.fn(t.arg);
     return true;
 }
+namespace {
+std::jmp_buf* g_task_jmp = nullptr;
+int g_delay_budget       = -1;  // -1 = not inside run_task_for
+void (*g_on_delay)()     = nullptr;
+}  // namespace
+void task_delay_point() {
+    if (g_on_delay) g_on_delay();
+    if (g_delay_budget < 0 || !g_task_jmp) return;
+    if (--g_delay_budget <= 0) std::longjmp(*g_task_jmp, 1);
+}
+bool run_task_for(const char* name, int max_delays, void (*on_delay)()) {
+    auto it = g_tasks.find(name);
+    if (it == g_tasks.end()) return false;
+    const Task t = it->second;
+    g_tasks.erase(it);
+    std::jmp_buf env;
+    g_task_jmp     = &env;
+    g_delay_budget = max_delays;
+    g_on_delay     = on_delay;
+    if (setjmp(env) == 0) t.fn(t.arg);
+    g_task_jmp     = nullptr;
+    g_delay_budget = -1;
+    g_on_delay     = nullptr;
+    return true;
+}
 bool task_created(const char* name) {
     return g_tasks.count(name) != 0;
 }
@@ -69,6 +95,7 @@ void tasks_forget() {
 
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t fn, const char* name, uint32_t, void* arg,
                                    UBaseType_t, TaskHandle_t* out, BaseType_t) {
+    if (shim::should_fail(shim::Fault::TaskCreate)) return pdFAIL;
     static int handle;
     g_tasks[name] = { fn, arg };
     if (out) *out = &handle;

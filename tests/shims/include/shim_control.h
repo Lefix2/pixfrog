@@ -35,6 +35,10 @@ int nvs_writes();                // nvs_set_blob calls since the last wipe
 // xTaskCreate* records the task instead of spawning it; the test runs its
 // body on the calling thread (it must return — see net_on_idle).
 bool run_task(const char* name);
+// Runs a task that never returns (a monitor loop) until it has blocked
+// `max_delays` times (vTaskDelay / vTaskDelayUntil), then unwinds back here.
+// `on_delay`, when set, runs at every one of those blocking points.
+bool run_task_for(const char* name, int max_delays, void (*on_delay)() = nullptr);
 bool task_created(const char* name);
 void tasks_forget();
 
@@ -96,6 +100,7 @@ enum class Fault {
     OtaWrite,     // esp_ota_write → ESP_FAIL
     OtaSetBoot,   // esp_ota_set_boot_partition → ESP_FAIL
     HttpdStart,   // httpd_start → ESP_FAIL
+    TaskCreate,   // xTaskCreate* → pdFAIL
     MdnsInit,     // mdns_init → ESP_FAIL
     Count,
 };
@@ -104,6 +109,10 @@ void fail_next(Fault f, int count = 1, int skip = 0);
 bool should_fail(Fault f);  // consumes one pending failure
 void faults_clear();
 void set_reset_reason(int reason);  // esp_reset_reason() value
+
+// ── SD card (driver/sdmmc_host.h, esp_vfs_fat.h, vfs_redirect.h) ────────────
+void sd_root(const std::string& host_dir);  // files of the card
+void sd_insert(bool inserted);              // mount succeeds / status OK only when in
 
 // ── OTA / core dump / mDNS ──────────────────────────────────────────────────
 std::vector<uint8_t>& ota_image();                     // bytes esp_ota_write() received
