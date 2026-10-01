@@ -1,6 +1,7 @@
 // Single-threaded FreeRTOS subset: the harness drives tasks explicitly and
 // blocking calls advance the fake clock instead of sleeping.
 #pragma once
+#include "esp_attr.h"  // as in IDF, via portmacro.h
 #include <cstdint>
 typedef uint32_t TickType_t;
 typedef int BaseType_t;

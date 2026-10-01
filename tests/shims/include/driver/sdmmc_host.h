@@ -2,9 +2,8 @@
 #pragma once
 #include <cstdint>
 
+#include "driver/gpio.h"
 #include "esp_err.h"
-
-typedef int gpio_num_t;
 
 typedef struct {
     int max_freq_khz;

@@ -3,7 +3,8 @@
 # FreeRTOS. One executable per component keeps their static state apart.
 set(SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/../shims)
 add_library(idf_shims STATIC ${SHIMS}/src/shims.cpp ${SHIMS}/src/net.cpp ${SHIMS}/src/system.cpp
-    ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp ${SHIMS}/src/vfs.cpp)
+    ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp ${SHIMS}/src/vfs.cpp
+    ${SHIMS}/src/output.cpp ${SHIMS}/src/lcd.cpp)
 target_include_directories(idf_shims PUBLIC ${SHIMS}/include)
 target_compile_options(idf_shims PRIVATE -Wall -Wextra)
 
@@ -77,6 +78,35 @@ target_include_directories(harness_fseq PRIVATE ${REPO}/components/fseq_player/s
                                                 ${REPO}/components/fseq_player/third_party)
 set_source_files_properties(${REPO}/components/fseq_player/third_party/zstddeclib.c PROPERTIES
     COMPILE_OPTIONS "-w")
+
+# The PARLIO LED output backend against a recording PARLIO driver: what it
+# would put on the bus is decoded back to pixel bytes.
+# Both backends are compiled, as on the device; the Kconfig choice keeps one.
+set(LED_OUTPUT_SRC ${REPO}/components/led_output/src/parlio_output.cpp
+    ${REPO}/components/led_output/src/lcd_cam_output.cpp)
+pixfrog_harness(harness_output
+    test_output.cpp
+    ${LED_OUTPUT_SRC}
+    ${REPO}/components/dmx_manager/src/dmx_manager.cpp
+    ${REPO}/components/config_store/src/config_store.cpp
+    ${LED_PROTOCOLS_SRC}
+)
+# The legacy LCD_CAM backend against a recording RGB panel.
+pixfrog_harness(harness_output_lcdcam
+    test_output_lcdcam.cpp
+    ${LED_OUTPUT_SRC}
+    ${REPO}/components/dmx_manager/src/dmx_manager.cpp
+    ${REPO}/components/config_store/src/config_store.cpp
+    ${LED_PROTOCOLS_SRC}
+)
+target_compile_definitions(harness_output_lcdcam PRIVATE CONFIG_PIXFROG_LED_OUTPUT_PARLIO=0)
+foreach(t harness_output harness_output_lcdcam)
+    target_include_directories(${t} PRIVATE ${REPO}/components/led_output/src)
+    # Each case re-inits the backend, which allocates its buffers once per boot
+    # on the device (never freed by design): no leak check here.
+    set_tests_properties(${t} PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")
+endforeach()
 
 pixfrog_harness(harness_receivers
     test_receivers.cpp
