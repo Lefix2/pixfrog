@@ -6,6 +6,7 @@ from pixfrog_uart import Board, Checks, http, main_guard
 
 def run(board: Board):
     c = Checks("identify_gamma_backup")
+    web_was_on = board.get("global", "web_enabled") == "1"  # restored at the end
     board.cmd("global web_enabled 1")
     board.cmd("ch 0 protocol WS2815")
     board.cmd("ch 0 universe 1")
@@ -57,7 +58,8 @@ def run(board: Board):
 
     board.cmd("ch 0 gamma_x10 10")
     board.cmd("ch 0 wb ffffff")
-    board.cmd("global web_enabled 0")
+    if not web_was_on:
+        board.cmd("global web_enabled 0")
     return c.finish()
 
 

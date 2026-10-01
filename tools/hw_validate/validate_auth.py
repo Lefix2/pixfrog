@@ -8,6 +8,7 @@ POST_JSON = ["-X", "POST", "-H", "Content-Type: application/json", "-d", '{"refr
 
 def run(board: Board):
     c = Checks("auth")
+    web_was_on = board.get("global", "web_enabled") == "1"  # restored at the end
     board.cmd("global web_enabled 1")
     board.cmd("global web_password -")  # known starting state
     c.check("link up", board.wait_link())
@@ -38,7 +39,8 @@ def run(board: Board):
     code, _ = http("/api/global", *POST_JSON)
     c.check("POST open again", code == 200)
 
-    board.cmd("global web_enabled 0")
+    if not web_was_on:
+        board.cmd("global web_enabled 0")
     return c.finish()
 
 
