@@ -30,7 +30,39 @@ typedef struct {
     httpd_method_t method;
     esp_err_t (*handler)(httpd_req_t* r);
     void* user_ctx;
+    bool is_websocket;
+    bool handle_ws_control_frames;
+    const char* supported_subprotocol;
 } httpd_uri_t;
+
+// WebSocket subset (CONFIG_HTTPD_WS_SUPPORT). A test opens a client with
+// shim::ws_open(uri) and reads what the server pushed with shim::ws_frames().
+typedef enum {
+    HTTPD_WS_TYPE_CONTINUE = 0x0,
+    HTTPD_WS_TYPE_TEXT     = 0x1,
+    HTTPD_WS_TYPE_BINARY   = 0x2,
+    HTTPD_WS_TYPE_CLOSE    = 0x8,
+    HTTPD_WS_TYPE_PING     = 0x9,
+    HTTPD_WS_TYPE_PONG     = 0xA
+} httpd_ws_type_t;
+typedef struct httpd_ws_frame {
+    bool final;
+    bool fragmented;
+    httpd_ws_type_t type;
+    uint8_t* payload;
+    size_t len;
+} httpd_ws_frame_t;
+typedef enum {
+    HTTPD_WS_CLIENT_INVALID   = 0x0,
+    HTTPD_WS_CLIENT_HTTP      = 0x1,
+    HTTPD_WS_CLIENT_WEBSOCKET = 0x2
+} httpd_ws_client_info_t;
+typedef void (*httpd_work_fn_t)(void* arg);
+esp_err_t httpd_ws_recv_frame(httpd_req_t* req, httpd_ws_frame_t* pkt, size_t max_len);
+esp_err_t httpd_ws_send_frame_async(httpd_handle_t hd, int fd, httpd_ws_frame_t* frame);
+httpd_ws_client_info_t httpd_ws_get_fd_info(httpd_handle_t hd, int fd);
+esp_err_t httpd_get_client_list(httpd_handle_t handle, size_t* fds, int* client_fds);
+esp_err_t httpd_queue_work(httpd_handle_t handle, httpd_work_fn_t work, void* arg);
 typedef bool (*httpd_uri_match_func_t)(const char* tmpl, const char* uri, size_t len);
 typedef struct {
     unsigned task_priority;

@@ -387,3 +387,23 @@ def test_fseq_play_a_file_in_a_loop(page, device):
     page.locator('[data-fseq-play="show.fseq"]').click()
     expect(page.locator('[data-live="save-state"]')).to_contain_text("show.fseq")
     assert device.get("/api/status")["fseq"]["loop"] is True
+
+
+# ── live status over a WebSocket ─────────────────────────────────────────────
+
+
+def test_status_arrives_over_the_websocket_and_polling_stands_down(page, device):
+    frames = []
+    page.on("websocket", lambda ws: ws.on("framereceived", lambda f: frames.append(f)))
+    page.reload()
+    expect(page.locator("[data-screen-title]")).to_have_text("Dashboard")
+    for _ in range(60):
+        if frames:
+            break
+        page.wait_for_timeout(100)
+    assert frames, "no status pushed over /api/ws"
+    assert '"type":"status"' in frames[-1]
+    polls = []
+    page.on("request", lambda r: polls.append(r.url) if r.url.endswith("/api/status") else None)
+    page.wait_for_timeout(3500)
+    assert len(polls) <= 1, f"polling kept going while pushes arrive: {polls}"

@@ -132,6 +132,8 @@ int main(int argc, char** argv) {
         std::thread(keep_demo_alive).detach();
     }
     pixfrog::web::start();
+    // The status push task, on its own thread as on the device (WebSocket).
+    std::thread([] { shim::run_task("web_push"); }).detach();
     std::printf("pixfrog_api_host listening on http://127.0.0.1:%u\n", port);
     std::fflush(stdout);
     shim::http_serve(port, &g_stop);

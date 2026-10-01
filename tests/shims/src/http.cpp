@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -25,7 +26,20 @@ struct Route {
     httpd_method_t method;
     esp_err_t (*handler)(httpd_req_t*);
     void* user_ctx;
+    bool websocket;
 };
+
+// WebSocket clients: in-process ones (sock -1) keep what was pushed to them;
+// served ones (a real browser) get real frames on their socket.
+struct WsClient {
+    int sock = -1;
+    std::vector<std::string> frames;
+};
+std::map<int, WsClient> g_ws;
+int g_next_ws_fd = 100;
+// httpd_queue_work runs on the caller's thread; in serve mode that is another
+// thread than the request loop, so both take this lock.
+std::recursive_mutex g_serve_mux;
 
 struct Ctx {  // per-request state behind httpd_req_t::aux
     std::string body;
@@ -77,13 +91,19 @@ esp_err_t httpd_start(httpd_handle_t* handle, const httpd_config_t* cfg) {
     return ESP_OK;
 }
 esp_err_t httpd_stop(httpd_handle_t) {
+    {
+        std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+        for (auto& [fd, c] : g_ws)
+            if (c.sock >= 0) ::close(c.sock);
+        g_ws.clear();
+    }
     g_routes.clear();
     g_running = false;
     return ESP_OK;
 }
 esp_err_t httpd_register_uri_handler(httpd_handle_t, const httpd_uri_t* u) {
     if (g_routes.size() >= g_max_routes) return ESP_ERR_NO_MEM;  // as esp_http_server
-    g_routes.push_back({ u->uri, u->method, u->handler, u->user_ctx });
+    g_routes.push_back({ u->uri, u->method, u->handler, u->user_ctx, u->is_websocket });
     return ESP_OK;
 }
 
@@ -160,7 +180,185 @@ esp_err_t httpd_resp_send_500(httpd_req_t* r) {
     return httpd_resp_sendstr(r, "Internal Server Error");
 }
 
+namespace {
+
+// Server → client frame (unmasked), RFC 6455 §5.2.
+std::string ws_frame(uint8_t opcode, const std::string& payload) {
+    std::string f(1, static_cast<char>(0x80 | opcode));
+    const size_t n = payload.size();
+    if (n < 126) {
+        f += static_cast<char>(n);
+    } else if (n < 65536) {
+        f += static_cast<char>(126);
+        f += static_cast<char>(n >> 8);
+        f += static_cast<char>(n & 0xFF);
+    } else {
+        f += static_cast<char>(127);
+        for (int i = 7; i >= 0; --i)
+            f += static_cast<char>((static_cast<uint64_t>(n) >> (8 * i)) & 0xFF);
+    }
+    return f + payload;
+}
+
+const Route* ws_route(const std::string& path) {
+    for (const auto& r : g_routes)
+        if (r.websocket && r.method == HTTP_GET &&
+            (g_match ? g_match(r.uri.c_str(), path.c_str(), path.size()) : r.uri == path))
+            return &r;
+    return nullptr;
+}
+
+// The handshake reaches the handler as a GET, as in esp_http_server.
+int ws_register(const Route& route, const std::string& path, int sock) {
+    Ctx c;
+    httpd_req_t r{};
+    r.method = HTTP_GET;
+    std::snprintf(r.uri, sizeof(r.uri), "%s", path.c_str());
+    r.aux      = &c;
+    r.user_ctx = route.user_ctx;
+    route.handler(&r);
+    const int fd  = g_next_ws_fd++;
+    g_ws[fd].sock = sock;
+    return fd;
+}
+
+// SHA-1 (FIPS 180-1), only for the WebSocket handshake of the test server.
+std::string sha1(const std::string& msg) {
+    uint32_t h[5]  = { 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0 };
+    std::string m  = msg;
+    m             += static_cast<char>(0x80);
+    while (m.size() % 64 != 56)
+        m += '\0';
+    const uint64_t bits = static_cast<uint64_t>(msg.size()) * 8;
+    for (int i = 7; i >= 0; --i)
+        m += static_cast<char>((bits >> (8 * i)) & 0xFF);
+    auto rol = [](uint32_t v, int n) { return (v << n) | (v >> (32 - n)); };
+    for (size_t off = 0; off < m.size(); off += 64) {
+        uint32_t w[80];
+        for (int i = 0; i < 16; ++i)
+            w[i] = (uint32_t(uint8_t(m[off + 4 * i])) << 24) |
+                   (uint32_t(uint8_t(m[off + 4 * i + 1])) << 16) |
+                   (uint32_t(uint8_t(m[off + 4 * i + 2])) << 8) |
+                   uint32_t(uint8_t(m[off + 4 * i + 3]));
+        for (int i = 16; i < 80; ++i)
+            w[i] = rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
+        for (int i = 0; i < 80; ++i) {
+            uint32_t f, k;
+            if (i < 20) {
+                f = (b & c) | (~b & d);
+                k = 0x5A827999;
+            } else if (i < 40) {
+                f = b ^ c ^ d;
+                k = 0x6ED9EBA1;
+            } else if (i < 60) {
+                f = (b & c) | (b & d) | (c & d);
+                k = 0x8F1BBCDC;
+            } else {
+                f = b ^ c ^ d;
+                k = 0xCA62C1D6;
+            }
+            const uint32_t t = rol(a, 5) + f + e + k + w[i];
+            e                = d;
+            d                = c;
+            c                = rol(b, 30);
+            b                = a;
+            a                = t;
+        }
+        h[0] += a;
+        h[1] += b;
+        h[2] += c;
+        h[3] += d;
+        h[4] += e;
+    }
+    std::string out;
+    for (uint32_t v : h)
+        for (int i = 3; i >= 0; --i)
+            out += static_cast<char>((v >> (8 * i)) & 0xFF);
+    return out;
+}
+
+std::string base64(const std::string& in) {
+    static const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    size_t i = 0;
+    for (; i + 2 < in.size(); i += 3) {
+        const uint32_t v = (uint32_t(uint8_t(in[i])) << 16) | (uint32_t(uint8_t(in[i + 1])) << 8) |
+                           uint8_t(in[i + 2]);
+        out += t[v >> 18];
+        out += t[(v >> 12) & 63];
+        out += t[(v >> 6) & 63];
+        out += t[v & 63];
+    }
+    if (i < in.size()) {
+        uint32_t v = uint32_t(uint8_t(in[i])) << 16;
+        if (i + 1 < in.size()) v |= uint32_t(uint8_t(in[i + 1])) << 8;
+        out += t[v >> 18];
+        out += t[(v >> 12) & 63];
+        out += i + 1 < in.size() ? t[(v >> 6) & 63] : '=';
+        out += '=';
+    }
+    return out;
+}
+
+}  // namespace
+
+esp_err_t httpd_ws_recv_frame(httpd_req_t*, httpd_ws_frame_t* pkt, size_t) {
+    pkt->len = 0;  // clients send nothing the firmware reads
+    return ESP_OK;
+}
+esp_err_t httpd_ws_send_frame_async(httpd_handle_t, int fd, httpd_ws_frame_t* frame) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    auto it = g_ws.find(fd);
+    if (it == g_ws.end()) return ESP_FAIL;
+    const std::string payload(reinterpret_cast<const char*>(frame->payload), frame->len);
+    if (it->second.sock < 0) {
+        it->second.frames.push_back(payload);
+        return ESP_OK;
+    }
+    const std::string f = ws_frame(static_cast<uint8_t>(frame->type), payload);
+    if (::send(it->second.sock, f.data(), f.size(), MSG_NOSIGNAL) != ssize_t(f.size())) {
+        ::close(it->second.sock);  // the browser went away
+        g_ws.erase(it);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+httpd_ws_client_info_t httpd_ws_get_fd_info(httpd_handle_t, int fd) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    return g_ws.count(fd) ? HTTPD_WS_CLIENT_WEBSOCKET : HTTPD_WS_CLIENT_INVALID;
+}
+esp_err_t httpd_get_client_list(httpd_handle_t, size_t* fds, int* client_fds) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    size_t n = 0;
+    for (auto& [fd, c] : g_ws)
+        if (n < *fds) client_fds[n++] = fd;
+    *fds = n;
+    return ESP_OK;
+}
+esp_err_t httpd_queue_work(httpd_handle_t, httpd_work_fn_t work, void* arg) {
+    if (!g_running) return ESP_FAIL;
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    work(arg);
+    return ESP_OK;
+}
+
 namespace shim {
+
+int ws_open(const std::string& uri) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    const Route* r = ws_route(uri);
+    return r ? ws_register(*r, uri, -1) : -1;
+}
+std::vector<std::string> ws_frames(int fd) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    auto it = g_ws.find(fd);
+    return it == g_ws.end() ? std::vector<std::string>{} : it->second.frames;
+}
+void ws_close(int fd) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    g_ws.erase(fd);
+}
 
 size_t http_routes() {
     return g_routes.size();
@@ -253,8 +451,25 @@ void http_serve(uint16_t port, volatile bool* stop) {
         const size_t sp1 = rl.find(' '), sp2 = rl.find(' ', sp1 + 1);
         const std::string method = rl.substr(0, sp1);
         const std::string target = rl.substr(sp1 + 1, sp2 - sp1 - 1);
-        HttpResponse r           = http_request(method.c_str(), target, body, hdrs);
-        std::string out          = "HTTP/1.1 " +
+        std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+        // WebSocket upgrade (RFC 6455 handshake): the socket stays open and
+        // joins the client list the firmware pushes to.
+        if (lower(hdrs["upgrade"]) == "websocket" && hdrs.count("sec-websocket-key")) {
+            const Route* wr = ws_route(target);
+            if (wr) {
+                const std::string accept = base64(
+                    sha1(hdrs["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
+                const std::string resp =
+                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+                    "Connection: Upgrade\r\nSec-WebSocket-Accept: " +
+                    accept + "\r\n\r\n";
+                ::send(cs, resp.data(), resp.size(), MSG_NOSIGNAL);
+                ws_register(*wr, target, cs);
+                continue;
+            }
+        }
+        HttpResponse r  = http_request(method.c_str(), target, body, hdrs);
+        std::string out = "HTTP/1.1 " +
                           (r.status_line.empty() ? std::to_string(r.status) + " OK"
                                                  : r.status_line) +
                           "\r\n";

@@ -81,7 +81,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 31);
+    EXPECT_EQ(shim::http_routes(), 32);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -416,6 +416,26 @@ TEST(turning_the_web_ui_off_from_it_stops_the_server) {
     EXPECT_FALSE(config::get_global().web_enabled);
     web::start();  // the next cases need it
     EXPECT_TRUE(shim::http_running());
+}
+
+// The SPA's live status: once a WebSocket client is on /api/ws, the push task
+// sends the /api/status JSON (typed "status") to it every second.
+TEST(status_is_pushed_to_websocket_clients) {
+    EXPECT_EQ(shim::ws_open("/api/nope"), -1);
+    const int fd = shim::ws_open("/api/ws");
+    EXPECT_TRUE(fd >= 0);
+    EXPECT_TRUE(shim::ws_frames(fd).empty());
+    shim::run_task_for("web_push", 3, [] {});  // two one-second ticks
+    const auto frames = shim::ws_frames(fd);
+    EXPECT_EQ(frames.size(), 2u);
+    if (!frames.empty()) {
+        Json j(frames.back());
+        EXPECT_STREQ(j["type"]->valuestring, "status");
+        EXPECT_TRUE(cJSON_IsNumber(j["fps"]));
+        EXPECT_TRUE(cJSON_IsArray(j["channels"]));
+        EXPECT_TRUE(cJSON_IsObject(j["fseq"]));
+    }
+    shim::ws_close(fd);
 }
 
 TEST(unknown_route_is_404) {

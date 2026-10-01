@@ -16,6 +16,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mbedtls/base64.h"
 #include "mdns.h"
@@ -899,7 +900,7 @@ static esp_err_t handle_get_config(httpd_req_t* req) {
 // Lightweight live status for SPA polling: no config blobs, just the values
 // that change at runtime. Unauthenticated like the other GETs.
 
-static esp_err_t handle_get_status(httpd_req_t* req) {
+static cJSON* build_status_json() {
     const auto st = dmx::get_stats();
     cJSON* root   = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "link", ui::is_link_up());
@@ -944,7 +945,88 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
     }
     cJSON_AddItemToObject(root, "channels", jchs);
     cJSON_AddItemToObject(root, "show", build_show_json());
-    return send_json(req, root);
+    return root;
+}
+
+static esp_err_t handle_get_status(httpd_req_t* req) {
+    return send_json(req, build_status_json());
+}
+
+// ── GET /api/ws — live status pushed over a WebSocket ───────────────────────
+// The SPA opens one and stops polling /api/status: web_push_task builds the
+// same JSON once a second ({"type":"status", …}) and the httpd task sends it
+// to every WebSocket client (httpd_queue_work: sends happen in the server's
+// own task). Read-only and unauthenticated, like the GET it replaces.
+
+namespace {
+std::atomic<uint32_t> g_ws_seen{ 0 };      // a client connected since start (32-bit: P4 RMW)
+std::atomic<uint32_t> g_push_run{ 0 };     // web_push_task keeps going while 1
+SemaphoreHandle_t g_server_mux = nullptr;  // g_server vs the push task's use of it
+constexpr size_t kMaxWsClients = 8;
+}  // namespace
+
+static esp_err_t handle_ws(httpd_req_t* req) {
+    if (req->method == HTTP_GET) {  // the handshake: httpd answered it already
+        g_ws_seen.store(1, std::memory_order_relaxed);
+        return ESP_OK;
+    }
+    // The client sends nothing meaningful: read a frame and drop it.
+    httpd_ws_frame_t f{};
+    if (httpd_ws_recv_frame(req, &f, 0) != ESP_OK) return ESP_FAIL;
+    if (f.len == 0) return ESP_OK;
+    if (f.len > 128) return ESP_FAIL;  // not ours to buffer
+    uint8_t buf[128];
+    f.payload = buf;
+    return httpd_ws_recv_frame(req, &f, f.len);
+}
+
+struct WsPush {
+    httpd_handle_t server;
+    char* text;
+};
+
+// Runs in the httpd task: send `text` to every WebSocket client.
+static void ws_broadcast(void* arg) {
+    auto* p  = static_cast<WsPush*>(arg);
+    size_t n = kMaxWsClients;
+    int fds[kMaxWsClients];
+    if (httpd_get_client_list(p->server, &n, fds) == ESP_OK) {
+        for (size_t i = 0; i < n; ++i) {
+            if (httpd_ws_get_fd_info(p->server, fds[i]) != HTTPD_WS_CLIENT_WEBSOCKET) continue;
+            httpd_ws_frame_t f{};
+            f.type    = HTTPD_WS_TYPE_TEXT;
+            f.payload = reinterpret_cast<uint8_t*>(p->text);
+            f.len     = std::strlen(p->text);
+            httpd_ws_send_frame_async(p->server, fds[i], &f);
+        }
+    }
+    cJSON_free(p->text);
+    delete p;
+}
+
+static void web_push_task(void*) {
+    while (g_push_run.load(std::memory_order_acquire)) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (!g_ws_seen.load(std::memory_order_relaxed)) continue;  // nobody listening yet
+        cJSON* root = build_status_json();
+        cJSON_AddStringToObject(root, "type", "status");
+        char* text = cJSON_PrintUnformatted(root);
+        cJSON_Delete(root);
+        if (!text) continue;
+        auto* p     = new (std::nothrow) WsPush{ nullptr, text };
+        bool queued = false;
+        xSemaphoreTake(g_server_mux, portMAX_DELAY);
+        if (p && g_server) {
+            p->server = g_server;
+            queued    = httpd_queue_work(g_server, ws_broadcast, p) == ESP_OK;
+        }
+        xSemaphoreGive(g_server_mux);
+        if (!queued) {
+            cJSON_free(text);
+            delete p;
+        }
+    }
+    vTaskDelete(nullptr);
 }
 
 // ── GET /api/diag — "stats for nerds" ───────────────────────────────────────
@@ -2312,11 +2394,13 @@ void init_log_capture() {
 
 void start() {
     if (g_server) return;
+    if (!g_server_mux) g_server_mux = xSemaphoreCreateMutex();
+    if (!g_server_mux) return;
 
     init_log_capture();  // ensure capture is on even if app_main didn't call it
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 40;  // 31 routes today
+    cfg.max_uri_handlers = 40;  // 32 routes today
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -2418,6 +2502,11 @@ void start() {
           .method   = HTTP_GET,
           .handler  = handle_get_status,
           .user_ctx = nullptr },
+        { .uri          = "/api/ws",
+          .method       = HTTP_GET,
+          .handler      = handle_ws,
+          .user_ctx     = nullptr,
+          .is_websocket = true },
         { .uri      = "/api/peers",
           .method   = HTTP_GET,
           .handler  = handle_get_peers,
@@ -2442,12 +2531,22 @@ void start() {
 
     ESP_LOGI(TAG, "HTTP server started on port %u", cfg.server_port);
     start_mdns();
+
+    g_ws_seen.store(0, std::memory_order_relaxed);
+    if (!g_push_run.exchange(1, std::memory_order_acq_rel) &&
+        xTaskCreate(web_push_task, "web_push", 4096, nullptr, 3, nullptr) != pdPASS) {
+        g_push_run.store(0, std::memory_order_release);
+        ESP_LOGW(TAG, "web_push task create failed: the SPA keeps polling");
+    }
 }
 
 void stop() {
     if (!g_server) return;
+    g_push_run.store(0, std::memory_order_release);  // the push task leaves at its next tick
+    xSemaphoreTake(g_server_mux, portMAX_DELAY);
     httpd_stop(g_server);
     g_server = nullptr;
+    xSemaphoreGive(g_server_mux);
     stop_mdns();
     ESP_LOGI(TAG, "HTTP server stopped");
 }
