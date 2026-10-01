@@ -255,7 +255,7 @@ the DMX node firmware (a separate project forked from this one).
 | `artnet`             | UDP parser, Dmx/Poll/Sync/Address/IpProg/Trigger, replies | `lwip`, `dmx_manager` |
 | `sacn`               | E1.31 receiver: multicast joins, priority gate, sync | `lwip`, `dmx_manager`  |
 | `dmx_manager`        | Universe pool, 2-source HTP/LTP merge, channel mapping, capacity check, scenes/failsafe/identify state | `config_store` |
-| `fseq_player`        | microSD FSEQ show playback: SDMMC 4-bit + FAT mount/hot-plug, v2 zstd frame decode, pacing, inject into pool; ArtTimeCode / FPP seek hooks | `config_store`, `dmx_manager`, `sdmmc`, `fatfs` |
+| `fseq_player`        | microSD FSEQ show playback: SDMMC 4-bit + FAT mount/hot-plug, v2 zstd frame decode, pacing, inject into pool from the `fseq_universe` setting (byte 0's universe, default 1); ArtTimeCode / FPP seek hooks | `config_store`, `dmx_manager`, `sdmmc`, `fatfs` |
 | `fpp_sync`           | Opt-in FPP MultiSync remote (UDP 32320 + multicast): master START/STOP/SYNC drive the local FSEQ player | `lwip`, `fseq_player` |
 | `config_store`       | NVS wrappers + RAM cache + forward migration + web password hash | IDF NVS, mbedtls |
 | `web_config`         | Opt-in HTTP server: SPA, REST, OTA, backup/restore, Basic auth | esp_http_server, `app_update` |

@@ -44,9 +44,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## FSEQ / standalone playback
 
-- [ ] **Configurable FSEQ start universe** — `kUniverseBase = 1` is hard-coded
-      in `fseq_player.cpp`; expose it or map absolute channels onto the
-      channel configs.
 - [ ] **Pacing tied to the render clock** — the player paces on FreeRTOS
       ticks, independent of `render_task`: a 40 fps file on a 60 Hz render
       judders. Pick the FSEQ frame by elapsed time in the render loop.
@@ -104,11 +101,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Web UI
 
-- [ ] **Expose `persist_ok` in `/api/status`** — degraded-NVS mode is only
-      visible over UART; the SPA should warn when settings no longer persist.
-- [ ] **Backup filename** — include the date and `short_name` in the
-      `Content-Disposition` name (several boxes collide on
-      `pixfrog-config.json`).
 - [ ] **Dead icon colours** — 7 `<i data-lucide style="color:…">` never
       showed their colour (lucide drops `style` when it swaps in the `<svg>`):
       decide per icon whether the colour was meant, then move it to a class.

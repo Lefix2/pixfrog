@@ -306,6 +306,28 @@ TEST(sparse_ranges_land_on_their_universes) {
     if (u2) EXPECT_EQ(u2[2], 6);
 }
 
+// xLights' "start universe" is a setting: byte 0 lands on it, read once per
+// file. 0 (an older config, zero-filled) still means universe 1.
+TEST(the_sequence_starts_on_the_configured_universe) {
+    auto g          = config::get_global();
+    g.fseq_universe = 2;
+    config::set_global(g);
+    write_file("u2.fseq", cat(header(6, 1), Bytes{ 71, 72, 73, 74, 75, 76 }));
+    EXPECT_TRUE(play("u2.fseq"));
+    const uint8_t* u2 = dmx::universe_front_buffer_for(2);
+    EXPECT_TRUE(u2 != nullptr);
+    if (u2) {
+        EXPECT_EQ(u2[0], 71);
+        EXPECT_EQ(u2[5], 76);
+    }
+    g.fseq_universe = 0;
+    config::set_global(g);
+    EXPECT_EQ(config::fseq_universe(config::get_global()), 1);
+    write_file("u1.fseq", cat(header(3, 1), Bytes{ 81, 82, 83 }));
+    EXPECT_TRUE(play("u1.fseq"));
+    EXPECT_EQ(dmx::universe_front_buffer_for(1)[0], 81);
+}
+
 TEST(malformed_files_report_an_error) {
     struct Case {
         const char* name;

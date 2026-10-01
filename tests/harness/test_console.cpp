@@ -276,6 +276,16 @@ TEST(global_hub_preferred) {
     EXPECT_FALSE(run("global hub_preferred maybe"));
 }
 
+TEST(global_fseq_universe) {
+    EXPECT_TRUE(run("global fseq_universe 17"));
+    EXPECT_EQ(config::get_global().fseq_universe, 17);
+    EXPECT_TRUE(run("global"));
+    EXPECT_TRUE(has("fseq_universe=17"));
+    EXPECT_FALSE(run("global fseq_universe 0"));
+    EXPECT_FALSE(run("global fseq_universe 40000"));
+    EXPECT_TRUE(run("global fseq_universe 1"));
+}
+
 // A failed play answers ERR and a zero code: a non-zero one makes esp_console
 // print its own "command returned non-zero" line after ours.
 TEST(fseq_failures_keep_the_ok_err_protocol) {

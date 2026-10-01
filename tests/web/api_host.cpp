@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
     bool rollback        = false;
     const char* password = nullptr;
     bool demo            = false;
+    bool no_persist      = false;  // NVS dead at boot: RAM-only settings
     for (int i = 1; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--port") && i + 1 < argc)
             port = std::atoi(argv[++i]);
@@ -123,13 +124,18 @@ int main(int argc, char** argv) {
             if (std::sscanf(argv[++i], "%31[^,],%u,%15[^,],%3s", name, &peer_port, mac, hub) >= 3)
                 shim::mdns_add_peer(name, 0x7F000001, "pixfrog", name, "v0.0.0-host", mac, hub,
                                     static_cast<uint16_t>(peer_port));
-        }
+        } else if (!std::strcmp(argv[i], "--no-persist"))
+            no_persist = true;
     }
     std::signal(SIGTERM, on_signal);
     std::signal(SIGINT, on_signal);
 
     shim::use_real_clock(true);
     shim::nvs_wipe();
+    if (no_persist) {
+        shim::nvs_fail_init(5);
+        shim::nvs_fail_erase(5);
+    }
     pixfrog::config::init();
     pixfrog::dmx::init();
     // One lit WS2815 line so the dashboard and editors have something to show.

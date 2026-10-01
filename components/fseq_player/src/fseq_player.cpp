@@ -52,9 +52,6 @@ namespace {
 constexpr const char* TAG      = "FSEQ";
 constexpr const char* kMntPath = kMountPath;
 
-// Universe number of FSEQ byte 0 (xLights default = 1).
-constexpr uint16_t kUniverseBase = 1;
-
 // Per-frame buffer caps.
 constexpr size_t kMaxFrameBytes     = 512 * 1024;       // 512 KB; truncates huge shows safely
 constexpr size_t kMaxCompBlockBytes = 1024 * 1024;      // 1 MB compressed input per block
@@ -181,9 +178,10 @@ static void sd_monitor_task(void* /*arg*/) {
 }
 
 // Inject one flat frame (no sparse ranges) into the universe back-buffers.
-void inject_linear_frame(const uint8_t* data, uint32_t channel_count) {
+// `base` = universe of FSEQ byte 0 (config::fseq_universe).
+void inject_linear_frame(const uint8_t* data, uint32_t channel_count, uint16_t base) {
     uint32_t remaining = channel_count;
-    uint32_t uni       = kUniverseBase;
+    uint32_t uni       = base;
     while (remaining > 0 && uni <= dmx::kMaxUniverseNumber) {
         const size_t chunk = remaining < 512 ? remaining : 512;
         dmx::inject_frame_universe(static_cast<uint16_t>(uni), 0, data, chunk);
@@ -196,7 +194,8 @@ void inject_linear_frame(const uint8_t* data, uint32_t channel_count) {
 // Inject one sparse frame into the universe back-buffers.
 // Each SparseRange maps a contiguous run of FSEQ bytes to an absolute
 // channel offset; that offset is split into (universe, slot) pairs.
-void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges, uint8_t num_ranges) {
+void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges, uint8_t num_ranges,
+                         uint16_t base) {
     const uint8_t* p = data;
     for (uint8_t r = 0; r < num_ranges; ++r) {
         uint32_t ch_abs    = ranges[r].start_channel;
@@ -209,8 +208,7 @@ void inject_sparse_frame(const uint8_t* data, const SparseRange* ranges, uint8_t
             // A range reaching past the addressable universe range only walks
             // further out, so drop the rest of it — but still step `p` over
             // those bytes, or every later range would read the wrong offset.
-            if (!channel_to_universe_checked(ch_abs, kUniverseBase, dmx::kMaxUniverseNumber,
-                                             &uni)) {
+            if (!channel_to_universe_checked(ch_abs, base, dmx::kMaxUniverseNumber, &uni)) {
                 p += remaining;
                 break;
             }
@@ -234,6 +232,8 @@ enum class FileResult : uint8_t { Ended, Stopped, Failed };
 // Plays one file to its last frame, or until stop(). On Failed, g_status and
 // g_error say why.
 FileResult play_file(const char* filename, Buffers& buf) {
+    // Read once per file: a change applies from the next file (or loop).
+    const uint16_t base = config::fseq_universe(config::get_global());
     char path[kMaxNameLen + 16];
     snprintf(path, sizeof(path), "%s/%s", kMntPath, filename);
 
@@ -422,9 +422,9 @@ FileResult play_file(const char* filename, Buffers& buf) {
             // publishes every universe of it together (no torn frame).
             dmx::inject_frame_begin();
             if (hdr.num_sparse_ranges > 0) {
-                inject_sparse_frame(buf.frame, ranges, hdr.num_sparse_ranges);
+                inject_sparse_frame(buf.frame, ranges, hdr.num_sparse_ranges, base);
             } else {
-                inject_linear_frame(buf.frame, frame_bytes);
+                inject_linear_frame(buf.frame, frame_bytes, base);
             }
             dmx::inject_frame_end();
 
