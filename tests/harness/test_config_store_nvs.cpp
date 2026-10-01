@@ -2,6 +2,7 @@
 // in-memory NVS shim. Every case starts from wiped flash and a fresh init()
 // ("a reboot"): init() reloads every cached struct from NVS.
 
+#include <chrono>
 #include <cstring>
 
 #include "config_store.h"
@@ -403,6 +404,32 @@ TEST(a_legacy_password_hash_is_upgraded_on_login) {
     EXPECT_TRUE(check_web_password(pw));
     EXPECT_TRUE(set_web_password(""));
     EXPECT_FALSE(web_password_set());
+}
+
+// Basic auth re-sends the password on every request: the accepted one is
+// remembered so the KDF runs once, and any change of the stored hash (new
+// password, restored backup, clear) drops that memory.
+TEST(an_accepted_password_skips_the_kdf_until_the_hash_changes) {
+    using clk = std::chrono::steady_clock;
+    EXPECT_TRUE(set_web_password("régie"));
+    const auto t0 = clk::now();
+    EXPECT_TRUE(check_web_password("régie"));  // full KDF
+    const auto t1 = clk::now();
+    for (int i = 0; i < 10; ++i)
+        EXPECT_TRUE(check_web_password("régie"));  // remembered
+    const auto t2 = clk::now();
+    EXPECT_TRUE((t2 - t1) < (t1 - t0));  // ten hits cost less than one KDF
+    EXPECT_FALSE(check_web_password("regie"));
+
+    const GlobalConfig before = get_global();
+    EXPECT_TRUE(set_web_password("lumière"));
+    EXPECT_FALSE(check_web_password("régie"));
+    EXPECT_TRUE(check_web_password("lumière"));
+    set_global(before);  // a backup restore brings the old hash back
+    EXPECT_FALSE(check_web_password("lumière"));
+    EXPECT_TRUE(check_web_password("régie"));
+    EXPECT_TRUE(set_web_password(""));
+    EXPECT_TRUE(check_web_password("anything"));  // auth off
 }
 
 int main(int argc, char** argv) {

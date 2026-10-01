@@ -113,7 +113,9 @@ password (`web_password` via the SPA, `/api/global`, or UART
 `global web_password <pwd|->` — `-` clears). No password set (the default) =
 no auth — optional by design (private show networks). Stored as a salted
 PBKDF2-HMAC-SHA256 (4096 rounds) in GlobalConfig — a hash from an older firmware
-(single SHA-256) still checks and is upgraded on the next login; UART is the physical
+(single SHA-256) still checks and is upgraded on the next login. The KDF costs
+~220 ms on the P4, so the last accepted password is remembered in RAM (fast
+salted hash, tied to the stored hash) and repeat requests skip it; UART is the physical
 recovery channel. There is no TLS: Basic auth sends the password in clear on
 every request, readable by anyone on the show network.
 

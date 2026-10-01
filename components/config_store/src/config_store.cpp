@@ -536,22 +536,45 @@ bool web_password_set() {
     return !hash_is_zero(g_global.web_auth_hash);
 }
 
+namespace {
+// Basic auth re-sends the password with every request and PBKDF2 costs
+// ~220 ms on the P4, so a fader would crawl. The last accepted password is
+// remembered in RAM as a fast salted SHA-256, tied to the stored hash it was
+// checked against (a new password, a restore or a clear drop it). A wrong
+// guess never matches it and still pays the full KDF.
+uint8_t g_auth_memo[32];
+uint8_t g_auth_memo_for[32];  // web_auth_hash the memo was accepted under
+bool g_auth_memo_valid = false;
+
+bool same32(const uint8_t* a, const uint8_t* b) {  // constant time
+    uint8_t diff = 0;
+    for (int i = 0; i < 32; ++i)
+        diff |= a[i] ^ b[i];
+    return diff == 0;
+}
+}  // namespace
+
 bool check_web_password(const char* password) {
+    ScopedLock lock;
     if (!web_password_set()) return true;  // auth disabled
     if (!password || std::strlen(password) > kMaxWebPasswordLen) return false;
     const bool legacy = g_global.web_auth_kdf == kWebAuthSha256;
+    uint8_t fast[32];
+    legacy_hash(g_global.web_auth_salt, password, fast);
+    if (!legacy && g_auth_memo_valid && same32(g_auth_memo_for, g_global.web_auth_hash) &&
+        same32(g_auth_memo, fast))
+        return true;
     uint8_t candidate[32];
     if (legacy)
-        legacy_hash(g_global.web_auth_salt, password, candidate);
+        std::memcpy(candidate, fast, sizeof(candidate));
     else
         kdf_hash(g_global.web_auth_salt, password, candidate);
-    // Constant-time compare: no early exit on mismatch.
-    uint8_t diff = 0;
-    for (int i = 0; i < 32; ++i)
-        diff |= candidate[i] ^ g_global.web_auth_hash[i];
-    if (diff != 0) return false;
+    if (!same32(candidate, g_global.web_auth_hash)) return false;
     // Right password, weak hash (set by an older firmware): store the KDF one.
     if (legacy) set_web_password(password);
+    legacy_hash(g_global.web_auth_salt, password, g_auth_memo);  // salt may be new
+    std::memcpy(g_auth_memo_for, g_global.web_auth_hash, sizeof(g_auth_memo_for));
+    g_auth_memo_valid = true;
     return true;
 }
 
