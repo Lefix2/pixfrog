@@ -1,6 +1,10 @@
 set(srcs
     "src/ui.cpp"
     "src/menu.cpp"
+    "src/menu_common.cpp"
+    "src/menu_screens.cpp"
+    "src/menu_nodes.cpp"
+    "src/menu_edit.cpp"
     "src/encoder_seesaw.cpp"
     "src/font_data.cpp"
     "src/splash.cpp"

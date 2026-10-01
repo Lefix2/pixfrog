@@ -28,6 +28,10 @@ set(REPO ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 add_executable(pixfrog_emu
     # device UI sources, reused verbatim
     ${REPO}/components/ui/src/menu.cpp
+    ${REPO}/components/ui/src/menu_common.cpp
+    ${REPO}/components/ui/src/menu_screens.cpp
+    ${REPO}/components/ui/src/menu_nodes.cpp
+    ${REPO}/components/ui/src/menu_edit.cpp
     ${REPO}/components/ui/src/canvas_tft.cpp
     ${REPO}/components/ui/src/splash.cpp
     ${REPO}/components/ui/src/splash_anim.cpp
