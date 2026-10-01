@@ -842,7 +842,7 @@ var FR={
   'Color 2 flashes at the strobe rate':'La couleur 2 flashe au rythme du stroboscope',
   'Empty scene — click to name':'Scène vide — cliquer pour nommer','COLOR':'COULEUR','SPEED':'VITESSE','TARGET CHANNELS':'CANAUX CIBLÉS',
   'Factory reset':'Réinitialisation usine',
-  'All channels, scenes, network settings and credentials will be erased, then the box reboots with its factory configuration. FSEQ sequences stored on the microSD card are kept.':'Tous les canaux, scènes, réglages réseau et identifiants seront effacés, puis le boîtier redémarrera avec sa configuration d’usine. Les séquences FSEQ stockées sur la carte microSD sont conservées.',
+  'All channels, scenes, network settings and credentials will be erased, then the box reboots with its factory configuration — web UI off: turn it back on from the box menu or the UART console. FSEQ sequences stored on the microSD card are kept.':'Tous les canaux, scènes, réglages réseau et identifiants seront effacés, puis le boîtier redémarrera avec sa configuration d’usine — interface web désactivée : réactivez-la depuis le menu du boîtier ou la console UART. Les séquences FSEQ stockées sur la carte microSD sont conservées.',
   'I understand this action is irreversible.':'Je comprends que cette action est irréversible.',
   'Resetting…':'Réinitialisation…','restoring factory configuration':'restauration de la configuration d’usine',
   'Reboot the box':'Redémarrer le boîtier',
@@ -1821,7 +1821,7 @@ function openModal(kind,opt){
   }:reset?{
     kind:kind,icon:'triangle-alert',accent:'#ec8480',bg:'rgba(217,83,79,.14)',bd:'rgba(217,83,79,.4)',
     title:t('Factory reset'),
-    desc:t('All channels, scenes, network settings and credentials will be erased, then the box reboots with its factory configuration. FSEQ sequences stored on the microSD card are kept.'),
+    desc:t('All channels, scenes, network settings and credentials will be erased, then the box reboots with its factory configuration — web UI off: turn it back on from the box menu or the UART console. FSEQ sequences stored on the microSD card are kept.'),
     confirm:t('Factory reset'),confirmIcon:'trash-2',confBg:'#d9534f',confText:'#fff',
     ack:t('I understand this action is irreversible.'),
     prog:t('Resetting…'),progSub:t('restoring factory configuration')

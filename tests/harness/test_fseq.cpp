@@ -162,10 +162,12 @@ TEST(card_mounts_at_init_and_lists_only_fseq_files) {
     write_file("B.FSEQ", header(3, 1));
     write_file("notes.txt", Bytes(4, 0));
     write_file("x", Bytes(1, 0));
+    write_file(".fseq", Bytes(1, 0));  // hidden, not a show
+    write_file("c.FsEq", header(3, 1));
     mkdir((g_dir + "/dir.fseq").c_str(), 0700);
     char names[fseq::kMaxFiles][fseq::kMaxNameLen];
     const size_t n = fseq::list_files(names, fseq::kMaxFiles);
-    EXPECT_EQ(n, 2u);
+    EXPECT_EQ(n, 3u);  // a, B, c in any case; not .fseq, notes.txt, x, dir.fseq
     EXPECT_EQ(fseq::list_files(names, 0), 0u);
 }
 

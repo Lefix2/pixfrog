@@ -656,7 +656,7 @@ namespace {
 // One source into `buf`: scene `src` (with the desk's overrides) when it is a
 // valid scene whose mask still holds the output, else the live path — FSEQ,
 // failsafe or the decoded universes.
-void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t* buf, uint32_t t) {
+void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t* buf, uint64_t t) {
     const uint8_t bpp = led::bytes_per_pixel(cc.protocol);
     if (src >= 0 && static_cast<size_t>(src) < config::num_scenes()) {
         config::Scene scene = config::get_scene(static_cast<size_t>(src));
@@ -742,14 +742,17 @@ bool decode_pixels_for_channel(size_t ch) {
         return true;
     }
 
-    const uint32_t t   = now_ms();
+    // Effects and strobe: 64-bit ms, no wrap in a lifetime. The fade keeps a
+    // 32-bit stamp — a difference, so its wrap is harmless.
+    const uint64_t t   = static_cast<uint64_t>(esp_timer_get_time() / 1000);
     const size_t bytes = static_cast<size_t>(cc.pixel_count) * led::bytes_per_pixel(cc.protocol);
     render_source(ch, cc, g_scene_out[ch].load(std::memory_order_acquire), dst, t);
 
     // Crossfade from what the output showed before its last scene change.
     const uint16_t len = g_fade_len_ms[ch].load(std::memory_order_relaxed);
     if (len) {
-        const uint32_t elapsed = t - g_fade_start_ms[ch].load(std::memory_order_relaxed);
+        const uint32_t elapsed = static_cast<uint32_t>(t) -
+                                 g_fade_start_ms[ch].load(std::memory_order_relaxed);
         if (elapsed < len && g_scratch) {
             render_source(ch, cc, g_fade_from[ch].load(std::memory_order_relaxed), g_scratch, t);
             logic::blend_into(dst, g_scratch, bytes, logic::fade_weight(elapsed, len));

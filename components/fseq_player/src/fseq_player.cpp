@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 
 #include "driver/sdmmc_host.h"
 #include "esp_heap_caps.h"
@@ -538,16 +539,11 @@ size_t list_files(char names[][kMaxNameLen], size_t max) {
         if (ent->d_type != DT_REG) continue;
         const char* name = ent->d_name;
         const size_t len = strlen(name);
-        if (len < 5) continue;
-        const char* ext = name + len - 5;
-        // Match .fseq or .FSEQ (case-insensitive last 5 chars check)
-        if ((ext[0] == '.' || ext[0] == '.') && (ext[1] == 'f' || ext[1] == 'F') &&
-            (ext[2] == 's' || ext[2] == 'S') && (ext[3] == 'e' || ext[3] == 'E') &&
-            (ext[4] == 'q' || ext[4] == 'Q')) {
-            strncpy(names[count], name, kMaxNameLen - 1);
-            names[count][kMaxNameLen - 1] = '\0';
-            ++count;
-        }
+        // name.fseq in any case; a bare ".fseq" is a hidden file, not a show.
+        if (len <= 5 || strcasecmp(name + len - 5, ".fseq") != 0) continue;
+        strncpy(names[count], name, kMaxNameLen - 1);
+        names[count][kMaxNameLen - 1] = '\0';
+        ++count;
     }
     closedir(dir);
     return count;

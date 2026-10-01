@@ -1,12 +1,16 @@
 // config_store — persistent configuration for pixfrog.
 //
-// Two flavors:
-//   GlobalConfig   : IP/DHCP, ArtNet identity, refresh rate
+// Blobs, each its own NVS key (a grown struct loads zero-filled):
+//   GlobalConfig   : network, Art-Net identity, refresh, services, display…
 //   ChannelConfig  : per-LED-channel settings (×8)
+//   SceneBank      : the standalone scenes
+//   ControlConfig  : the DMX control universe
+//   FseqPlaylist   : the FSEQ playlist
 //
-// All accessors are blocking on NVS. They are expected to be called only
-// from `ui_task` and once during boot from `app_main`. The render path
-// reads a RAM-cached snapshot instead — see `config_get_runtime_snapshot()`.
+// init() loads everything into a RAM cache. get_*() return references into
+// that cache (no NVS access, safe from the render path); set_*() update the
+// cache then write the blob through. Writers (UI, web, console) are not
+// serialized against each other — see "Serialize config writes" in TODO.md.
 
 #pragma once
 

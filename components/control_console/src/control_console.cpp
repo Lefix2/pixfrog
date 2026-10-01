@@ -251,6 +251,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("failsafe_scene=%u\n", g.failsafe_scene);
     printf("boot_scene=%u\n", g.boot_scene);
     printf("merge_mode=%s\n", g.merge_mode == config::kMergeLtp ? "LTP" : "HTP");
+    printf("language=%s\n", g.language == config::kLangFrench ? "fr" : "en");
 }
 
 int cmd_global(int argc, char** argv) {
@@ -269,6 +270,13 @@ int cmd_global(int argc, char** argv) {
     if (strcmp(key, "dhcp") == 0) {
         if (!parse_bool(val, g.use_dhcp)) return err("dhcp: 0|1");
         network_changed = true;
+    } else if (strcmp(key, "language") == 0) {  // web UI language
+        if (strcmp(val, "en") == 0 || strcmp(val, "0") == 0)
+            g.language = config::kLangEnglish;
+        else if (strcmp(val, "fr") == 0 || strcmp(val, "1") == 0)
+            g.language = config::kLangFrench;
+        else
+            return err("language: en|fr");
     } else if (strcmp(key, "ip_fallback") == 0) {
         const int fb = config::ip_fallback_from_id(val);
         if (fb < 0) return err("ip_fallback: linklocal|artnet");
@@ -354,13 +362,14 @@ int cmd_global(int argc, char** argv) {
         printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
         return ok();
     } else {
-        return err("unknown key (dhcp ip_fallback ip mask gw net subnet short_name long_name "
-                   "reply_unicast "
-                   "refresh_hz home_timeout_s tft_brightness tft_idle_dim tft_dim_delay_s "
-                   "web_enabled "
-                   "sacn_enabled fpp_remote web_password "
-                   "failsafe_mode failsafe_timeout_s failsafe_color failsafe_scene boot_scene "
-                   "merge_mode)");
+        return err(
+            "unknown key (dhcp ip_fallback language ip mask gw net subnet short_name long_name "
+            "reply_unicast "
+            "refresh_hz home_timeout_s tft_brightness tft_idle_dim tft_dim_delay_s "
+            "web_enabled "
+            "sacn_enabled fpp_remote web_password "
+            "failsafe_mode failsafe_timeout_s failsafe_color failsafe_scene boot_scene "
+            "merge_mode)");
     }
 
     const bool persisted = config::set_global(g);
@@ -623,7 +632,12 @@ int cmd_factory_reset(int, char**) {
     dmx::mark_global_dirty();
     for (size_t ch = 0; ch < config::kNumChannels; ++ch)
         dmx::mark_channel_dirty(ch);
-    printf("note=reboot_recommended\n");
+    // The defaults turn the opt-in services off: follow them now rather than
+    // at the next reboot (the network settings still need one).
+    sacn::stop();
+    fpp::stop();
+    web::stop();
+    printf("note=network_changes_apply_after_reboot\n");
     return ok();
 }
 
@@ -812,8 +826,7 @@ int cmd_fseq_playlist(int argc, char** argv) {
     const char* sub = argv[1];
     if (strcmp(sub, "play") == 0 && argc == 2) {
         if (!fseq::start_playlist()) {
-            printf("ERR %s\n", fseq::error_string());
-            return 1;
+            return err(fseq::error_string());  // OK/ERR only, no non-zero code
         }
         return ok();
     }
@@ -863,8 +876,7 @@ int cmd_fseq(int argc, char** argv) {
         const bool loop = argc == 4 && strcmp(argv[3], "loop") == 0;
         if (argc != 3 && !loop) return err("usage: fseq play <filename> [loop]");
         if (!fseq::start(argv[2], loop)) {
-            printf("ERR %s\n", fseq::error_string());
-            return 1;
+            return err(fseq::error_string());  // OK/ERR only, no non-zero code
         }
         printf("active=%s\n", argv[2]);
         return ok();

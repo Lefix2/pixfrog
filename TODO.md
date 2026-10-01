@@ -10,28 +10,6 @@ belongs to that fork.
 
 ## Bugs & small fixes
 
-- [ ] **`POST /api/global web_enabled:false` silently does nothing** — the
-      flag persists but the server keeps running (a handler can't stop its own
-      server) and the response has no "applies after reboot" note. Minimum: the
-      note; better: defer `web::stop()` to a timer/task.
-- [ ] **Factory reset leaves opt-in services running** — web/UART
-      `factory-reset` zero `sacn_enabled`/`fpp_remote`/`web_enabled` (and the
-      control universe) but sACN/FPP/web keep running until reboot; stop them
-      or return the reboot note consistently.
-- [ ] **`cmd_fseq` breaks the console OK/ERR convention** — `return 1` on a
-      play failure makes esp_console append its own "command returned
-      non-zero" line after `ERR`.
-- [ ] **`fseq::list_files` typo** — `(ext[0] == '.' || ext[0] == '.')`;
-      replace the 5-char test with `strcasecmp(ext, ".fseq")`.
-- [ ] **UART console can't get/set `language`** — AGENT.md promises every
-      config field; add the key to `cmd_global`.
-- [ ] **Stale comments in `config_store`** — `config_store.h` points at a
-      `config_get_runtime_snapshot()` that doesn't exist (see *serialize config
-      writes*), and `nvs_load_blob`'s doc block sits above
-      `fill_default_scenes`.
-- [ ] **Scene clock wraps after 49.7 days** — effects run on
-      `uint32_t(esp_timer/1000)`; a permanent install sees one jump. Use a
-      64-bit phase or wrap on a period the effects are continuous over.
 - [ ] **Encoder acceleration feels wrong** — the ×10/×100 multiplier
       (`menu.cpp` `accel_note_rotation`) only resets after 350 ms without a
       detent. Reset the streak on a direction reversal and give ×100 a shorter
@@ -142,8 +120,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Output & performance
 
-- [ ] **Current limiter (ABL)** — per-channel amp budget (mA at full, PSU
-      limit) scaling the frame down when the sum exceeds it.
 - [ ] **Adaptive PCLK / sample density** — NRZ is encoded at 16 MHz with 20
       samples per bit where 3-4 at ~3.2 MHz suffice: frame buffers and
       PSRAM/DMA bandwidth are 5-6× larger than needed. Choose the density per
@@ -154,9 +130,6 @@ a password protects once set; none of them may make it mandatory.
       frame buffers (3 × 2.6 MB), the universe pool (64, capped by the uint64
       dirty mask), sACN joins, the UI editors. Pick a target (e.g. 2048 px)
       first; shrinks a lot with adaptive density.
-- [ ] **16-output NRZ mode** — with no clocked channel, reuse the 8 CLOCK bus
-      bits as 8 more NRZ outputs (16 × 512 px @60 Hz). Needs adaptive density
-      and shield support.
 - [ ] **Split the encode across both cores** — decode + effects + encode run on
       core 1 while core 0 idles; encode two halves in parallel if heavy effects
       × 8 × 1024 px get tight.
@@ -180,9 +153,6 @@ a password protects once set; none of them may make it mandatory.
 
 - [ ] **Bench SD card for FSEQ** — `hw_validate fseq` needs a microSD in the
       board (every other validator passes on the bench).
-- [ ] **Scope the first LED** — confirm on the wire (Saleae on GPIO2 +
-      `nrz_decode.py`) that pixel 1 is emitted; the bench strip's first LED is
-      sacrificial (3.3 V data without a level shifter).
 - [ ] **Multi-board validation** — the aggregated multi-node web UI and
       PTP/sync work need ≥ 2 boards on one LAN.
 - [ ] **Physical DMX input** — RS-485 receive on the shield to drive the box

@@ -1153,7 +1153,44 @@ static void test_scene_override_applies() {
     EXPECT_EQ(std::memcmp(&before, &sc, sizeof(sc)), 0);
 }
 
+// Largest per-byte change between two frames.
+static int max_step(const uint8_t* a, const uint8_t* b, size_t n) {
+    int m = 0;
+    for (size_t i = 0; i < n; ++i) {
+        const int d = a[i] > b[i] ? a[i] - b[i] : b[i] - a[i];
+        if (d > m) m = d;
+    }
+    return m;
+}
+
+// The scene clock is 64-bit: crossing 2^32 ms (49.7 days) is just the next
+// millisecond for every effect but fire (documented reseed) — no jump.
+static void test_scene_clock_has_no_wrap_jump() {
+    using namespace pixfrog::config;
+    const uint8_t fxs[]   = { kSceneFxSolid,    kSceneFxChase,  kSceneFxRainbow, kSceneFxBlobs,
+                              kSceneFxGradient, kSceneFxFade,   kSceneFxTwinkle, kSceneFxScanner,
+                              kSceneFxWave,     kSceneFxStripes };
+    constexpr uint16_t kN = 60;
+    const uint64_t wrap   = 1ull << 32;
+    for (uint8_t fx : fxs) {
+        Scene s = with_color(mk_scene(fx, 255, 0, 0, 200, 0), 0, 0, 255);
+        uint8_t a[kN * 3], b[kN * 3], c[kN * 3], d[kN * 3];
+        // Steady state: one ms apart, far from any wrap.
+        fill_scene_pattern(a, sizeof(a), kN, 3, s, 1'000'000);
+        fill_scene_pattern(b, sizeof(b), kN, 3, s, 1'000'001);
+        // Across 2^32 ms.
+        fill_scene_pattern(c, sizeof(c), kN, 3, s, wrap - 1);
+        fill_scene_pattern(d, sizeof(d), kN, 3, s, wrap);
+        const int steady = max_step(a, b, sizeof(a));
+        const int across = max_step(c, d, sizeof(c));
+        if (across > steady + 16)
+            std::printf("effect %u jumps at 2^32 ms: %d vs %d\n", fx, across, steady);
+        EXPECT_TRUE(across <= steady + 16);
+    }
+}
+
 int main() {
+    test_scene_clock_has_no_wrap_jump();
     test_total_bytes_rgb();
     test_total_bytes_rgbw();
     test_universes_used();

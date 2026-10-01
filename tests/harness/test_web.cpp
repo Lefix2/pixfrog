@@ -392,8 +392,30 @@ TEST(reboot_factory_reset_autopatch) {
     EXPECT_EQ(shim::restarts(), r0 + 1);
     EXPECT_EQ(post("/api/autopatch", "{\"base\":0}").status, 200);
     post("/api/channel/0", "{\"pixel_count\":999}");
-    EXPECT_EQ(post("/api/factory-reset").status, 200);
+    const int r1  = shim::restarts();
+    const auto fr = post("/api/factory-reset");
+    EXPECT_EQ(fr.status, 200);
+    EXPECT_TRUE(fr.body.find("\"rebooting\":true") != std::string::npos);
+    EXPECT_EQ(shim::restarts(), r1 + 1);  // as the SPA announces: services follow the defaults
     EXPECT_TRUE(config::get_channel(0).pixel_count != 999);
+}
+
+// The server cannot stop itself inside a handler: it answers, then a
+// short-lived task stops it. It used to keep serving until a reboot.
+TEST(turning_the_web_ui_off_from_it_stops_the_server) {
+    EXPECT_TRUE(shim::http_running());
+    const auto on = post("/api/global", "{\"web_enabled\":true}");
+    EXPECT_TRUE(on.body.find("web_stopping") == std::string::npos);
+    EXPECT_FALSE(shim::task_created("web_stop"));
+    const auto off = post("/api/global", "{\"web_enabled\":false}");
+    EXPECT_EQ(off.status, 200);
+    EXPECT_TRUE(off.body.find("\"web_stopping\":true") != std::string::npos);
+    EXPECT_TRUE(shim::http_running());  // the answer went out first
+    EXPECT_TRUE(shim::run_task("web_stop"));
+    EXPECT_FALSE(shim::http_running());
+    EXPECT_FALSE(config::get_global().web_enabled);
+    web::start();  // the next cases need it
+    EXPECT_TRUE(shim::http_running());
 }
 
 TEST(unknown_route_is_404) {

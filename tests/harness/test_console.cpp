@@ -247,8 +247,33 @@ TEST(reboot_and_factory_reset) {
     run("reboot");
     EXPECT_EQ(shim::restarts(), before + 1);
     EXPECT_TRUE(run("ch 1 pixels 999"));
+    fake::modules().fpp_running = true;
+    fake::modules().web_running = true;
     EXPECT_TRUE(run("factory-reset"));
     EXPECT_TRUE(config::get_channel(1).pixel_count != 999);
+    // The defaults turn the opt-in services off: they stop now, not at reboot.
+    EXPECT_FALSE(fake::modules().fpp_running);
+    EXPECT_FALSE(fake::modules().web_running);
+}
+
+TEST(global_language) {
+    EXPECT_TRUE(run("global language fr"));
+    EXPECT_EQ(config::get_global().language, config::kLangFrench);
+    EXPECT_TRUE(run("global"));
+    EXPECT_TRUE(has("language=fr"));
+    EXPECT_TRUE(run("global language 0"));
+    EXPECT_EQ(config::get_global().language, config::kLangEnglish);
+    EXPECT_FALSE(run("global language de"));
+}
+
+// A failed play answers ERR and a zero code: a non-zero one makes esp_console
+// print its own "command returned non-zero" line after ours.
+TEST(fseq_failures_keep_the_ok_err_protocol) {
+    EXPECT_EQ(shim::console_exec("fseq play missing.fseq", &g_out), 0);
+    EXPECT_TRUE(has("ERR"));
+    config::set_playlist(config::FseqPlaylist{});
+    EXPECT_EQ(shim::console_exec("fseq playlist play", &g_out), 0);
+    EXPECT_TRUE(has("ERR"));
 }
 
 TEST(unknown_usage_errors_keep_the_protocol) {
