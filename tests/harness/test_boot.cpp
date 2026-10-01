@@ -235,6 +235,47 @@ TEST(the_render_task_puts_artnet_pixels_on_the_wire) {
     EXPECT_TRUE(span_ms >= static_cast<int64_t>(79 * 1000 / rate) + 400);
 }
 
+// No DHCP server: lwIP's AutoIP lands a 169.254 address (raised as GOT_IP).
+// Link-local keeps it; Art-Net swaps it for 2.x/8 and asks DHCP again on the
+// next link-up.
+TEST(the_fallback_address_without_a_dhcp_server_is_configurable) {
+    configure(true);
+    auto g        = config::get_global();
+    g.ip_fallback = config::kIpFallbackLinkLocal;
+    config::set_global(g);
+    boot();
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_CONNECTED);
+    ip_event_got_ip_t ll{};
+    ll.ip_info.ip.addr = lwip_htonl(0xA9FE707A);  // 169.254.112.122
+    shim::event_post(IP_EVENT, IP_EVENT_ETH_GOT_IP, &ll);
+    EXPECT_EQ(ui::get_ip(), 0xA9FE707Au);
+    EXPECT_FALSE(shim::netif_log().dhcp_stopped);  // DHCP keeps trying
+
+    g.ip_fallback = config::kIpFallbackArtnet;  // read at the fallback, no reboot
+    config::set_global(g);
+    shim::event_post(IP_EVENT, IP_EVENT_ETH_GOT_IP, &ll);
+    const uint32_t art = 0x02123456;  // 2.<mac 12 34 56>
+    EXPECT_EQ(ui::get_ip(), art);
+    const auto& n = shim::netif_log();
+    EXPECT_TRUE(n.dhcp_stopped);
+    EXPECT_EQ(n.ip, lwip_htonl(art));
+    EXPECT_EQ(n.mask, lwip_htonl(0xFF000000));
+    // A real lease is never replaced.
+    ip_event_got_ip_t lease{};
+    lease.ip_info.ip.addr = lwip_htonl(0x0A000105);
+    shim::event_post(IP_EVENT, IP_EVENT_ETH_GOT_IP, &lease);
+    EXPECT_EQ(ui::get_ip(), 0x0A000105u);
+    // Replug: DHCP is asked again (once).
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED);
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_CONNECTED);
+    EXPECT_EQ(n.dhcp_restarts, 1);
+    EXPECT_FALSE(n.dhcp_stopped);
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_CONNECTED);
+    EXPECT_EQ(n.dhcp_restarts, 1);
+    g.ip_fallback = config::kIpFallbackLinkLocal;
+    config::set_global(g);
+}
+
 TEST(static_mode_publishes_its_address_on_every_link_up) {
     configure(false);
     boot();

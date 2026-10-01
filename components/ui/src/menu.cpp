@@ -377,6 +377,7 @@ enum class Field : uint8_t {
     DisplayPixelRefresh,
 #endif
     NetworkDhcp,
+    NetworkIpFallback,
     NetworkWebEnabled,
     ChProtocol,
     ChColorOrder,
@@ -421,17 +422,18 @@ enum class ValueKind : uint8_t {
     Protocol,
     ColorOrder,
     Failsafe,
-    ClockHz,  // clocked-SPI rate, picked from kClockChoices (achievable divisors)
-    CtlFn,    // control-universe function
-    Preset,   // control-universe preset (Simple / Full)
-    Mask,     // outputs bitmask, shown as "1234----"
-    Tenths,   // tenths shown as "2.5s"
+    ClockHz,     // clocked-SPI rate, picked from kClockChoices (achievable divisors)
+    CtlFn,       // control-universe function
+    Preset,      // control-universe preset (Simple / Full)
+    Mask,        // outputs bitmask, shown as "1234----"
+    Tenths,      // tenths shown as "2.5s"
+    IpFallback,  // address without a DHCP server (link-local / Art-Net)
 };
 
 // Pick-from-a-list kinds (wheel) vs numeric ones (gauge).
 bool is_enum_kind(ValueKind k) {
     return k == ValueKind::Protocol || k == ValueKind::ColorOrder || k == ValueKind::Failsafe ||
-           k == ValueKind::CtlFn || k == ValueKind::Preset;
+           k == ValueKind::CtlFn || k == ValueKind::Preset || k == ValueKind::IpFallback;
 }
 bool is_gauge_kind(ValueKind k) {
     return k == ValueKind::Int || k == ValueKind::ClockHz || k == ValueKind::Mask ||
@@ -673,6 +675,9 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
         std::snprintf(out, cap, "%s", ctl_fn_label(static_cast<uint8_t>(v)));
         return;
     case ValueKind::Preset: std::snprintf(out, cap, "%s", v ? "Full" : "Simple"); return;
+    case ValueKind::IpFallback:
+        std::snprintf(out, cap, "%s", v == config::kIpFallbackArtnet ? "Art-Net 2.x" : "169.254");
+        return;
     case ValueKind::Mask: format_mask(static_cast<uint8_t>(v), out, cap); return;
     case ValueKind::Tenths:
         std::snprintf(out, cap, "%ld.%lds", static_cast<long>(v / 10), static_cast<long>(v % 10));
@@ -2089,6 +2094,12 @@ void commit_edit() {
         dmx::mark_global_dirty();
         break;
     }
+    case Field::NetworkIpFallback: {
+        auto g        = config::get_global();
+        g.ip_fallback = static_cast<uint8_t>(v);  // read when the fallback is taken
+        config::set_global(g);
+        break;
+    }
     case Field::NetworkWebEnabled: {
         auto g        = config::get_global();
         g.web_enabled = (v != 0);
@@ -3020,8 +3031,10 @@ uint8_t build_playback(ListItem* items, OnClick* fns) {
 
 uint8_t build_network(ListItem* items, OnClick* fns) {
     static char vdhcp[8], vip[kOledCols + 1], vmsk[kOledCols + 1], vgw[kOledCols + 1], vweb[8];
-    static char vshort[14], vlong[14];
+    static char vshort[14], vlong[14], vfb[12];
     const auto& g = config::get_global();
+    std::snprintf(vfb, sizeof(vfb), "%s",
+                  g.ip_fallback == config::kIpFallbackArtnet ? "ARTNET" : "LINK");
     std::snprintf(vdhcp, sizeof(vdhcp), "%s", g.use_dhcp ? "ON" : "OFF");
     std::snprintf(vweb, sizeof(vweb), "%s", g.web_enabled ? "ON" : "OFF");
     auto fmt_ip = [](char* buf, size_t cap, uint32_t v) {
@@ -3071,9 +3084,15 @@ uint8_t build_network(ListItem* items, OnClick* fns) {
         enter_edit_string(StringField::ArtnetLong, g.long_name, sizeof(g.long_name) - 1, "Long",
                             Screen::Menu);
     };
-    items[7] = back_item();
-    fns[7]   = [](uint8_t) { go_back(); };
-    return 8;
+    // Only meaningful in DHCP mode; kept last so the rows above keep their place.
+    items[7] = { "NoDHCP", vfb };
+    fns[7]   = [](uint8_t) {
+        enter_edit(Field::NetworkIpFallback, ValueKind::IpFallback,
+                     config::get_global().ip_fallback, 0, 1, 1, "No DHCP", Screen::Menu);
+    };
+    items[8] = back_item();
+    fns[8]   = [](uint8_t) { go_back(); };
+    return 9;
 }
 
 // ── CHANNEL MENU ────────────────────────────────────────────────────────────

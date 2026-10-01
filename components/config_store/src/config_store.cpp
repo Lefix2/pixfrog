@@ -298,6 +298,7 @@ void init() {
     }
     sanitize_control(g_control);
     if (g_global.scene_fade_ms > kMaxSceneFadeMs) g_global.scene_fade_ms = kMaxSceneFadeMs;
+    if (g_global.ip_fallback > kIpFallbackArtnet) g_global.ip_fallback = kIpFallbackLinkLocal;
 
     // FSEQ playlist: absent before it existed — empty, nothing autostarts.
     if (!nvs_load_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist)))

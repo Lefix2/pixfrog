@@ -116,6 +116,11 @@ esp_err_t esp_netif_dhcpc_stop(esp_netif_t*) {
     g_netif.dhcp_stopped = true;
     return ESP_OK;
 }
+esp_err_t esp_netif_dhcpc_start(esp_netif_t*) {
+    g_netif.dhcp_stopped = false;
+    ++g_netif.dhcp_restarts;
+    return ESP_OK;
+}
 esp_err_t esp_netif_set_ip_info(esp_netif_t*, const esp_netif_ip_info_t* info) {
     g_netif.ip   = info->ip.addr;  // network order, as lwIP stores it
     g_netif.mask = info->netmask.addr;

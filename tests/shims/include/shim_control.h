@@ -205,7 +205,8 @@ void ledc_reset();
 struct NetifLog {
     bool created = false, dhcp_stopped = false, eth_started = false;
     uint32_t ip = 0, mask = 0, gw = 0;  // network order, as set_ip_info got them
-    int handlers = 0;                   // esp_event_handler_register calls
+    int handlers      = 0;              // esp_event_handler_register calls
+    int dhcp_restarts = 0;              // esp_netif_dhcpc_start calls
     int mdc = -1, mdio = -1, phy_addr = -2, phy_reset = -2;
     int ldo_chan = -1, ldo_mv = 0;
 };

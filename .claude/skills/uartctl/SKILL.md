@@ -18,4 +18,4 @@ End-to-end pipeline check (universe → decoded pixels):
 universes into pixels — a `pixr` issued back-to-back with `dmxw` reads the
 pre-injection buffer and prints zeros. Put any command (e.g. `status`) between
 them, or read twice.
-Config sets persist to NVS and apply next frame; network keys (`dhcp ip mask gw`) need `reboot`.
+Config sets persist to NVS and apply next frame; network keys (`dhcp ip mask gw`) need `reboot`; `ip_fallback linklocal|artnet` applies at the next fallback.

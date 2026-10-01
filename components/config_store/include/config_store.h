@@ -92,7 +92,42 @@ struct GlobalConfig {
     // Crossfade when a scene starts, stops or replaces another on an output.
     // Zero-fill migration = 0 = instant, the behaviour before fades.
     uint16_t scene_fade_ms;  // 0..kMaxSceneFadeMs
+
+    // Address taken in DHCP mode when no DHCP server answers. Zero-fill
+    // migration = link-local, the behaviour it shipped with.
+    uint8_t ip_fallback;  // kIpFallback*
 };
+
+// DHCP mode without a DHCP server:
+//  link-local — 169.254.x.x (RFC 3927, lwIP AutoIP): what a laptop without
+//               DHCP also takes, so the two meet with no setup; DHCP keeps
+//               being retried and a lease replaces it.
+//  artnet     — 2.x.y.z/8 from the MAC (the Art-Net convention many desks
+//               default to); DHCP is retried at the next link-up or reboot.
+constexpr uint8_t kIpFallbackLinkLocal = 0;
+constexpr uint8_t kIpFallbackArtnet    = 1;
+inline const char* ip_fallback_id(uint8_t v) {
+    return v == kIpFallbackArtnet ? "artnet" : "linklocal";
+}
+// -1 when unknown.
+inline int ip_fallback_from_id(const char* s) {
+    if (std::strcmp(s, "linklocal") == 0) return kIpFallbackLinkLocal;
+    if (std::strcmp(s, "artnet") == 0) return kIpFallbackArtnet;
+    return -1;
+}
+// The Art-Net fallback address: 2.<mac3>.<mac4>.<mac5>, host order, /8.
+// The two host parts a /8 cannot use (all zeros / all ones) are nudged in.
+inline uint32_t artnet_fallback_ip(const uint8_t mac[6]) {
+    uint32_t host = (static_cast<uint32_t>(mac[3]) << 16) | (static_cast<uint32_t>(mac[4]) << 8) |
+                    mac[5];
+    if (host == 0) host = 1;
+    if (host == 0xFFFFFF) host = 0xFFFFFE;
+    return (2u << 24) | host;
+}
+constexpr uint32_t kArtnetFallbackMask = 0xFF000000u;
+inline bool is_link_local(uint32_t host_order_ip) {
+    return (host_order_ip >> 16) == 0xA9FE;  // 169.254/16
+}
 
 constexpr uint16_t kMaxSceneFadeMs = 25500;  // what one DMX slot can express (×100 ms)
 
