@@ -3,7 +3,7 @@
 # FreeRTOS. One executable per component keeps their static state apart.
 set(SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/../shims)
 add_library(idf_shims STATIC ${SHIMS}/src/shims.cpp ${SHIMS}/src/net.cpp ${SHIMS}/src/system.cpp
-    ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp)
+    ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp ${SHIMS}/src/vfs.cpp)
 target_include_directories(idf_shims PUBLIC ${SHIMS}/include)
 target_compile_options(idf_shims PRIVATE -Wall -Wextra)
 
@@ -32,7 +32,10 @@ set(FIRMWARE_INCLUDES
 function(pixfrog_harness name)
     add_executable(${name} ${ARGN})
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FIRMWARE_INCLUDES})
-    target_compile_options(${name} PRIVATE -Wall -Wextra -fno-exceptions -fno-rtti)
+    target_compile_options(${name} PRIVATE -Wall -Wextra
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions -fno-rtti>
+        # /sdcard/... file calls land in the host directory the test picked.
+        -include ${SHIMS}/include/vfs_redirect.h)
     target_link_libraries(${name} PRIVATE idf_shims)
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "${PIXFROG_TEST_ENV}")
@@ -58,6 +61,22 @@ pixfrog_harness(harness_dmx_init
 # device): no leak check for this one.
 set_tests_properties(harness_dmx_init PROPERTIES ENVIRONMENT
     "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")
+
+# The real FSEQ player (SD hot-plug, uncompressed / zstd / sparse files,
+# seek, desk requests) and the FPP MultiSync receiver driving it.
+pixfrog_harness(harness_fseq
+    test_fseq.cpp
+    ${REPO}/components/fseq_player/src/fseq_player.cpp
+    ${REPO}/components/fseq_player/third_party/zstddeclib.c
+    ${REPO}/components/fpp_sync/src/fpp_sync.cpp
+    ${REPO}/components/dmx_manager/src/dmx_manager.cpp
+    ${REPO}/components/config_store/src/config_store.cpp
+    ${LED_PROTOCOLS_SRC}
+)
+target_include_directories(harness_fseq PRIVATE ${REPO}/components/fseq_player/src
+                                                ${REPO}/components/fseq_player/third_party)
+set_source_files_properties(${REPO}/components/fseq_player/third_party/zstddeclib.c PROPERTIES
+    COMPILE_OPTIONS "-w")
 
 pixfrog_harness(harness_receivers
     test_receivers.cpp

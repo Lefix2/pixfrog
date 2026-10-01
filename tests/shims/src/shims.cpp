@@ -262,11 +262,21 @@ EventBits_t xEventGroupClearBits(EventGroupHandle_t g, EventBits_t bits) {
 EventBits_t xEventGroupGetBits(EventGroupHandle_t g) {
     return g->bits;
 }
+namespace shim {
+void task_delay_point();  // net.cpp: run_task_for's budget
+}
 void vTaskDelay(TickType_t ticks) {
     if (shim::real_clock())
         std::this_thread::sleep_for(std::chrono::milliseconds(ticks));
     else
         shim::advance_ms(ticks);
+    shim::task_delay_point();
+}
+void vTaskDelayUntil(TickType_t* previous_wake, TickType_t increment) {
+    *previous_wake    += increment;
+    const auto now_ms  = static_cast<TickType_t>(shim::now_us() / 1000);
+    if (*previous_wake > now_ms) shim::advance_ms(*previous_wake - now_ms);
+    shim::task_delay_point();
 }
 TickType_t xTaskGetTickCount() {
     return static_cast<TickType_t>(shim::now_us() / 1000);

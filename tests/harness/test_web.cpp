@@ -3,6 +3,7 @@
 // FSEQ, logs, core dump, peers. Real config_store/dmx_manager/sacn beneath.
 
 #include <string>
+#include <sys/stat.h>
 
 #include "cJSON.h"
 #include "config_store.h"
@@ -659,4 +660,32 @@ TEST(server_restart_and_start_failures) {
     web::stop();
     web::start();
     EXPECT_TRUE(web::is_running());
+}
+
+TEST(fseq_upload_writes_the_file_and_handles_card_errors) {
+    char tmpl[]           = "/tmp/pixfrog-web-sd-XXXXXX";
+    const std::string dir = mkdtemp(tmpl);
+    shim::sd_root(dir);
+    ::fake::modules().sd_mounted = true;
+    const std::string body(3000, 'Q');  // several receive chunks
+    EXPECT_EQ(post("/api/fseq/upload?name=show%201.fseq", body).status, 200);
+    FILE* f = fopen((dir + "/show 1.fseq").c_str(), "rb");
+    EXPECT_TRUE(f != nullptr);
+    if (f) {
+        std::fseek(f, 0, SEEK_END);
+        EXPECT_EQ(std::ftell(f), 3000);
+        std::fclose(f);
+    }
+    // Re-uploading the file being played stops it first, then replaces it.
+    ::fake::modules().fseq_started = "show 1.fseq";
+    EXPECT_EQ(post("/api/fseq/upload?name=show+1.fseq", "new").status, 200);
+    EXPECT_TRUE(::fake::modules().fseq_stopped);
+    // A directory where the file should go: the rename fails, nothing is left.
+    mkdir((dir + "/dir.fseq").c_str(), 0700);
+    mkdir((dir + "/dir.fseq/x").c_str(), 0700);
+    EXPECT_EQ(post("/api/fseq/upload?name=dir.fseq", "abc").status, 500);
+    // The card's directory gone: the temporary file cannot be created.
+    shim::sd_root(dir + "/missing");
+    EXPECT_EQ(post("/api/fseq/upload?name=x.fseq", "abc").status, 500);
+    shim::sd_root("");
 }
