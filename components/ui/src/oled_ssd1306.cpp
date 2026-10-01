@@ -80,7 +80,7 @@ void rasterise_row(uint8_t row) {
     std::memset(page, 0, kSsd1306Cols);
     for (uint8_t tc = 0; tc < kTextCols; ++tc) {
         const char c = g_text_buf[row][tc];
-        if (c == '\0') break;
+        if (c == '\0') continue;  // a cell nothing was drawn in (text may start further right)
         // Crisp 1bpp font: each glyph byte is already a column (bit r = row r,
         // top = bit0), matching the SSD1306 page layout — copy it straight in.
         const uint8_t* col = font_oled_for(c);

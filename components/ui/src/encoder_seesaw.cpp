@@ -137,10 +137,12 @@ void be32(uint32_t v, uint8_t out[4]) {
 bool seesaw_read_position(int32_t& pos) {
     uint8_t buf[4];
     if (!seesaw_read(kSeeBaseEncoder, kSeeEncoderPosition, buf, 4)) return false;
-    // Signed big-endian. Sign-extend the high byte through the int32.
-    pos = (static_cast<int32_t>(static_cast<int8_t>(buf[0])) << 24) |
-          (static_cast<int32_t>(buf[1]) << 16) | (static_cast<int32_t>(buf[2]) << 8) |
-          static_cast<int32_t>(buf[3]);
+    // Signed big-endian: assemble unsigned (shifting a negative int is UB in
+    // C++17), then reinterpret as two's complement.
+    const uint32_t u = (static_cast<uint32_t>(buf[0]) << 24) |
+                       (static_cast<uint32_t>(buf[1]) << 16) |
+                       (static_cast<uint32_t>(buf[2]) << 8) | static_cast<uint32_t>(buf[3]);
+    pos = static_cast<int32_t>(u);
     return true;
 }
 

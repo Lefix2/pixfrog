@@ -75,6 +75,10 @@ esp_err_t parlio_tx_unit_transmit(parlio_tx_unit_handle_t unit, const void* payl
     return ESP_OK;
 }
 
+esp_err_t gpio_config(const gpio_config_t*) {
+    ++g_gpio_calls;
+    return ESP_OK;
+}
 esp_err_t gpio_reset_pin(gpio_num_t) {
     ++g_gpio_calls;
     return ESP_OK;

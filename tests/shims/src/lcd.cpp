@@ -196,6 +196,14 @@ esp_err_t esp_lcd_panel_io_tx_param(esp_lcd_panel_io_handle_t io, int lcd_cmd, c
                                     size_t param_size) {
     if (!io || (param_size && !param)) return ESP_ERR_INVALID_ARG;
     g_log.commands.push_back(lcd_cmd);
+    const auto* p = static_cast<const uint8_t*>(param);
+    if ((lcd_cmd == 0x2A || lcd_cmd == 0x2B) && param_size == 4) {
+        const int lo = (p[0] << 8) | p[1], hi = (p[2] << 8) | p[3];
+        if (hi < lo || hi >= (lcd_cmd == 0x2A ? shim::LcdLog::kGramW : shim::LcdLog::kGramH))
+            return ESP_ERR_INVALID_ARG;
+        (lcd_cmd == 0x2A ? g_log.win_x0 : g_log.win_y0) = lo;
+        (lcd_cmd == 0x2A ? g_log.win_x1 : g_log.win_y1) = hi;
+    }
     return ESP_OK;
 }
 esp_err_t esp_lcd_panel_io_tx_color(esp_lcd_panel_io_handle_t io, int lcd_cmd, const void* color,
@@ -203,6 +211,15 @@ esp_err_t esp_lcd_panel_io_tx_color(esp_lcd_panel_io_handle_t io, int lcd_cmd, c
     if (!io || !color || !color_size) return ESP_ERR_INVALID_ARG;
     g_log.commands.push_back(lcd_cmd);
     ++g_log.color_tx;
+    // RAMWR fills the CASET/RASET window row by row, as a DCS controller does.
+    const auto* px = static_cast<const uint16_t*>(color);
+    const int w    = g_log.win_x1 - g_log.win_x0 + 1;
+    for (size_t i = 0; i < color_size / 2; ++i) {
+        const int x = g_log.win_x0 + static_cast<int>(i % w);
+        const int y = g_log.win_y0 + static_cast<int>(i / w);
+        if (y > g_log.win_y1) return ESP_ERR_INVALID_SIZE;  // overran the window
+        g_log.gram[static_cast<size_t>(y) * shim::LcdLog::kGramW + x] = px[i];
+    }
     if (io->cfg.on_color_trans_done) io->cfg.on_color_trans_done(io, nullptr, io->cfg.user_ctx);
     return ESP_OK;
 }

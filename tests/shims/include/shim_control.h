@@ -114,6 +114,13 @@ enum class Fault {
     LcdNewIo,        // esp_lcd_new_panel_io_spi → ESP_FAIL
     SpiBus,          // spi_bus_initialize → ESP_FAIL
     CacheMsync,      // esp_cache_msync → ESP_FAIL
+    I2cBus,          // i2c_new_master_bus → ESP_FAIL
+    I2cAddDevice,    // i2c_master_bus_add_device → ESP_FAIL
+    I2cTransmit,     // i2c_master_transmit → ESP_FAIL
+    I2cReceive,      // i2c_master_receive → ESP_FAIL
+    LedcTimer,       // ledc_timer_config → ESP_FAIL
+    LedcChannel,     // ledc_channel_config → ESP_FAIL
+    LedcFade,        // ledc_fade_func_install → ESP_FAIL
     Count,
 };
 // `skip` calls succeed first (fail the Nth allocation, not the first).
@@ -156,11 +163,36 @@ struct LcdLog {
     std::vector<int> commands;  // every tx_param / tx_color command, in order
     bool display_on = false, swap_xy = false, mirror_x = false, mirror_y = false;
     bool inverted = false;
+    // SPI panel GRAM (CASET 0x2A / RASET 0x2B / RAMWR 0x2C), kGramW × kGramH.
+    static constexpr int kGramW = 256, kGramH = 512;
+    int win_x0 = 0, win_x1 = 0, win_y0 = 0, win_y1 = 0;
+    std::vector<uint16_t> gram = std::vector<uint16_t>(kGramW * kGramH, 0xA5A5);
+    uint16_t at(int x, int y) const { return gram[static_cast<size_t>(y) * kGramW + x]; }
 };
 LcdLog& lcd_log();
 void lcd_reset();
 // false: refresh never raises on_vsync (an emission that never completes).
 void lcd_auto_vsync(bool on);
+
+// ── I2C (driver/i2c_master.h) — a device model per address ─────────────────
+struct I2cDevice {
+    virtual ~I2cDevice()                                = default;
+    virtual bool write(const uint8_t* data, size_t len) = 0;  // false = NACK
+    virtual bool read(uint8_t* data, size_t len)        = 0;
+};
+void i2c_attach(uint16_t addr, I2cDevice* dev);  // nullptr detaches (address NACKs)
+void i2c_nack_probes(int n);                     // the next n probes NACK anyway
+
+// ── LEDC (driver/ledc.h) ────────────────────────────────────────────────────
+struct LedcLog {
+    int gpio         = -1;
+    uint32_t freq_hz = 0, res_bits = 0;
+    bool fade_installed = false;
+    uint32_t duty = 0, pending_duty = 0, last_fade_ms = 0;
+    int fades = 0, fade_stops = 0, steps = 0;
+};
+LedcLog& ledc_log();
+void ledc_reset();
 
 // ── OTA / core dump / mDNS ──────────────────────────────────────────────────
 std::vector<uint8_t>& ota_image();                     // bytes esp_ota_write() received

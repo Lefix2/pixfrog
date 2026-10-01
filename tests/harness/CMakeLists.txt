@@ -4,9 +4,13 @@
 set(SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/../shims)
 add_library(idf_shims STATIC ${SHIMS}/src/shims.cpp ${SHIMS}/src/net.cpp ${SHIMS}/src/system.cpp
     ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp ${SHIMS}/src/vfs.cpp
-    ${SHIMS}/src/output.cpp ${SHIMS}/src/lcd.cpp)
+    ${SHIMS}/src/output.cpp ${SHIMS}/src/lcd.cpp
+    ${SHIMS}/src/ui_hw.cpp)
 target_include_directories(idf_shims PUBLIC ${SHIMS}/include)
-target_compile_options(idf_shims PRIVATE -Wall -Wextra)
+# Same C++ dialect as the firmware: device models defined in a test (no RTTI)
+# are called through the shims, which UBSan would otherwise vptr-check.
+target_compile_options(idf_shims PRIVATE -Wall -Wextra
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions -fno-rtti>)
 
 set(LED_PROTOCOLS_SRC
     ${REPO}/components/led_protocols/src/led_protocols.cpp
@@ -175,3 +179,28 @@ target_link_libraries(pixfrog_api_host PRIVATE idf_shims cjson webui_blob)
 if(PIXFROG_FUZZ)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../fuzz ${CMAKE_BINARY_DIR}/fuzz)
 endif()
+
+# The UI hardware layer (display, encoder, backlight drivers) and ui.cpp's task
+# loop, once per display Kconfig; menu.cpp is faked (the emulator covers it).
+set(UI_SRC ${REPO}/components/ui/src)
+set(UI_COMMON test_ui.cpp fakes/menu_fake.cpp ${UI_SRC}/ui.cpp ${UI_SRC}/encoder_seesaw.cpp
+    ${UI_SRC}/splash.cpp ${REPO}/components/config_store/src/config_store.cpp)
+set(UI_TFT ${UI_SRC}/canvas_tft.cpp ${UI_SRC}/backlight.cpp ${UI_SRC}/tft_backlight_pwm.cpp
+    ${UI_SRC}/font_data.cpp ${UI_SRC}/splash_anim.cpp)
+pixfrog_harness(harness_ui_oled ${UI_COMMON} ${UI_SRC}/oled_ssd1306.cpp ${UI_SRC}/canvas_oled.cpp
+    ${UI_SRC}/font_oled.cpp ${UI_SRC}/splash_oled.cpp)
+pixfrog_harness(harness_ui_nv3007 ${UI_COMMON} ${UI_TFT} ${UI_SRC}/tft_nv3007.cpp)
+target_compile_definitions(harness_ui_nv3007 PRIVATE CONFIG_PIXFROG_DISPLAY_TFT=1
+    CONFIG_PIXFROG_DISPLAY_NV3007=1)
+pixfrog_harness(harness_ui_nv3007_rot180 ${UI_COMMON} ${UI_TFT} ${UI_SRC}/tft_nv3007.cpp)
+target_compile_definitions(harness_ui_nv3007_rot180 PRIVATE CONFIG_PIXFROG_DISPLAY_TFT=1
+    CONFIG_PIXFROG_DISPLAY_NV3007=1 CONFIG_PIXFROG_NV3007_ROT180=1)
+pixfrog_harness(harness_ui_st7789 ${UI_COMMON} ${UI_TFT} ${UI_SRC}/tft_st7789.cpp)
+target_compile_definitions(harness_ui_st7789 PRIVATE CONFIG_PIXFROG_DISPLAY_TFT=1)
+foreach(t harness_ui_oled harness_ui_nv3007 harness_ui_nv3007_rot180 harness_ui_st7789)
+    target_include_directories(${t} PRIVATE ${UI_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/fakes)
+    # Buses, devices and panels are created once per boot on the device; the
+    # cases re-create them freely.
+    set_tests_properties(${t} PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")
+endforeach()

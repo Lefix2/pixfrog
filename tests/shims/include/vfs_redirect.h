@@ -1,9 +1,10 @@
 // Force-included into the harness builds: file calls on the device's
 // mount point (/sdcard/...) land in a host directory the test picked
-// (shim::sd_root). The real <cstdio>/<dirent.h> come first so the macros only
+// (shim::sd_root). The real <cstdio>/<dirent.h>/<algorithm> come first so the macros only
 // rename call sites, never the library's own declarations.
 #pragma once
 #ifdef __cplusplus
+#include <algorithm>  // declares std::remove(first, last, v) before the macro below
 #include <cstdio>
 #else
 #include <stdio.h>
