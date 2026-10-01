@@ -5,7 +5,7 @@ set(SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/../shims)
 add_library(idf_shims STATIC ${SHIMS}/src/shims.cpp ${SHIMS}/src/net.cpp ${SHIMS}/src/system.cpp
     ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp ${SHIMS}/src/vfs.cpp
     ${SHIMS}/src/output.cpp ${SHIMS}/src/lcd.cpp
-    ${SHIMS}/src/ui_hw.cpp)
+    ${SHIMS}/src/ui_hw.cpp ${SHIMS}/src/boot.cpp)
 target_include_directories(idf_shims PUBLIC ${SHIMS}/include)
 # Same C++ dialect as the firmware: device models defined in a test (no RTTI)
 # are called through the shims, which UBSan would otherwise vptr-check.
@@ -204,3 +204,31 @@ foreach(t harness_ui_oled harness_ui_nv3007 harness_ui_nv3007_rot180 harness_ui_
     set_tests_properties(${t} PROPERTIES ENVIRONMENT
         "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")
 endforeach()
+
+# main.cpp: app_main() boots every real module (OLED UI build, menu faked) and
+# the render task is driven frame by frame — Art-Net in, PARLIO wire out.
+pixfrog_harness(harness_boot
+    test_boot.cpp
+    fakes/menu_fake.cpp
+    ${REPO}/main/main.cpp
+    ${REPO}/components/artnet/src/artnet.cpp
+    ${REPO}/components/sacn/src/sacn.cpp
+    ${REPO}/components/fpp_sync/src/fpp_sync.cpp
+    ${REPO}/components/fseq_player/src/fseq_player.cpp
+    ${REPO}/components/fseq_player/third_party/zstddeclib.c
+    ${REPO}/components/control_console/src/control_console.cpp
+    ${REPO}/components/web_config/src/web_config.cpp
+    ${REPO}/components/dmx_manager/src/dmx_manager.cpp
+    ${REPO}/components/config_store/src/config_store.cpp
+    ${LED_OUTPUT_SRC}
+    ${LED_PROTOCOLS_SRC}
+    ${UI_SRC}/ui.cpp ${UI_SRC}/encoder_seesaw.cpp ${UI_SRC}/splash.cpp ${UI_SRC}/oled_ssd1306.cpp
+    ${UI_SRC}/canvas_oled.cpp ${UI_SRC}/font_oled.cpp ${UI_SRC}/splash_oled.cpp
+)
+target_include_directories(harness_boot PRIVATE ${REPO}/boards ${REPO}/components/led_output/src
+    ${REPO}/components/fseq_player/src ${REPO}/components/fseq_player/third_party ${UI_SRC}
+    ${CMAKE_CURRENT_SOURCE_DIR}/fakes)
+target_link_libraries(harness_boot PRIVATE cjson webui_blob)
+# app_main() runs once per case; the device runs it once per boot.
+set_tests_properties(harness_boot PROPERTIES ENVIRONMENT
+    "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")

@@ -121,6 +121,13 @@ enum class Fault {
     LedcTimer,       // ledc_timer_config → ESP_FAIL
     LedcChannel,     // ledc_channel_config → ESP_FAIL
     LedcFade,        // ledc_fade_func_install → ESP_FAIL
+    NetifNew,        // esp_netif_new → nullptr
+    EthMac,          // esp_eth_mac_new_esp32 → nullptr
+    EthPhy,          // esp_eth_phy_new_ip101 → nullptr
+    EthInstall,      // esp_eth_driver_install → ESP_FAIL
+    EthStart,        // esp_eth_start → ESP_FAIL
+    LdoAcquire,      // esp_ldo_acquire_channel → ESP_ERR_INVALID_STATE
+    OtaDescription,  // esp_ota_get_partition_description → ESP_FAIL
     Count,
 };
 // `skip` calls succeed first (fail the Nth allocation, not the first).
@@ -193,6 +200,25 @@ struct LedcLog {
 };
 LedcLog& ledc_log();
 void ledc_reset();
+
+// ── Boot (esp_eth, esp_netif, esp_event, LDO, task WDT, OTA state) ─────────
+struct NetifLog {
+    bool created = false, dhcp_stopped = false, eth_started = false;
+    uint32_t ip = 0, mask = 0, gw = 0;  // network order, as set_ip_info got them
+    int handlers = 0;                   // esp_event_handler_register calls
+    int mdc = -1, mdio = -1, phy_addr = -2, phy_reset = -2;
+    int ldo_chan = -1, ldo_mv = 0;
+};
+NetifLog& netif_log();
+void boot_reset();
+// Runs the handlers registered for (base, id) synchronously.
+void event_post(const char* base, int32_t id, void* data = nullptr);
+int wdt_resets();  // esp_task_wdt_reset() calls — one per render frame
+// The partition esp_ota_get_last_invalid_partition() reports (nullptr: none)
+// and its descriptor: `version`, and an ELF SHA of sha_seed, sha_seed+1, …
+void ota_invalid_partition(const char* label, const char* version = "", uint8_t sha_seed = 0);
+void ota_pending_verify(bool pending);  // running image state
+bool ota_marked_valid();                // esp_ota_mark_app_valid_cancel_rollback() called
 
 // ── OTA / core dump / mDNS ──────────────────────────────────────────────────
 std::vector<uint8_t>& ota_image();                     // bytes esp_ota_write() received

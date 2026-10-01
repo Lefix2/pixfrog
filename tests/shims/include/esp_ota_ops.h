@@ -26,3 +26,15 @@ typedef enum {
 const esp_partition_t* esp_partition_find_first(esp_partition_type_t type,
                                                 esp_partition_subtype_t subtype, const char* label);
 esp_err_t esp_partition_read(const esp_partition_t* part, size_t off, void* dst, size_t size);
+typedef enum {
+    ESP_OTA_IMG_NEW            = 0,
+    ESP_OTA_IMG_PENDING_VERIFY = 1,
+    ESP_OTA_IMG_VALID          = 2,
+    ESP_OTA_IMG_INVALID        = 3,
+    ESP_OTA_IMG_ABORTED        = 4,
+    ESP_OTA_IMG_UNDEFINED      = -1,
+} esp_ota_img_states_t;
+const esp_partition_t* esp_ota_get_last_invalid_partition();
+esp_err_t esp_ota_get_partition_description(const esp_partition_t* part, esp_app_desc_t* desc);
+esp_err_t esp_ota_get_state_partition(const esp_partition_t* part, esp_ota_img_states_t* state);
+esp_err_t esp_ota_mark_app_valid_cancel_rollback();
