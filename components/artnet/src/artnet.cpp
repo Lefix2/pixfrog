@@ -131,63 +131,69 @@ void handle_address(const uint8_t* buf, size_t len, const sockaddr_in& from) {
     }
     dmx::note_ctrl_rx();
 
-    config::GlobalConfig g = config::get_global();
-    bool global_changed    = false;
+    {
+        // Read-modify-write of the global and channel configs: hold the config
+        // lock so a web/console/UI edit cannot land in between and be lost.
+        config::ScopedLock lock;
+        config::GlobalConfig g = config::get_global();
+        bool global_changed    = false;
 
-    if (f.net_switch & 0x80) {
-        g.artnet_net   = f.net_switch & 0x7F;
-        global_changed = true;
-    }
-    if (f.sub_switch & 0x80) {
-        g.artnet_subnet = f.sub_switch & 0x0F;
-        global_changed  = true;
-    }
-    if (f.short_name[0] != '\0') {
-        std::memset(g.short_name, 0, sizeof(g.short_name));
-        std::memcpy(g.short_name, f.short_name, sizeof(g.short_name) - 1);
-        global_changed = true;
-    }
-    if (f.long_name[0] != '\0') {
-        std::memset(g.long_name, 0, sizeof(g.long_name));
-        std::memcpy(g.long_name, f.long_name, sizeof(g.long_name) - 1);
-        global_changed = true;
-    }
-
-    // SwOut programs the low nibble of a port's universe. BindIndex 0/1 →
-    // channels 1-4, BindIndex 2 → channels 5-8 (mirrors our ArtPollReply).
-    const uint8_t bind   = (f.bind_index <= 1) ? 1 : f.bind_index;
-    const size_t base_ch = static_cast<size_t>(bind - 1) * 4;
-    for (uint8_t p = 0; p < 4; ++p) {
-        if (!(f.sw_out[p] & 0x80)) continue;
-        const size_t ch = base_ch + p;
-        if (ch >= config::kNumChannels) continue;
-        auto c           = config::get_channel(ch);
-        c.universe_start = static_cast<uint16_t>((c.universe_start & ~0x0Fu) |
-                                                 (f.sw_out[p] & 0x0F));
-        config::set_channel(ch, c);
-        dmx::mark_channel_dirty(ch);
-    }
-
-    // Merge commands. The spec scopes AcMerge* to one port; pixfrog applies a
-    // single node-wide merge mode, so any port's command switches it globally.
-    if (f.command == parser::kAcCancelMerge) {
-        dmx::merge_cancel_all();
-        ESP_LOGI(TAG, "ArtAddress: merge cancelled");
-    } else if (parser::is_merge_ltp_command(f.command) || parser::is_merge_htp_command(f.command)) {
-        const uint8_t mode = parser::is_merge_ltp_command(f.command) ? config::kMergeLtp
-                                                                     : config::kMergeHtp;
-        if (g.merge_mode != mode) {
-            g.merge_mode   = mode;
+        if (f.net_switch & 0x80) {
+            g.artnet_net   = f.net_switch & 0x7F;
             global_changed = true;
         }
-        ESP_LOGI(TAG, "ArtAddress: merge mode %s", mode == config::kMergeLtp ? "LTP" : "HTP");
-    } else if (f.command != parser::kAcNone) {
-        ESP_LOGI(TAG, "ArtAddress command 0x%02X ignored", f.command);
-    }
+        if (f.sub_switch & 0x80) {
+            g.artnet_subnet = f.sub_switch & 0x0F;
+            global_changed  = true;
+        }
+        if (f.short_name[0] != '\0') {
+            std::memset(g.short_name, 0, sizeof(g.short_name));
+            std::memcpy(g.short_name, f.short_name, sizeof(g.short_name) - 1);
+            global_changed = true;
+        }
+        if (f.long_name[0] != '\0') {
+            std::memset(g.long_name, 0, sizeof(g.long_name));
+            std::memcpy(g.long_name, f.long_name, sizeof(g.long_name) - 1);
+            global_changed = true;
+        }
 
-    if (global_changed) {
-        config::set_global(g);
-        dmx::mark_global_dirty();
+        // SwOut programs the low nibble of a port's universe. BindIndex 0/1 →
+        // channels 1-4, BindIndex 2 → channels 5-8 (mirrors our ArtPollReply).
+        const uint8_t bind   = (f.bind_index <= 1) ? 1 : f.bind_index;
+        const size_t base_ch = static_cast<size_t>(bind - 1) * 4;
+        for (uint8_t p = 0; p < 4; ++p) {
+            if (!(f.sw_out[p] & 0x80)) continue;
+            const size_t ch = base_ch + p;
+            if (ch >= config::kNumChannels) continue;
+            auto c           = config::get_channel(ch);
+            c.universe_start = static_cast<uint16_t>((c.universe_start & ~0x0Fu) |
+                                                     (f.sw_out[p] & 0x0F));
+            config::set_channel(ch, c);
+            dmx::mark_channel_dirty(ch);
+        }
+
+        // Merge commands. The spec scopes AcMerge* to one port; pixfrog applies a
+        // single node-wide merge mode, so any port's command switches it globally.
+        if (f.command == parser::kAcCancelMerge) {
+            dmx::merge_cancel_all();
+            ESP_LOGI(TAG, "ArtAddress: merge cancelled");
+        } else if (parser::is_merge_ltp_command(f.command) ||
+                   parser::is_merge_htp_command(f.command)) {
+            const uint8_t mode = parser::is_merge_ltp_command(f.command) ? config::kMergeLtp
+                                                                         : config::kMergeHtp;
+            if (g.merge_mode != mode) {
+                g.merge_mode   = mode;
+                global_changed = true;
+            }
+            ESP_LOGI(TAG, "ArtAddress: merge mode %s", mode == config::kMergeLtp ? "LTP" : "HTP");
+        } else if (f.command != parser::kAcNone) {
+            ESP_LOGI(TAG, "ArtAddress command 0x%02X ignored", f.command);
+        }
+
+        if (global_changed) {
+            config::set_global(g);
+            dmx::mark_global_dirty();
+        }
     }
 
     send_poll_reply(from.sin_addr.s_addr);
@@ -204,26 +210,30 @@ void handle_ip_prog(const uint8_t* buf, size_t len, const sockaddr_in& from) {
     }
     dmx::note_ctrl_rx();
 
-    config::GlobalConfig g = config::get_global();
-    if (f.command & 0x80) {  // programming enabled
-        if (f.command & 0x10) {
-            // Reset to defaults: DHCP on, static fields cleared.
-            g.use_dhcp       = true;
-            g.static_ip      = 0;
-            g.static_mask    = 0;
-            g.static_gateway = 0;
-        } else {
-            if (f.command & 0x40) g.use_dhcp = true;
-            if (f.command & 0x04) {
-                g.static_ip = f.prog_ip;
-                g.use_dhcp  = false;
+    config::GlobalConfig g;
+    {
+        config::ScopedLock lock;  // read-modify-write, see handle_address
+        g = config::get_global();
+        if (f.command & 0x80) {  // programming enabled
+            if (f.command & 0x10) {
+                // Reset to defaults: DHCP on, static fields cleared.
+                g.use_dhcp       = true;
+                g.static_ip      = 0;
+                g.static_mask    = 0;
+                g.static_gateway = 0;
+            } else {
+                if (f.command & 0x40) g.use_dhcp = true;
+                if (f.command & 0x04) {
+                    g.static_ip = f.prog_ip;
+                    g.use_dhcp  = false;
+                }
+                if (f.command & 0x02) g.static_mask = f.prog_mask;
+                if (f.command & 0x08) g.static_gateway = f.prog_gw;
             }
-            if (f.command & 0x02) g.static_mask = f.prog_mask;
-            if (f.command & 0x08) g.static_gateway = f.prog_gw;
+            config::set_global(g);
+            dmx::mark_global_dirty();
+            ESP_LOGI(TAG, "ArtIpProg applied (cmd 0x%02X) — reboot to take effect", f.command);
         }
-        config::set_global(g);
-        dmx::mark_global_dirty();
-        ESP_LOGI(TAG, "ArtIpProg applied (cmd 0x%02X) — reboot to take effect", f.command);
     }
 
     if (g_sock < 0) return;

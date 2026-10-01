@@ -154,8 +154,12 @@ uint8_t* g_merge_staging = nullptr;
 // Per-channel last-activity timestamp (µs). 0 = never seen; kTerminatedUs =
 // the source announced its end (sACN stream_terminated).
 constexpr int64_t kTerminatedUs = INT64_MIN / 2;
-// Per-channel last-activity timestamp (µs). 0 = never seen.
-int64_t g_last_activity_us[config::kNumChannels]{};
+// Per-channel last-activity timestamp (µs). 0 = never seen. Written by the
+// receivers (core 0), read by render_task (core 1): a plain int64 is two
+// 32-bit accesses on the P4, so a reader could see mixed halves at a 2³² µs
+// rollover — one spurious failsafe frame. Load/store only (no RMW), so the
+// P4's word-sized RMW rule does not apply; IDF makes them indivisible.
+std::atomic<int64_t> g_last_activity_us[config::kNumChannels]{};
 // "Active" if last_activity within this window:
 constexpr int64_t kActivityWindowUs = 1'000'000;  // 1 second
 
@@ -659,7 +663,10 @@ namespace {
 void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t* buf, uint64_t t) {
     const uint8_t bpp = led::bytes_per_pixel(cc.protocol);
     if (src >= 0 && static_cast<size_t>(src) < config::num_scenes()) {
-        config::Scene scene = config::get_scene(static_cast<size_t>(src));
+        // A copy under the config lock: a scene-list edit (memmove) on another
+        // task cannot tear the scene being drawn.
+        config::Scene scene;
+        config::copy_scene(static_cast<size_t>(src), scene);
         if ((scene.channel_mask >> ch) & 1) {
             logic::apply_scene_override(scene, g_ovr[ch]);
             logic::fill_scene_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, scene, t);
@@ -681,10 +688,12 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
     // here — stale decode IS the hold.
     const auto& g = config::get_global();
     if (g.failsafe_mode != config::kFailsafeHold &&
-        logic::failsafe_due(g_last_activity_us[ch], esp_timer_get_time(), g.failsafe_timeout_s)) {
+        logic::failsafe_due(g_last_activity_us[ch].load(std::memory_order_relaxed),
+                            esp_timer_get_time(), g.failsafe_timeout_s)) {
         // Mode "scene": play the configured scene's effect on the lost channel —
         // only on the channels the scene targets; the others black out.
-        const auto& scene  = config::get_scene(g.failsafe_scene);
+        config::Scene scene;
+        config::copy_scene(g.failsafe_scene, scene);
         const bool in_mask = (scene.channel_mask >> ch) & 1;
         if (g.failsafe_mode == config::kFailsafeScene && in_mask) {
             logic::fill_scene_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, scene, t);
@@ -831,12 +840,12 @@ int channel_for_universe(uint16_t universe_number) {
 
 void note_channel_activity(size_t channel_index) {
     if (channel_index >= config::kNumChannels) return;
-    g_last_activity_us[channel_index] = esp_timer_get_time();
+    g_last_activity_us[channel_index].store(esp_timer_get_time(), std::memory_order_relaxed);
 }
 
 bool is_channel_active(size_t channel_index) {
     if (channel_index >= config::kNumChannels) return false;
-    const int64_t last = g_last_activity_us[channel_index];
+    const int64_t last = g_last_activity_us[channel_index].load(std::memory_order_relaxed);
     if (last == 0) return false;
     return (esp_timer_get_time() - last) < kActivityWindowUs;
 }
@@ -845,8 +854,8 @@ bool is_channel_failsafe(size_t channel_index) {
     if (channel_index >= config::kNumChannels) return false;
     const auto& g = config::get_global();
     if (g.failsafe_mode == config::kFailsafeHold) return false;
-    return logic::failsafe_due(g_last_activity_us[channel_index], esp_timer_get_time(),
-                               g.failsafe_timeout_s);
+    return logic::failsafe_due(g_last_activity_us[channel_index].load(std::memory_order_relaxed),
+                               esp_timer_get_time(), g.failsafe_timeout_s);
 }
 
 void note_universe_terminated(uint16_t universe_number) {
@@ -855,7 +864,8 @@ void note_universe_terminated(uint16_t universe_number) {
     // Age the timestamp far into the past: still "was active once" (non-zero),
     // but past any timeout whatever the uptime — ageing it to boot+1 µs left a
     // stream terminated within the first failsafe_timeout_s of uptime ignored.
-    if (g_last_activity_us[ch] != 0) g_last_activity_us[ch] = kTerminatedUs;
+    if (g_last_activity_us[ch].load(std::memory_order_relaxed) != 0)
+        g_last_activity_us[ch].store(kTerminatedUs, std::memory_order_relaxed);
 }
 
 // Seed a pool slot in the back bank from the front bank the first time it is

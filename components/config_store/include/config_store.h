@@ -9,8 +9,14 @@
 //
 // init() loads everything into a RAM cache. get_*() return references into
 // that cache (no NVS access, safe from the render path); set_*() update the
-// cache then write the blob through. Writers (UI, web, console) are not
-// serialized against each other — see "Serialize config writes" in TODO.md.
+// cache then write the blob through.
+//
+// Concurrency: every setter (and every scene-list edit) takes one recursive
+// config lock, so two writers never interleave inside a struct. A caller's
+// read-modify-write (get → change a field → set) wraps itself in a
+// ScopedLock so another task's write cannot land in between and be lost. The
+// render task copies the scenes it draws with copy_scene() (under the lock),
+// never through a reference a list edit could memmove under it.
 
 #pragma once
 
@@ -412,6 +418,16 @@ inline void sanitize_channel(ChannelConfig& c) {
 void init();
 
 // Read-only access to current cached config (returns reference into static storage).
+// Holds the config lock (recursive) for a read-modify-write:
+//   { config::ScopedLock lock; auto g = config::get_global(); g.x = 1; config::set_global(g); }
+class ScopedLock {
+  public:
+    ScopedLock();
+    ~ScopedLock();
+    ScopedLock(const ScopedLock&)            = delete;
+    ScopedLock& operator=(const ScopedLock&) = delete;
+};
+
 const GlobalConfig& get_global();
 const ChannelConfig& get_channel(size_t channel_index);
 
@@ -424,6 +440,9 @@ bool set_channel(size_t channel_index, const ChannelConfig& cfg);
 // return a blank (black, no channels) scene rather than aliasing another one.
 size_t num_scenes();
 const Scene& get_scene(size_t scene_index);
+// A consistent copy of a scene, taken under the config lock (render path).
+// False, with `out` blanked, past the last scene.
+bool copy_scene(size_t scene_index, Scene& out);
 bool set_scene(size_t scene_index, const Scene& scene);
 // Structural edits also remap boot_scene / failsafe_scene; a deleted
 // reference is cleared (boot → none, failsafe scene mode → blackout).

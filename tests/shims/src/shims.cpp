@@ -248,6 +248,20 @@ SemaphoreHandle_t xSemaphoreCreateMutex() {
     if (shim::should_fail(shim::Fault::Semaphore)) return nullptr;
     return new shim_sem{ true, 1 };
 }
+// Single-threaded: a recursive mutex only counts its nesting depth.
+SemaphoreHandle_t xSemaphoreCreateRecursiveMutex() {
+    if (shim::should_fail(shim::Fault::Semaphore)) return nullptr;
+    return new shim_sem{ true, 0 };
+}
+BaseType_t xSemaphoreTakeRecursive(SemaphoreHandle_t s, TickType_t) {
+    ++s->count;
+    return pdTRUE;
+}
+BaseType_t xSemaphoreGiveRecursive(SemaphoreHandle_t s) {
+    if (s->count == 0) std::abort();  // given more than taken: an unbalanced lock
+    --s->count;
+    return pdTRUE;
+}
 SemaphoreHandle_t xSemaphoreCreateBinary() {
     if (shim::should_fail(shim::Fault::Semaphore)) return nullptr;
     return new shim_sem{ false, 0 };
