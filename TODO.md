@@ -111,9 +111,11 @@ a password protects once set; none of them may make it mandatory.
 - [ ] **Backup filename** — include the date and `short_name` in the
       `Content-Disposition` name (several boxes collide on
       `pixfrog-config.json`).
-- [ ] **CSS classes instead of inline styles** — the UI is inline styles in
-      HTML and JS templates (a theme change was a 660-line diff); move the look
-      to classes + CSS variables, still one embedded file.
+- [ ] **Dead icon colours** — 7 `<i data-lucide style="color:…">` never
+      showed their colour (lucide drops `style` when it swaps in the `<svg>`):
+      decide per icon whether the colour was meant, then move it to a class.
+- [ ] **More classes** — ~330 inline styles remain (one-off layout, JS-built
+      rows); fold further repeats into classes as screens are touched.
 
 ## Hardware & bench
 

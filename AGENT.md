@@ -99,6 +99,14 @@ UI in an `iframe` (`/?embed=1` hides the device bar in the framed child) — no
 cross-origin writes. All JSON GET responses carry `Access-Control-Allow-Origin: *`
 (simple read-only requests, no preflight); writes stay behind Basic auth.
 
+SPA styling (`web_ui.html`, one embedded file): colours are `var(--…)` from the
+`:root` palette (never a raw theme hex — a theme change is that one line);
+repeated looks are classes (`.field`, `.f-label`, `.eyebrow`, `.card`, …) and
+buttons carry their role (`.btn-pri` / `.btn-sec` / `.btn-dng`, which own the
+hover); one-off layout and JS state (`display:none`) stay inline. Canvas
+colours (`data-color`, sparklines) stay hex. Lucide swaps `<i>` for `<svg>`
+keeping `class` but not `style`: colour an icon through a class or its parent.
+
 Auth: HTTP Basic on every POST/DELETE and on the two GETs that may leak a
 secret (`/api/logs`, `/api/coredump` — raw RAM); other GETs stay open. Enabled by setting an admin
 password (`web_password` via the SPA, `/api/global`, or UART
