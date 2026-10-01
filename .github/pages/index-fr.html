@@ -31,6 +31,7 @@
     <link rel="stylesheet" href="./style.css" />
     <script src="./nav.js" defer></script>
     <script src="./hero.js" defer></script>
+    <script src="./compare.js" defer></script>
   </head>
   <body>
     <header class="nav">
@@ -105,39 +106,44 @@
             <span class="sec-num">01</span>
             <h2>Un rack complet, ouvert et documenté.</h2>
           </div>
-          <div class="media-pair">
-            <figure class="figure">
-              <div class="well">
-                <img
-                  src="./img/rack-open.jpg"
-                  alt="Intérieur du rack pixfrog : carte fille, alimentation et grilles de ventilation"
-                  loading="lazy"
-                  onerror="this.closest('figure').remove()"
-                />
-              </div>
-              <figcaption>
+          <!-- Before/after: the open render is uncovered left of the handle
+               (compare.js); both renders share one camera. -->
+          <figure class="figure compare-figure">
+            <div class="well compare" data-compare>
+              <img
+                src="./img/rack-full.jpg"
+                alt="Rack pixfrog 1U, huit sorties XLR en face avant"
+                loading="lazy"
+              />
+              <img
+                class="compare-top"
+                src="./img/rack-open.jpg"
+                alt="Intérieur du rack pixfrog : carte fille, alimentation et grilles de ventilation"
+                loading="lazy"
+              />
+              <span class="compare-tag open">Ouvert</span>
+              <span class="compare-tag closed">Fermé</span>
+              <span class="compare-line" aria-hidden="true"></span>
+              <span class="compare-grip" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m9 6-6 6 6 6" /><path d="m15 6 6 6-6 6" />
+                </svg>
+              </span>
+              <input class="compare-range" type="range" min="0" max="100" value="30"
+                aria-label="Capot du rack : glisser pour ouvrir" />
+            </div>
+            <figcaption class="compare-caption">
+              <div>
                 <b>Réparable</b>
-                <p>Carte fille sur bornier débrochable, alimentation séparée.
-                  Tout est remplaçable, tout est publié.</p>
-              </figcaption>
-            </figure>
-            <figure class="figure">
-              <div class="well">
-                <img
-                  src="./img/rack-full.jpg"
-                  alt="Rack pixfrog 1U, huit sorties XLR en face avant"
-                  loading="lazy"
-                  onerror="this.closest('figure').remove()"
-                />
+                <p>Carte fille sur bornier débrochable, alimentation séparée. Tout est remplaçable, tout est publié.</p>
               </div>
-              <figcaption>
+              <div>
                 <b>8 × XLR, alimentation interne, 1U</b>
-                <p>Sorties repérées CH1 à CH8, fixation rack standard,
-                  ventilation passive. Le patch se fait en façade, sans
-                  démontage.</p>
-              </figcaption>
-            </figure>
-          </div>
+                <p>Sorties repérées CH1 à CH8, fixation rack standard, ventilation passive. Le patch se fait en façade, sans démontage.</p>
+              </div>
+            </figcaption>
+          </figure>
           <div class="metastrip">
             <span><b>FAILSAFE</b> · repli par canal</span>
             <span><b>NVS</b> · réglages persistants</span>
