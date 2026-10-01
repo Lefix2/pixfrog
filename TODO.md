@@ -115,9 +115,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Network & protocols
 
-- [ ] ★ **DHCP-timeout fallback address** — with no DHCP server the box stays
-      at 0.0.0.0 forever; fall back to link-local 169.254.x.x (or Art-Net
-      2.x.x.x) so "plug a laptop in and configure" works.
 - [ ] **Unique mDNS hostname** — the fixed `pixfrog` collides on `.local`
       with several boxes; derive `pixfrog-XXXX` from the MAC.
 - [ ] **ArtSync / sACN sync mode** — banks are published on the first dirty
