@@ -10,6 +10,7 @@ USB reflash).
 import gzip
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -79,10 +80,21 @@ def run(board: Board):
             board.watch_log("pixfrog.local now points here", deadline=10))
     board.sync(deadline=5)
     time.sleep(1)
-    st = json.loads(http("/api/status").stdout or "{}")
+    st = json.loads(http("/api/status")[1] or "{}")
     c.check("status names the box pixfrog-xxxx",
             str(st.get("host", "")).startswith("pixfrog-") and len(st.get("host", "")) == 12)
     c.check("status says it holds the alias", st.get("alias") is True)
+    # Ask the board's responder for both names (WSL has no route for mDNS
+    # multicast; Windows does, through powershell.exe).
+    if shutil.which("powershell.exe"):
+        ps1 = subprocess.run(["wslpath", "-w", os.path.join(os.path.dirname(__file__),
+                                                            "mdns_query.ps1")],
+                             capture_output=True, text=True).stdout.strip()
+        for name in (st.get("host", "") + ".local", "pixfrog.local"):
+            out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                                  "-File", ps1, "-Name", name, "-Board", BOARD_IP],
+                                 capture_output=True, text=True, timeout=30).stdout
+            c.check(f"mDNS answers {name}", f"ip={BOARD_IP}" in out)
 
     # ── Coredump cycle ──────────────────────────────────────────────────────
     http("/api/coredump", "-X", "DELETE")  # clear any leftover dump

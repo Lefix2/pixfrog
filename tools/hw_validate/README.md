@@ -25,7 +25,7 @@ PORT=/dev/ttyACM1 BOARD_IP=10.0.0.5 ./run_all.py
 | `fseq` | upload to SD, playback position/duration, console seek, ArtTimeCode seek, FPP MultiSync start/sync/stop/hot-join (needs a microSD in the board) |
 | `display` | backlight level + idle dim + dim delay: console ranges, NVS persistence, web round-trip |
 | `auth` | open-by-default, 401s, flat brute-force delay, UART recovery |
-| `webops` | `/api/status` fields, gzipped SPA + ETag/304, mDNS announce, coredump cycle |
+| `webops` | `/api/status` fields, gzipped SPA + ETag/304, mDNS: unique name + `pixfrog.local` alias (log, status, and a unicast query through `powershell.exe` when present), coredump cycle |
 | `ota` | upload → slot swap → confirmation after 30 s of rendering; then a second upload reset before confirming → bootloader rollback, record on console + `/api/status`, web acknowledge (needs `build/pixfrog.bin`, ~3 min) |
 
 Conventions (see `pixfrog_uart.py`):
