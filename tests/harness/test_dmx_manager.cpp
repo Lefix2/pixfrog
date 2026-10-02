@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "config_store.h"
 #include "dmx_logic.h"
@@ -269,16 +270,41 @@ TEST(playing_scene_follows_list_edits) {
     EXPECT_EQ(dmx::active_scene(), -1);
 }
 
-TEST(identify_blinks_at_2hz_and_expires) {
-    dmx::identify_start(0, 2);
-    shim::set_time_us((shim::now_us() / 500000 + 1) * 500000);  // align on a 500 ms edge
-    const uint8_t first = decode0()[0];
+// Three blinks at 2 Hz (lit first), then the output is back to its show.
+TEST(identify_blinks_three_times_then_ends) {
+    one_channel(4);
+    dmx::identify_start(0);
+    std::string seen;
+    for (int i = 0; i < 7; ++i, shim::advance_ms(250))
+        seen += decode0()[0] == 255 ? '#' : '.';
+    EXPECT_STREQ(seen.c_str(), "#.#.#..");
+    EXPECT_EQ(dmx::identify_channel(), -1);  // 1.5 s: done
+}
+
+// The dashboard's identify: every configured output in turn, in channel order.
+TEST(identify_runs_the_outputs_one_after_the_other) {
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        auto c     = config::get_channel(ch);
+        c.protocol = (ch == 1 || ch == 4) ? led::Protocol::WS2815 : led::Protocol::Off;
+        config::set_channel(ch, c);
+    }
+    EXPECT_EQ(dmx::identify_configured_outputs(), 0x12);
+    dmx::identify_outputs(dmx::identify_configured_outputs());
+    EXPECT_EQ(dmx::identify_channel(), 1);
+    EXPECT_TRUE(dmx::identify_lit());
     shim::advance_ms(250);
-    const uint8_t second = decode0()[0];
-    EXPECT_TRUE(first != second);
-    EXPECT_TRUE(first == 255 || second == 255);
-    shim::advance_ms(2500);
+    EXPECT_FALSE(dmx::identify_lit());
+    shim::advance_ms(1250);  // output 2's three blinks are over
+    EXPECT_EQ(dmx::identify_channel(), 4);
+    EXPECT_TRUE(dmx::identify_lit());
+    shim::advance_ms(1500);
     EXPECT_EQ(dmx::identify_channel(), -1);
+    EXPECT_FALSE(dmx::identify_lit());
+    dmx::identify_outputs(0);  // nothing configured: nothing to do
+    EXPECT_EQ(dmx::identify_channel(), -1);
+    dmx::identify_start(9);  // out of range: ignored
+    EXPECT_EQ(dmx::identify_channel(), -1);
+    one_channel();
 }
 
 TEST(htp_merge_of_two_sources_and_third_rejected) {
@@ -490,7 +516,7 @@ TEST(master_blackout_and_strobe_act_on_the_rendered_output) {
 
 TEST(identify_stays_visible_through_a_blackout) {
     dmx::blackout_set(dmx::kAllOutputs, true);
-    dmx::identify_start(0, 5);
+    dmx::identify_start(0);
     uint8_t seen = 0;
     for (int i = 0; i < 4; ++i, shim::advance_ms(250))
         seen = static_cast<uint8_t>(seen | decode0()[0]);

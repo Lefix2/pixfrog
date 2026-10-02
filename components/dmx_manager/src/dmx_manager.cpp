@@ -130,8 +130,11 @@ std::atomic<bool> g_fseq_active{ false };
 // Identify blink: channel in the high byte (0xFF = off), expiry in ms since
 // boot in the low 24 bits won't fit — use two relaxed atomics; tearing across
 // them costs at most one oddly-timed frame.
-std::atomic<int8_t> g_identify_ch{ -1 };
-std::atomic<uint32_t> g_identify_until_ms{ 0 };
+// Identify sequence: the outputs left to blink (bit n = output n, 32-bit for
+// the P4 RMW rule), its start and the blinks per output.
+std::atomic<uint32_t> g_identify_mask{ 0 };
+std::atomic<uint32_t> g_identify_t0_ms{ 0 };
+std::atomic<uint32_t> g_identify_blinks{ kIdentifyBlinks };
 
 // Universe → slot lookup, indexed by the flat 15-bit Art-Net Port-Address.
 // Sized for the whole addressable range so routing is a single load; every
@@ -399,26 +402,58 @@ uint16_t preview_emit_count() {
     return g_preview_emit.load(std::memory_order_relaxed);
 }
 
-void identify_start(size_t channel_index, uint16_t seconds) {
+void identify_outputs(uint8_t outputs, uint8_t blinks) {
+    const uint32_t mask = outputs & ((1u << config::kNumChannels) - 1u);
+    g_identify_blinks.store(blinks ? blinks : 1, std::memory_order_relaxed);
+    g_identify_t0_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000),
+                           std::memory_order_relaxed);
+    g_identify_mask.store(mask, std::memory_order_release);
+}
+
+void identify_start(size_t channel_index, uint8_t blinks) {
     if (channel_index >= config::kNumChannels) return;
-    g_identify_until_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000) + seconds * 1000u,
-                              std::memory_order_relaxed);
-    g_identify_ch.store(static_cast<int8_t>(channel_index), std::memory_order_relaxed);
+    identify_outputs(static_cast<uint8_t>(1u << channel_index), blinks);
+}
+
+uint8_t identify_configured_outputs() {
+    uint8_t mask = 0;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
+        if (config::get_channel(ch).protocol != led::Protocol::Off) mask |= 1u << ch;
+    return mask;
 }
 
 void identify_stop() {
-    g_identify_ch.store(-1, std::memory_order_relaxed);
+    g_identify_mask.store(0, std::memory_order_relaxed);
 }
 
-int identify_channel() {
-    const int ch = g_identify_ch.load(std::memory_order_relaxed);
-    if (ch < 0) return -1;
-    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
-    if (static_cast<int32_t>(g_identify_until_ms.load(std::memory_order_relaxed) - now) <= 0) {
-        g_identify_ch.store(-1, std::memory_order_relaxed);
-        return -1;
+namespace {
+// Time into the sequence, and which output that falls on (-1 once done).
+int identify_at(uint32_t* phase_ms) {
+    const uint32_t mask = g_identify_mask.load(std::memory_order_acquire);
+    if (!mask) return -1;
+    const uint32_t slot = g_identify_blinks.load(std::memory_order_relaxed) * kIdentifyPeriodMs;
+    const uint32_t now  = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    const uint32_t t    = now - g_identify_t0_ms.load(std::memory_order_relaxed);
+    uint32_t idx        = t / slot;
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        if (!(mask & (1u << ch))) continue;
+        if (idx-- == 0) {
+            if (phase_ms) *phase_ms = t % slot;
+            return static_cast<int>(ch);
+        }
     }
-    return ch;
+    g_identify_mask.store(0, std::memory_order_relaxed);  // the last one is done
+    return -1;
+}
+}  // namespace
+
+int identify_channel() {
+    return identify_at(nullptr);
+}
+
+bool identify_lit() {
+    uint32_t phase = 0;
+    return identify_at(&phase) >= 0 && phase % kIdentifyPeriodMs < kIdentifyPeriodMs / 2;
 }
 
 void fseq_set_active(bool active) {
@@ -720,9 +755,8 @@ bool decode_pixels_for_channel(size_t ch) {
 
     // Identify blink: top priority — it answers "which strip is this?".
     if (identify_channel() == static_cast<int>(ch)) {
-        const uint8_t bpp  = led::bytes_per_pixel(cc.protocol);
-        const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
-        const uint8_t lvl  = ((now / 250) & 1) ? 255 : 0;  // 2 Hz blink
+        const uint8_t bpp = led::bytes_per_pixel(cc.protocol);
+        const uint8_t lvl = identify_lit() ? 255 : 0;  // 2 Hz blink, starting lit
         logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count, bpp,
                                      config::kFailsafeColor, lvl, lvl, lvl);
         return true;

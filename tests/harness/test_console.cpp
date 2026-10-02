@@ -215,9 +215,12 @@ TEST(fseq_commands_drive_the_player) {
 }
 
 TEST(identify_cal_loglevel_autopatch) {
-    EXPECT_TRUE(run("identify 3 5"));
+    EXPECT_TRUE(run("identify 3 5"));  // 5 blinks
     EXPECT_EQ(dmx::identify_channel(), 3);
     EXPECT_FALSE(run("identify 3 0"));
+    EXPECT_TRUE(run("identify all"));
+    EXPECT_TRUE(run("identify all 2"));
+    EXPECT_FALSE(run("identify all 99"));
     EXPECT_TRUE(run("cal 1"));
     EXPECT_EQ(fake::modules().cal_mode, 1);
     EXPECT_FALSE(run("cal 7"));

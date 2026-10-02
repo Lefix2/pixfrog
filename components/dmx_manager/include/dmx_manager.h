@@ -179,11 +179,18 @@ uint16_t pixel_preview_count();
 uint16_t preview_emit_count();
 
 // ── Channel identify (commissioning) ───────────────────────────────────────
-// Blinks the channel full white at 2 Hz for `seconds` so the physical strip
-// can be matched to its config slot. Auto-expires; any new call retargets.
-void identify_start(size_t channel_index, uint16_t seconds = 10);
+// Blinks outputs full white, `blinks` times at 2 Hz each (250 ms on, 250 ms
+// off), one output after the other in channel order, so each physical strip
+// can be matched to its config slot. Ends on its own; any new call replaces
+// the running one.
+constexpr uint8_t kIdentifyBlinks    = 3;
+constexpr uint32_t kIdentifyPeriodMs = 500;
+void identify_start(size_t channel_index, uint8_t blinks = kIdentifyBlinks);
+void identify_outputs(uint8_t outputs, uint8_t blinks = kIdentifyBlinks);  // bit n = output n
+uint8_t identify_configured_outputs();                                     // every output not Off
 void identify_stop();
-int identify_channel();  // -1 = inactive
+int identify_channel();  // the output blinking now, -1 = none
+bool identify_lit();     // its blink phase now (on/off)
 
 // ── Standalone scenes (manual override), one per output ────────────────────
 // Every output plays its own scene or the live input, so several scenes run

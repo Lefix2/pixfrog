@@ -679,7 +679,7 @@ OnClick channel_action(ChItem it) {
         };
     case ChItem::Gaps: return [](uint8_t) { go(NodeId::Gaps); };
     case ChItem::Identify:
-        return [](uint8_t) { dmx::identify_start(s.channel_index); };  // 10 s blink; stay
+        return [](uint8_t) { dmx::identify_start(s.channel_index); };  // 3 blinks; stay
     case ChItem::Back: return [](uint8_t) { go_back(); };
     }
     return nullptr;
