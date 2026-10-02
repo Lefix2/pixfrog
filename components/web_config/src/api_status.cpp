@@ -111,6 +111,16 @@ esp_err_t handle_get_diag(httpd_req_t* req) {
     cJSON_AddNumberToObject(jm, "psram_total",
                             static_cast<double>(heap_caps_get_total_size(MALLOC_CAP_SPIRAM)));
     cJSON_AddNumberToObject(jm, "fb_bytes", static_cast<double>(output::fb_bytes()));
+    // Internal RAM is the scarce one: DMA buffers (display SPI, Ethernet) must
+    // come from it, and the largest free DMA block is what a transfer needs.
+    cJSON_AddNumberToObject(jm, "internal_free",
+                            static_cast<double>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+    cJSON_AddNumberToObject(
+        jm, "internal_min",
+        static_cast<double>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)));
+    cJSON_AddNumberToObject(jm, "internal_dma_largest",
+                            static_cast<double>(heap_caps_get_largest_free_block(
+                                MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)));
     cJSON_AddItemToObject(root, "mem", jm);
 
     // System identity.

@@ -1,6 +1,7 @@
 // Host shim: cache maintenance is a no-op on the host (can be made to fail).
 #pragma once
 #include <cstddef>
+#include <cstdint>
 
 #include "esp_err.h"
 

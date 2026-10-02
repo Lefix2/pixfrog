@@ -239,6 +239,7 @@ uint32_t display_stalls() {
 
 namespace detail {
 void note_display_stall() {
+    canvas_invalidate();  // the dropped band would stay stale: repaint it all next frame
     const uint32_t n = g_stalls.fetch_add(1, std::memory_order_relaxed) + 1;
     if (n == 1 || n % 100 == 0) ESP_LOGW(TAG, "display transfer stalled (%u so far)", (unsigned)n);
 }

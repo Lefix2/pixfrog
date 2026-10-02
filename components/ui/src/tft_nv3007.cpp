@@ -41,10 +41,17 @@ constexpr int kGramXOffset = 0x0C;
 // Landscape rows per transposed chunk. canvas_flush() sends bands of ≤ 32
 // rows; the chunk loop in tft_draw_bitmap keeps larger callers safe too.
 constexpr int kXposeRows = 32;
-// Staging for one transposed chunk (internal RAM, DMA-safe): ≤ kXposeRows
-// portrait columns × the full 428-row native height. Zero-initialised (.bss),
-// which the GRAM black-fill at init relies on.
-uint16_t s_xpose[kXposeRows * kNativeH];
+// Staging for one transposed chunk: ≤ kXposeRows portrait columns × the full
+// 428-row native height. On the P4 the SPI DMA wants the address and the
+// length of every transfer on the cache line (internal RAM sits behind L1),
+// else spi_master mallocs a bounce copy of the whole transfer — up to 27 KB
+// per push out of ~50 KB of internal RAM, until a malloc fails (ESP_ERR_NO_MEM,
+// seen after ~1 h on the bench). So: allocated on the line, zeroed (the GRAM
+// black-fill at init relies on it), and push_colors() sends the aligned bulk
+// straight from it.
+constexpr size_t kXposeBytes = kXposeRows * kNativeH * sizeof(uint16_t);
+uint16_t* s_xpose            = nullptr;
+size_t g_align               = 4;  // SPI DMA alignment (cache line on the P4)
 
 // Vendor init sequence, flat {cmd, len, params…} stream. Register meanings are
 // undocumented (no public NV3007 datasheet); the values are the vendor's and
@@ -196,21 +203,34 @@ void set_window(int xs, int xe, int ys, int ye) {
     esp_lcd_panel_io_tx_param(g_io, 0x2B, ra, sizeof(ra));
 }
 
-// Blocking RAMWR: waits for the DMA completion callback so the caller can
-// reuse the staging buffer as soon as this returns. Bounded: a transfer the
-// driver refuses, or a completion that never fires, used to wedge ui_task
-// for good (frozen screen and knob, LEDs and network still running).
+// One colour transfer, waited for. Bounded: a transfer the driver refuses, or
+// a completion that never fires, used to wedge ui_task for good (frozen screen
+// and knob, LEDs and network still running).
 constexpr TickType_t kTxTimeout = pdMS_TO_TICKS(250);  // a full frame is ~25 ms
 
-void push_colors(const uint16_t* px, size_t count) {
+bool tx_wait(int cmd, const void* data, size_t bytes) {
     xSemaphoreTake(g_tx_done, 0);  // drop a late completion of a timed-out push
-    const esp_err_t err = esp_lcd_panel_io_tx_color(g_io, 0x2C, px, count * sizeof(uint16_t));
+    const esp_err_t err = esp_lcd_panel_io_tx_color(g_io, cmd, data, bytes);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "RAMWR refused: %s", esp_err_to_name(err));
         note_display_stall();
-        return;
+        return false;
     }
-    if (xSemaphoreTake(g_tx_done, kTxTimeout) != pdTRUE) note_display_stall();
+    if (xSemaphoreTake(g_tx_done, kTxTimeout) == pdTRUE) return true;
+    note_display_stall();
+    return false;
+}
+
+// Blocking RAMWR of `px` (in s_xpose): the bulk that fills whole cache lines
+// goes out from the buffer itself; the few bytes left (< one line) follow with
+// no command phase, which continues the same RAMWR (esp_lcd's own chunked
+// transfers rely on it), so spi_master copies at most those.
+void push_colors(const uint16_t* px, size_t count) {
+    const size_t bytes = count * sizeof(uint16_t);
+    const size_t bulk  = bytes & ~(g_align - 1);
+    const auto* p      = reinterpret_cast<const uint8_t*>(px);
+    if (bulk && !tx_wait(0x2C, p, bulk)) return;
+    if (bytes > bulk) tx_wait(bulk ? -1 : 0x2C, p + bulk, bytes - bulk);
 }
 
 }  // namespace
@@ -228,6 +248,23 @@ bool tft_init(const TftConfig& cfg) {
 
     g_tx_done = xSemaphoreCreateBinary();
     if (!g_tx_done) return false;
+        // spi_master's own rule (esp_cache_get_alignment, private in IDF 5.5): the
+        // L1 line where internal RAM is cached, 4 bytes elsewhere.
+#ifdef CONFIG_CACHE_L1_CACHE_LINE_SIZE
+    g_align = CONFIG_CACHE_L1_CACHE_LINE_SIZE;
+#else
+    g_align = 4;
+#endif
+    if (!s_xpose) {
+        s_xpose = static_cast<uint16_t*>(
+            heap_caps_aligned_calloc(g_align, 1, (kXposeBytes + g_align - 1) & ~(g_align - 1),
+                                     MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        if (!s_xpose) {
+            ESP_LOGE(TAG, "no internal DMA RAM for the %u B staging buffer",
+                     static_cast<unsigned>(kXposeBytes));
+            return false;
+        }
+    }
 
     spi_bus_config_t bus{};
     bus.mosi_io_num     = cfg.mosi_gpio;
@@ -235,7 +272,7 @@ bool tft_init(const TftConfig& cfg) {
     bus.sclk_io_num     = cfg.clk_gpio;
     bus.quadwp_io_num   = -1;
     bus.quadhd_io_num   = -1;
-    bus.max_transfer_sz = sizeof(s_xpose);
+    bus.max_transfer_sz = kXposeBytes;
 
     if (spi_bus_initialize(static_cast<spi_host_device_t>(cfg.spi_host), &bus, SPI_DMA_CH_AUTO) !=
         ESP_OK) {
