@@ -656,6 +656,12 @@ esp-web-install-button {
   line-height: 1.55;
   color: #9ea098;
 }
+.figure figcaption p a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+}
 /* Before/after rack (landing §01): the closed render underneath, the open
    one clipped to the left of --pos (set by compare.js). A transparent range
    input over the image does the dragging and the keyboard. */

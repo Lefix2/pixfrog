@@ -978,6 +978,9 @@ function api(method,path,body,retry){
     return ct.indexOf('json')>=0 ? r.json() : r.text();
   });
 }
+// Downloads go through here: the GitHub Pages demo (tools/demo/mock.js) has no
+// box to navigate to and builds the file in the page instead.
+function downloadUrl(u){ if(window.pfDemoDownload) return window.pfDemoDownload(u); location.href=u; }
 function toast(msg,err){ var e=document.querySelector('[data-live="save-state"]'); if(!e) return; e.textContent=msg; e.style.color=err?'var(--danger)':'var(--accent)'; }
 
 /* ─────────── dirty / save bar ─────────── */
@@ -2030,7 +2033,7 @@ function doAction(a){
   else if(a==='autopatch'){ api('POST','/api/autopatch',{base:0}).then(function(r){ toast(t('Patch — next free universe U')+r.next_free); reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='logs-refresh'){ fetchLogs(); }
   else if(a==='logs-download'){ downloadLogs(); }
-  else if(a==='export'){ var d=new Date(); location.href='/api/backup?date='+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  else if(a==='export'){ var d=new Date(); downloadUrl('/api/backup?date='+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')); }
   else if(a==='import'){ el('restore-file').click(); }
   else if(a==='ota'){ el('ota-file').click(); }
   else if(a==='fseq-upload'){ el('fseq-file').click(); }

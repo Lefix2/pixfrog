@@ -14,6 +14,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import time
 import urllib.request
 
@@ -535,3 +536,53 @@ def test_icon_colours_reach_the_svg(page, device):
     nav(page, "channels")
     zap = page.locator('[data-action="identify-chan"] svg').first
     assert zap.evaluate("e => getComputedStyle(e).color") == accent
+
+
+# ── The GitHub Pages demo (tools/demo): the SPA against a simulated box ───────
+
+def test_the_demo_snapshot_covers_the_api():
+    # mock.js starts from tools/demo/snapshot.json: a field the API gained
+    # since is missing from the demo until the snapshot is refreshed.
+    r = subprocess.run([sys.executable, os.path.join(REPO, "tools", "demo", "snapshot.py"), "--check"],
+                       capture_output=True, text=True, env=dict(os.environ, PIXFROG_API_HOST=HOST_BIN))
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
+    import functools
+    import http.server
+    import threading
+    subprocess.run([sys.executable, os.path.join(REPO, "tools", "demo", "build.py"),
+                    str(tmp_path / "demo")], check=True, capture_output=True)
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(tmp_path))
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, accept_downloads=True)
+    errors = []
+    try:
+        pg = ctx.new_page()
+        pg.on("pageerror", lambda e: errors.append(str(e)))
+        pg.goto(f"http://127.0.0.1:{srv.server_port}/demo/")
+        expect(pg.locator("#pf-demo-banner")).to_contain_text("simulated box")
+        expect(pg.locator("[data-screen-title]")).to_have_text("Dashboard")
+        expect(pg.locator('canvas[data-preview="0"]')).to_have_attribute("width", re.compile(r"[1-9]\d*"))
+        for screen in ["scenes", "fseq", "channels", "control", "network", "artnet", "system",
+                       "diag", "dashboard"]:
+            nav(pg, screen)
+            expect(pg.locator("[data-screen-title]")).not_to_have_text("")
+        # A setting sticks in the page (the simulated box keeps it).
+        nav(pg, "network")
+        pg.fill("#n-host", "demo-rack")
+        pg.locator('[data-action="save"]').first.click()
+        expect(pg.locator('[data-live="node-name"]').first).to_have_text("demo-rack")
+        # Identify runs every configured output; the backup downloads.
+        nav(pg, "dashboard")
+        pg.locator('[data-action="identify"]').first.click()
+        expect(pg.locator('[data-live="save-state"]').first).to_contain_text("Identifying outputs")
+        with pg.expect_download() as dl:
+            pg.locator('[data-action="export"]').first.click()
+        assert json.loads(open(dl.value.path()).read())["global"]["short_name"] == "demo-rack"
+    finally:
+        ctx.close()
+        srv.shutdown()
+    assert not errors, errors
