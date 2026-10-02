@@ -118,9 +118,6 @@ a password protects once set; none of them may make it mandatory.
       real NVS on emulated flash, lwIP on host sockets; the portable components
       could run on the real IDF implementations. Unknown: `esp_http_server` has
       no linux support; cost: slower builds, no fake clock.
-- [ ] **Share the JSON field parsers** between the `POST` handlers
-      (`api_config.cpp`: `/api/global`, `/api/channel`) and `restore`: each
-      field is parsed twice today, with the same bounds written twice.
 
 ## Documentation & website
 

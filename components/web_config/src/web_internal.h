@@ -94,7 +94,17 @@ cJSON* build_control_json();  // api_show.cpp
 bool apply_control_json(const cJSON* jc, config::ControlConfig& c, const char** why);
 cJSON* build_show_json();
 void apply_scene_json(const cJSON* js, config::Scene& sc);  // api_config.cpp
-cJSON* build_playlist_json();                               // api_fseq.cpp
+// What a global update changed that the caller must act on (POST only).
+struct GlobalApplied {
+    bool network = false;  // reboot to apply
+    bool web_off = false;  // web_enabled went false: stop this server
+    bool sacn    = false;  // sacn_enabled changed: start/stop the receiver
+    bool fpp     = false;  // fpp_remote changed
+};
+// Shared by POST /api/global|channel and restore; see api_config.cpp.
+GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const char** why);
+void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** why);
+cJSON* build_playlist_json();  // api_fseq.cpp
 bool apply_playlist_json(const cJSON* j, config::FseqPlaylist& p, const char** why);
 cJSON* build_status_json();  // api_status.cpp
 

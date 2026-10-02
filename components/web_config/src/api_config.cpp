@@ -197,137 +197,195 @@ esp_err_t handle_backup(httpd_req_t* req) {
     return send_json(req, root);
 }
 
-static void restore_global(cJSON* jg) {
-    config::GlobalConfig g = config::get_global();
-    cJSON* it;
-    auto num = [&](const char* k, double lo, double hi, double* out) {
-        it = cJSON_GetObjectItemCaseSensitive(jg, k);
-        if (cJSON_IsNumber(it) && it->valuedouble >= lo && it->valuedouble <= hi) {
-            *out = it->valuedouble;
-            return true;
-        }
-        return false;
-    };
-    auto getb = [&](const char* k, bool* out) {
-        it = cJSON_GetObjectItemCaseSensitive(jg, k);
-        if (cJSON_IsBool(it)) {
-            *out = cJSON_IsTrue(it);
-            return true;
-        }
-        return false;
-    };
-    auto getip = [&](const char* k, uint32_t* out) {
-        it = cJSON_GetObjectItemCaseSensitive(jg, k);
-        uint32_t x;
-        if (cJSON_IsString(it) && parse_ip(it->valuestring, x)) *out = x;
-    };
-    double v;
-    bool bv;
-    if (getb("dhcp", &bv)) g.use_dhcp = bv;
-    it = cJSON_GetObjectItemCaseSensitive(jg, "ip_fallback");
-    if (cJSON_IsString(it) && config::ip_fallback_from_id(it->valuestring) >= 0)
-        g.ip_fallback = static_cast<uint8_t>(config::ip_fallback_from_id(it->valuestring));
-    getip("ip", &g.static_ip);
-    getip("mask", &g.static_mask);
-    getip("gw", &g.static_gateway);
-    if (num("net", 0, 127, &v)) g.artnet_net = static_cast<uint8_t>(v);
-    if (num("subnet", 0, 15, &v)) g.artnet_subnet = static_cast<uint8_t>(v);
-    it = cJSON_GetObjectItemCaseSensitive(jg, "short_name");
-    if (cJSON_IsString(it)) {
-        memset(g.short_name, 0, sizeof(g.short_name));
-        strncpy(g.short_name, it->valuestring, sizeof(g.short_name) - 1);
+// ── Field parsers shared by POST /api/global|channel and restore ──────────
+// One parser per object, so a field's bounds are written once. Every valid
+// field is applied; an invalid number, bool or colour is skipped. The first
+// field a POST must refuse (an address, an enum name) is reported in *why:
+// the handler answers 400 and saves nothing, restore keeps the rest.
+
+namespace {
+
+const cJSON* field(const cJSON* j, const char* key) {
+    return cJSON_GetObjectItemCaseSensitive(j, key);
+}
+
+bool json_u32(const cJSON* j, const char* key, uint32_t lo, uint32_t hi, uint32_t& out) {
+    const cJSON* it = field(j, key);
+    if (!cJSON_IsNumber(it)) return false;
+    // Range-check the double first: casting an out-of-range value (-5, 1e40)
+    // to uint32_t is undefined (RISC-V saturates -5 to 0).
+    const double d = it->valuedouble;
+    if (!(d >= lo && d <= hi)) return false;
+    out = static_cast<uint32_t>(d);
+    return true;
+}
+
+bool json_bool(const cJSON* j, const char* key, bool& out) {  // true/false or 0/1
+    const cJSON* it = field(j, key);
+    if (cJSON_IsBool(it)) {
+        out = cJSON_IsTrue(it);
+        return true;
     }
-    it = cJSON_GetObjectItemCaseSensitive(jg, "long_name");
-    if (cJSON_IsString(it)) {
-        memset(g.long_name, 0, sizeof(g.long_name));
-        strncpy(g.long_name, it->valuestring, sizeof(g.long_name) - 1);
+    if (cJSON_IsNumber(it)) {
+        out = it->valuedouble != 0;
+        return true;
     }
-    if (getb("reply_unicast", &bv)) g.artnet_poll_reply_unicast = bv;
-    if (num("refresh_hz", config::kMinRefreshHz, config::kMaxRefreshHz, &v))
-        g.refresh_rate_hz = static_cast<uint8_t>(v);
-    if (num("home_timeout_s", 0, 65535, &v)) g.home_timeout_s = static_cast<uint16_t>(v);
-    if (num("tft_brightness", config::kTftBrightnessMin, 100, &v))
-        g.tft_brightness = static_cast<uint8_t>(v);
-    if (num("tft_idle_dim", 0, 100, &v)) g.tft_idle_dim = static_cast<uint8_t>(v);
-    if (num("tft_dim_delay_s", 0, config::kTftDimDelayMaxS, &v))
-        g.tft_dim_delay_s = static_cast<uint16_t>(v);
-    if (getb("web_enabled", &bv)) g.web_enabled = bv;
-    if (getb("sacn_enabled", &bv)) g.sacn_enabled = bv;
-    if (num("failsafe_mode", 0, 3, &v)) g.failsafe_mode = static_cast<uint8_t>(v);
-    if (num("failsafe_timeout_s", 0, 3600, &v)) g.failsafe_timeout_s = static_cast<uint16_t>(v);
-    it = cJSON_GetObjectItemCaseSensitive(jg, "failsafe_color");
-    if (cJSON_IsString(it)) {
-        unsigned cr, cg, cb;
-        if (sscanf(it->valuestring[0] == '#' ? it->valuestring + 1 : it->valuestring,
-                   "%02x%02x%02x", &cr, &cg, &cb) == 3) {
-            g.failsafe_r = static_cast<uint8_t>(cr);
-            g.failsafe_g = static_cast<uint8_t>(cg);
-            g.failsafe_b = static_cast<uint8_t>(cb);
+    return false;
+}
+
+const char* json_str(const cJSON* j, const char* key) {
+    const cJSON* it = field(j, key);
+    return cJSON_IsString(it) ? it->valuestring : nullptr;
+}
+
+// "#rrggbb" or "rrggbb".
+bool hex_rgb(const char* s, unsigned& r, unsigned& g, unsigned& b) {
+    return s && sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &r, &g, &b) == 3;
+}
+
+void copy_name(char* dst, size_t cap, const char* src) {
+    memset(dst, 0, cap);
+    strncpy(dst, src, cap - 1);
+}
+
+void refuse(const char** why, const char* msg) {
+    if (why && !*why) *why = msg;
+}
+
+}  // namespace
+
+GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const char** why) {
+    GlobalApplied fx;
+    uint32_t u = 0;
+    bool b     = false;
+    const char* s;
+    if (json_bool(j, "dhcp", b)) {
+        g.use_dhcp = b;
+        fx.network = true;
+    }
+    struct {
+        const char* key;
+        uint32_t* dst;
+        const char* msg;
+    } const addrs[] = { { "ip", &g.static_ip, "bad ip" },
+                        { "mask", &g.static_mask, "bad mask" },
+                        { "gw", &g.static_gateway, "bad gw" } };
+    for (const auto& a : addrs) {
+        if (!(s = json_str(j, a.key))) continue;
+        uint32_t ip;
+        if (!parse_ip(s, ip)) {
+            refuse(why, a.msg);
+            continue;
         }
+        *a.dst     = ip;
+        fx.network = true;
+    }
+    // Read when the fallback is taken: no reboot needed.
+    if ((s = json_str(j, "ip_fallback"))) {
+        const int fb = config::ip_fallback_from_id(s);
+        if (fb < 0)
+            refuse(why, "ip_fallback: linklocal|artnet");
+        else
+            g.ip_fallback = static_cast<uint8_t>(fb);
+    }
+    if (json_u32(j, "net", 0, 127, u)) g.artnet_net = static_cast<uint8_t>(u);
+    if (json_u32(j, "subnet", 0, 15, u)) g.artnet_subnet = static_cast<uint8_t>(u);
+    if ((s = json_str(j, "short_name"))) copy_name(g.short_name, sizeof(g.short_name), s);
+    if ((s = json_str(j, "long_name"))) copy_name(g.long_name, sizeof(g.long_name), s);
+    if (json_bool(j, "reply_unicast", b)) g.artnet_poll_reply_unicast = b;
+    if (json_u32(j, "refresh_hz", config::kMinRefreshHz, config::kMaxRefreshHz, u))
+        g.refresh_rate_hz = static_cast<uint8_t>(u);
+    if (json_u32(j, "home_timeout_s", 0, 65535, u)) g.home_timeout_s = static_cast<uint16_t>(u);
+    if (json_u32(j, "tft_brightness", config::kTftBrightnessMin, 100, u))
+        g.tft_brightness = static_cast<uint8_t>(u);
+    if (json_u32(j, "tft_idle_dim", 0, 100, u)) g.tft_idle_dim = static_cast<uint8_t>(u);
+    if (json_u32(j, "tft_dim_delay_s", 0, config::kTftDimDelayMaxS, u))
+        g.tft_dim_delay_s = static_cast<uint16_t>(u);
+    if (json_bool(j, "web_enabled", b)) {
+        g.web_enabled = b;
+        fx.web_off    = !b;
+    }
+    if (json_bool(j, "sacn_enabled", b)) {
+        fx.sacn        = g.sacn_enabled != b;
+        g.sacn_enabled = b;
+    }
+    if (json_bool(j, "fpp_remote", b)) {
+        fx.fpp       = g.fpp_remote != b;
+        g.fpp_remote = b;
+    }
+    if (json_u32(j, "failsafe_mode", 0, 3, u)) g.failsafe_mode = static_cast<uint8_t>(u);
+    if (json_u32(j, "failsafe_timeout_s", 0, 3600, u))
+        g.failsafe_timeout_s = static_cast<uint16_t>(u);
+    unsigned r, gr, bl;
+    if (hex_rgb(json_str(j, "failsafe_color"), r, gr, bl)) {
+        g.failsafe_r = static_cast<uint8_t>(r);
+        g.failsafe_g = static_cast<uint8_t>(gr);
+        g.failsafe_b = static_cast<uint8_t>(bl);
     }
     // Bounded by the list capacity, not its current length: a reference past
     // the end plays nothing (scene_start / get_scene bound-check at use).
-    if (num("failsafe_scene", 0, config::kMaxScenes - 1, &v))
-        g.failsafe_scene = static_cast<uint8_t>(v);
-    if (num("boot_scene", 0, config::kMaxScenes, &v)) g.boot_scene = static_cast<uint8_t>(v);
-    if (num("merge_mode", 0, 1, &v)) g.merge_mode = static_cast<uint8_t>(v);
-    if (getb("fpp_remote", &bv)) g.fpp_remote = bv;
-    if (num("lang", 0, 1, &v)) g.language = static_cast<uint8_t>(v);
-    if (getb("hub_preferred", &bv)) g.hub_preferred = bv;
-    if (num("scene_fade_ms", 0, config::kMaxSceneFadeMs, &v))
-        g.scene_fade_ms = static_cast<uint16_t>(v);
-    if (num("fseq_universe", 1, dmx::kMaxUniverseNumber, &v))
-        g.fseq_universe = static_cast<uint16_t>(v);
+    if (json_u32(j, "failsafe_scene", 0, config::kMaxScenes - 1, u))
+        g.failsafe_scene = static_cast<uint8_t>(u);
+    if (json_u32(j, "boot_scene", 0, config::kMaxScenes, u)) g.boot_scene = static_cast<uint8_t>(u);
+    if (json_u32(j, "merge_mode", 0, 1, u)) g.merge_mode = static_cast<uint8_t>(u);
+    if (json_u32(j, "lang", 0, 1, u)) g.language = static_cast<uint8_t>(u);
+    if (json_bool(j, "hub_preferred", b)) g.hub_preferred = b;
+    if (json_u32(j, "scene_fade_ms", 0, config::kMaxSceneFadeMs, u))
+        g.scene_fade_ms = static_cast<uint16_t>(u);
+    if (json_u32(j, "fseq_universe", 1, dmx::kMaxUniverseNumber, u))
+        g.fseq_universe = static_cast<uint16_t>(u);
+    return fx;
+}
+
+void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** why) {
+    uint32_t u = 0;
+    bool b     = false;
+    const char* s;
+    if ((s = json_str(j, "protocol"))) {
+        const int p = lookup(kProtoNames, static_cast<size_t>(led::Protocol::COUNT), s);
+        if (p >= 0) {
+            c.protocol = static_cast<led::Protocol>(p);
+        } else {
+            // DMX512 output moved to the DMX node firmware: a backup from that
+            // era comes back disabled; a POST asking for it is refused.
+            if (std::strcmp(s, "DMX512") == 0) c.protocol = led::Protocol::Off;
+            refuse(why, "bad protocol");
+        }
+    }
+    if ((s = json_str(j, "color_order"))) {
+        const int o = lookup(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), s);
+        if (o >= 0)
+            c.color_order = static_cast<led::ColorOrder>(o);
+        else
+            refuse(why, "bad color_order");
+    }
+    if (json_u32(j, "universe_start", 0, 32767, u)) c.universe_start = static_cast<uint16_t>(u);
+    if (json_u32(j, "dmx_start", 1, 512, u)) c.dmx_start = static_cast<uint16_t>(u);
+    if (json_u32(j, "pixel_count", 1, dmx::kMaxPixelsPerChan, u))
+        c.pixel_count = static_cast<uint16_t>(u);
+    if (json_u32(j, "brightness", 0, 255, u)) c.brightness = static_cast<uint8_t>(u);
+    if (json_u32(j, "grouping", 1, 8, u)) c.grouping = static_cast<uint8_t>(u);
+    if (json_bool(j, "invert", b)) c.invert_direction = b;
+    if (json_u32(j, "clock_hz", led::kMinClockHz, led::kMaxClockHz, u)) c.clock_hz = u;
+    if (json_u32(j, "gamma_x10", 10, 40, u)) c.gamma_x10 = static_cast<uint8_t>(u);
+    unsigned r, g, bl;
+    if (hex_rgb(json_str(j, "wb"), r, g, bl)) {  // 0 would black a colour out: unity
+        c.wb_r = r ? static_cast<uint8_t>(r) : 255;
+        c.wb_g = g ? static_cast<uint8_t>(g) : 255;
+        c.wb_b = bl ? static_cast<uint8_t>(bl) : 255;
+    }
+    apply_gaps_json(j, c);
+}
+
+static void restore_global(cJSON* jg) {
+    config::GlobalConfig g = config::get_global();
+    apply_global_json(jg, g, nullptr);
     config::set_global(g);
 }
 
 static void restore_channel(size_t i, cJSON* jc) {
-    auto c    = config::get_channel(i);
-    cJSON* it = cJSON_GetObjectItemCaseSensitive(jc, "protocol");
-    if (cJSON_IsString(it)) {
-        const int pv = lookup(kProtoNames, static_cast<size_t>(led::Protocol::COUNT),
-                              it->valuestring);
-        if (pv >= 0) c.protocol = static_cast<led::Protocol>(pv);
-        // A backup from before DMX512 output moved to the DMX node firmware:
-        // that channel described a DMX universe, not a strip — disable it.
-        if (std::strcmp(it->valuestring, "DMX512") == 0) c.protocol = led::Protocol::Off;
-    }
-    it = cJSON_GetObjectItemCaseSensitive(jc, "color_order");
-    if (cJSON_IsString(it)) {
-        const int ov = lookup(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT),
-                              it->valuestring);
-        if (ov >= 0) c.color_order = static_cast<led::ColorOrder>(ov);
-    }
-    auto num = [&](const char* k, double lo, double hi, double* out) {
-        it = cJSON_GetObjectItemCaseSensitive(jc, k);
-        if (cJSON_IsNumber(it) && it->valuedouble >= lo && it->valuedouble <= hi) {
-            *out = it->valuedouble;
-            return true;
-        }
-        return false;
-    };
-    double v;
-    if (num("universe_start", 0, 32767, &v)) c.universe_start = static_cast<uint16_t>(v);
-    if (num("dmx_start", 1, 512, &v)) c.dmx_start = static_cast<uint16_t>(v);
-    if (num("pixel_count", 1, dmx::kMaxPixelsPerChan, &v)) c.pixel_count = static_cast<uint16_t>(v);
-    if (num("brightness", 0, 255, &v)) c.brightness = static_cast<uint8_t>(v);
-    if (num("grouping", 1, 8, &v)) c.grouping = static_cast<uint8_t>(v);
-    it = cJSON_GetObjectItemCaseSensitive(jc, "invert");
-    if (cJSON_IsBool(it)) c.invert_direction = cJSON_IsTrue(it);
-    if (num("clock_hz", led::kMinClockHz, led::kMaxClockHz, &v))
-        c.clock_hz = static_cast<uint32_t>(v);
-    if (num("gamma_x10", 10, 40, &v)) c.gamma_x10 = static_cast<uint8_t>(v);
-    it = cJSON_GetObjectItemCaseSensitive(jc, "wb");
-    if (cJSON_IsString(it)) {
-        unsigned cr, cg, cb;
-        if (sscanf(it->valuestring[0] == '#' ? it->valuestring + 1 : it->valuestring,
-                   "%02x%02x%02x", &cr, &cg, &cb) == 3) {
-            c.wb_r = cr ? static_cast<uint8_t>(cr) : 255;
-            c.wb_g = cg ? static_cast<uint8_t>(cg) : 255;
-            c.wb_b = cb ? static_cast<uint8_t>(cb) : 255;
-        }
-    }
-    apply_gaps_json(jc, c);
+    auto c = config::get_channel(i);
+    apply_channel_json(jc, c, nullptr);
     config::set_channel(i, c);
     dmx::mark_channel_dirty(i);
 }
@@ -470,129 +528,15 @@ esp_err_t handle_post_global(httpd_req_t* req) {
     if (!j) return send_err(req, 400, "invalid JSON");
 
     config::GlobalConfig g = config::get_global();
-    bool network_changed   = false;
-
-    auto get_bool = [&](const char* key, bool& out) -> bool {
-        cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
-        if (!item) return false;
-        if (cJSON_IsBool(item)) {
-            out = cJSON_IsTrue(item);
-            return true;
-        }
-        if (cJSON_IsNumber(item)) {
-            out = (item->valuedouble != 0);
-            return true;
-        }
-        return false;
-    };
-    auto get_u32 = [&](const char* key, uint32_t lo, uint32_t hi, uint32_t& out) -> bool {
-        cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
-        if (!item || !cJSON_IsNumber(item)) return false;
-        // Range-check the double first: casting an out-of-range value
-        // (-5, 1e40) to uint32_t is undefined (RISC-V saturates -5 to 0).
-        const double d = item->valuedouble;
-        if (!(d >= lo && d <= hi)) return false;
-        out = static_cast<uint32_t>(d);
-        return true;
-    };
-    auto get_str = [&](const char* key) -> const char* {
-        cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
-        if (!item || !cJSON_IsString(item)) return nullptr;
-        return item->valuestring;
-    };
-
-    uint32_t u = 0;
-    bool b     = false;
+    const char* why        = nullptr;
+    const GlobalApplied fx = apply_global_json(j, g, &why);
+    if (why) {
+        cJSON_Delete(j);
+        return send_err(req, 400, why);
+    }
+    const bool network_changed = fx.network, web_off = fx.web_off;
+    const bool sacn_changed = fx.sacn, fpp_changed = fx.fpp;
     const char* s;
-
-    if (get_bool("dhcp", b)) {
-        g.use_dhcp      = b;
-        network_changed = true;
-    }
-    if ((s = get_str("ip"))) {
-        if (!parse_ip(s, g.static_ip)) {
-            cJSON_Delete(j);
-            return send_err(req, 400, "bad ip");
-        }
-        network_changed = true;
-    }
-    if ((s = get_str("mask"))) {
-        if (!parse_ip(s, g.static_mask)) {
-            cJSON_Delete(j);
-            return send_err(req, 400, "bad mask");
-        }
-        network_changed = true;
-    }
-    if ((s = get_str("gw"))) {
-        if (!parse_ip(s, g.static_gateway)) {
-            cJSON_Delete(j);
-            return send_err(req, 400, "bad gw");
-        }
-        network_changed = true;
-    }
-    // Read when the fallback is taken: no reboot needed.
-    if ((s = get_str("ip_fallback"))) {
-        const int fb = config::ip_fallback_from_id(s);
-        if (fb < 0) {
-            cJSON_Delete(j);
-            return send_err(req, 400, "ip_fallback: linklocal|artnet");
-        }
-        g.ip_fallback = static_cast<uint8_t>(fb);
-    }
-    if (get_u32("net", 0, 127, u)) g.artnet_net = static_cast<uint8_t>(u);
-    if (get_u32("subnet", 0, 15, u)) g.artnet_subnet = static_cast<uint8_t>(u);
-    if ((s = get_str("short_name"))) {
-        memset(g.short_name, 0, sizeof(g.short_name));
-        strncpy(g.short_name, s, sizeof(g.short_name) - 1);
-    }
-    if ((s = get_str("long_name"))) {
-        memset(g.long_name, 0, sizeof(g.long_name));
-        strncpy(g.long_name, s, sizeof(g.long_name) - 1);
-    }
-    if (get_bool("reply_unicast", b)) g.artnet_poll_reply_unicast = b;
-    if (get_u32("refresh_hz", config::kMinRefreshHz, config::kMaxRefreshHz, u))
-        g.refresh_rate_hz = static_cast<uint8_t>(u);
-    if (get_u32("home_timeout_s", 0, 65535, u)) g.home_timeout_s = static_cast<uint16_t>(u);
-    if (get_u32("tft_brightness", config::kTftBrightnessMin, 100, u))
-        g.tft_brightness = static_cast<uint8_t>(u);
-    if (get_u32("tft_idle_dim", 0, 100, u)) g.tft_idle_dim = static_cast<uint8_t>(u);
-    if (get_u32("tft_dim_delay_s", 0, config::kTftDimDelayMaxS, u))
-        g.tft_dim_delay_s = static_cast<uint16_t>(u);
-    bool web_off = false;  // this request turns the web UI off
-    if (get_bool("web_enabled", b)) {
-        g.web_enabled = b;
-        web_off       = !b;
-    }
-    if (get_u32("failsafe_mode", 0, 3, u)) g.failsafe_mode = static_cast<uint8_t>(u);
-    if (get_u32("failsafe_scene", 0, config::kMaxScenes - 1, u))
-        g.failsafe_scene = static_cast<uint8_t>(u);
-    if (get_u32("boot_scene", 0, config::kMaxScenes, u)) g.boot_scene = static_cast<uint8_t>(u);
-    if (get_u32("failsafe_timeout_s", 0, 3600, u)) g.failsafe_timeout_s = static_cast<uint16_t>(u);
-    if (get_u32("merge_mode", 0, 1, u)) g.merge_mode = static_cast<uint8_t>(u);
-    if (get_u32("lang", 0, 1, u)) g.language = static_cast<uint8_t>(u);
-    if (get_bool("hub_preferred", b)) g.hub_preferred = b;
-    if (get_u32("scene_fade_ms", 0, config::kMaxSceneFadeMs, u))
-        g.scene_fade_ms = static_cast<uint16_t>(u);
-    if (get_u32("fseq_universe", 1, dmx::kMaxUniverseNumber, u))
-        g.fseq_universe = static_cast<uint16_t>(u);
-    if ((s = get_str("failsafe_color"))) {
-        unsigned fr, fg, fb;
-        if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &fr, &fg, &fb) == 3) {
-            g.failsafe_r = static_cast<uint8_t>(fr);
-            g.failsafe_g = static_cast<uint8_t>(fg);
-            g.failsafe_b = static_cast<uint8_t>(fb);
-        }
-    }
-    bool sacn_changed = false;
-    if (get_bool("sacn_enabled", b)) {
-        sacn_changed   = (g.sacn_enabled != b);
-        g.sacn_enabled = b;
-    }
-    bool fpp_changed = false;
-    if (get_bool("fpp_remote", b)) {
-        fpp_changed  = (g.fpp_remote != b);
-        g.fpp_remote = b;
-    }
 
     // Admin password: separate setter (hashes + persists on its own); empty
     // string clears it (auth off). Copied out before cJSON_Delete frees the
@@ -600,7 +544,7 @@ esp_err_t handle_post_global(httpd_req_t* req) {
     // a truncated hash would never match what the browser sends back.
     char pwd[config::kMaxWebPasswordLen + 1];
     bool password_changed = false;
-    if ((s = get_str("web_password"))) {
+    if ((s = json_str(j, "web_password"))) {
         if (strlen(s) > config::kMaxWebPasswordLen) {
             cJSON_Delete(j);
             return send_err(req, 400, "web_password: at most 63 characters");
@@ -661,74 +605,12 @@ esp_err_t handle_post_channel(httpd_req_t* req) {
     if (!j) return send_err(req, 400, "invalid JSON");
 
     config::ChannelConfig c = config::get_channel(static_cast<size_t>(idx));
-
-    auto get_u32 = [&](const char* key, uint32_t lo, uint32_t hi, uint32_t& out) -> bool {
-        cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
-        if (!item || !cJSON_IsNumber(item)) return false;
-        // Range-check the double first: casting an out-of-range value
-        // (-5, 1e40) to uint32_t is undefined (RISC-V saturates -5 to 0).
-        const double d = item->valuedouble;
-        if (!(d >= lo && d <= hi)) return false;
-        out = static_cast<uint32_t>(d);
-        return true;
-    };
-    auto get_bool = [&](const char* key, bool& out) -> bool {
-        cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
-        if (!item) return false;
-        if (cJSON_IsBool(item)) {
-            out = cJSON_IsTrue(item);
-            return true;
-        }
-        if (cJSON_IsNumber(item)) {
-            out = (item->valuedouble != 0);
-            return true;
-        }
-        return false;
-    };
-    auto get_str = [&](const char* key) -> const char* {
-        cJSON* item = cJSON_GetObjectItemCaseSensitive(j, key);
-        if (!item || !cJSON_IsString(item)) return nullptr;
-        return item->valuestring;
-    };
-
-    uint32_t u = 0;
-    bool b     = false;
-    const char* s;
-
-    if ((s = get_str("protocol"))) {
-        const int p = lookup(kProtoNames, static_cast<size_t>(led::Protocol::COUNT), s);
-        if (p < 0) {
-            cJSON_Delete(j);
-            return send_err(req, 400, "bad protocol");
-        }
-        c.protocol = static_cast<led::Protocol>(p);
+    const char* why         = nullptr;
+    apply_channel_json(j, c, &why);
+    if (why) {
+        cJSON_Delete(j);
+        return send_err(req, 400, why);
     }
-    if ((s = get_str("color_order"))) {
-        const int o = lookup(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), s);
-        if (o < 0) {
-            cJSON_Delete(j);
-            return send_err(req, 400, "bad color_order");
-        }
-        c.color_order = static_cast<led::ColorOrder>(o);
-    }
-    if (get_u32("universe_start", 0, 32767, u)) c.universe_start = static_cast<uint16_t>(u);
-    if (get_u32("dmx_start", 1, 512, u)) c.dmx_start = static_cast<uint16_t>(u);
-    if (get_u32("pixel_count", 1, dmx::kMaxPixelsPerChan, u))
-        c.pixel_count = static_cast<uint16_t>(u);
-    if (get_u32("brightness", 0, 255, u)) c.brightness = static_cast<uint8_t>(u);
-    if (get_u32("grouping", 1, 8, u)) c.grouping = static_cast<uint8_t>(u);
-    if (get_bool("invert", b)) c.invert_direction = b;
-    if (get_u32("clock_hz", led::kMinClockHz, led::kMaxClockHz, u)) c.clock_hz = u;
-    if (get_u32("gamma_x10", 10, 40, u)) c.gamma_x10 = static_cast<uint8_t>(u);
-    if ((s = get_str("wb"))) {
-        unsigned wr, wg, wbv;
-        if (sscanf(s[0] == '#' ? s + 1 : s, "%02x%02x%02x", &wr, &wg, &wbv) == 3) {
-            c.wb_r = wr ? static_cast<uint8_t>(wr) : 255;
-            c.wb_g = wg ? static_cast<uint8_t>(wg) : 255;
-            c.wb_b = wbv ? static_cast<uint8_t>(wbv) : 255;
-        }
-    }
-    apply_gaps_json(j, c);
 
     cJSON_Delete(j);
     config::set_channel(static_cast<size_t>(idx), c);

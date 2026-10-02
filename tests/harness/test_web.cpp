@@ -268,6 +268,37 @@ TEST(backup_file_is_named_after_the_box_and_the_date) {
                  "attachment; filename=\"pixfrog-2026-10-01.json\"");  // not pixfrog-pixfrog
 }
 
+// POST and restore share one parser per object: the same bounds, the same
+// bools (true/false or 0/1). A field POST refuses fails the whole request;
+// restore skips it and keeps the rest.
+TEST(post_and_restore_parse_the_same_fields) {
+    const auto before = config::get_global();
+    EXPECT_EQ(post("/api/global", "{\"refresh_hz\":30,\"ip\":\"nope\"}").status, 400);
+    EXPECT_EQ(config::get_global().refresh_rate_hz, before.refresh_rate_hz);  // nothing saved
+    EXPECT_EQ(post("/api/channel/2", "{\"pixel_count\":33,\"color_order\":\"XYZ\"}").status, 400);
+    EXPECT_TRUE(config::get_channel(2).pixel_count != 33);
+
+    Json backup(get("/api/backup").body);
+    cJSON* g = cJSON_GetObjectItem(backup.j, "global");
+    cJSON_ReplaceItemInObject(g, "refresh_hz", cJSON_CreateNumber(30));
+    cJSON_ReplaceItemInObject(g, "ip", cJSON_CreateString("nope"));
+    cJSON_ReplaceItemInObject(g, "reply_unicast", cJSON_CreateNumber(1));  // 0/1 as in POST
+    cJSON* c2 = cJSON_GetArrayItem(cJSON_GetObjectItem(backup.j, "channels"), 2);
+    cJSON_ReplaceItemInObject(c2, "pixel_count", cJSON_CreateNumber(33));
+    cJSON_ReplaceItemInObject(c2, "color_order", cJSON_CreateString("XYZ"));
+    cJSON_ReplaceItemInObject(c2, "invert", cJSON_CreateNumber(1));
+    char* body = cJSON_PrintUnformatted(backup.j);
+    EXPECT_EQ(post("/api/restore", body).status, 200);
+    cJSON_free(body);
+    EXPECT_EQ(config::get_global().refresh_rate_hz, 30);
+    EXPECT_EQ(config::get_global().static_ip, before.static_ip);  // the bad one skipped
+    EXPECT_TRUE(config::get_global().artnet_poll_reply_unicast);
+    EXPECT_EQ(config::get_channel(2).pixel_count, 33);
+    EXPECT_TRUE(config::get_channel(2).invert_direction);
+    post("/api/global", "{\"refresh_hz\":60,\"reply_unicast\":false}");
+    post("/api/channel/2", "{\"invert\":false}");
+}
+
 TEST(backup_then_restore_round_trips) {
     post("/api/channel/3", "{\"protocol\":\"APA102\",\"pixel_count\":77,\"gaps\":[[5,1]]}");
     post("/api/global", "{\"short_name\":\"before\"}");
