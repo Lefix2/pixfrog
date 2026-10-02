@@ -99,15 +99,17 @@ Multi-node: every box is `pixfrog-<last 4 hex of MAC>.local`; the alias
 picks a box marked `hub_preferred` (Network screen, `global hub_preferred`),
 else the lowest MAC; a sibling unseen for 45 s is forgotten, so a dead holder
 is replaced. The TXT record carries `product=pixfrog`, `node`, `fw`, `mac`,
-`hub`; a box without `mac` (older firmware) takes no part. Opened as
-`pixfrog.local` with several boxes, the SPA starts on the hub (one card per
-box: status, playback, alerts; a click opens that box), by a unique name or IP
-it is that box's UI. `GET /api/peers` browses mDNS for sibling pixfrogs (filtered on the
-`product=pixfrog` TXT record, self listed first, each with `host`/`mac`/`hub`,
-`alias:true` on the holder). With several boxes the SPA
-shows a device bar, an aggregated channel grid on the dashboard (cross-origin
-`GET /api/status`+`/api/config`), and configures each remote box through its own
-UI in an `iframe` (`/?embed=1` hides the device bar in the framed child) — no
+`hub`; a box without `mac` (older firmware) takes no part. `GET /api/peers`
+browses mDNS for sibling pixfrogs (filtered on the `product=pixfrog` TXT
+record, self listed first, each with `host`/`mac`/`hub`, `alias:true` on the
+holder). With several boxes the SPA puts a tab bar at the very top of the page,
+`[All pixfrogs] [box A] [box B] …` in name order. No box is shown as the master:
+the alias only decides which box serves the page. "All" is the overview, one
+card per box (status, playback, alerts) from cross-origin `GET /api/status`. A
+box tab shows that box's UI full page: the native one for the box that served
+the page, a sibling in a full-page `iframe` (`/?embed=1`: no tab bar of its
+own, so menus never nest). Opened as `pixfrog.local` the page starts on "All";
+by a unique name or IP, on that box. No
 cross-origin writes. All JSON GET responses carry `Access-Control-Allow-Origin: *`
 (simple read-only requests, no preflight); writes stay behind Basic auth.
 
