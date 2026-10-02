@@ -97,6 +97,8 @@
   .fg-4{color:var(--fg-4)}
   .fg-accent{color:var(--accent)}
   .fg-warn{color:var(--warn)}
+  .fg-5{color:var(--fg-5)}
+  .fg-6{color:var(--fg-6)}
 </style>
 </head>
 <body>
@@ -184,7 +186,7 @@
 
           <div style="grid-column:span 8;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px;display:flex;flex-direction:column;gap:15px">
             <div class="row-between-c">
-              <span style="display:inline-flex;align-items:center;gap:8px;font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-4)"><i data-lucide="film" class="ic16" style="color:var(--warn)"></i><span data-i18n="NOW PLAYING">NOW PLAYING</span></span>
+              <span style="display:inline-flex;align-items:center;gap:8px;font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-4)"><i data-lucide="film" class="ic16 fg-warn"></i><span data-i18n="NOW PLAYING">NOW PLAYING</span></span>
               <span data-live="now-badge" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--fg-4);background:rgba(255,255,255,.04);border:1px solid var(--line-2);padding:4px 9px;border-radius:0">stopped</span>
             </div>
             <div style="display:flex;align-items:center;gap:14px">
@@ -257,7 +259,7 @@
         <div style="display:grid;grid-template-columns:1.7fr 1fr;gap:16px;align-items:start">
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line)">
-              <span style="display:inline-flex;align-items:center;gap:9px;font:600 13px 'Figtree'"><i data-lucide="hard-drive" class="ic16" style="color:var(--warn)"></i><span data-live="sd-state">microSD</span></span>
+              <span style="display:inline-flex;align-items:center;gap:9px;font:600 13px 'Figtree'"><i data-lucide="hard-drive" class="ic16 fg-warn"></i><span data-live="sd-state">microSD</span></span>
               <button class="btn-sec" data-action="fseq-upload" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 12px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="upload" class="ic14"></i><span data-i18n="Upload">Upload</span></button>
               <input id="fseq-file" type="file" accept=".fseq" style="display:none"/>
             </div>
@@ -305,7 +307,7 @@
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)">
               <div style="display:flex;align-items:center;gap:12px"><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Channel 1</h3><span data-chan-state style="font:500 10.5px 'DM Mono';letter-spacing:.04em;color:var(--accent);background:rgba(63,212,99,.12);border-radius:0;padding:4px 10px">Active</span></div>
-              <button class="btn-sec" data-action="identify-chan" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="zap" class="ic14" style="color:var(--accent)"></i><span data-i18n="Identify">Identify</span></button>
+              <button class="btn-sec" data-action="identify-chan" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="zap" class="ic14 fg-accent"></i><span data-i18n="Identify">Identify</span></button>
             </div>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 22px">
@@ -418,7 +420,7 @@
       <div data-screen="artnet" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1040px">
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
-            <div style="display:flex;align-items:center;gap:9px"><i data-lucide="radio-tower" class="ic20" style="color:var(--warn)"></i><span style="font-size:14px;font-weight:700" data-i18n="Reception protocols">Reception protocols</span></div>
+            <div style="display:flex;align-items:center;gap:9px"><i data-lucide="radio-tower" class="ic20 fg-warn"></i><span style="font-size:14px;font-weight:700" data-i18n="Reception protocols">Reception protocols</span></div>
             <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px"><div><div class="h-sm">ArtNet 4</div><div class="hint" data-i18n="UDP 6454 · always on">UDP 6454 · always on</div></div><span class="sw"><input type="checkbox" checked disabled/><span></span></span></label>
             <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm">sACN E1.31</div><div class="hint">Multicast 239.255.x.x · UDP 5568</div></div><span class="sw"><input id="a-sacn" type="checkbox"/><span></span></span></label>
             <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Remote FPP / FSEQ">Remote FPP / FSEQ</div><div class="hint" data-i18n="Multi-box FPP sync">Multi-box FPP sync</div></div><span class="sw"><input id="a-fpp" type="checkbox"/><span></span></span></label>
@@ -431,7 +433,7 @@
 
           <div class="stack-16">
             <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
-              <div style="display:flex;align-items:center;gap:9px"><i data-lucide="shield" class="ic20" style="color:var(--warn)"></i><span style="font-size:14px;font-weight:700" data-i18n="Failsafe (signal loss)">Failsafe (signal loss)</span></div>
+              <div style="display:flex;align-items:center;gap:9px"><i data-lucide="shield" class="ic20 fg-warn"></i><span style="font-size:14px;font-weight:700" data-i18n="Failsafe (signal loss)">Failsafe (signal loss)</span></div>
               <div><label class="f-label" data-i18n="Trigger delay">Trigger delay</label><div style="display:flex;align-items:center;gap:9px"><input id="a-fsdelay" type="range" min="0" max="30" value="5" style="flex:1;accent-color:var(--accent)"/><span id="a-fsdelay-val" style="font:500 13px 'DM Mono';color:var(--accent);width:74px;text-align:right">5 s</span></div></div>
               <div><label class="f-label" data-i18n="Behavior">Behavior</label><select class="field field-text" id="a-fsmode"><option value="1" data-i18n="Full blackout">Full blackout</option><option value="0" data-i18n="Hold last look">Hold last look</option><option value="2" data-i18n="Solid color">Solid color</option><option value="3" data-i18n="Play a scene">Play a scene</option></select></div>
               <div id="a-fsscene-row" style="display:none"><label class="f-label" data-i18n="Failsafe scene">Failsafe scene</label><select class="field field-text" id="a-fsscene"></select></div>
@@ -609,7 +611,7 @@
     </div>
 
     <footer style="flex:none;height:58px;border-top:1px solid var(--rule-2);background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:0 28px">
-      <span style="display:inline-flex;align-items:center;gap:8px;font:500 12px 'DM Mono';color:var(--fg-4)"><i data-lucide="hard-drive" class="ic14" style="color:var(--fg-6)"></i><span data-i18n="Settings persisted in NVS · network changes apply on reboot">Settings persisted in NVS · network changes apply on reboot</span></span>
+      <span style="display:inline-flex;align-items:center;gap:8px;font:500 12px 'DM Mono';color:var(--fg-4)"><i data-lucide="hard-drive" class="ic14 fg-6"></i><span data-i18n="Settings persisted in NVS · network changes apply on reboot">Settings persisted in NVS · network changes apply on reboot</span></span>
       <div style="display:flex;gap:10px;align-items:center">
         <span data-live="save-state" style="font:500 12px 'DM Mono';color:var(--accent)">✓ saved</span>
         <button class="btn-sec" data-action="cancel" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);border-radius:0;padding:9px 16px;font:500 12.5px 'DM Mono';cursor:pointer" data-i18n="Cancel">Cancel</button>
@@ -1219,7 +1221,7 @@ function renderScene(n){
 function fseqRow(name,active){
   var on=active&&active.toLowerCase()===name.toLowerCase();
   return '<div style="display:grid;grid-template-columns:1fr auto auto auto;align-items:center;padding:13px 18px;border-bottom:1px solid var(--rule);background:'+(on?'rgba(63,212,99,.06)':'transparent')+'">'
-    +'<span style="display:inline-flex;align-items:center;gap:10px;font:500 13px \'DM Mono\';color:var(--fg);min-width:0"><i data-lucide="file-video" class="ic16" style="color:'+(on?'var(--accent)':'var(--fg-5)')+'"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</span></span>'
+    +'<span style="display:inline-flex;align-items:center;gap:10px;font:500 13px \'DM Mono\';color:var(--fg);min-width:0"><i data-lucide="file-video" class="ic16 '+(on?'fg-accent':'fg-5')+'"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</span></span>'
     +'<span style="padding:0 18px;font:500 12px \'DM Mono\';color:var(--fg-3)">—</span>'
     +'<span style="padding:0 18px;font:500 12px \'DM Mono\';color:var(--fg-3)">—</span>'
     +'<span style="display:flex;gap:6px"><button class="btn-sec" data-fseq-add="'+esc(name)+'" title="'+esc(t('Add to the playlist'))+'" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="list-plus" class="ic14"></i></button><button class="btn-pri" data-fseq-play="'+esc(name)+'" style="width:30px;height:30px;border-radius:0;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;cursor:pointer"><i data-lucide="play" class="ic14"></i></button></span></div>';
