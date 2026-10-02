@@ -43,6 +43,8 @@ Bytes art_dmx(uint16_t universe, const Bytes& data) {
     return p;
 }
 
+uint8_t g_sacn_seq[256];  // next E1.31 sequence number per test source (cid0)
+
 Bytes sacn_data(uint16_t universe, uint8_t priority, const Bytes& slots, uint8_t options = 0,
                 uint8_t cid0 = 0, uint8_t start_code = 0) {
     Bytes p(126 + slots.size(), 0);
@@ -53,7 +55,7 @@ Bytes sacn_data(uint16_t universe, uint8_t priority, const Bytes& slots, uint8_t
         p[22 + i] = static_cast<uint8_t>(i + cid0);
     p[43]                = 0x02;
     p[108]               = priority;
-    p[111]               = 1;
+    p[111]               = ++g_sacn_seq[cid0];  // numbered per source, as a sender does
     p[112]               = options;
     p[113]               = static_cast<uint8_t>(universe >> 8);
     p[114]               = static_cast<uint8_t>(universe & 0xFF);
@@ -280,6 +282,30 @@ TEST(sacn_priority_gate_keeps_the_higher_source) {
     shim::net_push(kSacn, sacn_data(1, 100, { 99, 99, 99 }, 0, 0x40));
     pump_sacn();
     EXPECT_EQ(pixels0()[0], 99);
+}
+
+// The old gate kept one priority per universe: lowering its own priority
+// took a source off the air for 2.5 s.
+TEST(sacn_a_source_lowering_its_own_priority_stays_on_air) {
+    shim::net_push(kSacn, sacn_data(1, 150, { 10 }, 0, 0x11));
+    shim::net_push(kSacn, sacn_data(1, 100, { 20 }, 0, 0x11));
+    pump_sacn();
+    EXPECT_EQ(pixels0()[0], 20);
+}
+
+// E1.31 §6.7.2: a packet 0..19 behind its source's last one is discarded.
+TEST(sacn_duplicate_and_late_packets_are_dropped) {
+    Bytes a    = sacn_data(1, 100, { 30 }, 0, 0x22);
+    Bytes late = sacn_data(1, 100, { 31 }, 0, 0x22);
+    late[111]  = static_cast<uint8_t>(a[111] - 3);  // sent before `a`, arrives after
+    shim::net_push(kSacn, a);
+    shim::net_push(kSacn, a);  // duplicate
+    shim::net_push(kSacn, late);
+    pump_sacn();
+    EXPECT_EQ(pixels0()[0], 30);
+    shim::net_push(kSacn, sacn_data(1, 100, { 32 }, 0, 0x22));  // in order: applied
+    pump_sacn();
+    EXPECT_EQ(pixels0()[0], 32);
 }
 
 TEST(sacn_stream_terminated_triggers_failsafe_now) {
