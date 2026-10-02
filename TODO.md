@@ -61,9 +61,6 @@ a password protects once set; none of them may make it mandatory.
       global net/subnet and each channel's first universe only; desks (MADRIX,
       xLights) should see every mapped universe with its own Net/SubNet (and
       the control universe).
-- [ ] **sACN sequence check and per-source priority** — no E1.31 §6.7.2
-      out-of-order discard, and a source lowering its own priority is rejected
-      for 2.5 s by the per-universe gate; track priority per CID.
 - [ ] **sACN multicast on a real LAN** — only unicast was validated (bench
       behind a NAT). Drive the board from xLights or a desk on the same LAN,
       incl. a universe re-config (5 s join refresh) and the control universe.

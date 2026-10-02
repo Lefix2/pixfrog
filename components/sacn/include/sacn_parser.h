@@ -133,63 +133,76 @@ inline uint32_t source_id_from_cid(const uint8_t cid[16]) {
     return h != 0 ? h : 1;
 }
 
-// ── Per-universe source gate ────────────────────────────────────────────────
-// E1.31 priority arbitration: highest priority wins; an idle source is
-// forgotten after kSourceTimeoutMs (network data loss, §6.7.1). Equal
-// priority passes through — the dmx_manager 2-source merge arbitrates there.
+// ── Per-source gate (priority + sequence) ───────────────────────────────────
+// E1.31 arbitration, tracked per (universe, source CID):
+// - priority (§6.6): a packet passes when its priority is at least the
+//   highest of the OTHER live sources on that universe, so a source may lower
+//   its own priority without being shut out by its own past. Equal priority
+//   passes through: the dmx_manager 2-source merge arbitrates there.
+// - sequence (§6.7.2): per source, a packet 0..19 behind the last one is a
+//   duplicate or out of order and is discarded; a larger step back is a
+//   restarted sender and is taken.
+// - a source silent for kSourceTimeoutMs is forgotten (§6.7.1).
 
 constexpr uint32_t kSourceTimeoutMs = 2500;
 
 struct SourceGate {
-    uint16_t universe = 0;
-    uint8_t priority  = 0;
-    uint32_t last_ms  = 0;
-    bool active       = false;
+    uint32_t source_id = 0;  // CID hash (source_id_from_cid)
+    uint32_t last_ms   = 0;
+    uint16_t universe  = 0;
+    uint8_t priority   = 0;
+    uint8_t sequence   = 0;
+    bool active        = false;
 };
 
-// Decide whether a data packet for `universe` with `priority` may be applied,
-// updating the gate table (linear scan, `count` entries). Returns true to
-// accept. `terminated` releases the slot immediately. `*takeover` is set when
-// a live universe's priority strictly rises — the caller must then drop the
-// outranked sources from the downstream merge.
+// Decide whether a data packet may be applied, updating the table (linear
+// scan). `terminated` forgets that source on that universe. `*takeover` is set
+// when the packet outranks live sources of that universe: the caller drops
+// them from the downstream merge.
 template <size_t N>
-inline bool gate_accept(SourceGate (&gates)[N], uint16_t universe, uint8_t priority,
-                        bool terminated, uint32_t now_ms, bool* takeover = nullptr) {
+inline bool gate_accept(SourceGate (&gates)[N], uint16_t universe, uint32_t source_id,
+                        uint8_t priority, uint8_t sequence, bool terminated, uint32_t now_ms,
+                        bool* takeover = nullptr) {
     if (takeover) *takeover = false;
-    SourceGate* slot     = nullptr;
+    SourceGate* self     = nullptr;
     SourceGate* free_one = nullptr;
+    int others_max       = -1;  // highest priority of the other live sources
     for (auto& g : gates) {
-        if (g.active && g.universe == universe) {
-            slot = &g;
-            break;
+        if (g.active && now_ms - g.last_ms > kSourceTimeoutMs) g.active = false;  // §6.7.1
+        if (!g.active) {
+            if (!free_one) free_one = &g;
+            continue;
         }
-        if (!g.active && !free_one) free_one = &g;
+        if (g.universe != universe) continue;
+        if (g.source_id == source_id)
+            self = &g;
+        else if (g.priority > others_max)
+            others_max = g.priority;
     }
 
     if (terminated) {
-        if (slot) slot->active = false;
+        if (self) self->active = false;
         return false;
     }
-
-    if (slot) {
-        const bool expired = (now_ms - slot->last_ms) > kSourceTimeoutMs;
-        if (!expired && priority < slot->priority) return false;
-        if (takeover && !expired && priority > slot->priority) *takeover = true;
-        slot->priority = priority;
-        slot->last_ms  = now_ms;
-        return true;
+    if (self) {
+        const int8_t step = static_cast<int8_t>(sequence - self->sequence);
+        if (step <= 0 && step > -20) return false;  // duplicate / out of order
+    } else {
+        if (!free_one) {  // table full: reclaim the stalest entry
+            free_one = &gates[0];
+            for (auto& g : gates)
+                if (g.last_ms < free_one->last_ms) free_one = &g;
+        }
+        self            = free_one;
+        self->universe  = universe;
+        self->source_id = source_id;
+        self->active    = true;
     }
-
-    if (!free_one) {
-        // Gate table full — reclaim the stalest entry.
-        free_one = &gates[0];
-        for (auto& g : gates)
-            if (g.last_ms < free_one->last_ms) free_one = &g;
-    }
-    free_one->universe = universe;
-    free_one->priority = priority;
-    free_one->last_ms  = now_ms;
-    free_one->active   = true;
+    self->priority = priority;
+    self->sequence = sequence;
+    self->last_ms  = now_ms;
+    if (priority < others_max) return false;  // outranked (still tracked)
+    if (takeover && priority > others_max && others_max >= 0) *takeover = true;
     return true;
 }
 

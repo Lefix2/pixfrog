@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""sACN (unicast) end-to-end: E1.31 data → universe pool → pixel decode."""
+"""sACN (unicast) end-to-end: E1.31 data → universe pool → pixel decode; the
+per-source gate drops duplicates and late packets (§6.7.2) and lets a source
+lower its own priority."""
 import sys, time
 from pixfrog_uart import Board, Checks, sacn_data, udp_send, prime_network, main_guard
 
@@ -22,6 +24,20 @@ def run(board: Board):
 
     board.cmd("status")
     c.check("pixels decoded", board.get("pixr 0 0 3", "data") == "112233")
+
+    # One step at a time, each sent 3 times (the WSL NAT drops lone
+    # datagrams; the repeats are duplicates the gate must drop anyway).
+    px = lambda: board.get("pixr 0 0 1", "data")
+
+    def step(val, seq, priority=100):
+        udp_send(sacn_data(1, [val], priority=priority, seq=seq), 5568, repeat=3)
+        time.sleep(0.3)
+        return px()
+
+    c.check("in-order packet applied", step(0x40, 100) == "40")
+    c.check("same sequence again dropped", step(0x41, 100) == "40")
+    c.check("late packet dropped", step(0x42, 97) == "40")
+    c.check("a source may lower its own priority", step(0x43, 101, priority=50) == "43")
 
     board.cmd("global sacn_enabled 0")  # restore opt-in default
     return c.finish()

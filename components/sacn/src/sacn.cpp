@@ -52,7 +52,8 @@ bool running() {
 uint16_t g_joined[kMaxJoined];
 size_t g_joined_count = 0;
 
-parser::SourceGate g_gates[dmx::kNumUniverses];
+// Two sources per universe on average: each (universe, CID) pair is an entry.
+parser::SourceGate g_gates[dmx::kNumUniverses * 2];
 
 uint32_t now_ms() {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000);
@@ -145,7 +146,8 @@ void handle_data(const uint8_t* buf, size_t len) {
         dmx::merge_drop_source(f.universe, source_id);
     }
     bool takeover = false;
-    if (!parser::gate_accept(g_gates, f.universe, f.priority, terminated, now_ms(), &takeover))
+    if (!parser::gate_accept(g_gates, f.universe, source_id, f.priority, f.sequence, terminated,
+                             now_ms(), &takeover))
         return;
     // Priority rose: the outranked sources' staging must not blend into HTP.
     if (takeover) dmx::merge_reset_universe(f.universe);

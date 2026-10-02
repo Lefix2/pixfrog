@@ -167,58 +167,89 @@ static void test_multicast_group() {
     EXPECT_EQ(multicast_group_host(63999), 0xEFFFF9FFu);  // 239.255.249.255
 }
 
-// ── Source gate ─────────────────────────────────────────────────────────────
+// ── Source gate (per universe + CID: priority, sequence) ────────────────────
+
+// Sources A and B; `seq` numbers their packets as a sender would.
+struct Src {
+    uint32_t id;
+    uint8_t seq = 0;
+    uint8_t next() { return ++seq; }
+};
 
 static void test_gate_higher_priority_wins() {
-    SourceGate gates[4] = {};
-    EXPECT_TRUE(gate_accept(gates, 1, 100, false, 1000));   // first source
-    EXPECT_TRUE(!gate_accept(gates, 1, 50, false, 1100));   // lower → rejected
-    EXPECT_TRUE(gate_accept(gates, 1, 150, false, 1200));   // higher → wins
-    EXPECT_TRUE(!gate_accept(gates, 1, 100, false, 1300));  // now below 150
-    EXPECT_TRUE(gate_accept(gates, 1, 150, false, 1400));   // equal → accepted
+    SourceGate gates[8] = {};
+    Src a{ 1 }, b{ 2 };
+    EXPECT_TRUE(gate_accept(gates, 1, a.id, 100, a.next(), false, 1000));   // first source
+    EXPECT_TRUE(!gate_accept(gates, 1, b.id, 50, b.next(), false, 1100));   // lower → rejected
+    EXPECT_TRUE(gate_accept(gates, 1, b.id, 150, b.next(), false, 1200));   // higher → wins
+    EXPECT_TRUE(!gate_accept(gates, 1, a.id, 100, a.next(), false, 1300));  // now below 150
+    EXPECT_TRUE(gate_accept(gates, 1, a.id, 150, a.next(), false, 1400));   // equal → accepted
+}
+
+// The old gate kept one priority per universe: a source lowering its own
+// priority was shut out by its own past for 2.5 s.
+static void test_gate_a_source_may_lower_its_own_priority() {
+    SourceGate gates[8] = {};
+    Src a{ 1 }, b{ 2 };
+    EXPECT_TRUE(gate_accept(gates, 1, a.id, 200, a.next(), false, 1000));
+    EXPECT_TRUE(gate_accept(gates, 1, a.id, 50, a.next(), false, 1100));   // alone: still applies
+    EXPECT_TRUE(gate_accept(gates, 1, b.id, 100, b.next(), false, 1200));  // now outranks it
+    EXPECT_TRUE(!gate_accept(gates, 1, a.id, 50, a.next(), false, 1300));
+}
+
+static void test_gate_sequence_drops_duplicates_and_late_packets() {
+    SourceGate gates[8] = {};
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 100, 10, false, 1000));
+    EXPECT_TRUE(!gate_accept(gates, 1, 1, 100, 10, false, 1010));  // duplicate
+    EXPECT_TRUE(!gate_accept(gates, 1, 1, 100, 5, false, 1020));   // 5 behind: out of order
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 100, 11, false, 1030));
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 100, 200, false, 1040));  // a jump: a restarted sender
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 100, 4, false, 1050));    // wraps 255 → 0 → 4: ahead
+    EXPECT_TRUE(gate_accept(gates, 1, 2, 100, 4, false, 1060));    // another source: its own count
+    EXPECT_TRUE(gate_accept(gates, 2, 1, 100, 4, false, 1070));    // another universe too
 }
 
 static void test_gate_timeout_reclaims() {
-    SourceGate gates[4] = {};
-    EXPECT_TRUE(gate_accept(gates, 1, 200, false, 1000));
-    EXPECT_TRUE(!gate_accept(gates, 1, 10, false, 2000));  // within 2.5 s
-    EXPECT_TRUE(gate_accept(gates, 1, 10, false, 4000));   // expired → low prio ok
+    SourceGate gates[8] = {};
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 200, 1, false, 1000));
+    EXPECT_TRUE(!gate_accept(gates, 1, 2, 10, 1, false, 2000));  // within 2.5 s
+    EXPECT_TRUE(gate_accept(gates, 1, 2, 10, 2, false, 4000));   // A expired → low prio ok
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 200, 1, false, 9000));  // A again, a fresh sequence
 }
 
 static void test_gate_terminated_releases() {
-    SourceGate gates[4] = {};
-    EXPECT_TRUE(gate_accept(gates, 1, 200, false, 1000));
-    EXPECT_TRUE(!gate_accept(gates, 1, 200, true, 1100));  // terminate (no data applied)
-    EXPECT_TRUE(gate_accept(gates, 1, 10, false, 1200));   // slot free → low prio ok
+    SourceGate gates[8] = {};
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 200, 1, false, 1000));
+    EXPECT_TRUE(!gate_accept(gates, 1, 1, 200, 2, true, 1100));  // terminate (no data applied)
+    EXPECT_TRUE(gate_accept(gates, 1, 2, 10, 1, false, 1200));   // A gone → low prio ok
 }
 
 static void test_gate_universes_independent() {
-    SourceGate gates[4] = {};
-    EXPECT_TRUE(gate_accept(gates, 1, 200, false, 1000));
-    EXPECT_TRUE(gate_accept(gates, 2, 10, false, 1000));  // other universe unaffected
-    EXPECT_TRUE(!gate_accept(gates, 1, 10, false, 1100));
+    SourceGate gates[8] = {};
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 200, 1, false, 1000));
+    EXPECT_TRUE(gate_accept(gates, 2, 2, 10, 1, false, 1000));  // other universe unaffected
+    EXPECT_TRUE(!gate_accept(gates, 1, 2, 10, 2, false, 1100));
 }
 
 static void test_gate_eviction_when_full() {
     SourceGate gates[2] = {};
-    EXPECT_TRUE(gate_accept(gates, 1, 100, false, 1000));
-    EXPECT_TRUE(gate_accept(gates, 2, 100, false, 2000));
-    EXPECT_TRUE(gate_accept(gates, 3, 100, false, 3000));  // evicts stalest (uni 1)
-    EXPECT_TRUE(gate_accept(gates, 1, 10, false, 3100));   // uni 1 forgotten → accepted
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 100, 1, false, 1000));
+    EXPECT_TRUE(gate_accept(gates, 2, 1, 100, 1, false, 2000));
+    EXPECT_TRUE(gate_accept(gates, 3, 1, 100, 1, false, 2100));  // evicts the stalest (uni 1)
+    EXPECT_TRUE(gate_accept(gates, 1, 2, 10, 1, false, 2200));   // uni 1 forgotten → accepted
 }
 
 static void test_gate_takeover_flag() {
-    SourceGate gates[4] = {};
+    SourceGate gates[8] = {};
     bool takeover       = true;
-    EXPECT_TRUE(gate_accept(gates, 1, 100, false, 1000, &takeover));
-    EXPECT_TRUE(!takeover);  // first source: no takeover
-    EXPECT_TRUE(gate_accept(gates, 1, 100, false, 1100, &takeover));
-    EXPECT_TRUE(!takeover);  // equal priority: no takeover
-    EXPECT_TRUE(gate_accept(gates, 1, 150, false, 1200, &takeover));
-    EXPECT_TRUE(takeover);  // priority rose on a live universe
-    takeover = true;
-    EXPECT_TRUE(gate_accept(gates, 1, 200, false, 5000, &takeover));
-    EXPECT_TRUE(!takeover);  // expired slot: reclaim, not a takeover
+    EXPECT_TRUE(gate_accept(gates, 1, 1, 100, 1, false, 1000, &takeover));
+    EXPECT_TRUE(!takeover);  // nobody to outrank
+    EXPECT_TRUE(gate_accept(gates, 1, 2, 100, 1, false, 1100, &takeover));
+    EXPECT_TRUE(!takeover);  // equal: both merge
+    EXPECT_TRUE(gate_accept(gates, 1, 3, 150, 1, false, 1200, &takeover));
+    EXPECT_TRUE(takeover);  // outranks the two others
+    EXPECT_TRUE(gate_accept(gates, 1, 3, 200, 2, false, 5000, &takeover));
+    EXPECT_TRUE(!takeover);  // the others expired meanwhile
 }
 
 // ── Merge-source key from CID ───────────────────────────────────────────────
@@ -246,6 +277,8 @@ int main() {
     test_parse_sync();
     test_multicast_group();
     test_gate_higher_priority_wins();
+    test_gate_a_source_may_lower_its_own_priority();
+    test_gate_sequence_drops_duplicates_and_late_packets();
     test_gate_timeout_reclaims();
     test_gate_terminated_releases();
     test_gate_universes_independent();

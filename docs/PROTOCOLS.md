@@ -315,8 +315,11 @@ but not consumed yet.
 **sACN / E1.31** (UDP 5568, opt-in `sacn_enabled`): data packets matched on
 the flat universe number (no net/subnet concept), one IGMP join per
 configured universe (set refreshed every 5 s from live config; unicast always
-accepted). Per-universe source gate: highest priority wins, 2.5 s source
-timeout (§6.7.1), `stream_terminated` releases the slot **and** expires the
+accepted). Per-source gate, keyed by universe + CID: a packet passes when
+its priority is at least that of every other live source on the universe (a
+source may lower its own), one 0..19 behind its source's last sequence
+number is a duplicate or late and is dropped (§6.7.2), 2.5 s source timeout
+(§6.7.1), `stream_terminated` releases the slot **and** expires the
 owning channel's failsafe immediately, preview-flagged data ignored. Data
 carrying a synchronization address waits for an E1.31 sync packet on that
 address (sync mode, below); `Force_Synchronization` keeps it waiting when
