@@ -119,6 +119,8 @@ enum class Fault {
     LcdDraw,         // esp_lcd_panel_draw_bitmap → ESP_FAIL
     LcdRefresh,      // esp_lcd_rgb_panel_refresh → ESP_FAIL
     LcdNewIo,        // esp_lcd_new_panel_io_spi → ESP_FAIL
+    LcdTxColor,      // esp_lcd_panel_io_tx_color → ESP_FAIL (transfer refused)
+    LcdTxLost,       // esp_lcd_panel_io_tx_color accepted, completion never fires
     SpiBus,          // spi_bus_initialize → ESP_FAIL
     CacheMsync,      // esp_cache_msync → ESP_FAIL
     I2cBus,          // i2c_new_master_bus → ESP_FAIL

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "config_store.h"
+#include "esp_timer.h"
 #include "harness.h"
 #include "menu_accel.h"
 #include "menu_fake.h"
@@ -504,6 +505,38 @@ TEST(nv3007_init_validates_then_wakes_and_blanks_the_panel) {
     EXPECT_TRUE(ui::detail::tft_init(tft));
 }
 
+// A refused RAMWR, or one whose completion never fires, costs one frame and
+// is counted; it used to block ui_task (screen and knob) forever.
+TEST(nv3007_a_refused_or_lost_transfer_costs_a_frame_not_the_ui) {
+    auto c   = ui_cfg();
+    auto tft = ui::detail::TftConfig{ c.spi_host,
+                                      c.spi_clk_gpio,
+                                      c.spi_mosi_gpio,
+                                      c.spi_cs_gpio,
+                                      c.tft_dc_gpio,
+                                      c.tft_rst_gpio,
+                                      c.spi_freq_hz,
+                                      428,
+                                      142,
+                                      -1 };
+    shim::lcd_reset();
+    EXPECT_TRUE(ui::detail::tft_init(tft));
+    static uint16_t px[4 * 4];
+    const uint32_t before = ui::display_stalls();
+    ui::detail::tft_draw_bitmap(0, 0, 4, 4, px);
+    EXPECT_EQ(ui::display_stalls(), before);  // a normal push
+    shim::fail_next(shim::Fault::LcdTxColor);
+    ui::detail::tft_draw_bitmap(0, 0, 4, 4, px);
+    EXPECT_EQ(ui::display_stalls(), before + 1);
+    const int64_t t0 = esp_timer_get_time();
+    shim::fail_next(shim::Fault::LcdTxLost);
+    ui::detail::tft_draw_bitmap(0, 0, 4, 4, px);
+    EXPECT_EQ(ui::display_stalls(), before + 2);
+    EXPECT_TRUE(esp_timer_get_time() - t0 <= 300'000);  // a bounded wait, then on
+    ui::detail::tft_draw_bitmap(0, 0, 4, 4, px);        // and the next frame goes out
+    EXPECT_EQ(ui::display_stalls(), before + 2);
+}
+
 TEST(nv3007_landscape_pixels_land_at_their_portrait_address) {
     auto c   = ui_cfg();
     auto tft = ui::detail::TftConfig{ c.spi_host,
@@ -627,6 +660,7 @@ TEST(the_task_plays_the_splash_then_runs_the_menu) {
     EXPECT_TRUE(shim::task_created("ui"));
     g_step = 0;
     EXPECT_TRUE(shim::run_task_for("ui", 120, ui_script));
+    EXPECT_TRUE(ui::loop_age_ms() < 1000);  // the heartbeat /api/diag reports
     const auto& m = fake::menu();
     EXPECT_TRUE(m.inited);
     EXPECT_TRUE(m.renders > 50);

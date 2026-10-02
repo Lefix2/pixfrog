@@ -1,5 +1,6 @@
 #include "ui.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 
@@ -28,6 +29,18 @@ uint32_t g_ip_host   = 0;      // host-order IPv4; 0 = no link
 bool g_link_up       = false;  // ETH_EVENT_CONNECTED state
 NetState g_net_state = NetState::Disconnected;
 
+// Health, read from other tasks (32-bit atomics: P4 RMW rule).
+std::atomic<uint32_t> g_beat_ms{ 0 };  // ms clock at the last loop pass, 0 = not started
+std::atomic<uint32_t> g_stalls{ 0 };
+
+uint32_t now_ms32() {
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
+void beat() {
+    const uint32_t t = now_ms32();
+    g_beat_ms.store(t ? t : 1, std::memory_order_relaxed);
+}
+
 bool create_i2c_bus(const InitConfig& cfg) {
     i2c_master_bus_config_t bus_cfg{};
     bus_cfg.clk_source                   = I2C_CLK_SRC_DEFAULT;
@@ -55,6 +68,7 @@ void task_main(void*) {
         bool bl_on = false;
 #endif
         while (!done) {
+            beat();
             const uint32_t t_ms    = static_cast<uint32_t>((xTaskGetTickCount() - t0) *
                                                            portTICK_PERIOD_MS);
             const detail::Event ev = detail::encoder_poll();
@@ -86,6 +100,7 @@ void task_main(void*) {
         // the encoder-LED animation and the diff-based display refresh, so a
         // one-tick worst-case input latency costs nothing perceptible.
         vTaskDelay(home_refresh);
+        beat();
         detail::Event e;
         while ((e = detail::encoder_poll()) != detail::Event::None) {
             last_event = xTaskGetTickCount();
@@ -212,5 +227,21 @@ void set_net_state(NetState s) {
 NetState get_net_state() {
     return g_net_state;
 }
+
+uint32_t loop_age_ms() {
+    const uint32_t b = g_beat_ms.load(std::memory_order_relaxed);
+    return b ? now_ms32() - b : 0;
+}
+
+uint32_t display_stalls() {
+    return g_stalls.load(std::memory_order_relaxed);
+}
+
+namespace detail {
+void note_display_stall() {
+    const uint32_t n = g_stalls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n == 1 || n % 100 == 0) ESP_LOGW(TAG, "display transfer stalled (%u so far)", (unsigned)n);
+}
+}  // namespace detail
 
 }  // namespace pixfrog::ui

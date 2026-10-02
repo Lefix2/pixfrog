@@ -197,10 +197,20 @@ void set_window(int xs, int xe, int ys, int ye) {
 }
 
 // Blocking RAMWR: waits for the DMA completion callback so the caller can
-// reuse the staging buffer as soon as this returns.
+// reuse the staging buffer as soon as this returns. Bounded: a transfer the
+// driver refuses, or a completion that never fires, used to wedge ui_task
+// for good (frozen screen and knob, LEDs and network still running).
+constexpr TickType_t kTxTimeout = pdMS_TO_TICKS(250);  // a full frame is ~25 ms
+
 void push_colors(const uint16_t* px, size_t count) {
-    esp_lcd_panel_io_tx_color(g_io, 0x2C, px, count * sizeof(uint16_t));
-    xSemaphoreTake(g_tx_done, portMAX_DELAY);
+    xSemaphoreTake(g_tx_done, 0);  // drop a late completion of a timed-out push
+    const esp_err_t err = esp_lcd_panel_io_tx_color(g_io, 0x2C, px, count * sizeof(uint16_t));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "RAMWR refused: %s", esp_err_to_name(err));
+        note_display_stall();
+        return;
+    }
+    if (xSemaphoreTake(g_tx_done, kTxTimeout) != pdTRUE) note_display_stall();
 }
 
 }  // namespace

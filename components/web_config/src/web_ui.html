@@ -592,6 +592,7 @@
               <div class="row-between"><span class="fg-2">IDF</span><span data-live="d-idf">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="partition">partition</span><span data-live="d-part">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="last reset">last reset</span><span class="fg-warn" data-live="d-reset">—</span></div>
+              <div class="row-between"><span class="fg-2" data-i18n="screen &amp; knob task">screen &amp; knob task</span><span data-live="d-ui">—</span></div>
               <div style="display:flex;justify-content:space-between;gap:10px"><span style="color:var(--fg-2);flex:none" data-i18n="last rollback">last rollback</span><span data-live="d-rollback" style="text-align:right">—</span></div>
             </div>
           </div>
@@ -845,7 +846,8 @@ var FR={
   'General · security · firmware · maintenance':'Général · sécurité · firmware · maintenance',
   'link':'lien','offline':'hors-ligne','Network link active':'Lien réseau actif','Network link down':'Lien réseau absent',
 
-  'All pixfrogs':'Tous les pixfrogs','connecting…':'connexion…','up':'actif depuis','master':'master','blackout':'blackout',
+  'All pixfrogs':'Tous les pixfrogs',
+  'screen & knob task':'tâche écran & bouton','frozen':'figée','running':'active','display stalls':'blocages écran','connecting…':'connexion…','up':'actif depuis','master':'master','blackout':'blackout',
   'OTA update rolled back':'Mise à jour OTA annulée','Settings not saved (NVS)':'Réglages non sauvegardés (NVS)',
   '{n} outputs in failsafe':'{n} sorties en failsafe','DMX control lost':'Contrôle DMX perdu','No SD card':'Pas de carte SD',
   'Preferred hub':'Hub préféré','With several boxes, this one answers pixfrog.local':'Avec plusieurs boîtes, celle-ci répond à pixfrog.local',
@@ -1509,6 +1511,7 @@ function pollDiag(){
     setLive('d-sacn',nf(x.sacn_rx)); setLive('d-bad',nf(x.bad_rx));
     setLive('d-uptime',fmtUptime(s.uptime_s)); setLive('d-ver',s.version);
     setLive('d-idf',s.idf); setLive('d-part',s.partition); setLive('d-reset',s.reset_reason);
+    var u=d.ui||{}; setLive('d-ui',u.loop_age_ms==null?'—':(u.loop_age_ms>2000?t('frozen')+' ('+Math.round(u.loop_age_ms/1000)+' s)':t('running'))+(u.display_stalls?' · '+u.display_stalls+' '+t('display stalls'):''));
     var rb=s.last_rollback; setLive('d-rollback',rb?(rb.rejected_version+' ('+rb.rejected_slot+', '+rb.reset_reason+')'):t('none'));
     var box=el('d-chans');
     if(box){ box.innerHTML=(d.channels||[]).map(function(c,i){

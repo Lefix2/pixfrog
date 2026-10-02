@@ -713,6 +713,16 @@ TEST(loglevel_accepts_every_level) {
     post("/api/loglevel", "{\"level\":\"info\"}");
 }
 
+// A frozen UI task (screen + knob) shows over HTTP, no UART needed.
+TEST(diag_reports_the_ui_task_health) {
+    fake::modules().ui_loop_age_ms = 42;
+    fake::modules().display_stalls = 3;
+    Json d(get("/api/diag").body);
+    const cJSON* u = d["ui"];
+    EXPECT_EQ(cJSON_GetObjectItem(u, "loop_age_ms")->valueint, 42);
+    EXPECT_EQ(cJSON_GetObjectItem(u, "display_stalls")->valueint, 3);
+}
+
 TEST(diag_names_every_reset_reason) {
     const int reasons[]    = { ESP_RST_EXT,      ESP_RST_SW,     ESP_RST_PANIC,     ESP_RST_INT_WDT,
                                ESP_RST_TASK_WDT, ESP_RST_WDT,    ESP_RST_DEEPSLEEP, ESP_RST_BROWNOUT,
