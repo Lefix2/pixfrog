@@ -263,8 +263,25 @@ int effect_for_dmx_value(uint8_t v);
 void fseq_set_active(bool active);
 bool fseq_is_active();
 
-// Signal that an ArtSync was received (forces frame emission ASAP).
-void note_sync();
+// ── Sync mode (Art-Net 4 ArtSync, E1.31 synchronization) ─────────────────────
+// Free-run (no sync seen): the render task publishes the universe banks as
+// soon as anything arrived, so an output spanning several universes can show
+// two source frames at once. Once a controller syncs, the box switches to
+// sync mode: received universes pile up in the back bank and are published
+// together on the next sync, until syncs stop for `timeout_ms` (Art-Net 4:
+// 4 s; E1.31: 2.5 s), then it free-runs again.
+constexpr uint32_t kArtSyncTimeoutMs  = 4000;
+constexpr uint32_t kE131SyncTimeoutMs = 2500;
+// A sync arrived (ArtSync, or an E1.31 sync packet on the address the data
+// asked for): publish at the next frame, and wake the render wait.
+void note_sync(uint32_t timeout_ms = kArtSyncTimeoutMs);
+// A source's data waits for a sync (E1.31 data with a synchronization
+// address): hold publication from now on. `force` (Force_Synchronization)
+// keeps holding even if the syncs stop, until data comes unsynchronized.
+void note_sync_hold(uint32_t timeout_ms, bool force);
+void note_sync_released();  // that source now sends unsynchronized data
+bool sync_mode();           // publishing on syncs right now
+void sync_reset();          // back to free-run (factory reset, tests)
 
 // Block until either `period_ticks` elapse or an ArtSync arrives,
 // whichever happens first. Returns true if a sync interrupted the wait,

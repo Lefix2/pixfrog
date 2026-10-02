@@ -57,11 +57,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Network & protocols
 
-- [ ] **ArtSync / sACN sync mode** — banks are published on the first dirty
-      slot, so a channel spanning several universes can show two source frames
-      at once. Once a sync is seen, hold publication until the next one
-      (free-run after 4 s without, Art-Net 4) and honour the E1.31 sync
-      address. `g_sync_pending` is already there, unused.
 - [ ] **ArtPollReply: one bind per universe** — it advertises 8 ports with the
       global net/subnet and each channel's first universe only; desks (MADRIX,
       xLights) should see every mapped universe with its own Net/SubNet (and

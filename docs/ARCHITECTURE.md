@@ -184,10 +184,11 @@ semaphore instead:
 Either way, if the wait expires `dma_underruns` is incremented and the next
 frame proceeds anyway — no error cascade.
 
-### 6.3 ArtSync wake
+### 6.3 Sync mode and the ArtSync wake
 
-- `dmx::note_sync()` is called from `artnet_rx_task` on ArtSync receipt; it gives `g_sync_sem`.
-- `render_task::dmx::wait_for_sync_or_period(remaining)` blocks on the semaphore with a timeout; an ArtSync interrupts the wait so the next frame goes out immediately.
+- `dmx::note_sync()` is called on an ArtSync, or an E1.31 sync packet on the address the data asked for (`sacn_rx_task`); it sets `g_sync_pending` and gives `g_sync_sem`. E1.31 data with a sync address calls `dmx::note_sync_hold()`.
+- Once a sync is seen, `swap_universes()` publishes the back bank only when `g_sync_pending` is set (consumed even with nothing new), so all the universes of a frame go out together; after 4 s (Art-Net) / 2.5 s (E1.31) without a sync it free-runs again (`dmx::sync_mode()`).
+- `render_task::dmx::wait_for_sync_or_period(remaining)` blocks on the semaphore with a timeout; a sync interrupts the wait so the next frame goes out without waiting a whole period.
 
 ### 6.4 Event group (config dirty bits)
 
