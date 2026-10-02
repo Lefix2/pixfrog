@@ -133,6 +133,7 @@ void setup() {
     reset_show();
     dmx::scene_stop();
     dmx::identify_stop();
+    dmx::sync_reset();
     dmx::clear_pixel_preview();
     dmx::fseq_set_active(false);
     dmx::merge_cancel_all();

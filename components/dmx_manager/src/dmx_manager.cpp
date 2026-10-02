@@ -68,7 +68,12 @@ struct ChanBufs {
 ChanBufs g_chan_bufs[config::kNumChannels]{};
 
 Stats g_stats{};
-std::atomic<bool> g_sync_pending{ false };
+// Sync mode (see dmx_manager.h). 32-bit: exchange() is a read-modify-write,
+// and sub-word RMW atomics clobber their neighbours on the P4.
+std::atomic<uint32_t> g_sync_pending{ 0 };
+std::atomic<uint32_t> g_sync_until_ms{ 0 };  // sync mode while now is before this
+std::atomic<uint32_t> g_sync_force{ 0 };     // E1.31 Force_Synchronization: hold for good
+std::atomic<uint32_t> g_sync_seen{ 0 };      // a sync or a sync hold ever arrived
 
 // Pixel-count preview state: channel (high 16 bits) + count (low 16 bits)
 // packed into one atomic so render_task always reads a consistent pair.
@@ -1035,9 +1040,45 @@ void note_ctrl_rx() {
 void note_sacn_rx() {
     __atomic_add_fetch(&g_stats.sacn_packets_rx, 1, __ATOMIC_RELAXED);
 }
-void note_sync() {
-    g_sync_pending.store(true, std::memory_order_release);
+namespace {
+uint32_t sync_now_ms() {
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
+void extend_sync(uint32_t timeout_ms) {
+    const uint32_t until = sync_now_ms() + timeout_ms;
+    const uint32_t cur   = g_sync_until_ms.load(std::memory_order_relaxed);
+    if (!g_sync_seen.load(std::memory_order_relaxed) || static_cast<int32_t>(until - cur) > 0)
+        g_sync_until_ms.store(until, std::memory_order_relaxed);
+    g_sync_seen.store(1, std::memory_order_relaxed);
+}
+}  // namespace
+
+void note_sync(uint32_t timeout_ms) {
+    extend_sync(timeout_ms);
+    g_sync_pending.store(1, std::memory_order_release);
     if (g_sync_sem) xSemaphoreGive(g_sync_sem);
+}
+
+void note_sync_hold(uint32_t timeout_ms, bool force) {
+    extend_sync(timeout_ms);
+    g_sync_force.store(force ? 1 : 0, std::memory_order_relaxed);
+}
+
+void note_sync_released() {
+    g_sync_force.store(0, std::memory_order_relaxed);
+}
+
+void sync_reset() {
+    g_sync_seen.store(0, std::memory_order_relaxed);
+    g_sync_force.store(0, std::memory_order_relaxed);
+    g_sync_pending.store(0, std::memory_order_relaxed);
+}
+
+bool sync_mode() {
+    if (!g_sync_seen.load(std::memory_order_relaxed)) return false;
+    if (g_sync_force.load(std::memory_order_relaxed)) return true;
+    return static_cast<int32_t>(g_sync_until_ms.load(std::memory_order_relaxed) - sync_now_ms()) >
+           0;
 }
 
 bool wait_for_sync_or_period(uint32_t period_ticks) {
@@ -1055,7 +1096,13 @@ void swap_universes() {
     // Hold-last-value is the stage-lighting convention, and now it really holds:
     // a channel that has not received an update keeps its previous value because
     // the front bank is left alone, not because the banks take turns.
+    // A sync is consumed even with nothing new: the next data must wait for its
+    // own sync, not ride this one.
+    const bool synced = g_sync_pending.exchange(0, std::memory_order_acq_rel) != 0;
     if (g_uni_dirty.load(std::memory_order_acquire) == 0 || !g_uni_swap_mux) return;
+    // Sync mode: what arrived waits in the back bank for the controller's sync,
+    // so every universe of a frame goes out together.
+    if (sync_mode() && !synced) return;
     xSemaphoreTake(g_uni_swap_mux, portMAX_DELAY);
     g_uni_front.store(back_bank_locked(), std::memory_order_release);
     g_uni_dirty.store(0, std::memory_order_relaxed);

@@ -101,6 +101,7 @@ void setup() {
     });
     artnet::set_local_ip(0xC0A80232);  // 192.168.2.50
     fseq::fake::set(fseq::Status::Idle, 0);
+    dmx::sync_reset();
     dmx::scene_stop();
     dmx::merge_cancel_all();
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
@@ -515,4 +516,111 @@ TEST(sacn_socket_and_bind_failures_end_the_task) {
     sacn::stop();
     shim::faults_clear();
     EXPECT_FALSE(sacn::is_running());
+}
+
+// ── Sync mode: ArtSync / E1.31 synchronization ──────────────────────────────
+
+namespace {
+// Channel 0 spans universes 1 and 2 (200 px: 170 in U1, 30 in U2).
+void two_universe_channel() {
+    auto c        = config::get_channel(0);
+    c.pixel_count = 200;
+    config::set_channel(0, c);
+    dmx::mark_channel_dirty(0);
+    dmx::handle_pending_remaps();
+}
+uint8_t u1_px() {
+    return pixels0()[0];
+}
+uint8_t u2_px() {
+    // Universe 2's first slot: the channel runs on through all 512 slots of
+    // universe 1. Decoded by the u1_px() call before it.
+    return dmx::pixel_back_buffer(0)[512];
+}
+Bytes sacn_synced(uint16_t universe, const Bytes& slots, uint16_t sync_addr, uint8_t options = 0) {
+    Bytes p = sacn_data(universe, 100, slots, options);
+    p[109]  = static_cast<uint8_t>(sync_addr >> 8);
+    p[110]  = static_cast<uint8_t>(sync_addr & 0xFF);
+    return p;
+}
+Bytes sacn_sync(uint16_t sync_addr) {
+    Bytes p(49, 0);
+    p[1] = 0x10;
+    std::memcpy(p.data() + 4, sacn::parser::kAcnId, sizeof(sacn::parser::kAcnId));
+    p[21] = 0x08;  // root vector: extended
+    p[43] = 0x01;  // framing vector: sync
+    p[45] = static_cast<uint8_t>(sync_addr >> 8);
+    p[46] = static_cast<uint8_t>(sync_addr & 0xFF);
+    return p;
+}
+}  // namespace
+
+// Before: the first universe that arrived was published alone, so a channel
+// spanning two universes showed two source frames at once.
+TEST(artsync_publishes_every_universe_of_a_frame_together) {
+    two_universe_channel();
+    shim::net_push(kArt, art_dmx(1, { 10 }));
+    shim::net_push(kArt, art_dmx(2, { 20 }));
+    shim::net_push(kArt, art_header(artnet::parser::kOpSync, 14));
+    pump_artnet();
+    EXPECT_EQ(u1_px(), 10);
+    EXPECT_EQ(u2_px(), 20);
+    EXPECT_TRUE(dmx::sync_mode());
+    shim::net_push(kArt, art_dmx(1, { 11 }));  // half of the next frame…
+    pump_artnet();
+    EXPECT_EQ(u1_px(), 10);  // …waits for its sync
+    shim::net_push(kArt, art_dmx(2, { 21 }));
+    shim::net_push(kArt, art_header(artnet::parser::kOpSync, 14));
+    pump_artnet();
+    EXPECT_EQ(u1_px(), 11);
+    EXPECT_EQ(u2_px(), 21);
+    // A sync with nothing new is used up: the next data waits for its own.
+    shim::net_push(kArt, art_header(artnet::parser::kOpSync, 14));
+    pump_artnet();
+    EXPECT_EQ(u1_px(), 11);
+    shim::net_push(kArt, art_dmx(1, { 12 }));
+    pump_artnet();
+    EXPECT_EQ(u1_px(), 11);
+    // Syncs stop for 4 s: free-run again (Art-Net 4).
+    shim::advance_ms(dmx::kArtSyncTimeoutMs + 1);
+    EXPECT_FALSE(dmx::sync_mode());
+    EXPECT_EQ(u1_px(), 12);
+    shim::net_push(kArt, art_dmx(1, { 13 }));
+    pump_artnet();
+    EXPECT_EQ(u1_px(), 13);
+}
+
+TEST(sacn_data_waits_for_a_sync_on_its_own_address) {
+    two_universe_channel();
+    shim::net_push(kSacn, sacn_data(1, 100, { 1 }));  // unsynchronized: published at once
+    pump_sacn();
+    EXPECT_EQ(u1_px(), 1);
+    shim::net_push(kSacn, sacn_synced(1, { 30 }, 7));
+    shim::net_push(kSacn, sacn_synced(2, { 40 }, 7));
+    shim::net_push(kSacn, sacn_sync(8));  // another address: not ours
+    pump_sacn();
+    EXPECT_TRUE(dmx::sync_mode());
+    EXPECT_EQ(u1_px(), 1);
+    shim::net_push(kSacn, sacn_sync(7));
+    pump_sacn();
+    EXPECT_EQ(u1_px(), 30);
+    EXPECT_EQ(u2_px(), 40);
+    // No sync for 2.5 s: back to free-run, unless Force_Synchronization asks
+    // to keep waiting.
+    shim::net_push(kSacn, sacn_synced(1, { 31 }, 7, sacn::parser::kOptForceSync));
+    pump_sacn();
+    shim::advance_ms(dmx::kE131SyncTimeoutMs + 1);
+    EXPECT_TRUE(dmx::sync_mode());
+    EXPECT_EQ(u1_px(), 30);
+    shim::net_push(kSacn, sacn_data(1, 100, { 32 }));  // the source goes unsynchronized
+    pump_sacn();
+    shim::advance_ms(dmx::kE131SyncTimeoutMs + 1);
+    EXPECT_FALSE(dmx::sync_mode());
+    EXPECT_EQ(u1_px(), 32);
+    Bytes short_sync = sacn_sync(7);
+    short_sync.resize(40);  // malformed: counted, ignored
+    const auto bad = dmx::get_stats().artnet_bad_packets;
+    shim::net_push(kSacn, short_sync);
+    pump_sacn();
+    EXPECT_EQ(dmx::get_stats().artnet_bad_packets, bad + 1);
 }

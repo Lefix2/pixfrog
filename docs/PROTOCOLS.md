@@ -304,7 +304,7 @@ universe_start + N-1` whichever protocol delivered the data.
 
 **ArtNet 4** (UDP 6454, always on): `ArtDmx` (filtered by configured
 net/subnet), `ArtPoll` → `ArtPollReply` (2 bind groups × 4 ports),
-`ArtSync` (early frame kick), `ArtAddress` (remote names/net/subnet/SwOut,
+`ArtSync` (sync mode, below), `ArtAddress` (remote names/net/subnet/SwOut,
 persisted + replied), `ArtIpProg`/`ArtIpProgReply` (remote IP, reboot
 applies), `ArtTrigger` global KeyShow (SubKey 1..8 plays standalone scene
 N-1, 0 stops), `ArtTimeCode` (slaves a *running* FSEQ playback to the desk
@@ -317,10 +317,20 @@ the flat universe number (no net/subnet concept), one IGMP join per
 configured universe (set refreshed every 5 s from live config; unicast always
 accepted). Per-universe source gate: highest priority wins, 2.5 s source
 timeout (§6.7.1), `stream_terminated` releases the slot **and** expires the
-owning channel's failsafe immediately, preview-flagged data ignored, E1.31
-sync packets and `force_sync` map to the ArtSync fast path. Equal-priority
+owning channel's failsafe immediately, preview-flagged data ignored. Data
+carrying a synchronization address waits for an E1.31 sync packet on that
+address (sync mode, below); `Force_Synchronization` keeps it waiting when
+syncs stop. Equal-priority
 sources go through the shared 2-source HTP/LTP merge (keyed by CID hash,
 same engine as concurrent ArtDmx senders).
+
+**Sync mode** (Art-Net 4 `ArtSync`, E1.31 synchronization): until a sync is
+seen, universes are published as they arrive (free-run). Once a controller
+syncs, received universes pile up in the back bank and go out together on
+the next sync, so an output spanning several universes never shows two
+source frames; a sync with nothing new is used up. Without syncs for 4 s
+(Art-Net) or 2.5 s (E1.31) the box free-runs again. A sync also wakes the
+render wait, so the frame leaves within the refresh period.
 
 **FPP MultiSync** (UDP 32320 + multicast 239.70.80.80, opt-in `fpp_remote`):
 the box follows an FPP/xSchedule master — START plays the named local

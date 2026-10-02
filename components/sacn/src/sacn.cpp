@@ -42,6 +42,7 @@ constexpr size_t kMaxJoined             = dmx::kNumUniverses;
 // task carries on. 32-bit: the P4 only does word-sized atomic RMW.
 enum : uint32_t { kOff, kRunning, kStopping };
 std::atomic<uint32_t> g_state{ kOff };
+std::atomic<uint32_t> g_sync_address{ 0 };  // the E1.31 sync address the data waits on, 0 = none
 int g_sock = -1;
 
 bool running() {
@@ -161,7 +162,14 @@ void handle_data(const uint8_t* buf, size_t len) {
     const int ch = dmx::channel_for_universe(f.universe);
     if (ch >= 0) dmx::note_channel_activity(static_cast<size_t>(ch));
 
-    if (f.options & parser::kOptForceSync) dmx::note_sync();
+    // E1.31 §6.2.4: data carrying a synchronization address waits for a sync
+    // packet on that address; Force_Synchronization keeps waiting if syncs stop.
+    if (f.sync_address) {
+        g_sync_address.store(f.sync_address, std::memory_order_relaxed);
+        dmx::note_sync_hold(dmx::kE131SyncTimeoutMs, (f.options & parser::kOptForceSync) != 0);
+    } else {
+        dmx::note_sync_released();
+    }
 }
 
 void task_main(void*) {
@@ -214,8 +222,13 @@ void task_main(void*) {
             if (root == parser::kRootVectorData) {
                 handle_data(buf, n);
             } else if (root == parser::kRootVectorExtended) {
-                uint16_t sync_addr = 0;
-                if (parser::parse_sync(buf, n, &sync_addr)) dmx::note_sync();
+                // Only the sync address the data asked for releases it.
+                uint16_t sync_addr   = 0;
+                const uint32_t asked = g_sync_address.load(std::memory_order_relaxed);
+                if (!parser::parse_sync(buf, n, &sync_addr))
+                    dmx::note_packet_bad();
+                else if (!asked || sync_addr == asked)
+                    dmx::note_sync(dmx::kE131SyncTimeoutMs);
             } else {
                 dmx::note_packet_bad();
             }
