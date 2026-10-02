@@ -61,7 +61,7 @@ uint16_t g_master[config::kNumChannels] = { kMasterFull, kMasterFull, kMasterFul
 uint8_t g_blackout                      = 0;
 uint8_t g_strobe[config::kNumChannels]  = {};
 }  // namespace
-void identify_start(size_t channel_index, uint16_t /*seconds*/) {
+void identify_start(size_t channel_index, uint8_t /*blinks*/) {
     g_identify = static_cast<int>(channel_index);
 }
 void identify_stop() {

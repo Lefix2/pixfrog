@@ -79,7 +79,7 @@ void start() {
     init_log_capture();  // ensure capture is on even if app_main didn't call it
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 40;  // 32 routes today
+    cfg.max_uri_handlers = 40;  // 33 routes today
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -94,6 +94,7 @@ void start() {
         route("/api/config", HTTP_GET, handle_get_config),
         route("/api/global", HTTP_POST, handle_post_global),
         route("/api/channel/*", HTTP_POST, handle_post_channel),
+        route("/api/identify", HTTP_POST, handle_identify),
         route("/api/ota", HTTP_POST, handle_ota),
         route("/api/backup", HTTP_GET, handle_backup),
         route("/api/restore", HTTP_POST, handle_restore),

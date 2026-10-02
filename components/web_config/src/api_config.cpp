@@ -618,6 +618,29 @@ esp_err_t handle_post_channel(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// ── POST /api/identify ───────────────────────────────────────────────────────
+// Blink outputs one after the other (dmx::identify_outputs), each 3 times.
+// Body {"outputs": mask} or empty / {} = every configured output. Replies
+// the mask actually run.
+esp_err_t handle_identify(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    char buf[64] = "";
+    uint8_t mask = dmx::identify_configured_outputs();
+    if (req->content_len) {
+        if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large");
+        cJSON* j = cJSON_Parse(buf);
+        if (!j) return send_err(req, 400, "invalid JSON");
+        uint32_t u = 0;
+        if (json_u32(j, "outputs", 0, 255, u)) mask = static_cast<uint8_t>(u);
+        cJSON_Delete(j);
+    }
+    dmx::identify_outputs(mask);
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddNumberToObject(root, "outputs", mask);
+    return send_json(req, root);
+}
+
 // ── POST /api/autopatch ─────────────────────────────────────────────────────
 // Re-address every channel contiguously from a base universe (cascade by each
 // channel's pixel span). Body: {"base": <0..32767>}. Replies the next free

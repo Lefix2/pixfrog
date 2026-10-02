@@ -117,6 +117,7 @@ esp_err_t handle_post_channel(httpd_req_t* req);
 esp_err_t handle_backup(httpd_req_t* req);
 esp_err_t handle_restore(httpd_req_t* req);
 esp_err_t handle_autopatch(httpd_req_t* req);
+esp_err_t handle_identify(httpd_req_t* req);
 esp_err_t handle_control_fixture(httpd_req_t* req);
 esp_err_t handle_post_control(httpd_req_t* req);
 esp_err_t handle_post_show(httpd_req_t* req);

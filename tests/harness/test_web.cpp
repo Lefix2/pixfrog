@@ -83,7 +83,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 32);
+    EXPECT_EQ(shim::http_routes(), 33);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -207,6 +207,17 @@ TEST(post_channel_updates_and_ignores_bad_fields) {
     EXPECT_EQ(post("/api/channel/9", "{}").status, 400);
     EXPECT_EQ(post("/api/channel/1/identify").status, 200);
     EXPECT_EQ(dmx::identify_channel(), 1);
+    dmx::identify_stop();
+}
+
+// The dashboard button: every configured output, or the outputs asked for.
+TEST(identify_endpoint_runs_the_configured_outputs_in_turn) {
+    Json all(post("/api/identify", "").body);
+    EXPECT_EQ(cJSON_GetObjectItem(all.j, "outputs")->valueint, dmx::identify_configured_outputs());
+    Json some(post("/api/identify", "{\"outputs\":5}").body);
+    EXPECT_EQ(cJSON_GetObjectItem(some.j, "outputs")->valueint, 5);
+    EXPECT_EQ(dmx::identify_channel(), 0);
+    EXPECT_EQ(post("/api/identify", "{nope").status, 400);
     dmx::identify_stop();
 }
 

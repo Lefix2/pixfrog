@@ -678,12 +678,20 @@ int cmd_identify(int argc, char** argv) {
         dmx::identify_stop();
         return ok();
     }
-    uint32_t ch = 0, secs = 10;
+    uint32_t blinks = dmx::kIdentifyBlinks;
+    if (argc == 3 && !parse_u32_in(argv[2], 1, 60, blinks)) return err("blinks: 1..60");
+    if (argc >= 2 && argc <= 3 &&
+        strcmp(argv[1], "all") == 0) {  // every configured output, in turn
+        const uint8_t mask = dmx::identify_configured_outputs();
+        dmx::identify_outputs(mask, static_cast<uint8_t>(blinks));
+        printf("identify=0x%02x x%u\n", mask, static_cast<unsigned>(blinks));
+        return ok();
+    }
+    uint32_t ch = 0;
     if (argc < 2 || argc > 3 || !parse_u32_in(argv[1], 0, config::kNumChannels - 1, ch))
-        return err("usage: identify <ch 0..7> [seconds] | identify stop");
-    if (argc == 3 && !parse_u32_in(argv[2], 1, 600, secs)) return err("seconds: 1..600");
-    dmx::identify_start(ch, static_cast<uint16_t>(secs));
-    printf("identify=ch%u for %us\n", static_cast<unsigned>(ch), static_cast<unsigned>(secs));
+        return err("usage: identify <ch 0..7>|all [blinks] | identify stop");
+    dmx::identify_start(ch, static_cast<uint8_t>(blinks));
+    printf("identify=ch%u x%u\n", static_cast<unsigned>(ch), static_cast<unsigned>(blinks));
     return ok();
 }
 

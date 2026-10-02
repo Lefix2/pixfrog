@@ -79,7 +79,9 @@ opened while the flag is off — opt-in only. Toggle from the Network submenu, v
 
 REST endpoints (all JSON; every POST/DELETE, plus `GET /api/logs` and `GET /api/coredump`,
 behind the optional password):
-- config: `GET /api/config`, `POST /api/global`, `POST /api/channel/{0..7}[/identify]`,
+- config: `GET /api/config`, `POST /api/global`, `POST /api/channel/{0..7}[/identify]`
+  (3 blinks), `POST /api/identify` (`{outputs:mask}`, default every configured
+  output, blinked one after the other),
   `POST /api/autopatch`, `GET /api/backup`, `POST /api/restore`
 - scenes: `POST /api/scene/{n}[/play|/stop|/delete]` (play takes `{"outputs":mask}`),
   `POST /api/scenes/add|move|stop`
