@@ -123,6 +123,11 @@ esp_err_t handle_get_diag(httpd_req_t* req) {
     if (const auto* rb = rollback_record())
         cJSON_AddItemToObject(js, "last_rollback", rollback_json(*rb));
     cJSON_AddItemToObject(root, "sys", js);
+    // The UI task: a growing loop age is a frozen screen + knob (see ui.h).
+    cJSON* ju = cJSON_CreateObject();
+    cJSON_AddNumberToObject(ju, "loop_age_ms", ui::loop_age_ms());
+    cJSON_AddNumberToObject(ju, "display_stalls", ui::display_stalls());
+    cJSON_AddItemToObject(root, "ui", ju);
 
     // Per-channel capacity.
     cJSON* jchs = cJSON_CreateArray();

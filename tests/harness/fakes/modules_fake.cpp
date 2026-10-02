@@ -71,6 +71,12 @@ uint32_t get_ip() {
 bool is_link_up() {
     return ::fake::modules().link_up;
 }
+uint32_t loop_age_ms() {
+    return ::fake::modules().ui_loop_age_ms;
+}
+uint32_t display_stalls() {
+    return ::fake::modules().display_stalls;
+}
 }  // namespace ui
 namespace fseq {
 bool start(const char* filename, bool loop) {

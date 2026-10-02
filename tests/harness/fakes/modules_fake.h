@@ -13,10 +13,12 @@ struct Modules {
     int fpp_starts   = 0;
     int web_starts   = 0;
     std::string fseq_started;  // last fseq::start() argument
-    bool fseq_stopped   = false;
-    bool fseq_loop      = false;  // last fseq::start() loop flag
-    int playlist_starts = 0;      // fseq::start_playlist() calls
-    bool sd_mounted     = true;   // fseq::sd_state()
+    bool fseq_stopped       = false;
+    bool fseq_loop          = false;  // last fseq::start() loop flag
+    int playlist_starts     = 0;      // fseq::start_playlist() calls
+    bool sd_mounted         = true;   // fseq::sd_state()
+    uint32_t ui_loop_age_ms = 33;     // ui::loop_age_ms()
+    uint32_t display_stalls = 0;      // ui::display_stalls()
 };
 Modules& modules();
 void reset_modules();

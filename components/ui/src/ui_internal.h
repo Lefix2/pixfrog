@@ -142,6 +142,8 @@ struct TftConfig {
     int backlight_gpio;  // -1 = no backlight control
 };
 bool tft_init(const TftConfig& cfg);
+// A display transfer failed or its completion never came (ui::display_stalls).
+void note_display_stall();
 void tft_draw_bitmap(int x1, int y1, int x2, int y2, const uint16_t* data);
 int tft_width();
 int tft_height();

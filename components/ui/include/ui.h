@@ -66,6 +66,15 @@ enum class NetState : uint8_t {
 void set_net_state(NetState s);
 NetState get_net_state();
 
+// ── Health (GET /api/diag) ────────────────────────────────────────────────
+// ms since ui_task last went round its loop (0 before it starts). The task
+// also polls the encoder, so a large age means a frozen UI and knob while the
+// LEDs and the network carry on.
+uint32_t loop_age_ms();
+// Display transfers that failed or never signalled completion (each one cost
+// the UI at most a bounded wait instead of freezing it).
+uint32_t display_stalls();
+
 // Per-channel activity is read directly from dmx::is_channel_active()
 // in menu.cpp — no UI-side cache needed.
 
