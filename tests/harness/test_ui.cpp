@@ -537,6 +537,47 @@ TEST(nv3007_a_refused_or_lost_transfer_costs_a_frame_not_the_ui) {
     EXPECT_EQ(ui::display_stalls(), before + 2);
 }
 
+// The SPI DMA copies any transfer whose address or length is off the cache
+// line; a 27 KB copy per push ran internal RAM out after ~1 h. The aligned bulk
+// goes straight out, only the tail (< one line) is copied, and the RAMWR
+// continuation still lands every pixel where it belongs.
+TEST(nv3007_pushes_bounce_at_most_a_cache_line) {
+    auto c   = ui_cfg();
+    auto tft = ui::detail::TftConfig{ c.spi_host,
+                                      c.spi_clk_gpio,
+                                      c.spi_mosi_gpio,
+                                      c.spi_cs_gpio,
+                                      c.tft_dc_gpio,
+                                      c.tft_rst_gpio,
+                                      c.spi_freq_hz,
+                                      428,
+                                      142,
+                                      -1 };
+    shim::lcd_reset();
+    EXPECT_TRUE(ui::detail::tft_init(tft));
+    // An odd-sized band: 37 × 13 landscape pixels, each one its own value.
+    static uint16_t px[37 * 13];
+    for (int i = 0; i < 37 * 13; ++i)
+        px[i] = static_cast<uint16_t>(0x1000 + i);
+    const size_t before = shim::lcd_log().bounced_bytes;
+    const int tx_before = shim::lcd_log().color_tx;
+    ui::detail::tft_draw_bitmap(100, 50, 137, 63, px);
+    const auto& l = shim::lcd_log();
+    EXPECT_EQ(l.color_tx - tx_before, 2);  // the aligned bulk + the tail
+    EXPECT_TRUE(l.bounced_bytes - before < 64);
+    // Landscape (x, y) → portrait (141 - y, x), or (y, 427 - x) rotated 180°,
+    // plus the 12-column glass offset.
+    for (int y = 50; y < 63; y += 3)
+        for (int x = 100; x < 137; x += 4) {
+#ifdef CONFIG_PIXFROG_NV3007_ROT180
+            const uint16_t got = l.at(12 + y, 427 - x);
+#else
+            const uint16_t got = l.at(12 + 141 - y, x);
+#endif
+            EXPECT_EQ(got, 0x1000 + (y - 50) * 37 + (x - 100));
+        }
+}
+
 TEST(nv3007_landscape_pixels_land_at_their_portrait_address) {
     auto c   = ui_cfg();
     auto tft = ui::detail::TftConfig{ c.spi_host,

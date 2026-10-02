@@ -200,10 +200,11 @@ pixfrog_harness(harness_ui_oled ${UI_COMMON} ${UI_SRC}/oled_ssd1306.cpp ${UI_SRC
     ${UI_SRC}/font_oled.cpp ${UI_SRC}/splash_oled.cpp)
 pixfrog_harness(harness_ui_nv3007 ${UI_COMMON} ${UI_TFT} ${UI_SRC}/tft_nv3007.cpp)
 target_compile_definitions(harness_ui_nv3007 PRIVATE CONFIG_PIXFROG_DISPLAY_TFT=1
-    CONFIG_PIXFROG_DISPLAY_NV3007=1)
+    CONFIG_PIXFROG_DISPLAY_NV3007=1 CONFIG_CACHE_L1_CACHE_LINE_SIZE=64)
 pixfrog_harness(harness_ui_nv3007_rot180 ${UI_COMMON} ${UI_TFT} ${UI_SRC}/tft_nv3007.cpp)
 target_compile_definitions(harness_ui_nv3007_rot180 PRIVATE CONFIG_PIXFROG_DISPLAY_TFT=1
-    CONFIG_PIXFROG_DISPLAY_NV3007=1 CONFIG_PIXFROG_NV3007_ROT180=1)
+    CONFIG_PIXFROG_DISPLAY_NV3007=1 CONFIG_PIXFROG_NV3007_ROT180=1
+    CONFIG_CACHE_L1_CACHE_LINE_SIZE=64)
 pixfrog_harness(harness_ui_st7789 ${UI_COMMON} ${UI_TFT} ${UI_SRC}/tft_st7789.cpp)
 target_compile_definitions(harness_ui_st7789 PRIVATE CONFIG_PIXFROG_DISPLAY_TFT=1)
 foreach(t harness_ui_oled harness_ui_nv3007 harness_ui_nv3007_rot180 harness_ui_st7789)

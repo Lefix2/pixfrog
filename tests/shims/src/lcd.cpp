@@ -1,6 +1,7 @@
 // esp_lcd + SPI bus + cache sync on the host: record what the LED backend and
 // the UI drivers ask of the LCD hardware (shim::lcd_log).
 #include <cstdarg>
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
@@ -211,14 +212,21 @@ esp_err_t esp_lcd_panel_io_tx_color(esp_lcd_panel_io_handle_t io, int lcd_cmd, c
     if (!io || !color || !color_size) return ESP_ERR_INVALID_ARG;
     if (shim::should_fail(shim::Fault::LcdTxColor)) return ESP_FAIL;
     const bool lost = shim::should_fail(shim::Fault::LcdTxLost);
-    g_log.commands.push_back(lcd_cmd);
+    if ((reinterpret_cast<uintptr_t>(color) | color_size) & 63u) g_log.bounced_bytes += color_size;
+    // A command starts RAMWR at the window origin; lcd_cmd < 0 (no command
+    // phase) continues where the previous transfer stopped, as esp_lcd's own
+    // chunked transfers rely on.
+    if (lcd_cmd >= 0) {
+        g_log.commands.push_back(lcd_cmd);
+        g_log.ram_pos = 0;
+    }
     ++g_log.color_tx;
     // RAMWR fills the CASET/RASET window row by row, as a DCS controller does.
     const auto* px = static_cast<const uint16_t*>(color);
     const int w    = g_log.win_x1 - g_log.win_x0 + 1;
-    for (size_t i = 0; i < color_size / 2; ++i) {
-        const int x = g_log.win_x0 + static_cast<int>(i % w);
-        const int y = g_log.win_y0 + static_cast<int>(i / w);
+    for (size_t i = 0; i < color_size / 2; ++i, ++g_log.ram_pos) {
+        const int x = g_log.win_x0 + static_cast<int>(g_log.ram_pos % w);
+        const int y = g_log.win_y0 + static_cast<int>(g_log.ram_pos / w);
         if (y > g_log.win_y1) return ESP_ERR_INVALID_SIZE;  // overran the window
         g_log.gram[static_cast<size_t>(y) * shim::LcdLog::kGramW + x] = px[i];
     }

@@ -182,6 +182,10 @@ struct LcdLog {
     // SPI panel GRAM (CASET 0x2A / RASET 0x2B / RAMWR 0x2C), kGramW × kGramH.
     static constexpr int kGramW = 256, kGramH = 512;
     int win_x0 = 0, win_x1 = 0, win_y0 = 0, win_y1 = 0;
+    size_t ram_pos = 0;  // pixels written since the last RAMWR (lcd_cmd -1 continues)
+    // Colour bytes sent from a buffer the SPI driver would have to copy (addr
+    // or length off the 64-byte line): what used to exhaust internal RAM.
+    size_t bounced_bytes       = 0;
     std::vector<uint16_t> gram = std::vector<uint16_t>(kGramW * kGramH, 0xA5A5);
     uint16_t at(int x, int y) const { return gram[static_cast<size_t>(y) * kGramW + x]; }
 };

@@ -24,8 +24,10 @@ esp_err_t handle_ws(httpd_req_t* req) {
     return httpd_ws_recv_frame(req, &f, f.len);
 }
 
-// A frame for every WebSocket client; `data` is malloc'ed (cJSON's allocator
-// for text) and freed by ws_broadcast.
+// A frame for every WebSocket client; `data` comes from frame_alloc() and is
+// freed by ws_broadcast. Frames live in PSRAM: under 16 KB a plain malloc
+// lands in internal RAM, and 5 frames a second fragmented it until the
+// display's DMA allocations failed (screen freeze, then glitches).
 struct WsPush {
     httpd_handle_t server;
     uint8_t* data;
@@ -33,14 +35,22 @@ struct WsPush {
     httpd_ws_type_t type;
 };
 
-// Runs in the httpd task: send the frame to every WebSocket client.
+static uint8_t* frame_alloc(size_t len) {
+    void* p = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
+    return static_cast<uint8_t*>(p ? p : malloc(len));
+}
+
+// Runs in the httpd task: send the frame to every WebSocket client. With none
+// left, the push task goes back to sleep until the next handshake.
 static void ws_broadcast(void* arg) {
     auto* p  = static_cast<WsPush*>(arg);
     size_t n = kMaxWsClients;
     int fds[kMaxWsClients];
+    size_t sent = 0;
     if (httpd_get_client_list(p->server, &n, fds) == ESP_OK) {
         for (size_t i = 0; i < n; ++i) {
             if (httpd_ws_get_fd_info(p->server, fds[i]) != HTTPD_WS_CLIENT_WEBSOCKET) continue;
+            ++sent;
             httpd_ws_frame_t f{};
             f.type    = p->type;
             f.payload = p->data;
@@ -48,10 +58,8 @@ static void ws_broadcast(void* arg) {
             httpd_ws_send_frame_async(p->server, fds[i], &f);
         }
     }
-    if (p->type == HTTPD_WS_TYPE_TEXT)
-        cJSON_free(p->data);
-    else
-        free(p->data);
+    if (!sent) g_ws_seen.store(0, std::memory_order_relaxed);
+    free(p->data);
     delete p;
 }
 
@@ -66,10 +74,7 @@ static void ws_queue(uint8_t* data, size_t len, httpd_ws_type_t type) {
     }
     xSemaphoreGive(g_server_mux);
     if (queued) return;
-    if (type == HTTPD_WS_TYPE_TEXT)
-        cJSON_free(data);
-    else
-        free(data);
+    free(data);
     delete p;
 }
 
@@ -79,7 +84,7 @@ constexpr size_t kPreviewSamples = 64;
 constexpr size_t kPreviewBytes   = 2 + config::kNumChannels * (1 + kPreviewSamples * 3);
 
 static void push_preview() {
-    auto* buf = static_cast<uint8_t*>(malloc(kPreviewBytes));
+    auto* buf = frame_alloc(kPreviewBytes);
     if (!buf) return;
     size_t len = 0;
     buf[len++] = 'P';
@@ -95,12 +100,18 @@ static void push_preview() {
 static void push_status() {
     cJSON* root = build_status_json();
     cJSON_AddStringToObject(root, "type", "status");
-    char* text = cJSON_PrintUnformatted(root);
+    constexpr size_t kMax = 4096;  // the status is ~1 KB
+    auto* text            = frame_alloc(kMax);
+    const bool ok         = text && cJSON_PrintPreallocated(root, reinterpret_cast<char*>(text),
+                                                            static_cast<int>(kMax), false);
     cJSON_Delete(root);
-    if (text) ws_queue(reinterpret_cast<uint8_t*>(text), std::strlen(text), HTTPD_WS_TYPE_TEXT);
+    if (ok)
+        ws_queue(text, std::strlen(reinterpret_cast<char*>(text)), HTTPD_WS_TYPE_TEXT);
+    else
+        free(text);
 }
 
-// 5 Hz preview, 1 Hz status, once a client has connected.
+// 5 Hz preview, 1 Hz status, while a WebSocket client is connected.
 void web_push_task(void*) {
     uint32_t tick = 0;
     while (g_push_run.load(std::memory_order_acquire)) {
