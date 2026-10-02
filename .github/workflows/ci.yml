@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # labeled/unlabeled: the coverage-drop-ok label re-runs the coverage gate.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   # Decide whether the code-building jobs need to run at all. A branch that
@@ -81,6 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # the gate needs the merge-base with main
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -104,6 +108,12 @@ jobs:
           disable_search: true
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
+      # Codecov's own statuses only inform; this fails the job (and so the
+      # required CI gate) when the PR lowers the project coverage by more than
+      # 0.1 point against its merge-base. tools/coverage_gate.py explains.
+      - name: Coverage gate (no drop vs main)
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'coverage-drop-ok')
+        run: python tools/coverage_gate.py --head-sha ${{ github.event.pull_request.head.sha }}
 
   emulator:
     name: UI emulator (SDL2 host build + smoke test)

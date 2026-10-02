@@ -26,6 +26,10 @@ else
 fi
 if python3 -c "import gcovr" 2>/dev/null; then
     python3 tools/coverage.py >/dev/null && cat build/coverage/summary.txt
+    # CI fails a PR that lowers coverage (tools/coverage_gate.py): same check on
+    # the local lcov, against main's figure on Codecov (skipped offline).
+    git fetch -q origin main 2>/dev/null || true
+    python3 tools/coverage_gate.py --lcov build/coverage/coverage.lcov
 else
     echo "(coverage skipped: pip install gcovr to replay the coverage job)"
 fi
