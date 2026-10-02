@@ -430,6 +430,9 @@
    "fb_bytes": 65664,
    "heap_free": 25165824,
    "heap_min": 24117248,
+   "internal_dma_largest": 16777216,
+   "internal_free": 25165824,
+   "internal_min": 24117248,
    "psram_free": 25165824,
    "psram_total": 33554432
   },
@@ -840,7 +843,7 @@
    "loop.fseq"
   ]
  },
- "logs": "I (1018) WEB: log capture ring installed (8192 B)\nI (1018) WEB: HTTP server started on port 80\nI (1036) WEB: mDNS: pixfrog-3456.local\nI (1036) WEB: mDNS: pixfrog.local now points here\n",
+ "logs": "I (1000) WEB: log capture ring installed (8192 B)\nI (1000) WEB: HTTP server started on port 80\nI (1000) WEB: mDNS: pixfrog-3456.local\nI (1000) WEB: mDNS: pixfrog.local now points here\n",
  "playlist": {
   "autostart": false,
   "items": [
