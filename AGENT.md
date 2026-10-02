@@ -144,6 +144,10 @@ applies to *always-on* listeners; this one is opt-in and user-controlled.
   `ci.yml` job (format check, host suites plain + ASan/UBSan + coverage, emulator build + smoke test + menu crawl/goldens,
   SPA browser tests, fuzzing (15 s per target locally),
   nv3007 + st7789 + oled IDF builds). Never push and "let CI find out".
+- **Coverage never goes down**: a PR that lowers the project coverage by more
+  than 0.1 point against its merge-base fails CI (`tools/coverage_gate.py`,
+  Codecov figures; ci-local runs the same check on the local lcov). Add tests
+  with the code; a deliberate, explained drop takes the `coverage-drop-ok` label.
 - A change in `led_protocols`, `dmx_manager`, or `artnet` requires the matching
   host suite green.
 - The canonical proof for IDF-bound refactors is `idf.py build` — natively in

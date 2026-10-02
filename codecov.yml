@@ -12,7 +12,7 @@ coverage:
     project:
       default:
         target: auto
-        threshold: 1%   # the harness only grows: a real drop means a test was lost
+        threshold: 1%   # informational: the blocking check is tools/coverage_gate.py (0.1 pt)
     patch:
       default:
         target: 60%     # new code should come with tests
