@@ -101,9 +101,6 @@ a password protects once set; none of them may make it mandatory.
 
 ## Web UI
 
-- [ ] **Dead icon colours** — 7 `<i data-lucide style="color:…">` never
-      showed their colour (lucide drops `style` when it swaps in the `<svg>`):
-      decide per icon whether the colour was meant, then move it to a class.
 - [ ] **More classes** — ~330 inline styles remain (one-off layout, JS-built
       rows); fold further repeats into classes as screens are touched.
 

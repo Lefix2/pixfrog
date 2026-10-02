@@ -507,3 +507,19 @@ def test_settings_that_persist_show_no_banner(page, device):
     expect(page.locator("#rb-banner")).to_be_hidden()
     page.wait_for_timeout(1500)  # a status has been applied
     expect(page.locator("#nv-banner")).to_be_hidden()
+
+
+def test_icon_colours_reach_the_svg(page, device):
+    # Lucide swaps each <i data-lucide> for an <svg>, keeping its class but not
+    # its style: a colour must come from a class (or a parent), never style=.
+    import gzip
+    with urllib.request.urlopen(device.url + "/") as r:
+        html = r.read()
+    html = gzip.decompress(html).decode() if html[:2] == b"\x1f\x8b" else html.decode()
+    assert not re.search(r"<i\b[^<>]*data-lucide[^<>]*style=", html)
+    accent, warn = "rgb(63, 212, 99)", "rgb(232, 178, 58)"
+    film = page.locator('[data-screen="dashboard"] svg.fg-warn').first  # NOW PLAYING
+    assert film.evaluate("e => getComputedStyle(e).color") == warn
+    nav(page, "channels")
+    zap = page.locator('[data-action="identify-chan"] svg').first
+    assert zap.evaluate("e => getComputedStyle(e).color") == accent
