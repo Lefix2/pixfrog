@@ -389,6 +389,25 @@ TEST(auto_patch_lays_channels_out_contiguously) {
     EXPECT_EQ(config::get_channel(1).universe_start, 12);
     EXPECT_EQ(config::get_channel(2).universe_start, 14);
     EXPECT_EQ(next, 16);
+    // An enabled control universe follows the outputs, from address 1.
+    auto ctl    = config::get_control();
+    ctl.enabled = 1;
+    ctl.address = 40;
+    config::set_control(ctl);
+    EXPECT_TRUE(dmx::auto_patch_universes(10, &next));
+    EXPECT_EQ(config::get_control().universe, 16);
+    EXPECT_EQ(config::get_control().address, 1);
+    EXPECT_EQ(next, 17);
+    // Nowhere left past the last universe: the control universe stays put.
+    for (size_t ch = 1; ch < 3; ++ch) {
+        auto c     = config::get_channel(ch);
+        c.protocol = led::Protocol::Off;
+        config::set_channel(ch, c);
+    }
+    EXPECT_TRUE(dmx::auto_patch_universes(dmx::kMaxUniverseNumber - 1, &next));
+    EXPECT_EQ(config::get_control().universe, 16);
+    ctl.enabled = 0;
+    config::set_control(ctl);
 }
 
 TEST(artsync_wakes_the_render_wait) {

@@ -272,6 +272,20 @@ def test_control_overlap_and_overflow_warnings(page, device):
     expect(page.locator("#ct-warn")).to_contain_text("past DMX channel 512")
 
 
+def test_auto_patch_places_the_control_universe_after_the_outputs(page, device):
+    navs = page.locator("aside div[data-nav]").evaluate_all("els => els.map(e => e.dataset.nav)")
+    assert navs.index("patch") == navs.index("control") + 1  # below DMX control
+    device.post("/api/control", {"enabled": True, "universe": 300, "address": 40})
+    page.reload()
+    nav(page, "patch")
+    page.locator('[data-action="autopatch"]').click()
+    expect(page.locator("#patch-mount")).to_contain_text("DMX control")
+    cfg = device.get("/api/config")
+    end = max(c["universe_start"] for c in cfg["channels"] if c["protocol"] != "Off")
+    assert cfg["control"]["universe"] > end and cfg["control"]["address"] == 1
+    expect(page.locator("#patch-mount")).to_contain_text(f'U{cfg["control"]["universe"]}')
+
+
 def test_fixture_profile_download(page, device):
     nav(page, "control")
     with page.expect_download() as dl:

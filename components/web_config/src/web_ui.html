@@ -131,8 +131,8 @@
     <div data-nav="channels" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Channels">Channels</span></div>
     <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
     <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i>ArtNet / sACN</div>
-    <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
     <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="DMX control">DMX control</span></div>
+    <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
     <div data-nav="system" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="settings"></i><span data-i18n="System">System</span></div>
     <div data-nav="diag" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="activity"></i><span data-i18n="Diagnostics">Diagnostics</span></div>
 
@@ -463,7 +463,7 @@
       <div data-screen="patch" style="display:none">
         <div style="max-width:920px;display:flex;flex-direction:column;gap:16px">
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:18px">
-            <div style="display:flex;align-items:center;gap:13px"><span style="width:42px;height:42px;border-radius:0;background:rgba(63,212,99,.12);border:1px solid rgba(63,212,99,.28);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none"><i data-lucide="git-fork" class="ic22"></i></span><div><div style="font-size:15px;font-weight:700;letter-spacing:-.02em" data-i18n="Contiguous auto-patch">Contiguous auto-patch</div><div style="font:500 12px 'DM Mono';color:var(--fg-3);margin-top:3px;max-width:520px" data-i18n="Re-assigns consecutive universes to every active channel, with no gap or overlap, starting from universe 0.">Re-assigns consecutive universes to every active channel, with no gap or overlap, starting from universe 0.</div></div></div>
+            <div style="display:flex;align-items:center;gap:13px"><span style="width:42px;height:42px;border-radius:0;background:rgba(63,212,99,.12);border:1px solid rgba(63,212,99,.28);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none"><i data-lucide="git-fork" class="ic22"></i></span><div><div style="font-size:15px;font-weight:700;letter-spacing:-.02em" data-i18n="Contiguous auto-patch">Contiguous auto-patch</div><div style="font:500 12px 'DM Mono';color:var(--fg-3);margin-top:3px;max-width:520px" data-i18n="Re-assigns consecutive universes to every active channel, then to the DMX control universe, with no gap or overlap, starting from universe 0.">Re-assigns consecutive universes to every active channel, then to the DMX control universe, with no gap or overlap, starting from universe 0.</div></div></div>
             <button class="btn-pri" data-action="autopatch" style="display:inline-flex;align-items:center;gap:8px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:11px 18px;font:500 13px 'DM Mono';cursor:pointer;flex:none"><i data-lucide="wand-2" class="ic16"></i><span data-i18n="Run auto-patch">Run auto-patch</span></button>
           </div>
 
@@ -890,7 +890,7 @@ var FR={
   'REAL-TIME STATISTICS':'STATISTIQUES TEMPS RÉEL','ArtNet packets/s':'ArtNet paquets/s','sACN packets/s':'sACN paquets/s',
   'active universes':'univers actifs','invalid packets':'paquets invalides',
   'Contiguous auto-patch':'Auto-patch contigu',
-  'Re-assigns consecutive universes to every active channel, with no gap or overlap, starting from universe 0.':'Réattribue à chaque canal actif des univers consécutifs, sans trou ni chevauchement, à partir de l’univers 0.',
+  'Re-assigns consecutive universes to every active channel, then to the DMX control universe, with no gap or overlap, starting from universe 0.':'Réattribue des univers consécutifs à chaque canal actif, puis à l’univers de contrôle DMX, sans trou ni chevauchement, à partir de l’univers 0.',
   'Run auto-patch':'Lancer l’auto-patch','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
   'Universes used':'Univers consommés','no overlap detected':'aucun chevauchement détecté',
   'GENERAL':'GÉNÉRAL','Frame rate (Hz)':'Cadence (Hz)','Return to home (s)':'Retour accueil (s)',
@@ -1257,6 +1257,12 @@ function buildPatch(){
     if(end>maxEnd) maxEnd=end;
     rows+=patchRow(c.n,c.proto,span>1?('U'+u+'–U'+end):('U'+u),c.dmx);
   });
+  // The DMX control universe follows the outputs (auto_patch_universes).
+  if(CTL.enabled){
+    var w=ctlFootprint(), a=CTL.address;
+    if(CTL.universe>maxEnd) maxEnd=CTL.universe;
+    rows+=patchRow('<i data-lucide="sliders-horizontal" class="ic14"></i>',t('DMX control'),'U'+CTL.universe,w>1?(a+'–'+(a+w-1)):String(a));
+  }
   var nf2=el('patch-nextfree'); if(nf2) nf2.textContent=(maxEnd+1);
   return rows;
 }
