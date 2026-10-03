@@ -20,4 +20,5 @@ idf_component_register(
         web_config
         fseq_player
         fpp_sync
+        audio
 )

@@ -13,6 +13,7 @@
 //   web_mdns.cpp    unique mDNS name, elected pixfrog.local alias, /api/peers
 #pragma once
 
+#include "audio.h"
 #include "cJSON.h"
 #include "config_store.h"
 #include "dmx_manager.h"
@@ -140,6 +141,7 @@ esp_err_t handle_post_playlist(httpd_req_t* req);
 esp_err_t handle_ota(httpd_req_t* req);
 esp_err_t handle_rollback_ack(httpd_req_t* req);
 esp_err_t handle_reboot(httpd_req_t* req);
+esp_err_t handle_audio_test(httpd_req_t* req);
 esp_err_t handle_factory_reset(httpd_req_t* req);
 esp_err_t handle_ws(httpd_req_t* req);
 esp_err_t handle_get_peers(httpd_req_t* req);

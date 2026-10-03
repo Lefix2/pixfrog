@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "audio.h"
 #include "config_store.h"
 #include "ui_internal.h"
 
@@ -64,6 +65,9 @@ void task_main(void*) {
     {
         const TickType_t t0 = xTaskGetTickCount();
         bool done           = false;
+        // The croak lands on the last frames of the logo drawing itself.
+        const uint32_t croak_at = detail::splash_total_ms() - 450;
+        bool croaked            = false;
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
         bool bl_on = false;
 #endif
@@ -74,6 +78,7 @@ void task_main(void*) {
             const detail::Event ev = detail::encoder_poll();
             detail::encoder_led_tick();  // breathe during the splash
             done = detail::splash_render(t_ms, ev == detail::Event::Click);
+            if (!croaked && !done && t_ms >= croak_at) croaked = audio::play_boot() || true;
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
             // First frame is now on the panel — safe to light the backlight
             // (kept off through boot so the white power-on state never shows).
@@ -114,7 +119,21 @@ void task_main(void*) {
             }
 #endif
             idle = false;
+            // Sound: a tick when a knob step moved something, a thud when it
+            // hit an end. The home screen (knob locked) stays silent.
+            // A click that takes or opens something confirms, one that backs
+            // out (Back row, long press) cancels.
+            const bool rotation = e == detail::Event::RotateLeft || e == detail::Event::RotateRight;
+            const bool sound    = rotation && !detail::menu_is_home();
+            const uint32_t was  = sound ? detail::menu_fingerprint() : 0;
+            const int press     = rotation ? 0 : detail::menu_press_kind(e);
             detail::menu_dispatch(e);
+            if (sound)
+                audio::feedback(detail::menu_fingerprint() != was ? audio::Feedback::Tick
+                                                                  : audio::Feedback::Bump,
+                                detail::menu_gauge_level());
+            else if (press)
+                audio::feedback(press > 0 ? audio::Feedback::Confirm : audio::Feedback::Cancel);
             // LED mode follows the screen: breathe on HOME, full green + yellow
             // action-blips in config. set_active() before flash() so the blip on
             // the click that opens config registers.
@@ -226,6 +245,10 @@ void set_net_state(NetState s) {
 
 NetState get_net_state() {
     return g_net_state;
+}
+
+i2c_master_bus_handle_t i2c_bus() {
+    return g_bus;
 }
 
 uint32_t loop_age_ms() {

@@ -39,6 +39,10 @@ int text_width(const char* s) {
 
 }  // namespace
 
+uint32_t splash_total_ms() {
+    return static_cast<uint32_t>(splash_anim_count()) * splash_anim_frame_ms();
+}
+
 bool splash_render(uint32_t t_ms, bool clicked) {
     const int count         = splash_anim_count();
     const uint32_t frame_ms = splash_anim_frame_ms();
@@ -126,6 +130,10 @@ void blit_text(int x0, int y0, const char* s, int scale) {
 }
 
 }  // namespace
+
+uint32_t splash_total_ms() {
+    return kHold;
+}
 
 bool splash_render(uint32_t t_ms, bool clicked) {
     if (clicked || t_ms >= kHold) return true;

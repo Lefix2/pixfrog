@@ -119,6 +119,10 @@ struct GlobalConfig {
     // Universe of an FSEQ sequence's first byte (xLights' "start universe").
     // Zero-fill migration = 0 = unset = 1, the xLights default.
     uint16_t fseq_universe;
+
+    // On-board speaker (boards with the R52 mod): knob ticks and the test
+    // sound. Zero-fill migration = 0 = off, the default.
+    uint8_t speaker_volume;  // 0 = off, 1..100 %
 };
 
 constexpr uint8_t kWebAuthSha256 = 0;  // legacy: SHA-256(salt || password)
@@ -170,6 +174,10 @@ constexpr uint8_t kTftBrightnessMin = 10;
 // Universe FSEQ byte 0 lands on (0 = unset = 1).
 inline uint16_t fseq_universe(const GlobalConfig& g) {
     return g.fseq_universe ? g.fseq_universe : 1;
+}
+
+inline uint8_t speaker_volume_pct(const GlobalConfig& g) {
+    return g.speaker_volume > 100 ? 100 : g.speaker_volume;
 }
 
 // Effective backlight level, in percent of full brightness. 0 (a config written

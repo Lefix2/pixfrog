@@ -61,9 +61,11 @@
 //    TXD0=34  TXD1=35  TX_EN=49  RXD0=29  RXD1=30  CRS_DV=28  REF_CLK=50
 //    MDC=31   MDIO=52  PHY_RESET=51
 //
-//  ES8311 audio codec (I2S — unused by pixfrog; GPIO9-13 left free, not on J13)
-//    MCLK=GPIO13  SCLK=GPIO12  LRCK=GPIO10  DOUT=GPIO11  DIN=GPIO9
-//    Config via I2C shared bus above.
+//  ES8311 audio codec + NS4150B speaker amp (on-board, not on J13)
+//    MCLK=GPIO13  SCLK=GPIO12  LRCK=GPIO10  ASDOUT(codec→P4)=GPIO11
+//    DSDIN(P4→codec)=GPIO9. Config via the shared I2C bus above (0x18).
+//    Amp enable PA_CTRL: R52 removed, 10 kΩ pull-up to 3.3 V (GPIO53 is
+//    LED CH8 DATA only).
 //
 // ════════════════════════════════════════════════════════════════════════════
 // Strapping pins (ESP32-P4 datasheet §3.3)
@@ -214,6 +216,24 @@ constexpr int kSdPowerGpio = 45;  // active low
 // ────────────────────────────────────────────────────────────────────────────
 // Miscellaneous
 // ────────────────────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────────────────────
+// Audio — ES8311 codec over I2S (on-board), config on the shared I2C bus
+// ────────────────────────────────────────────────────────────────────────────
+// The NS4150B amplifier's enable (PA_CTRL) came from GPIO53 through R52, the
+// same pin as LED CH8 DATA: every LED frame toggled the amp. On the bench
+// board R52 is removed and PA_CTRL pulled up (10 kΩ to 3.3 V): the amp is
+// always on, the firmware mutes the codec when idle (docs/HARDWARE.md §2.7).
+
+// Read once at boot, before the LED outputs: high = R52 removed (main.cpp).
+constexpr int kAmpProbeGpio = 53;
+
+constexpr uint16_t kCodecI2cAddr = 0x18;
+constexpr int kI2sMclkGpio       = 13;
+constexpr int kI2sBclkGpio       = 12;
+constexpr int kI2sWsGpio         = 10;
+constexpr int kI2sDoutGpio       = 9;   // to the codec's DSDIN (DAC)
+constexpr int kI2sDinGpio        = 11;  // from the codec's ASDOUT (ADC)
 
 constexpr int kStatusLedGpio = 1;
 

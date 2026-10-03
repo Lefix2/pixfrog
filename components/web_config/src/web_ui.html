@@ -545,6 +545,11 @@
               <div style="display:flex;gap:11px"><button class="btn-sec" data-action="export" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic16"></i><span data-i18n="Export JSON">Export JSON</span></button><button class="btn-sec" data-action="import" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="upload" class="ic16"></i><span data-i18n="Import JSON">Import JSON</span></button></div>
               <input id="restore-file" type="file" accept=".json,application/json" style="display:none"/>
             </div>
+            <div class="card" id="spk-card" style="display:none">
+              <span class="eyebrow" data-i18n="SPEAKER">SPEAKER</span>
+              <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:var(--fg-2)"><span data-i18n="Volume">Volume</span><input id="spk-vol" type="range" min="0" max="100" step="5" value="0" style="flex:1;accent-color:var(--accent)"/><span id="spk-vol-val" style="width:46px;text-align:right;color:var(--fg)">Off</span></label>
+              <div class="row-between-c" style="gap:12px"><span class="hint" data-live="audio-state">—</span><button class="btn-sec" data-action="audio-test" style="display:inline-flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="play" class="ic14"></i><span data-i18n="Play test sound">Play test sound</span></button></div>
+            </div>
             <div style="background:var(--panel);border:1px solid var(--danger-line);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
               <span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--danger)" data-i18n="DANGER ZONE">DANGER ZONE</span>
               <div style="display:flex;gap:11px"><button class="btn-dng" data-reboot style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="rotate-cw" class="ic16"></i><span data-i18n="Reboot">Reboot</span></button><button class="btn-dng" data-reset style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="trash-2" class="ic16"></i><span data-i18n="Factory reset">Factory reset</span></button></div>
@@ -849,6 +854,7 @@ var FR={
   'link':'lien','offline':'hors-ligne','Network link active':'Lien réseau actif','Network link down':'Lien réseau absent',
 
   'All pixfrogs':'Tous les pixfrogs',
+  'SPEAKER':'HAUT-PARLEUR','Play test sound':'Son de test','Playing the test sound':'Lecture du son de test','ES8311 codec ready':'Codec ES8311 prêt','No audio codec answering':'Aucun codec audio ne répond','Volume':'Volume','Off':'Off','Turn the volume up first':'Monte d’abord le volume',
   'screen & knob task':'tâche écran & bouton','frozen':'figée','running':'active','display stalls':'blocages écran','connecting…':'connexion…','up':'actif depuis','master':'master','blackout':'blackout',
   'OTA update rolled back':'Mise à jour OTA annulée','Settings not saved (NVS)':'Réglages non sauvegardés (NVS)',
   '{n} outputs in failsafe':'{n} sorties en failsafe','DMX control lost':'Contrôle DMX perdu','No SD card':'Pas de carte SD',
@@ -944,6 +950,11 @@ var FR={
   'SCENE':'SCÈNE','disabled':'désactivé','day':'j'
 };
 function t(s){ return LANG==='fr' ? (FR[s]||s) : s; }
+var tr=t;  // for handlers whose local `t` is the event target
+// Speaker: volume 0 = off, the test button waits for a volume.
+function spkVolLabel(){ var v=el('spk-vol'); if(v) setLive2('spk-vol-val',+v.value?v.value+'%':t('Off')); }
+function spkButtons(){ var v=el('spk-vol'), card=el('spk-card'); var on=!!card&&card.style.display!=='none'&&!!v&&+v.value>0;
+  document.querySelectorAll('[data-action="audio-test"]').forEach(function(b){ b.disabled=!on; b.style.opacity=on?'1':'.45'; b.title=on?'':t('Turn the volume up first'); }); }
 function locale(){ return LANG==='fr'?'fr-FR':'en-US'; }
 function applyI18n(){
   document.documentElement.lang=LANG;
@@ -1527,6 +1538,10 @@ function applyStatus(s){
     var up=fmtUptime(s.uptime_s); setLive('uptime',up); setLive('uptime-big',up);
     if(s.ip) setLive('ip-line',s.ip);
     if(s.host) setLive('mdns-host',s.host+'.local');
+    // Only a board with the speaker mod reports audio (stock: no card at all).
+    if(el('spk-card')) el('spk-card').style.display=s.audio?'':'none';
+    setLive('audio-state',t(s.audio?'ES8311 codec ready':'No audio codec answering'));
+    spkButtons();
     setLive('alias-state',s.alias?(s.siblings?t('Answers pixfrog.local for {n} boxes').replace('{n}',s.siblings+1):t('Answers pixfrog.local')):(s.siblings?t('pixfrog.local is answered by another box'):''));
     var free=s.heap_free||0; heapMax=Math.max(heapMax,free);
     if(free>=1048576){ setLive('heap',fmtFr(free/1048576,1)); setLive('heap-unit','MB'); }
@@ -1825,6 +1840,7 @@ function reloadConfig(){
     if(el('s-dimdelay')) el('s-dimdelay').value=g.tft_dim_delay_s||0;
     if(el('s-boot')) el('s-boot').value=String(g.boot_scene||0);
     if(el('s-fade')) el('s-fade').value=((g.scene_fade_ms||0)/1000).toFixed(1);
+    if(el('spk-vol')){ el('spk-vol').value=g.speaker_volume||0; spkVolLabel(); spkButtons(); }
     if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
     renderControl();
     if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
@@ -2117,6 +2133,7 @@ function doAction(a){
   else if(a==='export'){ var d=new Date(); downloadUrl('/api/backup?date='+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')); }
   else if(a==='import'){ el('restore-file').click(); }
   else if(a==='ota'){ el('ota-file').click(); }
+  else if(a==='audio-test'){ api('POST','/api/audio/test',{}).then(function(){ toast(t('Playing the test sound')); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='fseq-upload'){ el('fseq-file').click(); }
   else if(a==='pl-play'){ api('POST','/api/fseq/play',{playlist:true}).then(function(){ toast(t('Playing the playlist')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='fseq-stop'){ api('POST','/api/fseq/stop',{}).then(function(){ toast(t('Sequence stopped')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
@@ -2212,7 +2229,8 @@ function onInput(e){
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }
   if(['s-refresh','s-home','s-boot','s-bright','s-dim','s-dimdelay','s-fade'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
-  if(t.id==='fseq-uni'){ var fu=parseInt(t.value,10); if(e.type==='change' && fu>=1 && fu<=32767) api('POST','/api/global',{fseq_universe:fu}).then(function(){ toast(t('✓ saved')); }).catch(function(er){ toast(er.message,true); }); return; }
+  if(t.id==='spk-vol'){ spkVolLabel(); spkButtons(); if(e.type==='change') api('POST','/api/global',{speaker_volume:+t.value}).then(function(){ toast(tr('✓ saved')); }).catch(function(er){ toast(er.message,true); }); return; }
+  if(t.id==='fseq-uni'){ var fu=parseInt(t.value,10); if(e.type==='change' && fu>=1 && fu<=32767) api('POST','/api/global',{fseq_universe:fu}).then(function(){ toast(tr('✓ saved')); }).catch(function(er){ toast(er.message,true); }); return; }
   if(t.id==='sh-master'){ setLive2('sh-master-val',t.value+'%'); if(e.type==='change') api('POST','/api/show',{master:+t.value}).then(applyShow); return; }
   if(t.id==='sh-strobe'){ setLive2('sh-strobe-val',+t.value?t.value+' Hz':'—'); if(e.type==='change') api('POST','/api/show',{strobe_hz:+t.value}).then(applyShow); return; }
   if(t.id==='ct-en'){ CTL.enabled=t.checked; markDirty('control'); renderControl(); return; }

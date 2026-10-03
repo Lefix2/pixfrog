@@ -9,6 +9,7 @@
 //   6. ArtNet UDP receiver               (artnet)
 //   7. render_task spawn
 
+#include "driver/gpio.h"
 #include "esp_app_desc.h"
 #include "esp_eth.h"
 #include "esp_event.h"
@@ -17,6 +18,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_ota_ops.h"
+#include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
@@ -37,6 +39,7 @@
 #endif
 
 #include "artnet.h"
+#include "audio.h"
 #include "config_store.h"
 #include "control_console.h"
 #include "dmx_manager.h"
@@ -338,6 +341,30 @@ void power_vdd_io5_pads() {
     }
 }
 
+// The speaker needs the R52 mod (docs/HARDWARE.md §2.7): stock, GPIO53 (LED
+// CH8 DATA) drives the amp enable through R52 (0 Ω) into R58, 10 kΩ to
+// ground, so the amp would follow the LED data. With R52 removed the pin sees
+// only the CH8 line driver input: the internal pull-up (~45 kΩ) reads it high,
+// where the stock 10 kΩ divider holds it near 0.6 V, low. Probed before the
+// LED outputs take the pin. (It cannot see the PA_CTRL pull-up itself.)
+bool speaker_mod_present() {
+    const int pin         = pixfrog::board::kAmpProbeGpio;
+    const gpio_config_t c = {
+        .pin_bit_mask = 1ULL << pin,
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&c);
+    esp_rom_delay_us(200);
+    const bool high = gpio_get_level(static_cast<gpio_num_t>(pin)) == 1;
+    gpio_reset_pin(static_cast<gpio_num_t>(pin));
+    ESP_LOGI(TAG, "speaker: R52 %s (GPIO%d reads %s)", high ? "removed" : "fitted — stock board",
+             pin, high ? "high" : "low");
+    return high;
+}
+
 // A new OTA image boots "pending verify": if it resets before confirming
 // itself, the bootloader marks it invalid and boots the previous slot. That is
 // the only trace of a rollback, so turn it into a logged, persisted record the
@@ -429,6 +456,8 @@ extern "C" void app_main() {
         pixfrog::fseq::init(sd_cfg);
     }
 
+    const bool speaker_ok = speaker_mod_present();
+
     pixfrog::output::InitConfig out_cfg{
         .bus_gpio_16           = pixfrog::board::kLedBusGpio,
         .pclk_hz               = pixfrog::led::kPclkHz,
@@ -458,6 +487,21 @@ extern "C" void app_main() {
         .tft_backlight_gpio = pixfrog::board::kDisplayBacklightGpio,
     };
     pixfrog::ui::start(ui_cfg);
+
+    // Speaker: the ES8311 shares the UI's I2C bus. No codec = no sound, nothing else.
+    pixfrog::audio::InitConfig audio_cfg{};
+    audio_cfg.i2c_bus    = pixfrog::ui::i2c_bus();
+    audio_cfg.codec_addr = pixfrog::board::kCodecI2cAddr;
+    audio_cfg.mclk_gpio  = pixfrog::board::kI2sMclkGpio;
+    audio_cfg.bclk_gpio  = pixfrog::board::kI2sBclkGpio;
+    audio_cfg.ws_gpio    = pixfrog::board::kI2sWsGpio;
+    audio_cfg.dout_gpio  = pixfrog::board::kI2sDoutGpio;
+    audio_cfg.din_gpio   = pixfrog::board::kI2sDinGpio;
+    audio_cfg.volume     = [] {
+        return pixfrog::config::speaker_volume_pct(pixfrog::config::get_global());
+    };
+    // The UI plays the boot croak near the end of its splash.
+    if (speaker_ok) pixfrog::ui::set_speaker_present(pixfrog::audio::init(audio_cfg));
 
     init_network();
     pixfrog::artnet::start();

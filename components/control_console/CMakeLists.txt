@@ -3,6 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
         console
+        audio
         config_store
         dmx_manager
         fpp_sync

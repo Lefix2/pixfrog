@@ -7,6 +7,7 @@
 #include <cstring>
 #include <vector>
 
+#include "audio_fake.h"
 #include "config_store.h"
 #include "esp_timer.h"
 #include "harness.h"
@@ -719,6 +720,59 @@ TEST(the_task_plays_the_splash_then_runs_the_menu) {
     config::set_global(g);
 }
 
+namespace {
+int g_snd_step = 0;
+void sound_script() {
+    ++g_snd_step;
+    switch (g_snd_step) {
+    case 5: g_enc.pressed = true; break;  // skip the splash
+    case 7: g_enc.pressed = false; break;
+    case 12: g_enc.pos += 1; break;  // on HOME: the knob is locked, no sound
+    case 14:
+        fake::menu().home  = false;
+        fake::menu().moves = true;
+        break;
+    case 15: fake::menu().gauge = 0.25f; break;  // a gauge on screen
+    case 16: g_enc.pos += 1; break;              // a step that moves its value: tick
+    case 17: fake::menu().gauge = -1.0f; break;
+    case 18: g_enc.pos += 1; break;
+    case 20:
+        fake::menu().moves  = false;  // at the end of the list
+        g_enc.pos          += 1;      // bump
+        break;
+    case 22: g_enc.pos -= 1; break;        // nothing to move that way either: bump
+    case 24: g_enc.pressed = true; break;  // a click that takes something: confirm
+    case 26: g_enc.pressed = false; break;
+    case 28: fake::menu().press = -1; break;  // the cursor on Back
+    case 30: g_enc.pressed = true; break;     // that click backs out: cancel
+    case 32: g_enc.pressed = false; break;
+    default: break;
+    }
+}
+}  // namespace
+
+TEST(knob_steps_tick_ends_bump_clicks_confirm_or_cancel_home_silent) {
+    fake::menu() = fake::Menu{};
+    fake::feedbacks().clear();
+    fake::levels().clear();
+    EXPECT_TRUE(ui::start(ui_cfg()));
+    g_snd_step = 0;
+    EXPECT_TRUE(shim::run_task_for("ui", 60, sound_script));
+    const auto& f = fake::feedbacks();
+    EXPECT_EQ(f.size(), 6u);
+    if (f.size() == 6) {
+        EXPECT_TRUE(f[0] == audio::Feedback::Tick);
+        EXPECT_TRUE(f[1] == audio::Feedback::Tick);
+        EXPECT_TRUE(f[2] == audio::Feedback::Bump);
+        EXPECT_TRUE(f[3] == audio::Feedback::Bump);
+        EXPECT_TRUE(f[4] == audio::Feedback::Confirm);
+        EXPECT_TRUE(f[5] == audio::Feedback::Cancel);
+        EXPECT_EQ(fake::levels()[0], 0.25f);  // the gauge's tick carries its level
+        EXPECT_EQ(fake::levels()[1], -1.0f);
+    }
+    fake::menu() = fake::Menu{};
+}
+
 TEST(platform_hooks_and_network_state) {
     shim::advance_ms(1234);
     EXPECT_TRUE(ui::detail::now_ms() >= 1234u);
@@ -799,6 +853,27 @@ TEST(rotation_accelerates_then_a_reversal_or_a_pause_steps_back) {
     EXPECT_EQ(a.note(t += 400, false), 1);
     a.reset();
     EXPECT_EQ(a.note(t += 10, false), 1);  // a reset forgets the streak
+}
+
+// The croak plays once, on the last frames of the splash, not at its start.
+namespace {
+int g_croak_step = 0, g_croaks_early = -1;
+void croak_script() {
+    // ~33 ms a loop: sample the count 600 ms before the splash ends.
+    if (++g_croak_step == static_cast<int>((ui::detail::splash_total_ms() - 600) / 33))
+        g_croaks_early = fake::boot_sounds();
+}
+}  // namespace
+
+TEST(the_boot_croak_lands_at_the_end_of_the_splash) {
+    fake::menu()        = fake::Menu{};
+    fake::boot_sounds() = 0;
+    g_croak_step        = 0;
+    EXPECT_TRUE(ui::start(ui_cfg()));
+    const int steps = static_cast<int>(ui::detail::splash_total_ms() / 33) + 30;
+    EXPECT_TRUE(shim::run_task_for("ui", steps, croak_script));
+    EXPECT_EQ(g_croaks_early, 0);  // not yet
+    EXPECT_EQ(fake::boot_sounds(), 1);
 }
 
 int main(int argc, char** argv) {

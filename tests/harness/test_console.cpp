@@ -269,6 +269,19 @@ TEST(global_language) {
     EXPECT_FALSE(run("global language de"));
 }
 
+TEST(audio_test_and_tone) {
+    EXPECT_TRUE(run("audio test"));
+    EXPECT_TRUE(run("audio tone 440"));
+    EXPECT_TRUE(run("audio tone 440 200"));
+    EXPECT_FALSE(run("audio tone 5"));
+    EXPECT_FALSE(run("audio tone 440 1"));
+    EXPECT_FALSE(run("audio loud"));
+    fake::modules().audio_ready = false;
+    EXPECT_FALSE(run("audio test"));
+    EXPECT_FALSE(run("audio tone 440"));
+    fake::modules().audio_ready = true;
+}
+
 TEST(global_hub_preferred) {
     EXPECT_TRUE(run("global hub_preferred 1"));
     EXPECT_EQ(config::get_global().hub_preferred, 1);
@@ -409,6 +422,7 @@ TEST(global_keys_set_every_field) {
         "global boot_scene 2",
         "global failsafe_timeout_s 12",
         "global merge_mode LTP",
+        "global speaker_volume 35",
     };
     for (const char* l : ok_lines)
         EXPECT_TRUE(run(l));
@@ -429,7 +443,9 @@ TEST(global_keys_set_every_field) {
     EXPECT_EQ(g.boot_scene, 2);
     EXPECT_EQ(g.failsafe_timeout_s, 12);
     EXPECT_EQ(g.merge_mode, config::kMergeLtp);
+    EXPECT_EQ(g.speaker_volume, 35);
     const char* bad_lines[] = {
+        "global speaker_volume 101",
         "global dhcp maybe",
         "global mask 1.2.3",
         "global gw x",

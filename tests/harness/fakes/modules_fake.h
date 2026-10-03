@@ -19,6 +19,8 @@ struct Modules {
     bool sd_mounted         = true;   // fseq::sd_state()
     uint32_t ui_loop_age_ms = 33;     // ui::loop_age_ms()
     uint32_t display_stalls = 0;      // ui::display_stalls()
+    bool audio_ready        = true;   // audio::ready()
+    int audio_tests         = 0;      // audio::start_test() calls that started
 };
 Modules& modules();
 void reset_modules();

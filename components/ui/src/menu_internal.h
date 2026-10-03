@@ -16,6 +16,7 @@
 #include "ui.h"
 #include "ui_internal.h"
 #include "web_config.h"
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 
@@ -202,9 +203,7 @@ enum class NodeId : uint8_t {
     Network,
     Output,
     Playback,
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
-    Display,
-#endif
+    Settings,  // the box itself: screen, speaker, nerd stats
     Channel,
     Scenes,
     Fseq,
@@ -228,6 +227,8 @@ extern uint8_t g_gap_index;  // gap being edited (== gap_count for a new one)
 void preview_gap_edit(uint16_t pos0, uint16_t len);
 void enter_gap_len_edit();
 
+extern std::atomic<bool> g_speaker;  // ui::set_speaker_present()
+
 // ── Editable fields ─────────────────────────────────────────────────────────
 enum class Field : uint8_t {
     None,
@@ -239,6 +240,7 @@ enum class Field : uint8_t {
     ArtnetFailsafeMode,
     ArtnetFailsafeTimeout,
     GlobalRefresh,
+    SpeakerVolume,
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     DisplayBrightness,
     DisplayIdleDim,
@@ -481,7 +483,7 @@ uint8_t build_inputs(ListItem* items, OnClick* fns);
 uint8_t build_control(ListItem* items, OnClick* fns);
 uint8_t build_control_slot(ListItem* items, OnClick* fns);
 uint8_t build_output(ListItem* items, OnClick* fns);
-uint8_t build_display(ListItem* items, OnClick* fns);
+uint8_t build_settings(ListItem* items, OnClick* fns);
 uint8_t build_playback(ListItem* items, OnClick* fns);
 uint8_t build_network(ListItem* items, OnClick* fns);
 uint8_t build_channel(ListItem* items, OnClick* fns);

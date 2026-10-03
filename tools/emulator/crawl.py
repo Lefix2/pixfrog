@@ -20,9 +20,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REQUIRED = {
     "MainMenu", "InputsMenu", "NetworkMenu", "OutputMenu", "PlaybackMenu", "ChannelMenu",
     "ScenesMenu", "FSeqMenu", "TestPatternMenu", "GapsMenu", "Stats", "About", "EditValue",
-    "EditString", "EditIp", "EditUni", "ControlMenu", "ControlSlotMenu",
+    "EditString", "EditIp", "EditUni", "ControlMenu", "ControlSlotMenu", "SettingsMenu",
 }
-TFT_ONLY = {"DisplayMenu"}
+TFT_ONLY = set()
 
 # Golden screens: path of (cursor) clicks from HOME, taken on the seeded state
 # before the crawl edits anything. Only static screens — nothing that shows uptime or live counters.

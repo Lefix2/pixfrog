@@ -1,4 +1,5 @@
 #include "modules_fake.h"
+#include "audio.h"
 
 #include <cstring>
 
@@ -64,6 +65,22 @@ DebugCounters get_debug_counters() {
     return c;
 }
 }  // namespace output
+namespace audio {
+bool init(const InitConfig&) {
+    return true;
+}
+bool ready() {
+    return ::fake::modules().audio_ready;
+}
+bool play_tone(uint16_t, uint16_t) {
+    return ::fake::modules().audio_ready;
+}
+bool start_test() {
+    if (!::fake::modules().audio_ready) return false;
+    ++::fake::modules().audio_tests;
+    return true;
+}
+}  // namespace audio
 namespace ui {
 uint32_t get_ip() {
     return ::fake::modules().ip;

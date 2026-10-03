@@ -227,6 +227,19 @@ def test_scene_fixture_mode(page, device):
 
 # ── system / global ──────────────────────────────────────────────────────────
 
+def test_speaker_volume_and_test_button(page, device):
+    nav(page, "system")
+    expect(page.locator("#spk-card")).to_be_visible()  # the host box reports a speaker
+    expect(page.locator("#spk-vol-val")).to_have_text("Off")  # off by default
+    expect(page.locator('[data-action="audio-test"]')).to_be_disabled()
+    page.locator("#spk-vol").fill("60")
+    page.locator("#spk-vol").dispatch_event("change")
+    expect(page.locator("#spk-vol-val")).to_have_text("60%")
+    expect(page.locator('[data-action="audio-test"]')).to_be_enabled()
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("saved")
+    assert device.get("/api/config")["global"]["speaker_volume"] == 60
+
+
 def test_refresh_rate_input(page, device):
     nav(page, "system")
     page.locator("#s-refresh").fill("45")

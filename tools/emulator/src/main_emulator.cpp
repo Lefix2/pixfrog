@@ -126,8 +126,14 @@ void print_state() {
 #ifdef PIXFROG_EMULATOR
     det::menu_debug_state(&name, &cursor, &channel);
 #endif
-    std::printf("{\"screen\":\"%s\",\"cursor\":%d,\"channel\":%d,\"backlight\":%d}\n", name, cursor,
-                channel, emu_backlight_pct());
+    // What the UI task would play for the next press / step: click and long
+    // press kinds (+1 confirm, -1 cancel, 0 none), the gauge level and the
+    // fingerprint a knob step compares (tick vs bump).
+    std::printf("{\"screen\":\"%s\",\"cursor\":%d,\"channel\":%d,\"backlight\":%d,"
+                "\"click\":%d,\"long\":%d,\"gauge\":%.3f,\"fp\":%u}\n",
+                name, cursor, channel, emu_backlight_pct(), det::menu_press_kind(det::Event::Click),
+                det::menu_press_kind(det::Event::LongPress), det::menu_gauge_level(),
+                static_cast<unsigned>(det::menu_fingerprint()));
     std::fflush(stdout);
 }
 
@@ -216,6 +222,9 @@ bool exec_cmd(const std::string& line) {
             std::printf("error: usage: set gaps <idx> [<pos0>:<len> ...]\n");
             std::fflush(stdout);
         }
+    } else if (line.rfind("set speaker ", 0) == 0) {
+        // set speaker <0|1> — a board with the speaker mod (Settings → Volume)
+        ui::set_speaker_present(std::atoi(line.c_str() + 12) != 0);
     } else if (line.rfind("set sd ", 0) == 0) {
         // set sd <n> — fake a microSD holding n .fseq files (0 = no card)
         emu_fseq_set_files(std::atoi(line.c_str() + 7));

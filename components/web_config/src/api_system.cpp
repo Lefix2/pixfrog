@@ -113,6 +113,15 @@ esp_err_t handle_rollback_ack(httpd_req_t* req) {
     return send_ok(req);
 }
 
+// ── POST /api/audio/test ─────────────────────────────────────────────────────
+// The speaker test chime (audio::start_test), played from its own task.
+esp_err_t handle_audio_test(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    if (!audio::start_test())
+        return send_err(req, 409, "no sound: no speaker, volume off, or busy");
+    return send_ok(req);
+}
+
 // ── POST /api/reboot ─────────────────────────────────────────────────────────
 
 esp_err_t handle_reboot(httpd_req_t* req) {
