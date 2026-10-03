@@ -484,7 +484,7 @@
   },
   "rx": {
    "artnet_ctrl_rx": 0,
-   "artnet_rx": 375,
+   "artnet_rx": 400,
    "bad_rx": 0,
    "sacn_rx": 0
   },
@@ -900,7 +900,7 @@
  "status": {
   "active_scene": 2,
   "alias": true,
-  "artnet_rx": 375,
+  "artnet_rx": 400,
   "audio": true,
   "bad_rx": 0,
   "channels": [

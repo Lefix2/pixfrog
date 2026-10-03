@@ -786,7 +786,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 /* ─────────── i18n (English source strings, French overrides) ─────────── */
 var LANG='en';
 var FR={
-  'PLAY ON':'JOUER SUR','Play':'Lire','Playing':'En lecture','Output':'Sortie','Not a target channel of this scene':'Pas un canal cible de cette scène','Select at least one output':'Choisissez au moins une sortie',
+  'Play':'Lire','Playing':'En lecture','Output':'Sortie','Select at least one output':'Choisissez au moins une sortie',
   'DMX control':'Contrôle DMX','DMX layout':'Répartition DMX','DMX LAYOUT':'RÉPARTITION DMX','PLACEMENT':'PLACEMENT','Continuous (a pixel may straddle two universes)':'Continue (un pixel peut chevaucher deux univers)','Whole pixels (170 RGB / 128 RGBW per universe)':'Pixels entiers (170 RGB / 128 RGBW par univers)','One fixture per universe':'Une fixture par univers','Each output opens a universe':'Chaque sortie ouvre un univers','Compact: outputs follow each other inside a universe':'Compacte : les sorties se suivent dans un univers',"Keep each output's own":'Garder celle de chaque sortie','whole px':'px entiers','per fixture':'par fixture','universes':'univers','more than the box can map':'plus que le boîtier ne peut en recevoir','No universe left for the control universe: the outputs use all {n} — the desk is not heard. Shorten an output.':'Plus d’univers libre pour l’univers de contrôle : les sorties utilisent les {n} — la console n’est pas entendue. Raccourcis une sortie.',
   'SHOW':'SHOW',
   'Master':'Master',
@@ -1135,17 +1135,13 @@ function sceneCardHTML(sc){
     +'<button class="btn-dng" data-action="scene-del" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer;margin-left:auto"><i data-lucide="trash-2" class="ic14"></i>'+t('Delete')+'</button>'
     +'</div></div>';
 }
-// Zones: which outputs the ▶ of the card claims (∩ the scene's saved mask).
-// Starts as the whole mask; per scene, kept while the page is open.
-var PLAY_ON={};
-function playOnMask(sc){ var i=sc.n-1, m=(PLAY_ON[i]!=null?PLAY_ON[i]:sc.mask); return m&sc.mask; }
+// ▶ plays the scene on its target channels: they are the zone it claims, and
+// a later scene on some of them takes those over (scene 1 on 1-3, then scene 2
+// on 2: output 2 plays scene 2, 1 and 3 keep scene 1).
 function playOnHTML(sc){
-  var i=sc.n-1, m=playOnMask(sc), chips='';
-  for(var c=0;c<8;c++){ var can=!!(sc.mask&(1<<c)), on=can&&!!(m&(1<<c));
-    chips+='<span data-sc-pon="'+c+'" data-scn="'+sc.n+'" title="'+esc(can?t('Output')+' '+(c+1):t('Not a target channel of this scene'))+'" style="'+chip(on)+(can?'':';opacity:.35;cursor:not-allowed')+'">'+(c+1)+'</span>'; }
-  var btn='display:inline-flex;align-items:center;gap:6px;border-radius:0;padding:6px 11px;font:500 12px \'DM Mono\';cursor:pointer;margin-left:6px;';
-  return '<div><div class="eyebrow-sm">'+t('PLAY ON')+'</div>'
-    +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'+chips
+  var i=sc.n-1;
+  var btn='display:inline-flex;align-items:center;gap:6px;border-radius:0;padding:6px 11px;font:500 12px \'DM Mono\';cursor:pointer;';
+  return '<div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
     +'<button class="btn-pri" data-sc-playon="'+sc.n+'" style="'+btn+'background:var(--accent);border:1px solid var(--accent);color:var(--on-accent)"><i data-lucide="play" class="ic14"></i>'+t('Play')+'</button>'
     +'<button class="btn-sec" data-sc-stop="'+sc.n+'" style="'+btn+'background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg)"><i data-lucide="square" class="ic14"></i>'+t('Stop')+'</button></div>'
     +'<div data-sc-playing="'+sc.n+'" style="font:500 11px \'DM Mono\';color:var(--accent);margin-top:6px;min-height:14px">'+esc(playingText(i))+'</div></div>';
@@ -2250,11 +2246,11 @@ function onClick(e){
 
   var dh=e.target.closest('[data-dhcp]'); if(dh){ netDhcp=(+dh.getAttribute('data-dhcp'))===1; setDhcpUI(); markDirty('network'); return; }
   var sch=e.target.closest('[data-sc-ch]'); if(sch){ var n2=+sch.getAttribute('data-scn'),b=+sch.getAttribute('data-sc-ch'); SCENES[n2-1].mask^=(1<<b); markDirty('scene'+(n2-1)); renderScene(n2); return; }
-  var pon=e.target.closest('[data-sc-pon]'); if(pon){ var pn=+pon.getAttribute('data-scn'), ps=SCENES[pn-1], pb=+pon.getAttribute('data-sc-pon');
-    if(ps.mask&(1<<pb)){ PLAY_ON[pn-1]=playOnMask(ps)^(1<<pb); renderScene(pn); } return; }
-  var spo=e.target.closest('[data-sc-playon]'); if(spo){ var on=+spo.getAttribute('data-sc-playon')-1, om=playOnMask(SCENES[on]);
+  var spo=e.target.closest('[data-sc-playon]'); if(spo){ var on=+spo.getAttribute('data-sc-playon')-1, om=SCENES[on].mask;
     if(!om){ toast(t('Select at least one output'),true); return; }
-    api('POST','/api/scene/'+on+'/play',{outputs:om}).then(function(){ toast(t('Playing scene ')+(on+1)+' · '+outsText(om)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
+    // Unsaved target channels go first: the box plays the scene's saved mask.
+    var pre=dirty.has('scene'+on)?api('POST','/api/scene/'+on,sceneBody(SCENES[on])).then(function(){ dirty.delete('scene'+on); updateSaveBar(); }):Promise.resolve();
+    pre.then(function(){ return api('POST','/api/scene/'+on+'/play',{outputs:om}); }).then(function(){ toast(t('Playing scene ')+(on+1)+' · '+outsText(om)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var sst=e.target.closest('[data-sc-stop]'); if(sst){ var sn2=+sst.getAttribute('data-sc-stop')-1;
     api('POST','/api/scene/'+sn2+'/stop',{}).then(function(){ toast(t('Stopped scene ')+(sn2+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1, stop=!!PLAYING[n3];

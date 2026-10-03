@@ -399,47 +399,35 @@ def test_scene_fade_setting(page, device):
 
 
 def _play_on(page, row, outputs):
-    """Select scene `row`, keep only `outputs` (0-based) in PLAY ON, press Play."""
+    """Select scene `row`, set its target channels to `outputs` (0-based), press Play."""
     page.locator(f'[data-scene-row="{row}"]').click()
     n = row + 1
     for o in range(8):
-        chip = page.locator(f'[data-sc-pon="{o}"][data-scn="{n}"]')
+        chip = page.locator(f'[data-sc-ch="{o}"][data-scn="{n}"]')
         on = "rgba(63,212,99" in (chip.get_attribute("style") or "")  # the lit chip style
         if (o in outputs) != on:
             chip.click()
     page.locator(f'[data-sc-playon="{n}"]').click()
 
 
-def test_play_two_scenes_on_two_outputs_from_the_editor(page, device):
-    nav(page, "scenes")
-    _play_on(page, 0, {0})
-    expect(page.locator('[data-sc-playing="1"]')).to_contain_text("out 1")
-    _play_on(page, 1, {1})
-    expect(page.locator('[data-sc-outs="1"]')).to_contain_text("out 2")
-    scenes = device.get("/api/status")["show"]["scenes"]
-    assert scenes[:3] == [0, 1, -1]
-    page.locator('[data-sc-stop="2"]').click()  # stops scene 2 only
+def _scenes_on(device, want):
     for _ in range(40):
-        if device.get("/api/status")["show"]["scenes"][:2] == [0, -1]:
-            break
+        if device.get("/api/status")["show"]["scenes"][: len(want)] == want:
+            return True
         time.sleep(0.05)
-    assert device.get("/api/status")["show"]["scenes"][:2] == [0, -1]
+    return False
 
 
-def test_play_on_offers_only_the_scene_target_channels(page, device):
-    device.post("/api/scene/0", {"mask": 3})
-    page.reload()
+def test_a_later_scene_takes_over_only_its_own_outputs(page, device):
     nav(page, "scenes")
-    page.locator('[data-scene-row="0"]').click()
-    off = page.locator('[data-sc-pon="5"][data-scn="1"]')
-    assert "not-allowed" in off.get_attribute("style")
-    off.click()  # not a target channel: nothing to toggle
-    page.locator('[data-sc-playon="1"]').click()
-    for _ in range(40):
-        if device.get("/api/status")["show"]["scenes"][:3] == [0, 0, -1]:
-            break
-        time.sleep(0.05)
-    assert device.get("/api/status")["show"]["scenes"][:3] == [0, 0, -1]
+    _play_on(page, 0, {0, 1, 2})  # scene 1 on outputs 1-3
+    assert _scenes_on(device, [0, 0, 0, -1])
+    _play_on(page, 1, {1})  # scene 2 on output 2 only (saved before it plays)
+    assert _scenes_on(device, [0, 1, 0, -1])
+    assert device.get("/api/config")["scenes"][1]["mask"] == 2
+    expect(page.locator('[data-sc-playing="2"]')).to_contain_text("out 2")
+    page.locator('[data-sc-stop="2"]').click()  # stops scene 2 only: output 2 back to live
+    assert _scenes_on(device, [0, -1, 0])
 
 
 # ── FSEQ playlist ────────────────────────────────────────────────────────────
