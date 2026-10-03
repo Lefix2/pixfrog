@@ -512,6 +512,34 @@ TEST(sacn_leaves_stale_groups_and_survives_join_failure) {
     shim::faults_clear();
 }
 
+// More universes than the MAC's multicast filter holds: the board is asked
+// to pass all multicast while they are joined, and to stop when they are left.
+std::vector<bool> g_overflow_calls;
+TEST(sacn_many_universes_open_the_mac_to_all_multicast) {
+    auto g         = config::get_global();
+    g.sacn_enabled = true;
+    config::set_global(g);
+    const auto saved = config::get_channel(0);
+    auto c           = saved;
+    c.protocol       = led::Protocol::SK6812;  // RGBW
+    c.pixel_count    = 1024;                   // 4096 B: 8 universes
+    config::set_channel(0, c);
+    g_overflow_calls.clear();
+    sacn::set_multicast_overflow_hook([](bool on) { g_overflow_calls.push_back(on); });
+    pump_sacn();  // joins 8 (> kHwMulticastSlots), then the run ends and leaves them
+    EXPECT_EQ(g_sacn_groups.size(), 8u);
+    EXPECT_EQ(g_overflow_calls.size(), 2u);
+    if (g_overflow_calls.size() == 2) {
+        EXPECT_TRUE(g_overflow_calls[0]);
+        EXPECT_FALSE(g_overflow_calls[1]);
+    }
+    config::set_channel(0, saved);
+    g_overflow_calls.clear();
+    pump_sacn();  // one universe: under the filter, nothing to change
+    EXPECT_TRUE(g_overflow_calls.empty());
+    sacn::set_multicast_overflow_hook(nullptr);
+}
+
 TEST(sacn_sync_and_malformed_packets) {
     const auto bad = dmx::get_stats().artnet_bad_packets;
     Bytes sync(49, 0);

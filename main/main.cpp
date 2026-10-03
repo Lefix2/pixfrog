@@ -506,6 +506,10 @@ extern "C" void app_main() {
     init_network();
     pixfrog::artnet::start();
 
+    // Many sACN universes outgrow the EMAC's multicast filter: pass them all.
+    pixfrog::sacn::set_multicast_overflow_hook([](bool pass_all) {
+        if (g_eth_handle) esp_eth_ioctl(g_eth_handle, ETH_CMD_S_ALL_MULTICAST, &pass_all);
+    });
     if (pixfrog::config::get_global().sacn_enabled) pixfrog::sacn::start();
     if (pixfrog::config::get_global().fpp_remote) pixfrog::fpp::start();
     if (pixfrog::config::get_global().boot_scene > 0)

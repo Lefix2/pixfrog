@@ -240,6 +240,7 @@ struct NetifLog {
     int dhcp_restarts = 0;              // esp_netif_dhcpc_start calls
     int mdc = -1, mdio = -1, phy_addr = -2, phy_reset = -2;
     int ldo_chan = -1, ldo_mv = 0;
+    int all_multicast = -1;  // last ETH_CMD_S_ALL_MULTICAST (-1 = never set)
 };
 NetifLog& netif_log();
 void boot_reset();
