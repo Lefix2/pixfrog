@@ -333,7 +333,7 @@
                   <div id="cd-pixwarn" style="display:none;margin-top:6px;font:500 11.5px 'DM Mono';color:var(--warn)"></div>
                 </div>
                 <div id="cd-row-gaps">
-                  <label class="f-label-caps"><span data-i18n="Fixtures &amp; dead LEDs">Fixtures &amp; dead LEDs</span> <span class="fg-4" data-i18n="first LED · count">first LED · count</span></label>
+                  <label class="f-label-caps"><span data-i18n="Fixtures &amp; dead LEDs">Fixtures &amp; dead LEDs</span> <span class="fg-4" data-i18n="in strip order, sizes in LEDs">in strip order, sizes in LEDs</span></label>
                   <div id="cd-lay-viz" style="position:relative;height:30px;background:var(--well);border:1px solid var(--line-3);margin-bottom:8px;overflow:hidden"></div>
                   <div id="cd-lay-warn" style="display:none;margin-bottom:8px;font:500 11.5px 'DM Mono'"></div>
                   <div id="cd-gaps" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -887,10 +887,10 @@ var FR={
   'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
   'Firmware update rolled back':'Mise à jour du firmware annulée','Acknowledge':'Acquitter','last rollback':'dernier rollback','none':'aucun',
   '{v} on {slot} was rejected ({why}) — running {run}':'{v} sur {slot} a été rejeté ({why}) — version active {run}',
-  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
+  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
   'Fixtures overlap: LED {a}–{b}':'Des fixtures se chevauchent : LED {a}–{b}','A fixture ends past the strip (LED {n})':'Une fixture dépasse la fin du strip (LED {n})','Dead LEDs inside a fixture at LED {a}: the fixture is shorter':'LEDs mortes dans une fixture à la LED {a} : la fixture est plus courte',
   'At most {n} dead runs: fewer fixtures, or no dead LEDs between':'{n} zones de LEDs mortes au plus : moins de fixtures, ou pas de LEDs mortes entre elles','At most 32 fixtures':'32 fixtures au plus','At most 8 dead runs':'8 zones de LEDs mortes au plus',
-  'Channel {n}: fixtures overlap — fix them before saving':'Canal {n} : des fixtures se chevauchent — corrige-les avant d’enregistrer',
+  'Channel {n}: the layout list is not valid — fix it before saving':'Canal {n} : la liste n’est pas valide — corrige-la avant d’enregistrer',
   'FIXTURES':'FIXTURES','Whole strip':'Strip entier','Each fixture':'Chaque fixture','Fixtures in a row':'Fixtures à la suite','Mirrored':'Miroir',
   'The effect runs over the whole strip, fixtures ignored.':'L’effet couvre tout le strip, sans tenir compte des fixtures.','Every fixture plays the effect on its own.':'Chaque fixture joue l’effet pour elle-même.','The fixtures end to end, as one strip without what lies between.':'Les fixtures bout à bout, comme un seul strip, sans ce qu’il y a entre elles.','In a row over the first half, mirrored on the second.':'À la suite sur la première moitié, en miroir sur la seconde.',
   'first LED · count':'première LED · nombre','Add dead pixels':'Ajouter des pixels morts','Remove':'Retirer',
@@ -1127,8 +1127,8 @@ function sceneCardHTML(sc){
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'+sliders+'</div>'
     +'<div><div class="eyebrow-sm">'+t('TARGET CHANNELS')+'</div><div style="display:flex;gap:5px">'+chansHtml+'</div></div>'
     +'<div><div class="eyebrow-sm">'+t('FIXTURES')+'</div><select data-sc-fixmode="'+sc.n+'" style="width:100%;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 13px \'Figtree\'">'
-      +FIX_MODES.map(function(m){ return '<option value="'+m[0]+'"'+((sc.fixmode||'strip')===m[0]?' selected':'')+'>'+esc(t(m[1]))+'</option>'; }).join('')+'</select>'
-      +'<div class="hint" style="margin-top:5px">'+esc(t(FIX_HINTS[sc.fixmode||'strip']))+'</div></div>'
+      +FIX_MODES.map(function(m){ return '<option value="'+m[0]+'"'+((sc.fixmode||'each')===m[0]?' selected':'')+'>'+esc(t(m[1]))+'</option>'; }).join('')+'</select>'
+      +'<div class="hint" style="margin-top:5px">'+esc(t(FIX_HINTS[sc.fixmode||'each']))+'</div></div>'
     +playOnHTML(sc)
     +'<div style="display:flex;gap:9px;padding-top:14px;border-top:1px solid var(--line)">'
     +'<button class="btn-sec" data-action="scene-dup" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer"><i data-lucide="copy" class="ic14"></i>'+t('Duplicate')+'</button>'
@@ -1376,37 +1376,54 @@ function updatePixWarn(){
   if(over) w.textContent=t('Only {n} driven at {hz} Hz — lower the frame rate to drive them all').replace('{n}',c.maxpx).replace('{hz}',REFRESH);
 }
 var MAX_GAPS=8, MAX_FIX=32;
-/* Fixtures and dead LEDs: one list in the editor (rows sorted by first LED
-   when drawn), two lists on the wire (gaps, fixtures). Physical LED numbers,
-   1-based, like the box's own numbering. */
-function layRows(c){
-  var r=(c.fix||[]).map(function(g,k){ return {t:'f',k:k,g:g}; }).concat((c.gaps||[]).map(function(g,k){ return {t:'d',k:k,g:g}; }));
-  return r.sort(function(a,b){ return a.g[0]-b.g[0] || (a.t<b.t?-1:1); });
+/* The strip as an ordered list, first LED first: fixtures, dead LEDs, and
+   live LEDs belonging to no fixture. Only sizes are entered; positions follow
+   from the order (drag to reorder). The box stores positions (gaps,
+   fixtures, 1-based); layToWire / layFromWire translate. */
+var LAY_TYPES=[['f','Fixture'],['d','Dead LEDs'],['s','LEDs without fixture']];
+function layFromWire(c,gaps,fix){
+  var ev=gaps.map(function(g){ return {t:'d',a:g[0],n:g[1]}; }).concat(fix.map(function(g){ return {t:'f',a:g[0],n:g[1]}; }))
+    .sort(function(x,y){ return x.a-y.a; });
+  var out=[], phys=1, live=0;
+  ev.forEach(function(e){
+    if(e.a<phys){ var cut=phys-e.a; e.n-=cut; e.a=phys; if(e.n<=0) return; }  // an old overlap: clipped
+    if(e.a>phys){ out.push({t:'s',n:e.a-phys}); live+=e.a-phys; }
+    out.push({t:e.t,n:e.n}); if(e.t==='f') live+=e.n; phys=e.a+e.n;
+  });
+  if(out.length && c.pixel_count>live) out.push({t:'s',n:c.pixel_count-live});
+  return out;
 }
-// Physical LEDs the line spans: live pixels plus the dead runs inside it.
-function physCount(c){
-  var phys=c.pixels; (c.gaps||[]).slice().sort(function(a,b){ return a[0]-b[0]; }).forEach(function(g){ if(g[0]-1<phys) phys+=g[1]; });
-  return phys;
+function layLive(lay){ var n=0; lay.forEach(function(it){ if(it.t!=='d') n+=it.n; }); return n; }
+// Positions for the box: {gaps, fixtures, pixels} (pixels = the live LEDs listed).
+function layToWire(c){
+  var gaps=[], fix=[], phys=1;
+  (c.lay||[]).forEach(function(it){
+    if(it.t==='f') fix.push([phys,it.n]);
+    else if(it.t==='d'){ var g=gaps[gaps.length-1]; if(g && g[0]+g[1]===phys) g[1]+=it.n; else gaps.push([phys,it.n]); }
+    phys+=it.n;
+  });
+  return {gaps:gaps,fixtures:fix,pixels:(c.lay&&c.lay.length)?layLive(c.lay):c.pixels};
 }
+function physCount(c){ var n=0; (c.lay||[]).forEach(function(it){ n+=it.n; }); return Math.max(n,c.pixels); }
 function layIssues(c){
-  var out=[], fx=(c.fix||[]).map(function(g,k){ return {a:g[0],b:g[0]+g[1]-1,k:k}; }).sort(function(x,y){ return x.a-y.a; }), phys=physCount(c);
-  for(var i=1;i<fx.length;i++) if(fx[i].a<=fx[i-1].b) out.push(['err',t('Fixtures overlap: LED {a}–{b}').replace('{a}',fx[i].a).replace('{b}',Math.min(fx[i].b,fx[i-1].b))]);
-  fx.forEach(function(f){ if(f.b>phys) out.push(['warn',t('A fixture ends past the strip (LED {n})').replace('{n}',phys)]); });
-  (c.fix||[]).forEach(function(f){ (c.gaps||[]).forEach(function(g){ if(g[0]<=f[0]+f[1]-1 && f[0]<=g[0]+g[1]-1) out.push(['info',t('Dead LEDs inside a fixture at LED {a}: the fixture is shorter').replace('{a}',Math.max(f[0],g[0]))]); }); });
+  var w=layToWire(c), out=[];
+  if(w.fixtures.length>MAX_FIX) out.push(['err',t('At most 32 fixtures')]);
+  if(w.gaps.length>MAX_GAPS) out.push(['err',t('At most 8 dead runs')]);
+  if(w.pixels>1024) out.push(['err',t('More than 1024 live LEDs')]);
+  if(w.fixtures.length) out.push(['info',t('{n} fixtures, {p} live LEDs').replace('{n}',w.fixtures.length).replace('{p}',w.pixels)]);
   return out;
 }
 function layHasError(c){ return layIssues(c).some(function(i){ return i[0]==='err'; }); }
 function renderLayViz(){
   var v=el('cd-lay-viz'), w=el('cd-lay-warn'), c=CHANS[curChan]; if(!v||!c) return;
-  var phys=physCount(c), span=Math.max(phys,1);
-  (c.fix||[]).forEach(function(f){ span=Math.max(span,f[0]+f[1]-1); });
-  function seg(a,n,bg,label,extra){ return '<div title="'+esc(label)+'" style="position:absolute;top:0;bottom:0;left:'+((a-1)/span*100)+'%;width:'+Math.max(n/span*100,.4)+'%;background:'+bg+';'+(extra||'')+'display:flex;align-items:center;justify-content:center;overflow:hidden;font:600 10px \'DM Mono\';color:var(--on-accent)">'+(n/span>.04?esc(label):'')+'</div>'; }
-  var html=seg(1,phys,'rgba(237,238,234,.06)','',''); // the strip itself
-  if(span>phys) html+=seg(phys+1,span-phys,'repeating-linear-gradient(45deg,rgba(232,178,58,.35) 0 4px,transparent 4px 8px)','');
-  var fx=(c.fix||[]).map(function(f,k){ return f; }).sort(function(a,b){ return a[0]-b[0]; });
-  fx.forEach(function(f,k){ html+=seg(f[0],f[1],k%2?'var(--accent-deep)':'var(--accent)','F'+(k+1)); });
-  for(var i=0;i<fx.length;i++) for(var j=i+1;j<fx.length;j++){ var a=Math.max(fx[i][0],fx[j][0]), b=Math.min(fx[i][0]+fx[i][1],fx[j][0]+fx[j][1]); if(b>a) html+=seg(a,b-a,'repeating-linear-gradient(45deg,var(--danger) 0 3px,transparent 3px 6px)',''); }
-  (c.gaps||[]).forEach(function(g){ html+=seg(g[0],g[1],'var(--danger)','✕'); });
+  var lay=(c.lay&&c.lay.length)?c.lay:[{t:'s',n:c.pixels}], span=0;
+  lay.forEach(function(it){ span+=it.n; }); span=Math.max(span,1);
+  var html='', phys=0, nf=0;
+  lay.forEach(function(it){
+    var label=it.t==='f'?'F'+(++nf):it.t==='d'?'✕':'', bg=it.t==='f'?(nf%2?'var(--accent)':'var(--accent-deep)'):it.t==='d'?'var(--danger)':'rgba(237,238,234,.08)';
+    html+='<div title="'+esc(label||t('LEDs without fixture'))+' · '+it.n+'" style="position:absolute;top:0;bottom:0;left:'+(phys/span*100)+'%;width:'+Math.max(it.n/span*100,.4)+'%;background:'+bg+';border-right:1px solid var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden;font:600 10px \'DM Mono\';color:var(--on-accent)">'+(it.n/span>.04?esc(label):'')+'</div>';
+    phys+=it.n;
+  });
   v.innerHTML=html;
   var iss=layIssues(c), col={err:'var(--danger)',warn:'var(--warn)',info:'var(--fg-3)'};
   w.style.display=iss.length?'block':'none';
@@ -1414,38 +1431,67 @@ function renderLayViz(){
 }
 function renderGaps(){
   var m=el('cd-gaps'), c=CHANS[curChan]; if(!m||!c) return;
+  c.lay=c.lay||[];
   var inp='background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 10px;font:500 13px \'DM Mono\'';
-  var nf=0;
-  var rows=layRows(c).map(function(r){
-    var id=r.t+'-'+r.k, tag=r.t==='f'?('F'+(++nf)):'✕';
-    return '<div style="display:flex;align-items:center;gap:8px"><span style="font:600 11px \'DM Mono\';color:'+(r.t==='f'?'var(--accent)':'var(--danger)')+';width:28px">'+tag+'</span>'
-      +'<select id="cd-lay-t-'+id+'" style="'+inp+';width:120px"><option value="f"'+(r.t==='f'?' selected':'')+'>'+esc(t('Fixture'))+'</option><option value="d"'+(r.t==='d'?' selected':'')+'>'+esc(t('Dead LEDs'))+'</option></select>'
+  var nf=0, phys=1;
+  var rows=c.lay.map(function(it,k){
+    var tag=it.t==='f'?('F'+(++nf)):it.t==='d'?'✕':'·', from=phys; phys+=it.n;
+    return '<div data-lay-row="'+k+'" style="display:flex;align-items:center;gap:8px">'
+      +'<span data-lay-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
+      +'<span style="font:600 11px \'DM Mono\';color:'+(it.t==='f'?'var(--accent)':it.t==='d'?'var(--danger)':'var(--fg-4)')+';width:28px">'+tag+'</span>'
+      +'<select id="cd-lay-t-'+k+'" style="'+inp+';width:190px">'+LAY_TYPES.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===it.t?' selected':'')+'>'+esc(t(o[1]))+'</option>'; }).join('')+'</select>'
+      +'<input id="cd-lay-n-'+k+'" type="number" min="1" max="1024" value="'+it.n+'" style="width:80px;'+inp+'"/>'
       +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4)">LED</span>'
-      +'<input id="cd-lay-p-'+id+'" type="number" min="1" max="1024" value="'+r.g[0]+'" style="width:86px;'+inp+'"/>'
-      +'<span style="font:500 12px \'DM Mono\';color:var(--fg-4)">×</span>'
-      +'<input id="cd-lay-n-'+id+'" type="number" min="1" max="1024" value="'+r.g[1]+'" style="width:76px;'+inp+'"/>'
-      +sqBtn('data-lay-del="'+id+'"','x','Remove')+'</div>';
+      +'<span style="font:500 11px \'DM Mono\';color:var(--fg-5);min-width:90px">'+(it.n>1?from+'–'+(phys-1):from)+'</span>'
+      +sqBtn('data-lay-del="'+k+'"','x','Remove')+'</div>';
   }).join('');
-  var bar='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px">';
-  if((c.fix||[]).length<MAX_FIX) bar+='<button class="btn-sec" data-lay-add="f" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer"><i data-lucide="plus" class="ic14"></i>'+esc(t('Fixture'))+'</button>';
-  if((c.gaps||[]).length<MAX_GAPS) bar+='<button class="btn-sec" data-lay-add="d" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer"><i data-lucide="plus" class="ic14"></i>'+esc(t('Dead LEDs'))+'</button>';
+  var btn='display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer';
+  var bar='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px">'
+    +LAY_TYPES.map(function(o){ return '<button class="btn-sec" data-lay-add="'+o[0]+'" style="'+btn+'"><i data-lucide="plus" class="ic14"></i>'+esc(t(o[1]))+'</button>'; }).join('');
+  var fx=c.lay.filter(function(it){ return it.t==='f'; }), dd=c.lay.filter(function(it){ return it.t==='d'; });
   bar+='<span style="flex:1"></span><span style="font:500 11.5px \'DM Mono\';color:var(--fg-3)">'+esc(t('Fill:'))+'</span>'
-    +'<input id="lay-rep-n" type="number" min="1" max="32" value="'+(c.fix&&c.fix.length?c.fix.length:5)+'" title="'+esc(t('fixtures'))+'" style="width:58px;'+inp+'"/>'
-    +'<span class="fg-4">×</span><input id="lay-rep-l" type="number" min="1" max="1024" value="'+(c.fix&&c.fix.length?c.fix[0][1]:Math.max(1,Math.floor(c.pixels/5)))+'" title="'+esc(t('LEDs per fixture'))+'" style="width:70px;'+inp+'"/>'
-    +'<span class="fg-4">+</span><input id="lay-rep-k" type="number" min="0" max="16" value="'+((c.fix||[]).length>1&&(c.gaps||[]).length?c.gaps[0][1]:0)+'" title="'+esc(t('dead LEDs between'))+'" style="width:52px;'+inp+'"/>'
+    +'<input id="lay-rep-n" type="number" min="1" max="32" value="'+(fx.length||5)+'" title="'+esc(t('fixtures'))+'" style="width:58px;'+inp+'"/>'
+    +'<span class="fg-4">×</span><input id="lay-rep-l" type="number" min="1" max="1024" value="'+(fx.length?fx[0].n:Math.max(1,Math.floor(c.pixels/5)))+'" title="'+esc(t('LEDs per fixture'))+'" style="width:70px;'+inp+'"/>'
+    +'<span class="fg-4">+</span><input id="lay-rep-k" type="number" min="0" max="16" value="'+(fx.length>1&&dd.length?dd[0].n:0)+'" title="'+esc(t('dead LEDs between'))+'" style="width:52px;'+inp+'"/>'
     +'<span style="font:500 11.5px \'DM Mono\';color:var(--fg-3)">'+esc(t('dead'))+'</span>'
     +sqBtn('data-lay-fill','wand-2','Replace the list with this pattern')+'</div>';
   m.innerHTML=rows+bar; createIcons(m); renderLayViz();
+  var pe=el('cd-pix'); if(pe){ pe.disabled=c.lay.length>0; pe.title=c.lay.length?t('Set by the list below'):''; if(c.lay.length) pe.value=layLive(c.lay); }
 }
-// "N fixtures of L LEDs, K dead LEDs between": replaces the list and sets the
-// live pixel count to match.
+// "N fixtures of L LEDs, K dead LEDs between": replaces the list.
 function layFill(c,n,l,k){
   n=Math.max(1,Math.min(MAX_FIX,n)); k=Math.max(0,k);
   if(k>0 && n-1>MAX_GAPS){ toast(t('At most {n} dead runs: fewer fixtures, or no dead LEDs between').replace('{n}',MAX_GAPS),true); return false; }
-  c.fix=[]; c.gaps=[];
-  for(var i=0;i<n;i++){ var a=1+i*(l+k); c.fix.push([a,l]); if(k>0 && i<n-1) c.gaps.push([a+l,k]); }
-  c.pixels=Math.min(1024,n*l); var pe=el('cd-pix'); if(pe) pe.value=c.pixels;
+  c.lay=[];
+  for(var i=0;i<n;i++){ c.lay.push({t:'f',n:l}); if(k>0 && i<n-1) c.lay.push({t:'d',n:k}); }
+  c.pixels=Math.min(1024,layLive(c.lay));
   return true;
+}
+var lyDrag=null;
+function lyDragStart(e){
+  var g=e.target.closest('[data-lay-grip]'); if(!g) return;
+  e.preventDefault();
+  var row=g.closest('[data-lay-row]');
+  lyDrag={from:+row.getAttribute('data-lay-row'),to:-1};
+  row.style.opacity='.45';
+  document.addEventListener('pointermove',lyDragMove);
+  document.addEventListener('pointerup',lyDragEnd);
+  document.addEventListener('pointercancel',lyDragEnd);
+}
+function lyDragMove(e){
+  if(!lyDrag) return;
+  var best=-1,bestD=Infinity;
+  document.querySelectorAll('[data-lay-row]').forEach(function(r){ var b=r.getBoundingClientRect(), d=Math.abs(e.clientY-(b.top+b.height/2)); if(d<bestD){ bestD=d; best=+r.getAttribute('data-lay-row'); } });
+  lyDrag.to=best;
+  document.querySelectorAll('[data-lay-row]').forEach(function(r){ var k=+r.getAttribute('data-lay-row'); r.style.boxShadow=(k===best&&k!==lyDrag.from)?(k<lyDrag.from?'inset 0 2px 0 var(--accent)':'inset 0 -2px 0 var(--accent)'):''; });
+}
+function lyDragEnd(){
+  document.removeEventListener('pointermove',lyDragMove);
+  document.removeEventListener('pointerup',lyDragEnd);
+  document.removeEventListener('pointercancel',lyDragEnd);
+  var d=lyDrag; lyDrag=null; var c=CHANS[curChan];
+  if(d && c && d.to>=0 && d.to!==d.from){ var it=c.lay.splice(d.from,1)[0]; c.lay.splice(d.to,0,it); markDirty('ch'+curChan); }
+  renderGaps();
 }
 function pxLabel(c){
   if(c.protoRaw==='Off') return 'Off';
@@ -1457,10 +1503,11 @@ function readChanEditor(){
   function nv(id){ var e=el(id); return e?parseInt(e.value,10)||0:0; }
   c.protoRaw=el('cd-proto').value; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
   c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx');
-  c.pixels=Math.max(1,Math.min(nv('cd-pix'),1024));
+  if(!(c.lay&&c.lay.length)) c.pixels=Math.max(1,Math.min(nv('cd-pix'),1024));
   c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp'); if(el('cd-pack')) c.pack=el('cd-pack').value;
   c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
-  [['f',c.fix||[]],['d',c.gaps||[]]].forEach(function(L){ L[1].forEach(function(g,k){ var p=nv('cd-lay-p-'+L[0]+'-'+k), l=nv('cd-lay-n-'+L[0]+'-'+k); if(p>=1) g[0]=Math.min(p,1024); if(l>=1) g[1]=Math.min(l,1024); }); });
+  (c.lay||[]).forEach(function(it,k){ var n=nv('cd-lay-n-'+k); if(n>=1) it.n=Math.min(n,1024); });
+  if(c.lay&&c.lay.length){ c.pixels=Math.min(1024,layLive(c.lay)); var pe=el('cd-pix'); if(pe) pe.value=c.pixels; }
   renderLayViz();
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
   c.px=pxLabel(c); updatePixWarn();
@@ -1819,7 +1866,7 @@ function buildChrome(){
 function buildChan(c,i){
   var off=c.protocol==='Off';
   return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
-    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),fix:(c.fixtures||[]).map(function(g){ return [g[0],g[1]]; }),pack:c.packing||'continuous',unis:c.universes,
+    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),fix:(c.fixtures||[]).map(function(g){ return [g[0],g[1]]; }),lay:layFromWire(c,c.gaps||[],c.fixtures||[]),pack:c.packing||'continuous',unis:c.universes,
     state:'off',px:pxLabel({protoRaw:c.protocol,pixels:c.pixel_count,maxpx:c.max_pixels||1024}),uni:off?'—':'U'+c.universe_start,
     dot:ST.off.dot,txt:ST.off.txt,label:ST.off.label,chip:ST.off.chip,bd:ST.off.bd};
 }
@@ -1862,7 +1909,7 @@ function reloadConfig(){
     setLive('side-ver',(d.version||'?')+' · esp32-p4 · '+(d.ota_partition||'?'));
     setLive('part-line',(d.version||'')+' · '+(d.ota_partition||''));
     CHANS=(d.channels||[]).map(buildChan);
-    SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',effectIdx:sc.effect||0,colors:(sc.colors&&sc.colors.length)?sc.colors.slice(0,MAX_COLORS):[sc.color||'#000000'],speed:sc.speed||0,param:sc.param||0,mask:sc.mask||0,fixmode:sc.fixture_mode||'strip'}; });
+    SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',effectIdx:sc.effect||0,colors:(sc.colors&&sc.colors.length)?sc.colors.slice(0,MAX_COLORS):[sc.color||'#000000'],speed:sc.speed||0,param:sc.param||0,mask:sc.mask||0,fixmode:sc.fixture_mode||'each'}; });
     if(curScene>=SCENES.length) curScene=Math.max(0,SCENES.length-1);
     renderScenes(); renderSceneSelects(g);
     var pm=el('patch-mount'); if(pm){ pm.innerHTML=buildPatch(); createIcons(pm); }
@@ -1918,10 +1965,10 @@ function buildGlobalBody(){
   if(dirty.has('syslang')){ b.lang=(LANG==='fr'?1:0); }
   return b;
 }
-function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:c.pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:c.gaps||[],fixtures:c.fix||[],packing:c.pack||'continuous'}; }
-function sceneBody(s){ return {name:s.name,effect:s.effectIdx,colors:s.colors,speed:s.speed,param:s.param,mask:s.mask,fixture_mode:s.fixmode||'strip'}; }
+function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:layToWire(c).pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:layToWire(c).gaps,fixtures:layToWire(c).fixtures,packing:c.pack||'continuous'}; }
+function sceneBody(s){ return {name:s.name,effect:s.effectIdx,colors:s.colors,speed:s.speed,param:s.param,mask:s.mask,fixture_mode:s.fixmode||'each'}; }
 // How the effect spreads over a channel's fixtures (a channel without any is one strip).
-var FIX_MODES=[['strip','Whole strip'],['each','Each fixture'],['chain','Fixtures in a row'],['mirror','Mirrored']];
+var FIX_MODES=[['each','Each fixture'],['strip','Whole strip'],['chain','Fixtures in a row'],['mirror','Mirrored']];
 var FIX_HINTS={strip:'The effect runs over the whole strip, fixtures ignored.',each:'Every fixture plays the effect on its own.',chain:'The fixtures end to end, as one strip without what lies between.',mirror:'In a row over the first half, mirrored on the second.'};
 /* ─────────── DMX control universe ─────────── */
 var CTL={enabled:false,universe:100,address:1,slots:[]}, CTL_STATE='off';
@@ -2002,7 +2049,7 @@ function saveAll(){
   if(dirty.size===0) return;
   if(curChan>=0 && dirty.has('ch'+curChan)) readChanEditor();
   var bad=CHANS.filter(function(c,i){ return dirty.has('ch'+i) && layHasError(c); });
-  if(bad.length){ toast(t('Channel {n}: fixtures overlap — fix them before saving').replace('{n}',bad[0].n),true); return; }
+  if(bad.length){ toast(t('Channel {n}: the layout list is not valid — fix it before saving').replace('{n}',bad[0].n),true); return; }
   var ops=[];
   if(['network','artnet','sysgen','sysauth','syslang'].some(function(g){ return dirty.has(g); })) ops.push(api('POST','/api/global',buildGlobalBody()));
   CHANS.forEach(function(c,i){ if(dirty.has('ch'+i)) ops.push(api('POST','/api/channel/'+i,chanBody(c))); });
@@ -2224,11 +2271,12 @@ function onClick(e){
   var reboot=e.target.closest('[data-reboot]'); if(reboot){ openModal('reboot'); return; }
   var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
   var nav=e.target.closest('[data-nav]'); if(nav){ go(nav.getAttribute('data-nav')); return; }
-  var ladd=e.target.closest('[data-lay-add]'); if(ladd){ var ca=CHANS[curChan]; if(ca){ var kind=ladd.getAttribute('data-lay-add'), L=kind==='f'?(ca.fix=ca.fix||[]):(ca.gaps=ca.gaps||[]);
-      var last=0; (ca.fix||[]).concat(ca.gaps||[]).forEach(function(g){ last=Math.max(last,g[0]+g[1]-1); });
-      L.push([Math.min(1024,last+1),kind==='f'?Math.max(1,Math.min(1024-last,(ca.fix&&ca.fix.length?ca.fix[0][1]:10))):1]); markDirty('ch'+curChan); renderGaps(); } return; }
-  var ldel=e.target.closest('[data-lay-del]'); if(ldel){ var cd=CHANS[curChan]; if(cd){ var p=ldel.getAttribute('data-lay-del').split('-'); (p[0]==='f'?cd.fix:cd.gaps).splice(+p[1],1); markDirty('ch'+curChan); renderGaps(); } return; }
-  var lfill=e.target.closest('[data-lay-fill]'); if(lfill){ var cf=CHANS[curChan]; if(cf){ function iv(id){ return parseInt((el(id)||{}).value,10)||0; } if(layFill(cf,iv('lay-rep-n'),Math.max(1,iv('lay-rep-l')),iv('lay-rep-k'))){ markDirty('ch'+curChan); readChanEditor(); renderGaps(); } } return; }
+  var ladd=e.target.closest('[data-lay-add]'); if(ladd){ var ca=CHANS[curChan]; if(ca){ var kind=ladd.getAttribute('data-lay-add'); ca.lay=ca.lay||[];
+      if(!ca.lay.length && ca.pixels>0 && kind!=='s') ca.lay.push({t:'s',n:ca.pixels});  // the strip as it was, then the new entry
+      var last=ca.lay.filter(function(it){ return it.t==='f'; }).pop();
+      ca.lay.push({t:kind,n:kind==='d'?1:(kind==='f'&&last?last.n:10)}); markDirty('ch'+curChan); readChanEditor(); renderGaps(); } return; }
+  var ldel=e.target.closest('[data-lay-del]'); if(ldel){ var cd=CHANS[curChan]; if(cd&&cd.lay){ cd.lay.splice(+ldel.getAttribute('data-lay-del'),1); if(cd.lay.length) cd.pixels=layLive(cd.lay); markDirty('ch'+curChan); renderGaps(); } return; }
+  var lfill=e.target.closest('[data-lay-fill]'); if(lfill){ var cf=CHANS[curChan]; if(cf){ var iv=function(id){ return parseInt((el(id)||{}).value,10)||0; }; if(layFill(cf,iv('lay-rep-n'),Math.max(1,iv('lay-rep-l')),iv('lay-rep-k'))){ markDirty('ch'+curChan); renderGaps(); readChanEditor(); } } return; }
   var srow=e.target.closest('[data-scene-row]'); if(srow && !e.target.closest('[data-srow-grip]') && !e.target.closest('[data-sc-play]')){ selectScene(+srow.getAttribute('data-scene-row')); return; }
   var tile=e.target.closest('[data-nav-chan]'); if(tile){ go('channels'); selectChan(+tile.getAttribute('data-nav-chan')); return; }
   var row=e.target.closest('[data-chan]'); if(row){ selectChan(+row.getAttribute('data-chan')); return; }
@@ -2240,9 +2288,7 @@ function onInput(e){
   if(t.hasAttribute&&t.hasAttribute('data-sc-param')){ var pn=+t.getAttribute('data-sc-param'); SCENES[pn-1].param=parseInt(t.value,10)||0; var pv=document.querySelector('[data-sc-paramval="'+pn+'"]'); if(pv) pv.textContent=paramText(SCENES[pn-1]); markDirty('scene'+(pn-1)); return; }
   if(t.hasAttribute&&t.hasAttribute('data-sc-fixmode')){ var xm=+t.getAttribute('data-sc-fixmode'); SCENES[xm-1].fixmode=t.value; markDirty('scene'+(xm-1)); renderScene(xm); return; }
   if(t.hasAttribute&&t.hasAttribute('data-sc-fxsel')){ var fn=+t.getAttribute('data-sc-fxsel'); SCENES[fn-1].effectIdx=parseInt(t.value,10)||0; markDirty('scene'+(fn-1)); renderScene(fn); return; }
-  if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lp=t.id.slice(9).split('-'); if(lc&&t.value!==lp[0]){ var from=lp[0]==='f'?lc.fix:lc.gaps, to=t.value==='f'?(lc.fix=lc.fix||[]):(lc.gaps=lc.gaps||[]);
-      if(to.length>=(t.value==='f'?MAX_FIX:MAX_GAPS)){ toast(t.value==='f'?t('At most 32 fixtures'):t('At most 8 dead runs'),true); renderGaps(); return; }
-      to.push(from.splice(+lp[1],1)[0]); markDirty('ch'+curChan); renderGaps(); } return; }
+  if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }
   if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); return; }
   if(['n-ip','n-mask','n-gw','n-host','n-long','n-fallback','n-hub'].indexOf(t.id)>=0){ markDirty('network'); return; }
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
@@ -2274,6 +2320,7 @@ function init(){
   app.addEventListener('click',onClick);
   app.addEventListener('pointerdown',scDragStart);
   app.addEventListener('pointerdown',srDragStart);
+  app.addEventListener('pointerdown',lyDragStart);
   app.addEventListener('input',onInput);
   app.addEventListener('change',onInput);
   el('ota-file').addEventListener('change',otaUpload);
