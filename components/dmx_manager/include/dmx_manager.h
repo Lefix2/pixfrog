@@ -134,7 +134,9 @@ void handle_pending_remaps();
 // A disabled / 0-pixel channel consumes no universes. Persists each channel to
 // NVS and marks it dirty so the LUT rebuilds next frame. Returns false if any
 // NVS write failed (cache still updated); `*next_free` (if non-null) gets the
-// first universe past the last channel. Console/web/ui context only.
+// first universe past the last channel. An enabled DMX control universe is
+// placed right after the last channel (address 1) and counts in `next_free`.
+// Console/web/ui context only.
 bool auto_patch_universes(uint16_t base, uint16_t* next_free = nullptr);
 
 // Test injection (control_console): write `len` bytes at byte `offset` into

@@ -347,10 +347,23 @@ bool auto_patch_universes(uint16_t base, uint16_t* next_free) {
         chans[i] = config::get_channel(i);
 
     uint16_t starts[config::kNumChannels];
-    const uint16_t next = logic::compute_auto_patch(base, chans, config::kNumChannels, starts);
-    if (next_free) *next_free = next;
+    uint16_t next = logic::compute_auto_patch(base, chans, config::kNumChannels, starts);
 
     bool all_persisted = true;
+    // The DMX control universe, when used, follows the last output (address
+    // 1): the whole box patches as one contiguous block.
+    uint32_t end = base;  // unmasked: compute_auto_patch wraps past 0x7FFF
+    for (size_t i = 0; i < config::kNumChannels; ++i)
+        end += logic::channel_universes_used(chans[i]);
+    auto ctl = config::get_control();
+    if (ctl.enabled && end <= kMaxUniverseNumber) {
+        ctl.universe   = next++;
+        ctl.address    = 1;
+        all_persisted &= config::set_control(ctl);
+        mark_global_dirty();
+    }
+    if (next_free) *next_free = next;
+
     for (size_t i = 0; i < config::kNumChannels; ++i) {
         chans[i].universe_start  = starts[i];
         chans[i].dmx_start       = 1;  // cascade places every channel universe-aligned
