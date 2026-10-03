@@ -210,6 +210,48 @@ TEST(post_channel_updates_and_ignores_bad_fields) {
     dmx::identify_stop();
 }
 
+// Fixtures: [first LED, count] pairs like the gaps; two sharing an LED are
+// refused whole, the stored list kept.
+TEST(channel_fixtures_round_trip_and_overlaps_are_refused) {
+    EXPECT_EQ(post("/api/channel/4", "{\"pixel_count\":295,\"gaps\":[[60,1],[120,1]],"
+                                     "\"fixtures\":[[1,59],[61,59],[121,59]]}")
+                  .status,
+              200);
+    const auto& c = config::get_channel(4);
+    EXPECT_EQ(config::fixture_count(c.fixtures, config::kMaxFixtures), 3u);
+    EXPECT_EQ(c.fixtures[1].pos, 60);
+    EXPECT_EQ(c.fixtures[1].len, 59);
+    Json cfg(get("/api/config").body);
+    const cJSON* jf = cJSON_GetObjectItem(cJSON_GetArrayItem(cfg["channels"], 4), "fixtures");
+    EXPECT_EQ(cJSON_GetArraySize(jf), 3);
+    EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetArrayItem(jf, 2), 0)->valueint, 121);
+    const auto overlap = post("/api/channel/4", "{\"fixtures\":[[1,59],[50,20]]}");
+    EXPECT_EQ(overlap.status, 400);
+    EXPECT_TRUE(overlap.body.find("fixtures 1 and 2 overlap") != std::string::npos);
+    EXPECT_EQ(post("/api/channel/4", "{\"fixtures\":[[0,5]]}").status, 400);      // 1-based
+    EXPECT_EQ(post("/api/channel/4", "{\"fixtures\":[[1020,10]]}").status, 400);  // past 1024
+    EXPECT_EQ(post("/api/channel/4", "{\"fixtures\":{\"a\":1}}").status, 400);    // not a list
+    EXPECT_EQ(config::fixture_count(c.fixtures, config::kMaxFixtures), 3u);       // kept
+    // 32 fixtures (the most) fit one request, and a full backup restores.
+    config::ChannelConfig saved[config::kNumChannels];
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
+        saved[ch] = config::get_channel(ch);
+    std::string many = "{\"pixel_count\":1024,\"fixtures\":[";
+    for (int k = 0; k < 32; ++k)
+        many += (k ? ",[" : "[") + std::to_string(1 + k * 32) + ",31]";
+    many += "]}";
+    for (int ch = 0; ch < 8; ++ch)
+        EXPECT_EQ(post("/api/channel/" + std::to_string(ch), many).status, 200);
+    const std::string backup = get("/api/backup").body;
+    config::reset_to_defaults();
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    EXPECT_EQ(config::fixture_count(config::get_channel(7).fixtures, config::kMaxFixtures), 32u);
+    EXPECT_EQ(post("/api/channel/0", "{\"fixtures\":[]}").status, 200);  // empty: none
+    EXPECT_EQ(config::fixture_count(config::get_channel(0).fixtures, config::kMaxFixtures), 0u);
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
+        config::set_channel(ch, saved[ch]);
+}
+
 // The dashboard button: every configured output, or the outputs asked for.
 TEST(identify_endpoint_runs_the_configured_outputs_in_turn) {
     Json all(post("/api/identify", "").body);
@@ -249,6 +291,16 @@ TEST(scene_endpoints_manage_the_list) {
         post("/api/scene/" + std::to_string(n), "{\"colors\":[\"#ff0000\",\"#00ff00\"]}").status,
         200);
     EXPECT_EQ(config::scene_num_colors(config::get_scene(n)), 2);
+    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeStrip);  // the default
+    post("/api/scene/" + std::to_string(n), "{\"fixture_mode\":\"mirror\"}");
+    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeMirror);
+    post("/api/scene/" + std::to_string(n), "{\"fixture_mode\":\"spiral\"}");  // unknown: kept
+    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeMirror);
+    Json listed(get("/api/config").body);
+    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(listed["scenes"], static_cast<int>(n)),
+                                     "fixture_mode")
+                     ->valuestring,
+                 "mirror");
     EXPECT_EQ(post("/api/scenes/move", "{\"from\":" + std::to_string(n) + ",\"to\":0}").status,
               200);
     EXPECT_STREQ(config::get_scene(0).name, "Web");

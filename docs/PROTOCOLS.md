@@ -272,6 +272,30 @@ so they are indexed in physical order from the controller and never move with
   `ch N gaps 1:1,301:2` (first dead LED, 1-based : count; `-` clears), TFT
   channel menu → "Dead px". API/backup: `"gaps": [[first_led, count], ...]`.
 
+### 5.5 Fixtures
+
+Up to 32 fixtures per channel (`ChannelConfig::fixtures`, `config::Fixture
+{pos, len}`): runs of physical LEDs a scene treats as one luminaire (a bar, a
+tube). Physical positions like the gaps, so the two describe one layout; the
+web editor shows them as one list over a bar that draws the strip, the
+fixtures, the dead LEDs and any overlap.
+
+- Fixtures never share an LED: the API refuses an overlapping list (400,
+  "fixtures N and M overlap"), the web editor flags it and will not save.
+  A dead LED inside a fixture is allowed, it only shortens the fixture.
+- They only change scenes (and the failsafe scene); Art-Net/sACN data still
+  fills the live pixels end to end.
+- `Scene::fixture_mode` (`"fixture_mode"` in the API) picks how the effect
+  spreads: `strip` (the whole strip, the default), `each` (every fixture plays
+  it on its own), `chain` (the fixtures end to end as one strip, without the
+  LEDs between them), `mirror` (chained over the first half, mirrored on the
+  second). Live pixels in no fixture stay dark outside `strip`.
+- Rendering: `logic::fixture_spans` maps each fixture to its run of the source
+  buffer (dead LEDs skipped, then invert and grouping, as the encoder does);
+  `logic::fill_scene_on_channel` draws the effect per span.
+- Edit: web channel editor ("Fixtures & dead LEDs", with a "N × L + K dead"
+  fill). API/backup: `"fixtures": [[first_led, count], ...]`.
+
 ---
 
 ## 6. Verification

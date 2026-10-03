@@ -709,6 +709,107 @@ inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel
     }
 }
 
+// ── Fixtures ────────────────────────────────────────────────────────────────
+
+// A run of the channel's source buffer (the pixels a scene writes).
+struct Span {
+    uint16_t first, count;
+};
+
+// Each fixture of `cc` as a source-buffer span, ascending: dead LEDs inside a
+// fixture are skipped, invert flips the order, grouping divides it (the
+// encoder maps the buffer the same way). Fixtures past the strip's end are
+// cut or dropped. Returns the count.
+inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t cap) {
+    const size_t nf       = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+    const size_t ng       = led::gap_count(cc.gaps, led::kMaxPixelGaps);
+    const uint32_t live_n = cc.pixel_count;
+    const uint32_t group  = cc.grouping ? cc.grouping : 1;
+    size_t k              = 0;
+    for (size_t i = 0; i < nf && k < cap; ++i) {
+        const uint32_t end = static_cast<uint32_t>(cc.fixtures[i].pos) + cc.fixtures[i].len;
+        uint32_t a         = led::live_within(cc.fixtures[i].pos, cc.gaps, ng);
+        uint32_t b         = led::live_within(end, cc.gaps, ng);
+        if (b > live_n) b = live_n;
+        if (b <= a) continue;
+        if (cc.invert_direction) {
+            const uint32_t t = a;
+            a                = live_n - b;
+            b                = live_n - t;
+        }
+        const uint32_t ga = a / group, gb = (b + group - 1) / group;
+        out[k++] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga) };
+    }
+    if (cc.invert_direction)
+        for (size_t i = 0; i < k / 2; ++i) {
+            const Span t   = out[i];
+            out[i]         = out[k - 1 - i];
+            out[k - 1 - i] = t;
+        }
+    return k;
+}
+
+// Renders `scene` on channel `cc`, spread over its fixtures as the scene's
+// fixture_mode says; pixels outside every fixture stay dark. A channel
+// without fixtures (or a Strip scene) gets the plain whole-strip pattern.
+inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
+                                  const config::ChannelConfig& cc, uint8_t bpp,
+                                  const config::Scene& scene, uint64_t phase_ms) {
+    Span sp[config::kMaxFixtures];
+    const uint8_t mode = scene.fixture_mode;
+    const size_t n     = mode == config::kFixtureModeStrip || mode >= config::kFixtureModeCount
+                           ? 0
+                           : fixture_spans(cc, sp, config::kMaxFixtures);
+    const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
+    if (n == 0 || total > dst_capacity || bpp == 0) {
+        fill_scene_pattern(dst, dst_capacity, cc.pixel_count, bpp, scene, phase_ms);
+        return;
+    }
+    if (mode == config::kFixtureModeEach) {
+        std::memset(dst, 0, total);
+        for (size_t i = 0; i < n; ++i)
+            fill_scene_pattern(dst + static_cast<size_t>(sp[i].first) * bpp,
+                               dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count,
+                               bpp, scene, phase_ms);
+        return;
+    }
+    // Chain / Mirror: one pattern as long as the chained fixtures, drawn at the
+    // head of the buffer, then each piece moved out to its fixture. Last first:
+    // a fixture sits at or past its chained position, so nothing not yet moved
+    // is overwritten.
+    const size_t chained = mode == config::kFixtureModeMirror ? (n + 1) / 2 : n;
+    uint32_t len         = 0;
+    for (size_t i = 0; i < chained; ++i)
+        len += sp[i].count;
+    fill_scene_pattern(dst, dst_capacity, static_cast<uint16_t>(len), bpp, scene, phase_ms);
+    uint32_t at = len;
+    for (size_t i = chained; i-- > 0;) {
+        at -= sp[i].count;
+        std::memmove(dst + static_cast<size_t>(sp[i].first) * bpp,
+                     dst + static_cast<size_t>(at) * bpp, static_cast<size_t>(sp[i].count) * bpp);
+    }
+    // Mirror: fixture n-1-i is fixture i reversed (resampled when the two
+    // differ in length), so the look is symmetric about the middle.
+    for (size_t i = chained; i < n; ++i) {
+        const Span& from = sp[n - 1 - i];
+        for (uint32_t j = 0; j < sp[i].count; ++j) {
+            const uint32_t src = from.count - 1 - j * from.count / sp[i].count;
+            std::memcpy(dst + (static_cast<size_t>(sp[i].first) + j) * bpp,
+                        dst + (static_cast<size_t>(from.first) + src) * bpp, bpp);
+        }
+    }
+    // Dark outside the fixtures.
+    uint32_t cursor = 0;
+    for (size_t i = 0; i <= n; ++i) {
+        const uint32_t until = i < n ? sp[i].first : cc.pixel_count;
+        if (until > cursor)
+            std::memset(dst + static_cast<size_t>(cursor) * bpp, 0,
+                        static_cast<size_t>(until - cursor) * bpp);
+        if (i<n&& static_cast<uint32_t>(sp[i].first) + sp[i].count> cursor)
+            cursor = static_cast<uint32_t>(sp[i].first) + sp[i].count;
+    }
+}
+
 // ── 2-source merge (HTP/LTP) ────────────────────────────────────────────────
 //
 // Art-Net nodes must merge up to two concurrent senders per universe: HTP

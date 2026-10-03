@@ -185,11 +185,44 @@ def test_pixel_count_above_budget_warns_and_is_kept(page, device):
 
 def test_dead_pixel_gaps_editor(page, device):
     nav(page, "channels")
-    page.locator("[data-gap-add]").click()
-    page.locator("#cd-gap-p-0").fill("12")
-    page.locator("#cd-gap-l-0").fill("2")
+    page.locator('[data-lay-add="d"]').click()
+    page.locator("#cd-lay-p-d-0").fill("12")
+    page.locator("#cd-lay-n-d-0").fill("2")
     save(page)
     assert device.get("/api/config")["channels"][0]["gaps"] == [[12, 2]]
+
+
+def test_fixtures_fill_visualise_and_refuse_overlaps(page, device):
+    nav(page, "channels")
+    # 5 bars of 59 LEDs, one dead LED between two bars.
+    page.locator("#lay-rep-n").fill("5")
+    page.locator("#lay-rep-l").fill("59")
+    page.locator("#lay-rep-k").fill("1")
+    page.locator("[data-lay-fill]").click()
+    expect(page.locator("#cd-pix")).to_have_value("295")
+    expect(page.locator("#cd-lay-viz")).to_contain_text("F5")
+    save(page)
+    ch = device.get("/api/config")["channels"][0]
+    assert ch["fixtures"] == [[1, 59], [61, 59], [121, 59], [181, 59], [241, 59]]
+    assert ch["gaps"] == [[60, 1], [120, 1], [180, 1], [240, 1]]
+    assert ch["pixel_count"] == 295
+    # Fixture 2 pulled onto fixture 1: flagged, and saving is refused.
+    page.locator("#cd-lay-p-f-1").fill("50")
+    expect(page.locator("#cd-lay-warn")).to_contain_text("Fixtures overlap")
+    page.locator('[data-action="save"]').click()
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("overlap")
+    assert device.get("/api/config")["channels"][0]["fixtures"][1] == [61, 59]
+    # A row turned from fixture into dead LEDs moves list.
+    page.locator("#cd-lay-p-f-1").fill("61")
+    page.locator("#cd-lay-t-f-4").select_option("d")
+    expect(page.locator("#cd-lay-viz")).not_to_contain_text("F5")
+
+
+def test_scene_fixture_mode(page, device):
+    nav(page, "scenes")
+    page.locator("[data-sc-fixmode]").first.select_option("mirror")
+    save(page)
+    assert device.get("/api/config")["scenes"][0]["fixture_mode"] == "mirror"
 
 
 # ── system / global ──────────────────────────────────────────────────────────

@@ -556,6 +556,106 @@ static pixfrog::config::Scene with_color(pixfrog::config::Scene s, uint8_t r, ui
     return s;
 }
 
+// ── Fixtures ────────────────────────────────────────────────────────────────
+
+static pixfrog::config::ChannelConfig fixture_chan(uint16_t live) {
+    pixfrog::config::ChannelConfig cc{};
+    cc.protocol    = pixfrog::led::Protocol::WS2815;
+    cc.pixel_count = live;
+    cc.grouping    = 1;
+    return cc;
+}
+
+// The bench example: 5 bars of 59 LEDs, one dead LED between two bars.
+static void test_fixture_spans_skip_the_dead_leds() {
+    auto cc = fixture_chan(295);
+    for (uint16_t k = 0; k < 5; ++k)
+        cc.fixtures[k] = { static_cast<uint16_t>(k * 60), 59 };
+    for (uint16_t k = 0; k < 4; ++k)
+        cc.gaps[k] = { static_cast<uint16_t>(59 + k * 60), 1 };
+    Span sp[pixfrog::config::kMaxFixtures];
+    EXPECT_EQ(fixture_spans(cc, sp, pixfrog::config::kMaxFixtures), 5u);
+    for (uint16_t k = 0; k < 5; ++k) {
+        EXPECT_EQ(sp[k].first, k * 59);
+        EXPECT_EQ(sp[k].count, 59);
+    }
+    cc.pixel_count = 200;  // the strip now ends inside bar 4: cut, bar 5 dropped
+    EXPECT_EQ(fixture_spans(cc, sp, pixfrog::config::kMaxFixtures), 4u);
+    EXPECT_EQ(sp[3].count, 200 - 3 * 59);
+}
+
+static void test_fixture_spans_follow_invert_and_grouping() {
+    auto cc        = fixture_chan(15);  // A: 0-9, dead 10-11, B: 12-16
+    cc.fixtures[0] = { 0, 10 };
+    cc.fixtures[1] = { 12, 5 };
+    cc.gaps[0]     = { 10, 2 };
+    Span sp[4];
+    cc.invert_direction = true;  // B comes first in the buffer
+    EXPECT_EQ(fixture_spans(cc, sp, 4), 2u);
+    EXPECT_EQ(sp[0].first, 0);
+    EXPECT_EQ(sp[0].count, 5);
+    EXPECT_EQ(sp[1].first, 5);
+    EXPECT_EQ(sp[1].count, 10);
+    cc.invert_direction = false;
+    cc.grouping         = 2;  // two LEDs per buffer pixel
+    EXPECT_EQ(fixture_spans(cc, sp, 4), 2u);
+    EXPECT_EQ(sp[0].count, 5);
+    EXPECT_EQ(sp[1].first, 5);
+    EXPECT_EQ(sp[1].count, 3);
+}
+
+static void test_fixture_modes_each_chain_mirror() {
+    auto cc        = fixture_chan(12);  // 0-3 and 8-11; 4-7 are no fixture
+    cc.fixtures[0] = { 0, 4 };
+    cc.fixtures[1] = { 8, 4 };
+    auto sc        = with_color(mk_scene(4 /*gradient*/, 255, 0, 0, 0, 1), 0, 0, 255);
+    uint8_t buf[12 * 3], ref[12 * 3];
+    // Strip: the plain pattern, fixtures ignored.
+    sc.fixture_mode = pixfrog::config::kFixtureModeStrip;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 12, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(buf, ref, sizeof(buf)) == 0);
+    // Each: both fixtures show the same 4-pixel pattern, dark between.
+    sc.fixture_mode = pixfrog::config::kFixtureModeEach;
+    std::memset(buf, 0xEE, sizeof(buf));
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 4, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(buf, ref, 4 * 3) == 0);
+    EXPECT_TRUE(std::memcmp(buf + 8 * 3, ref, 4 * 3) == 0);
+    for (int i = 4 * 3; i < 8 * 3; ++i)
+        EXPECT_EQ(buf[i], 0);
+    // Chain: one 8-pixel pattern, its second half on the second fixture.
+    sc.fixture_mode = pixfrog::config::kFixtureModeChain;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 8, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(buf, ref, 4 * 3) == 0);
+    EXPECT_TRUE(std::memcmp(buf + 8 * 3, ref + 4 * 3, 4 * 3) == 0);
+    EXPECT_EQ(buf[5 * 3], 0);
+    // Mirror over three fixtures: the third is the first reversed.
+    cc.fixtures[1]  = { 4, 4 };
+    cc.fixtures[2]  = { 8, 4 };
+    sc.fixture_mode = pixfrog::config::kFixtureModeMirror;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 8, 3, sc, 0);  // chained over fixtures 1-2
+    EXPECT_TRUE(std::memcmp(buf, ref, 8 * 3) == 0);
+    for (int j = 0; j < 4; ++j)
+        EXPECT_TRUE(std::memcmp(buf + (8 + j) * 3, buf + (3 - j) * 3, 3) == 0);
+    // Mirror with a longer partner: resampled, still reversed end to end.
+    cc.fixtures[2] = { 8, 2 };
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(buf + 8 * 3, buf + 3 * 3, 3) == 0);
+    EXPECT_TRUE(std::memcmp(buf + 9 * 3, buf + 1 * 3, 3) == 0);
+    EXPECT_EQ(buf[10 * 3], 0);  // past the short fixture: dark
+}
+
+static void test_fixtures_normalize_drops_overlaps() {
+    pixfrog::config::Fixture f[4] = { { 20, 5 }, { 0, 10 }, { 5, 3 }, { 2000, 4 } };
+    EXPECT_EQ(pixfrog::config::normalize_fixtures(f, 4), 2u);
+    EXPECT_EQ(f[0].pos, 0);
+    EXPECT_EQ(f[1].pos, 20);
+    EXPECT_EQ(f[2].len, 0);
+}
+
 // The stored count survives a refresh change; only the emitted count follows
 // the budget (it used to be rewritten in NVS: 1024 px @30 Hz → 512 @60 Hz for good).
 static void test_effective_pixel_count_non_destructive() {
@@ -1222,6 +1322,10 @@ int main() {
     test_effective_pixel_count_non_destructive();
     test_gaps_budget_and_physical_count();
     test_preview_with_gaps();
+    test_fixture_spans_skip_the_dead_leds();
+    test_fixture_spans_follow_invert_and_grouping();
+    test_fixture_modes_each_chain_mirror();
+    test_fixtures_normalize_drops_overlaps();
     test_scene_solid();
     test_scene_solid_rgbw_white_off();
     test_scene_chase_position_and_width();
