@@ -199,7 +199,9 @@ SemaphoreHandle_t g_sync_sem = nullptr;
 // current contents of config_store. Called from init() and from
 // handle_pending_remaps() when the UI signals a config change.
 void rebuild_universe_lut() {
-    config::ChannelConfig chans[config::kNumChannels];
+    // Static: 8 channel configs (fixtures included) are ~1.7 kB, too much for
+    // app_main's stack at boot. init() and the render task never overlap.
+    static config::ChannelConfig chans[config::kNumChannels];
     for (size_t ch = 0; ch < config::kNumChannels; ++ch)
         chans[ch] = config::get_channel(ch);
 
@@ -361,7 +363,11 @@ bool auto_patch_universes(uint16_t base, uint16_t* next_free) {
 }
 
 bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
-    config::ChannelConfig chans[config::kNumChannels];
+    // On the heap: ~1.7 kB of channel configs on the ui task's 4 kB stack (the
+    // menu's Auto-patch) is asking for an overflow. A one-off config action.
+    auto* chans = static_cast<config::ChannelConfig*>(
+        heap_caps_malloc(sizeof(config::ChannelConfig) * config::kNumChannels, MALLOC_CAP_DEFAULT));
+    if (!chans) return false;
     for (size_t i = 0; i < config::kNumChannels; ++i)
         chans[i] = config::get_channel(i);
 
@@ -401,6 +407,7 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
         all_persisted &= config::set_channel(i, chans[i]);
         mark_channel_dirty(i);
     }
+    heap_caps_free(chans);
     return all_persisted;
 }
 
