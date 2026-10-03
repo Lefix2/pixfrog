@@ -302,7 +302,7 @@ TEST(scene_endpoints_manage_the_list) {
         post("/api/scene/" + std::to_string(n), "{\"colors\":[\"#ff0000\",\"#00ff00\"]}").status,
         200);
     EXPECT_EQ(config::scene_num_colors(config::get_scene(n)), 2);
-    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeStrip);  // the default
+    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeEach);  // the default
     post("/api/scene/" + std::to_string(n), "{\"fixture_mode\":\"mirror\"}");
     EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeMirror);
     post("/api/scene/" + std::to_string(n), "{\"fixture_mode\":\"spiral\"}");  // unknown: kept

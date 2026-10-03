@@ -249,15 +249,16 @@ constexpr uint8_t kSceneFxCount    = 11;
 constexpr size_t kSceneColorsMax = 4;
 
 // How a scene's effect spreads over a channel's fixtures (Scene::fixture_mode).
-// A channel without fixtures is one strip whatever the mode.
-constexpr uint8_t kFixtureModeStrip  = 0;  // over the whole strip, fixtures ignored
-constexpr uint8_t kFixtureModeEach   = 1;  // each fixture plays the effect on its own
+// A channel without fixtures is one strip whatever the mode, so per fixture
+// is the default (zero): defining fixtures is enough for the scenes to follow.
+constexpr uint8_t kFixtureModeEach   = 0;  // each fixture plays the effect on its own
+constexpr uint8_t kFixtureModeStrip  = 1;  // over the whole strip, fixtures ignored
 constexpr uint8_t kFixtureModeChain  = 2;  // fixtures chained into one strip, end to end
 constexpr uint8_t kFixtureModeMirror = 3;  // chained over the first half, mirrored on the rest
 constexpr uint8_t kFixtureModeCount  = 4;
 inline const char* fixture_mode_id(uint8_t m) {
-    static const char* const kIds[] = { "strip", "each", "chain", "mirror" };
-    return m < kFixtureModeCount ? kIds[m] : "strip";
+    static const char* const kIds[] = { "each", "strip", "chain", "mirror" };
+    return m < kFixtureModeCount ? kIds[m] : "each";
 }
 
 // Display names, indexed by effect id (fixture profiles, TFT).
@@ -330,7 +331,7 @@ inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* d
         std::memcpy(&dst[i], old_data + i * kSceneV1Size, kSceneV1Size);
         dst[i].name[kSceneNameMax - 1] = '\0';
         dst[i].num_colors              = 1;
-        dst[i].fixture_mode            = kFixtureModeStrip;
+        dst[i].fixture_mode            = kFixtureModeEach;
         if (dst[i].effect >= kSceneFxCount) dst[i].effect = kSceneFxSolid;
         if (dst[i].effect == kSceneFxSolid) dst[i].speed = 0;
     }

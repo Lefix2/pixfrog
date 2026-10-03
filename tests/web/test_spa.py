@@ -185,14 +185,14 @@ def test_pixel_count_above_budget_warns_and_is_kept(page, device):
 
 def test_dead_pixel_gaps_editor(page, device):
     nav(page, "channels")
-    page.locator('[data-lay-add="d"]').click()
-    page.locator("#cd-lay-p-d-0").fill("12")
-    page.locator("#cd-lay-n-d-0").fill("2")
+    page.locator('[data-lay-add="d"]').click()  # after the strip as it was
+    page.locator("#cd-lay-n-1").fill("2")
     save(page)
-    assert device.get("/api/config")["channels"][0]["gaps"] == [[12, 2]]
+    ch = device.get("/api/config")["channels"][0]
+    assert ch["gaps"] == [[ch["pixel_count"] + 1, 2]]
 
 
-def test_fixtures_fill_visualise_and_refuse_overlaps(page, device):
+def test_fixtures_by_size_in_order_and_reordered_by_drag(page, device):
     nav(page, "channels")
     # 5 bars of 59 LEDs, one dead LED between two bars.
     page.locator("#lay-rep-n").fill("5")
@@ -200,22 +200,28 @@ def test_fixtures_fill_visualise_and_refuse_overlaps(page, device):
     page.locator("#lay-rep-k").fill("1")
     page.locator("[data-lay-fill]").click()
     expect(page.locator("#cd-pix")).to_have_value("295")
+    expect(page.locator("#cd-pix")).to_be_disabled()  # the list sets it
     expect(page.locator("#cd-lay-viz")).to_contain_text("F5")
     save(page)
     ch = device.get("/api/config")["channels"][0]
     assert ch["fixtures"] == [[1, 59], [61, 59], [121, 59], [181, 59], [241, 59]]
     assert ch["gaps"] == [[60, 1], [120, 1], [180, 1], [240, 1]]
     assert ch["pixel_count"] == 295
-    # Fixture 2 pulled onto fixture 1: flagged, and saving is refused.
-    page.locator("#cd-lay-p-f-1").fill("50")
-    expect(page.locator("#cd-lay-warn")).to_contain_text("Fixtures overlap")
-    page.locator('[data-action="save"]').click()
-    expect(page.locator('[data-live="save-state"]')).to_contain_text("overlap")
-    assert device.get("/api/config")["channels"][0]["fixtures"][1] == [61, 59]
-    # A row turned from fixture into dead LEDs moves list.
-    page.locator("#cd-lay-p-f-1").fill("61")
-    page.locator("#cd-lay-t-f-4").select_option("d")
-    expect(page.locator("#cd-lay-viz")).not_to_contain_text("F5")
+    # Sizes only: the first bar grows, every later one moves along.
+    page.locator("#cd-lay-n-0").fill("70")
+    page.locator("#cd-lay-n-0").dispatch_event("change")
+    expect(page.locator("#cd-pix")).to_have_value("306")
+    # Drag the last bar to the top: positions follow the order.
+    page.locator("#cd-lay-n-8").fill("20")
+    page.locator("#cd-lay-n-8").dispatch_event("change")
+    drag(page, page.locator("[data-lay-row='8'] [data-lay-grip]"), page.locator("[data-lay-row='0']"))
+    save(page)
+    ch = device.get("/api/config")["channels"][0]
+    assert ch["fixtures"][0] == [1, 20] and ch["fixtures"][1] == [21, 70]
+    # A row turned into LEDs without fixture leaves the fixtures.
+    page.locator("#cd-lay-t-0").select_option("s")
+    save(page)
+    assert len(device.get("/api/config")["channels"][0]["fixtures"]) == 4
 
 
 def test_scene_fixture_mode(page, device):
@@ -393,47 +399,35 @@ def test_scene_fade_setting(page, device):
 
 
 def _play_on(page, row, outputs):
-    """Select scene `row`, keep only `outputs` (0-based) in PLAY ON, press Play."""
+    """Select scene `row`, set its target channels to `outputs` (0-based), press Play."""
     page.locator(f'[data-scene-row="{row}"]').click()
     n = row + 1
     for o in range(8):
-        chip = page.locator(f'[data-sc-pon="{o}"][data-scn="{n}"]')
+        chip = page.locator(f'[data-sc-ch="{o}"][data-scn="{n}"]')
         on = "rgba(63,212,99" in (chip.get_attribute("style") or "")  # the lit chip style
         if (o in outputs) != on:
             chip.click()
     page.locator(f'[data-sc-playon="{n}"]').click()
 
 
-def test_play_two_scenes_on_two_outputs_from_the_editor(page, device):
-    nav(page, "scenes")
-    _play_on(page, 0, {0})
-    expect(page.locator('[data-sc-playing="1"]')).to_contain_text("out 1")
-    _play_on(page, 1, {1})
-    expect(page.locator('[data-sc-outs="1"]')).to_contain_text("out 2")
-    scenes = device.get("/api/status")["show"]["scenes"]
-    assert scenes[:3] == [0, 1, -1]
-    page.locator('[data-sc-stop="2"]').click()  # stops scene 2 only
+def _scenes_on(device, want):
     for _ in range(40):
-        if device.get("/api/status")["show"]["scenes"][:2] == [0, -1]:
-            break
+        if device.get("/api/status")["show"]["scenes"][: len(want)] == want:
+            return True
         time.sleep(0.05)
-    assert device.get("/api/status")["show"]["scenes"][:2] == [0, -1]
+    return False
 
 
-def test_play_on_offers_only_the_scene_target_channels(page, device):
-    device.post("/api/scene/0", {"mask": 3})
-    page.reload()
+def test_a_later_scene_takes_over_only_its_own_outputs(page, device):
     nav(page, "scenes")
-    page.locator('[data-scene-row="0"]').click()
-    off = page.locator('[data-sc-pon="5"][data-scn="1"]')
-    assert "not-allowed" in off.get_attribute("style")
-    off.click()  # not a target channel: nothing to toggle
-    page.locator('[data-sc-playon="1"]').click()
-    for _ in range(40):
-        if device.get("/api/status")["show"]["scenes"][:3] == [0, 0, -1]:
-            break
-        time.sleep(0.05)
-    assert device.get("/api/status")["show"]["scenes"][:3] == [0, 0, -1]
+    _play_on(page, 0, {0, 1, 2})  # scene 1 on outputs 1-3
+    assert _scenes_on(device, [0, 0, 0, -1])
+    _play_on(page, 1, {1})  # scene 2 on output 2 only (saved before it plays)
+    assert _scenes_on(device, [0, 1, 0, -1])
+    assert device.get("/api/config")["scenes"][1]["mask"] == 2
+    expect(page.locator('[data-sc-playing="2"]')).to_contain_text("out 2")
+    page.locator('[data-sc-stop="2"]').click()  # stops scene 2 only: output 2 back to live
+    assert _scenes_on(device, [0, -1, 0])
 
 
 # ── FSEQ playlist ────────────────────────────────────────────────────────────

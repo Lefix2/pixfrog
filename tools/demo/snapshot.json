@@ -317,7 +317,7 @@
      "#ffb46e"
     ],
     "effect": 0,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Warm white",
     "param": 0,
@@ -330,7 +330,7 @@
      "#ff7800"
     ],
     "effect": 1,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Chase",
     "param": 3,
@@ -342,7 +342,7 @@
      "#ffffff"
     ],
     "effect": 2,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Rainbow",
     "param": 1,
@@ -356,7 +356,7 @@
      "#00ffa0"
     ],
     "effect": 3,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Blobs",
     "param": 4,
@@ -371,7 +371,7 @@
      "#fff096"
     ],
     "effect": 7,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Fire",
     "param": 0,
@@ -384,7 +384,7 @@
      "#a0c8ff"
     ],
     "effect": 6,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Twinkle",
     "param": 60,
@@ -396,7 +396,7 @@
      "#ff0000"
     ],
     "effect": 8,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Scanner",
     "param": 0,
@@ -409,7 +409,7 @@
      "#ffffff"
     ],
     "effect": 0,
-    "fixture_mode": "strip",
+    "fixture_mode": "each",
     "mask": 255,
     "name": "Strobe",
     "param": 0,
@@ -484,7 +484,7 @@
   },
   "rx": {
    "artnet_ctrl_rx": 0,
-   "artnet_rx": 375,
+   "artnet_rx": 400,
    "bad_rx": 0,
    "sacn_rx": 0
   },
@@ -900,7 +900,7 @@
  "status": {
   "active_scene": 2,
   "alias": true,
-  "artnet_rx": 375,
+  "artnet_rx": 400,
   "audio": true,
   "bad_rx": 0,
   "channels": [
