@@ -812,10 +812,12 @@ struct DmxRun {
 };
 constexpr size_t kMaxDmxRuns = 96;
 
-// Fills `out` (up to `cap`) and returns the number of runs the layout needs —
-// more than `cap` means it did not fit (never for a real config: 1024 px
-// RGBW per fixture-universe is at most 32 fixtures × 2 + 8).
-inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_t cap) {
+// Calls visit(run) for each run of the layout, in order (universes ascending),
+// and returns how many there were. Nothing is stored: the render task, the
+// boot task and the UI call this on small stacks (an on-stack run array
+// overflowed app_main's 4 kB stack at boot).
+template <typename Visit>
+inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit) {
     const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(cc.protocol));
     if (bpp == 0 || cc.pixel_count == 0) return 0;
     uint32_t uni = 0, slot = cc.dmx_start > 0 ? cc.dmx_start - 1u : 0u;
@@ -832,9 +834,8 @@ inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_
                 slot = 0;
                 continue;
             }
-            if (k < cap)
-                out[k] = DmxRun{ static_cast<uint16_t>(uni), static_cast<uint16_t>(slot),
-                                 static_cast<uint16_t>(dst), static_cast<uint16_t>(take) };
+            visit(DmxRun{ static_cast<uint16_t>(uni), static_cast<uint16_t>(slot),
+                          static_cast<uint16_t>(dst), static_cast<uint16_t>(take) });
             ++k;
             dst   += take;
             bytes -= take;
@@ -846,13 +847,15 @@ inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_
         }
     };
     const uint32_t total = static_cast<uint32_t>(cc.pixel_count) * bpp;
+    if (cc.packing == config::kPackContinuous) {
+        place(0, total, false);
+        return k;
+    }
     Span sp[config::kMaxFixtures];
     const size_t nf = cc.packing == config::kPackPerFixture
                         ? fixture_spans(cc, sp, config::kMaxFixtures)
                         : 0;
-    if (cc.packing == config::kPackContinuous) {
-        place(0, total, false);
-    } else if (nf == 0) {
+    if (nf == 0) {
         place(0, total, true);
     } else {
         for (size_t i = 0; i < nf; ++i) {
@@ -869,13 +872,23 @@ inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_
     return k;
 }
 
+// The runs into `out` (up to `cap`); returns how many the layout needs.
+inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_t cap) {
+    size_t k = 0;
+    return for_each_dmx_run(cc, [&](const DmxRun& r) {
+        if (k < cap) out[k] = r;
+        ++k;
+    });
+}
+
+// The last run (the highest universe), or false when there is none.
+inline bool last_dmx_run(const config::ChannelConfig& cc, DmxRun* last) {
+    return for_each_dmx_run(cc, [&](const DmxRun& r) { *last = r; }) > 0;
+}
+
 inline size_t channel_universes_used(const config::ChannelConfig& cc) {
-    DmxRun runs[kMaxDmxRuns];
-    const size_t n = channel_layout(cc, runs, kMaxDmxRuns);
-    size_t last    = 0;
-    for (size_t i = 0; i < n && i < kMaxDmxRuns; ++i)
-        if (runs[i].uni_off + 1u > last) last = runs[i].uni_off + 1u;
-    return last;
+    DmxRun last{};
+    return last_dmx_run(cc, &last) ? last.uni_off + 1u : 0u;
 }
 
 // ── Auto-patch ──────────────────────────────────────────────────────────────
@@ -901,7 +914,6 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
                                    size_t n, uint16_t* out_uni, uint16_t* out_dmx,
                                    uint16_t* slot_after = nullptr) {
     uint32_t cur_uni = o.base, cur_slot = 0;
-    DmxRun runs[kMaxDmxRuns];
     for (size_t i = 0; i < n; ++i) {
         auto& c = chans[i];
         if (o.packing >= 0) c.packing = static_cast<uint8_t>(o.packing);
@@ -924,11 +936,10 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
         out_dmx[i]       = static_cast<uint16_t>(cur_slot + 1);
         c.universe_start = out_uni[i];
         c.dmx_start      = out_dmx[i];
-        size_t nr        = channel_layout(c, runs, kMaxDmxRuns);
-        if (nr > kMaxDmxRuns) nr = kMaxDmxRuns;
-        const DmxRun& last = runs[nr - 1];
-        cur_uni            = cur_uni + last.uni_off;
-        cur_slot           = static_cast<uint32_t>(last.slot) + last.bytes;
+        DmxRun last{};
+        last_dmx_run(c, &last);
+        cur_uni  = cur_uni + last.uni_off;
+        cur_slot = static_cast<uint32_t>(last.slot) + last.bytes;
         if (cur_slot >= kUniverseSize) {
             ++cur_uni;
             cur_slot = 0;
@@ -1033,14 +1044,10 @@ inline bool decode_pixels(uint8_t* dst, size_t dst_capacity, const config::Chann
     const size_t total = channel_total_bytes(cc);
     if (total > dst_capacity) return false;
     if (total == 0) return true;
-    DmxRun runs[kMaxDmxRuns];
-    size_t n = channel_layout(cc, runs, kMaxDmxRuns);
-    if (n > kMaxDmxRuns) n = kMaxDmxRuns;
     // Pixels no run covers (per fixture: outside every fixture) stay dark.
     if (cc.packing != config::kPackContinuous) std::memset(dst, 0, total);
     bool all = true;
-    for (size_t i = 0; i < n; ++i) {
-        const DmxRun& r    = runs[i];
+    for_each_dmx_run(cc, [&](const DmxRun& r) {
         const uint8_t* src = get_universe(static_cast<uint16_t>(cc.universe_start + r.uni_off));
         if (src) {
             std::memcpy(dst + r.dst, src + r.slot, r.bytes);
@@ -1048,7 +1055,7 @@ inline bool decode_pixels(uint8_t* dst, size_t dst_capacity, const config::Chann
             std::memset(dst + r.dst, 0, r.bytes);
             all = false;
         }
-    }
+    });
     return all;
 }
 
