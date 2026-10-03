@@ -160,8 +160,9 @@ std::atomic<uint32_t> g_identify_blinks{ kIdentifyBlinks };
 uint16_t g_universe_to_slot[logic::kMaxUniverseNumber + 1]{};
 bool g_universe_to_slot_valid = false;
 
-// Reverse mapping slot → channel index, populated alongside g_universe_to_slot.
-uint8_t g_slot_to_channel[kNumUniverses]{};
+// Reverse mapping slot → the channels it feeds (bit n = channel n; two with
+// compact patching sharing a universe), populated alongside g_universe_to_slot.
+uint8_t g_slot_chans[kNumUniverses]{};
 uint16_t g_slots_used = 0;
 
 // 2-source merge: per-slot source tracking + per-source staging frames
@@ -204,7 +205,7 @@ void rebuild_universe_lut() {
 
     size_t unmapped = 0;
     g_slots_used    = logic::build_universe_map(chans, config::kNumChannels, g_universe_to_slot,
-                                                g_slot_to_channel, kNumUniverses, &unmapped);
+                                                g_slot_chans, kNumUniverses, &unmapped);
     // Silent truncation used to look exactly like a patching mistake on the
     // console side, so say it out loud.
     if (unmapped) {
@@ -225,7 +226,7 @@ void rebuild_universe_lut() {
         } else if (g_slots_used < kNumUniverses) {
             g_ctrl_slot                       = g_slots_used;
             g_universe_to_slot[ctrl.universe] = g_slots_used;
-            g_slot_to_channel[g_slots_used]   = kNoChannel;
+            g_slot_chans[g_slots_used]        = 0;  // feeds no output
             ++g_slots_used;
         } else {
             ESP_LOGE(TAG, "no pool slot left for the control universe %u",
@@ -354,35 +355,57 @@ void handle_pending_remaps() {
 }
 
 bool auto_patch_universes(uint16_t base, uint16_t* next_free) {
+    AutoPatch o;
+    o.base = base;
+    return auto_patch(o, next_free);
+}
+
+bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
     config::ChannelConfig chans[config::kNumChannels];
     for (size_t i = 0; i < config::kNumChannels; ++i)
         chans[i] = config::get_channel(i);
 
-    uint16_t starts[config::kNumChannels];
-    uint16_t next = logic::compute_auto_patch(base, chans, config::kNumChannels, starts);
+    logic::AutoPatchOptions o;
+    o.base    = opt.base;
+    o.compact = opt.compact;
+    o.packing = opt.packing;
+    uint16_t starts[config::kNumChannels], dmx[config::kNumChannels], slot_after = 0;
+    uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx,
+                                              &slot_after);
+    // Sequential layout: the universes used are next - base (the cursor wraps
+    // past 0x7FFF, so the end is computed unmasked to see an overflow).
+    size_t used        = static_cast<size_t>((next - opt.base) & 0x7FFF);
+    const uint32_t end = static_cast<uint32_t>(opt.base) + used;
 
     bool all_persisted = true;
-    // The DMX control universe, when used, follows the last output (address
-    // 1): the whole box patches as one contiguous block.
-    uint32_t end = base;  // unmasked: compute_auto_patch wraps past 0x7FFF
-    for (size_t i = 0; i < config::kNumChannels; ++i)
-        end += logic::channel_universes_used(chans[i]);
+    // The DMX control universe, when used, follows the last output: in the
+    // room left in its universe when compact, else from address 1 of the next.
     auto ctl = config::get_control();
     if (ctl.enabled && end <= kMaxUniverseNumber) {
-        ctl.universe   = next++;
-        ctl.address    = 1;
+        const size_t foot = config::control_footprint(ctl);
+        if (opt.compact && slot_after > 0 && slot_after + foot <= kUniverseSize) {
+            ctl.universe = static_cast<uint16_t>((next - 1) & 0x7FFF);
+            ctl.address  = static_cast<uint16_t>(slot_after + 1);
+        } else {
+            ctl.universe = next++;
+            ctl.address  = 1;
+            ++used;
+        }
         all_persisted &= config::set_control(ctl);
         mark_global_dirty();
     }
     if (next_free) *next_free = next;
+    if (universes) *universes = used;
 
     for (size_t i = 0; i < config::kNumChannels; ++i) {
-        chans[i].universe_start  = starts[i];
-        chans[i].dmx_start       = 1;  // cascade places every channel universe-aligned
-        all_persisted           &= config::set_channel(i, chans[i]);
+        all_persisted &= config::set_channel(i, chans[i]);
         mark_channel_dirty(i);
     }
     return all_persisted;
+}
+
+size_t channel_universe_span(const config::ChannelConfig& cc) {
+    return logic::channel_universes_used(cc);
 }
 
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
@@ -896,10 +919,28 @@ uint64_t frame_emit_us() {
     return longest;
 }
 
+namespace {
+// Every output a pool slot feeds received data now.
+void note_slot_activity(uint16_t slot) {
+    const int64_t now = esp_timer_get_time();
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
+        if (g_slot_chans[slot] & (1u << ch))
+            g_last_activity_us[ch].store(now, std::memory_order_relaxed);
+}
+}  // namespace
+
 int channel_for_universe(uint16_t universe_number) {
     const uint16_t slot = slot_for_universe(universe_number);
-    if (slot == logic::kNoSlot || g_slot_to_channel[slot] == kNoChannel) return -1;
-    return static_cast<int>(g_slot_to_channel[slot]);
+    if (slot == logic::kNoSlot || g_slot_chans[slot] == 0) return -1;
+    for (int ch = 0; ch < static_cast<int>(config::kNumChannels); ++ch)  // the lowest
+        if (g_slot_chans[slot] & (1u << ch)) return ch;
+    return -1;
+}
+
+void note_universe_activity(uint16_t universe_number) {
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return;
+    note_slot_activity(slot);
 }
 
 void note_channel_activity(size_t channel_index) {
@@ -923,13 +964,16 @@ bool is_channel_failsafe(size_t channel_index) {
 }
 
 void note_universe_terminated(uint16_t universe_number) {
-    const int ch = channel_for_universe(universe_number);
-    if (ch < 0) return;
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return;
     // Age the timestamp far into the past: still "was active once" (non-zero),
     // but past any timeout whatever the uptime — ageing it to boot+1 µs left a
     // stream terminated within the first failsafe_timeout_s of uptime ignored.
-    if (g_last_activity_us[ch].load(std::memory_order_relaxed) != 0)
-        g_last_activity_us[ch].store(kTerminatedUs, std::memory_order_relaxed);
+    // Every output the universe feeds (compact patching can share one).
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
+        if ((g_slot_chans[slot] & (1u << ch)) &&
+            g_last_activity_us[ch].load(std::memory_order_relaxed) != 0)
+            g_last_activity_us[ch].store(kTerminatedUs, std::memory_order_relaxed);
 }
 
 // Seed a pool slot in the back bank from the front bank the first time it is
@@ -995,7 +1039,7 @@ bool is_channel_merging(size_t channel_index) {
     if (channel_index >= config::kNumChannels) return false;
     const int64_t now = esp_timer_get_time();
     for (uint16_t slot = 0; slot < g_slots_used; ++slot) {
-        if (g_slot_to_channel[slot] != channel_index) continue;
+        if (!(g_slot_chans[slot] & (1u << channel_index))) continue;
         logic::MergeState m = g_merge[slot];
         logic::merge_expire(m, now, kArtnetMergeTimeoutUs);
         if (logic::merge_active_count(m) == 2) return true;
@@ -1019,7 +1063,7 @@ bool inject_universe(uint16_t universe_number, size_t offset, const uint8_t* dat
     // acceptable here — this is a bench/test path, not a sync-critical one.
     memcpy(g_uni_bank_a + base, data, len);
     memcpy(g_uni_bank_b + base, data, len);
-    note_channel_activity(g_slot_to_channel[slot]);
+    note_slot_activity(slot);
     if (slot == g_ctrl_slot) g_ctrl_last_us.store(esp_timer_get_time(), std::memory_order_relaxed);
     return true;
 }
@@ -1042,7 +1086,7 @@ bool inject_frame_universe(uint16_t universe_number, size_t offset, const uint8_
     uint8_t* back = back_bank_locked();
     prepare_back_slot(slot, back);
     memcpy(back + static_cast<size_t>(slot) * kUniverseSize + offset, data, len);
-    note_channel_activity(g_slot_to_channel[slot]);
+    note_slot_activity(slot);
     if (slot == g_ctrl_slot) g_ctrl_last_us.store(esp_timer_get_time(), std::memory_order_relaxed);
     return true;
 }

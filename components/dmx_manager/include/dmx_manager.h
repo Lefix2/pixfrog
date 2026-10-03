@@ -92,9 +92,11 @@ void note_sacn_rx();  // sACN data packet routed to a mapped universe
 // Refreshes the per-channel "last activity" timestamp used by HOME render.
 void note_channel_activity(size_t channel_index);
 
-// Returns the channel index this universe was assigned to at init() time,
-// or -1 if the universe number is not mapped to any channel.
+// The lowest channel a universe feeds (-1 = none; compact patching can share
+// a universe between two outputs).
 int channel_for_universe(uint16_t universe_number);
+// Data arrived on a universe: every output it feeds is active now.
+void note_universe_activity(uint16_t universe_number);
 
 // True if `channel_index` received at least one ArtDmx packet within the
 // last second. Used by ui::set_channel_active() at HOME refresh time.
@@ -139,6 +141,22 @@ void handle_pending_remaps();
 // placed right after the last channel (address 1) and counts in `next_free`.
 // Console/web/ui context only.
 bool auto_patch_universes(uint16_t base, uint16_t* next_free = nullptr);
+
+// The full auto-patch: `compact` starts each channel at the slot after the
+// previous one (sharing its universe) instead of a fresh universe; `packing`
+// >= 0 (config::kPack*) is set on every channel first, -1 keeps each one's.
+// An enabled control universe follows (in the room left when compact).
+// *universes (if set) gets the universes the patch uses, control included.
+struct AutoPatch {
+    uint16_t base  = 0;
+    bool compact   = false;
+    int8_t packing = -1;
+};
+bool auto_patch(const AutoPatch& opt, uint16_t* next_free = nullptr, size_t* universes = nullptr);
+
+// Universes a channel's DMX layout spans from its universe_start (packing and
+// dmx_start included).
+size_t channel_universe_span(const config::ChannelConfig& cc);
 
 // Test injection (control_console): write `len` bytes at byte `offset` into
 // the universe's slot in BOTH banks. Writing both sides makes the data

@@ -94,13 +94,23 @@
       return ok({ outputs: mask });
     }
     if (p === '/api/autopatch') {
-      var uni = body.base || 0;
+      // A sketch of the box's layout: aligned outputs, whole pixels unless
+      // continuous (compact placement is the box's job, not the demo's).
+      var uni = body.base || 0, used = 0;
       S.config.channels.forEach(function (c) {
+        if (body.packing && body.packing !== 'keep') c.packing = body.packing;
         c.universe_start = uni;
-        var span = c.protocol === 'Off' ? 0 : Math.ceil(c.pixel_count * bpp(c.protocol) / 510);
+        c.dmx_start = 1;
+        var b = bpp(c.protocol), span = 0;
+        if (c.protocol !== 'Off') {
+          span = c.packing === 'continuous' || !c.packing ? Math.ceil(c.pixel_count * b / 512)
+                                                          : Math.ceil(c.pixel_count / Math.floor(512 / b));
+        }
+        c.universes = span;
         uni += span;
+        used += span;
       });
-      return ok({ next_free: uni });
+      return ok({ next_free: uni, universes: used, pool: 72 });
     }
     if ((m = p.match(/^\/api\/scene\/(\d+)(\/(play|stop|delete))?$/))) {
       var n = +m[1];

@@ -86,8 +86,10 @@ static void test_auto_patch_cascade() {
         chans[i].pixel_count = 50;  // 1 universe each
     }
 
-    uint16_t out[8]{};
-    const uint16_t next = compute_auto_patch(14, chans, 8, out);
+    uint16_t out[8]{}, dmx[8]{};
+    AutoPatchOptions o;
+    o.base              = 14;
+    const uint16_t next = compute_auto_patch(o, chans, 8, out, dmx);
     EXPECT_EQ(out[0], 14);  // base
     EXPECT_EQ(out[1], 15);  // +1 (ch0 used 1)
     EXPECT_EQ(out[2], 17);  // +2 (ch1 used 2) — crosses into subnet 1 (15→16→17)
@@ -97,6 +99,129 @@ static void test_auto_patch_cascade() {
     EXPECT_EQ(out[6], 20);
     EXPECT_EQ(out[7], 21);
     EXPECT_EQ(next, 22);  // first free universe past the last channel
+}
+
+// ── DMX layout (packing) ────────────────────────────────────────────────────
+
+static config::ChannelConfig rgb_chan(uint16_t px, uint8_t packing, uint16_t dmx_start = 1) {
+    config::ChannelConfig c{};
+    c.protocol       = led::Protocol::WS2815;
+    c.pixel_count    = px;
+    c.grouping       = 1;
+    c.universe_start = 1;
+    c.dmx_start      = dmx_start;
+    c.packing        = packing;
+    return c;
+}
+
+static void test_layout_whole_pixels_never_split_one() {
+    DmxRun r[kMaxDmxRuns];
+    auto c         = rgb_chan(1024, config::kPackWholePixels);
+    const size_t n = channel_layout(c, r, kMaxDmxRuns);
+    EXPECT_EQ(n, 7u);            // 170 px a universe: 7, not 6
+    EXPECT_EQ(r[0].bytes, 510);  // two slots left unused
+    EXPECT_EQ(r[1].uni_off, 1);
+    EXPECT_EQ(r[1].slot, 0);
+    EXPECT_EQ(r[1].dst, 510);  // pixel 171 opens universe 2
+    EXPECT_EQ(channel_universes_used(c), 7u);
+    c.packing = config::kPackContinuous;
+    EXPECT_EQ(channel_universes_used(c), 6u);  // byte after byte
+    c.protocol = led::Protocol::SK6812;        // RGBW: 128 px fit exactly
+    c.packing  = config::kPackWholePixels;
+    EXPECT_EQ(channel_universes_used(c), 8u);
+    // Not one whole pixel left after dmx_start 511: it starts in the next one.
+    auto d = rgb_chan(10, config::kPackWholePixels, 511);
+    EXPECT_EQ(channel_layout(d, r, kMaxDmxRuns), 1u);
+    EXPECT_EQ(r[0].uni_off, 1);
+    EXPECT_EQ(r[0].slot, 0);
+}
+
+// The span used to ignore dmx_start: 300 bytes from slot 400 need 2 universes.
+static void test_layout_counts_the_start_address() {
+    auto c = rgb_chan(100, config::kPackContinuous, 401);
+    EXPECT_EQ(channel_universes_used(c), 2u);
+    c.dmx_start = 1;
+    EXPECT_EQ(channel_universes_used(c), 1u);
+}
+
+static void test_layout_one_fixture_per_universe() {
+    auto c = rgb_chan(295, config::kPackPerFixture);  // 5 bars of 59, a dead LED between
+    for (uint16_t k = 0; k < 5; ++k)
+        c.fixtures[k] = { static_cast<uint16_t>(k * 60), 59 };
+    for (uint16_t k = 0; k < 4; ++k)
+        c.gaps[k] = { static_cast<uint16_t>(59 + k * 60), 1 };
+    DmxRun r[kMaxDmxRuns];
+    EXPECT_EQ(channel_layout(c, r, kMaxDmxRuns), 5u);
+    for (uint16_t k = 0; k < 5; ++k) {
+        EXPECT_EQ(r[k].uni_off, k);  // each bar from slot 1 of its own universe
+        EXPECT_EQ(r[k].slot, 0);
+        EXPECT_EQ(r[k].dst, k * 177);
+        EXPECT_EQ(r[k].bytes, 177);
+    }
+    // A 200-pixel fixture runs into a second universe (whole pixels), the next
+    // fixture still opens its own.
+    auto big        = rgb_chan(300, config::kPackPerFixture);
+    big.fixtures[0] = { 0, 200 };
+    big.fixtures[1] = { 200, 100 };
+    EXPECT_EQ(channel_layout(big, r, kMaxDmxRuns), 3u);
+    EXPECT_EQ(r[1].uni_off, 1);
+    EXPECT_EQ(r[1].bytes, 90);  // pixels 171-200
+    EXPECT_EQ(r[2].uni_off, 2);
+    EXPECT_EQ(r[2].dst, 600);
+    // No fixtures: whole pixels.
+    auto none = rgb_chan(200, config::kPackPerFixture);
+    EXPECT_EQ(channel_universes_used(none), 2u);
+    EXPECT_EQ(channel_layout(none, r, kMaxDmxRuns), 2u);
+    EXPECT_EQ(r[0].bytes, 510);
+}
+
+static void test_decode_per_fixture_leaves_the_rest_dark() {
+    auto c        = rgb_chan(10, config::kPackPerFixture);
+    c.fixtures[0] = { 0, 3 };
+    c.fixtures[1] = { 6, 2 };  // pixels 3-5 and 8-9 are in no fixture
+    uint8_t u1[512], u2[512];
+    std::memset(u1, 0x11, sizeof(u1));
+    std::memset(u2, 0x22, sizeof(u2));
+    auto get = [&](uint16_t u) -> const uint8_t* { return u == 1 ? u1 : u == 2 ? u2 : nullptr; };
+    uint8_t px[30];
+    std::memset(px, 0xEE, sizeof(px));
+    EXPECT_TRUE(decode_pixels(px, sizeof(px), c, get));
+    EXPECT_EQ(px[0], 0x11);
+    EXPECT_EQ(px[3 * 3], 0);     // no fixture: no data
+    EXPECT_EQ(px[6 * 3], 0x22);  // fixture 2 from universe 2
+    EXPECT_EQ(px[9 * 3], 0);
+    // A missing universe darkens its run only and is reported.
+    auto only1 = [&](uint16_t u) -> const uint8_t* { return u == 1 ? u1 : nullptr; };
+    EXPECT_TRUE(!decode_pixels(px, sizeof(px), c, only1));
+    EXPECT_EQ(px[0], 0x11);
+    EXPECT_EQ(px[6 * 3], 0);
+}
+
+static void test_auto_patch_compact_and_forced_packing() {
+    config::ChannelConfig chans[8];
+    for (auto& c : chans)
+        c = rgb_chan(50, config::kPackContinuous);  // 150 B each
+    uint16_t uni[8], dmx[8], slot_after = 0;
+    AutoPatchOptions o;
+    o.compact           = true;
+    const uint16_t next = compute_auto_patch(o, chans, 8, uni, dmx, &slot_after);
+    for (uint16_t i = 0; i < 8; ++i) {  // one after the other, byte after byte
+        EXPECT_EQ(uni[i], 150 * i / 512);
+        EXPECT_EQ(dmx[i], 150 * i % 512 + 1);
+    }
+    EXPECT_EQ(next, 3);  // 1200 B: universes 0-2
+    EXPECT_EQ(slot_after, 1200 % 512);
+    // Whole pixels, compact: channel 3 starts at 451, 20 px fit before 512.
+    o.packing = config::kPackWholePixels;
+    compute_auto_patch(o, chans, 8, uni, dmx);
+    EXPECT_EQ(uni[3], 0);
+    EXPECT_EQ(dmx[3], 451);
+    EXPECT_EQ(chans[3].packing, config::kPackWholePixels);  // applied to every channel
+    // Per fixture always opens a universe, even compact.
+    o.packing = config::kPackPerFixture;
+    compute_auto_patch(o, chans, 8, uni, dmx);
+    EXPECT_EQ(uni[1], 1);
+    EXPECT_EQ(dmx[1], 1);
 }
 
 // ── universe → slot map ─────────────────────────────────────────────────────
@@ -119,6 +244,16 @@ struct UniMap {
     }
 };
 
+// Compact patching: two outputs share a universe — one slot, both bits.
+static void test_universe_map_shares_a_universe() {
+    config::ChannelConfig chans[2] = { rgb_chan(50, 0), rgb_chan(50, 0, 151) };
+    UniMap m(8);
+    m.build(chans, 2);
+    EXPECT_EQ(m.used, 1);
+    EXPECT_EQ(m.unmapped, 0u);
+    EXPECT_EQ(m.slot_to_chan[0], 0x3);
+}
+
 static void fill_channels(config::ChannelConfig* chans, size_t n, led::Protocol proto,
                           uint16_t pixels, uint16_t first_universe, uint16_t stride) {
     for (size_t i = 0; i < n; ++i) {
@@ -139,7 +274,7 @@ static void test_universe_map_basic() {
     EXPECT_EQ(m.unmapped, 0);
     EXPECT_EQ(m.uni_to_slot[1], 0);
     EXPECT_EQ(m.uni_to_slot[8], 7);
-    EXPECT_EQ(m.slot_to_chan[7], 7);
+    EXPECT_EQ(m.slot_to_chan[7], 1u << 7);  // a bit per channel fed
     // Everything else stays unmapped.
     EXPECT_EQ(m.uni_to_slot[0], kNoSlot);
     EXPECT_EQ(m.uni_to_slot[9], kNoSlot);
@@ -159,7 +294,7 @@ static void test_universe_map_rgbw_fills_pool() {
     EXPECT_EQ(m.unmapped, 0);
     EXPECT_EQ(m.uni_to_slot[1], 0);
     EXPECT_EQ(m.uni_to_slot[64], 63);
-    EXPECT_EQ(m.slot_to_chan[63], 7);
+    EXPECT_EQ(m.slot_to_chan[63], 1u << 7);
 }
 
 // A pool too small must report the shortfall rather than truncate silently,
@@ -1322,6 +1457,12 @@ int main() {
     test_effective_pixel_count_non_destructive();
     test_gaps_budget_and_physical_count();
     test_preview_with_gaps();
+    test_layout_whole_pixels_never_split_one();
+    test_layout_counts_the_start_address();
+    test_layout_one_fixture_per_universe();
+    test_decode_per_fixture_leaves_the_rest_dark();
+    test_auto_patch_compact_and_forced_packing();
+    test_universe_map_shares_a_universe();
     test_fixture_spans_skip_the_dead_leds();
     test_fixture_spans_follow_invert_and_grouping();
     test_fixture_modes_each_chain_mirror();

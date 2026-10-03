@@ -438,6 +438,8 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
     for (size_t k = 0; k < ng; ++k)
         printf("%s%u:%u", k ? "," : "", c.gaps[k].pos + 1u, static_cast<unsigned>(c.gaps[k].len));
     printf("%s\n", ng ? "" : "-");
+    printf("packing=%s\n", config::packing_id(c.packing));
+    printf("universes=%u\n", static_cast<unsigned>(dmx::channel_universe_span(c)));
 }
 
 // "pos:len[,pos:len…]" (pos 1-based) or "-" → gaps; false on a malformed list.
@@ -522,9 +524,13 @@ int cmd_ch(int argc, char** argv) {
     } else if (strcmp(key, "gaps") == 0) {
         if (!parse_gaps(val, c.gaps))
             return err("gaps: pos:len[,pos:len...] (pos 1-based, max 8) or -");
+    } else if (strcmp(key, "packing") == 0) {
+        const int p = config::packing_from_id(val);
+        if (p < 0) return err("packing: continuous|whole|fixture");
+        c.packing = static_cast<uint8_t>(p);
     } else {
         return err("unknown key (protocol order universe dmx_start pixels brightness grouping "
-                   "invert clock_hz gamma_x10 wb gaps)");
+                   "invert clock_hz gamma_x10 wb gaps packing)");
     }
 
     const bool persisted = config::set_channel(ch, c);
@@ -533,17 +539,37 @@ int cmd_ch(int argc, char** argv) {
     return ok();
 }
 
+// autopatch <base> [compact] [continuous|whole|fixture]
 int cmd_autopatch(int argc, char** argv) {
-    if (argc != 2) return err("usage: autopatch <base_universe>");
+    const char* usage = "usage: autopatch <base_universe> [compact] [continuous|whole|fixture]";
+    if (argc < 2 || argc > 4) return err(usage);
     uint32_t base = 0;
     if (!parse_u32_in(argv[1], 0, 32767, base)) return err("base_universe: 0..32767");
+    dmx::AutoPatch o;
+    o.base = static_cast<uint16_t>(base);
+    for (int i = 2; i < argc; ++i) {
+        const int p = config::packing_from_id(argv[i]);
+        if (strcmp(argv[i], "compact") == 0)
+            o.compact = true;
+        else if (p >= 0)
+            o.packing = static_cast<int8_t>(p);
+        else
+            return err(usage);
+    }
 
     uint16_t next        = 0;
-    const bool persisted = dmx::auto_patch_universes(static_cast<uint16_t>(base), &next);
-    for (size_t i = 0; i < config::kNumChannels; ++i)
-        printf("ch%u=universe %u\n", static_cast<unsigned>(i),
-               static_cast<unsigned>(config::get_channel(i).universe_start));
+    size_t universes     = 0;
+    const bool persisted = dmx::auto_patch(o, &next, &universes);
+    for (size_t i = 0; i < config::kNumChannels; ++i) {
+        const auto& c = config::get_channel(i);
+        printf("ch%u=universe %u dmx %u %s\n", static_cast<unsigned>(i),
+               static_cast<unsigned>(c.universe_start), static_cast<unsigned>(c.dmx_start),
+               config::packing_id(c.packing));
+    }
     printf("next_free=%u\n", static_cast<unsigned>(next));
+    printf("universes=%u/%u\n", static_cast<unsigned>(universes),
+           static_cast<unsigned>(dmx::kNumUniverses));
+    if (universes > dmx::kNumUniverses) printf("warn=pool_full\n");
     if (!persisted) printf("warn=not_persisted\n");
     return ok();
 }
@@ -1153,7 +1179,8 @@ void start() {
     register_cmd("chstat", "Per-channel activity + capacity flags", cmd_chstat);
     register_cmd("global", "global [<key> <value>] — get/set GlobalConfig", cmd_global);
     register_cmd("ch", "ch <n> [<key> <value>] — get/set ChannelConfig", cmd_ch);
-    register_cmd("autopatch", "autopatch <base> — re-address all channels contiguously from <base>",
+    register_cmd("autopatch",
+                 "autopatch <base> [compact] [continuous|whole|fixture] — re-address all channels",
                  cmd_autopatch);
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);

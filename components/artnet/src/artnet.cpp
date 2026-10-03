@@ -47,8 +47,7 @@ void handle_dmx(const uint8_t* buf, size_t len, const sockaddr_in& from) {
     }
     dmx::note_packet_rx();
 
-    const int ch = dmx::channel_for_universe(f.universe);
-    if (ch >= 0) dmx::note_channel_activity(static_cast<size_t>(ch));
+    dmx::note_universe_activity(f.universe);  // every output it feeds
 }
 
 void send_poll_reply(uint32_t target_addr_net_order) {

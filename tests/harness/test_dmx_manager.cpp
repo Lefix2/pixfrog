@@ -410,6 +410,67 @@ TEST(auto_patch_lays_channels_out_contiguously) {
     config::set_control(ctl);
 }
 
+// Compact: channels follow each other inside a universe and share it; the
+// control universe takes the room left. Data on the shared universe makes
+// both outputs active and each decodes its own slots.
+TEST(compact_auto_patch_shares_universes) {
+    config::ChannelConfig saved[3];
+    for (size_t ch = 0; ch < 3; ++ch) {
+        saved[ch]     = config::get_channel(ch);
+        auto c        = saved[ch];
+        c.protocol    = led::Protocol::WS2815;
+        c.pixel_count = 50;  // 150 B
+        c.grouping    = 1;
+        config::set_channel(ch, c);
+    }
+    for (size_t ch = 3; ch < config::kNumChannels; ++ch) {
+        auto c     = config::get_channel(ch);
+        c.protocol = led::Protocol::Off;
+        config::set_channel(ch, c);
+    }
+    enable_control();  // Simple preset: 6 channels
+    dmx::AutoPatch o;
+    o.base        = 10;
+    o.compact     = true;
+    uint16_t next = 0;
+    size_t used   = 0;
+    EXPECT_TRUE(dmx::auto_patch(o, &next, &used));
+    EXPECT_EQ(config::get_channel(1).universe_start, 10);
+    EXPECT_EQ(config::get_channel(1).dmx_start, 151);
+    EXPECT_EQ(config::get_channel(2).dmx_start, 301);
+    EXPECT_EQ(config::get_control().universe, 10);  // in the room after channel 3
+    EXPECT_EQ(config::get_control().address, 451);
+    EXPECT_EQ(next, 11);
+    EXPECT_EQ(used, 1u);
+    dmx::handle_pending_remaps();
+    uint8_t u[512]{};
+    u[150] = 77;  // channel 1's first byte
+    dmx::write_universe_from_source(10, u, sizeof(u), 1, dmx::kArtnetMergeTimeoutUs);
+    dmx::note_universe_activity(10);
+    EXPECT_TRUE(dmx::is_channel_active(0));
+    EXPECT_TRUE(dmx::is_channel_active(1));
+    EXPECT_EQ(dmx::channel_for_universe(10), 0);  // the lowest it feeds
+    dmx::swap_universes();
+    dmx::decode_pixels_for_channel(1);
+    EXPECT_EQ(dmx::pixel_back_buffer(1)[0], 77);
+    dmx::note_universe_terminated(10);  // every output it feeds
+    // Whole pixels on every channel, aligned: each opens a universe.
+    o.compact = false;
+    o.packing = config::kPackWholePixels;
+    EXPECT_TRUE(dmx::auto_patch(o, &next));
+    EXPECT_EQ(config::get_channel(1).universe_start, 11);
+    EXPECT_EQ(config::get_channel(1).packing, config::kPackWholePixels);
+    for (size_t ch = 0; ch < 3; ++ch) {
+        config::set_channel(ch, saved[ch]);
+        dmx::mark_channel_dirty(ch);
+    }
+    auto ctl    = config::get_control();
+    ctl.enabled = 0;
+    config::set_control(ctl);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+}
+
 TEST(artsync_wakes_the_render_wait) {
     const int64_t t0 = shim::now_us();
     EXPECT_FALSE(dmx::wait_for_sync_or_period(10));
