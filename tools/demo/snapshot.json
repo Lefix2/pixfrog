@@ -144,6 +144,8 @@
    "address": 1,
    "enabled": true,
    "footprint": 16,
+   "mapped": true,
+   "pool": 72,
    "slots": [
     {
      "fine": true,

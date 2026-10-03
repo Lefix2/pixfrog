@@ -16,9 +16,10 @@
 namespace pixfrog::dmx {
 
 constexpr size_t kUniverseSize = 512;  // bytes per DMX universe
-// 8 channels × 8 universes: a 1024-pixel RGBW channel spans 4096 B = 8
-// universes, so anything less silently leaves the last channels unmapped.
-constexpr size_t kNumUniverses = 64;
+// 8 channels × 8 universes (a 1024-pixel RGBW channel spans 4096 B = 8
+// universes) + the DMX control universe + spare: with 64, eight full RGBW
+// outputs left the control universe without a slot. PSRAM banks, so cheap.
+constexpr size_t kNumUniverses = 72;
 // Highest routable universe: the Art-Net Port-Address is 15-bit. sACN carries
 // 1..63999 on the wire and FSEQ sparse ranges a 32-bit channel offset, so both
 // must filter on universe_routable() before handing a number to this module.

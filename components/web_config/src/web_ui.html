@@ -779,7 +779,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 var LANG='en';
 var FR={
   'PLAY ON':'JOUER SUR','Play':'Lire','Playing':'En lecture','Output':'Sortie','Not a target channel of this scene':'Pas un canal cible de cette scène','Select at least one output':'Choisissez au moins une sortie',
-  'DMX control':'Contrôle DMX',
+  'DMX control':'Contrôle DMX','No universe left for the control universe: the outputs use all {n} — the desk is not heard. Shorten an output.':'Plus d’univers libre pour l’univers de contrôle : les sorties utilisent les {n} — la console n’est pas entendue. Raccourcis une sortie.',
   'SHOW':'SHOW',
   'Master':'Master',
   'Strobe':'Stroboscope',
@@ -1841,7 +1841,7 @@ function reloadConfig(){
     if(el('s-boot')) el('s-boot').value=String(g.boot_scene||0);
     if(el('s-fade')) el('s-fade').value=((g.scene_fade_ms||0)/1000).toFixed(1);
     if(el('spk-vol')){ el('spk-vol').value=g.speaker_volume||0; spkVolLabel(); spkButtons(); }
-    if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
+    if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,mapped:d.control.mapped!==false,pool:d.control.pool||72,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
     renderControl();
     if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
     setLive('fw-name','pixfrog '+(d.version||'')); setLive('fw-sub','esp32-p4 · partition '+(d.ota_partition||'?'));
@@ -1958,6 +1958,7 @@ function renderControl(){
   var wn=el('ct-warn'), ov=ctlOverlap(), msg='';
   if(last>512) msg=t('The mode ends past DMX channel 512 — move the start address');
   else if(ov) msg=t('Universe {u} also feeds channel {c}: both read the same data').replace('{u}',CTL.universe).replace('{c}',ov);
+  else if(CTL.enabled && CTL.mapped===false && !dirty.has('control')) msg=t('No universe left for the control universe: the outputs use all {n} — the desk is not heard. Shorten an output.').replace('{n}',CTL.pool);
   if(wn){ wn.style.display=msg?'flex':'none'; wn.textContent=msg; }
   renderCtlState();
 }

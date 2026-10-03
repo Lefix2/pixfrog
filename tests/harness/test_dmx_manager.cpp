@@ -659,6 +659,40 @@ TEST(control_can_share_an_output_universe) {
     EXPECT_EQ(decode0()[0], 200);
 }
 
+// Eight full RGBW outputs take 64 universes: the control universe still gets
+// a pool slot (the 65th — the third word of the dirty mask) and is heard.
+TEST(eight_full_rgbw_outputs_leave_room_for_the_control_universe) {
+    config::ChannelConfig saved[config::kNumChannels];
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        saved[ch]        = config::get_channel(ch);
+        auto c           = saved[ch];
+        c.protocol       = led::Protocol::SK6812;
+        c.pixel_count    = 1024;  // 4096 B: 8 universes
+        c.universe_start = static_cast<uint16_t>(1 + ch * 8);
+        c.dmx_start      = 1;
+        config::set_channel(ch, c);
+        dmx::mark_channel_dirty(ch);
+    }
+    enable_control();
+    EXPECT_EQ(dmx::control_pool_slot(), 64);
+    uint8_t u[6] = { 0x40, 0x00, 0, 0, 0, 0 };  // master a quarter
+    ctrl_frame(u, sizeof(u));
+    EXPECT_TRUE(dmx::control_live());
+    EXPECT_EQ(dmx::master_effective(0), 0x4000);
+    u[0] = 0xFF;
+    u[1] = 0xFF;
+    ctrl_frame(u, sizeof(u));
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        config::set_channel(ch, saved[ch]);
+        dmx::mark_channel_dirty(ch);
+    }
+    auto ctl    = config::get_control();
+    ctl.enabled = 0;
+    config::set_control(ctl);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+}
+
 // ── Accessors and corners ───────────────────────────────────────────────────
 
 TEST(accessors_report_the_current_state) {
@@ -684,7 +718,7 @@ TEST(accessors_report_the_current_state) {
 }
 
 TEST(an_exhausted_pool_is_reported_not_overrun) {
-    // 8 × 1024 px RGBW = 8 universes each: the 64-slot pool is full.
+    // 8 × 1024 px RGBW = 8 universes each: 64 of the 72 slots.
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         auto c           = config::get_channel(ch);
         c.protocol       = led::Protocol::SK6812;
@@ -693,8 +727,8 @@ TEST(an_exhausted_pool_is_reported_not_overrun) {
         config::set_channel(ch, c);
     }
     apply_channels();
-    enable_control();  // all 64 slots taken: no slot left for it
-    EXPECT_EQ(dmx::control_pool_slot(), -1);
+    enable_control();  // the pool keeps room for it
+    EXPECT_EQ(dmx::control_pool_slot(), 64);
     auto top           = config::get_channel(7);
     top.universe_start = 0x7FFE;  // runs past the top of the range: partly unmapped
     config::set_channel(7, top);

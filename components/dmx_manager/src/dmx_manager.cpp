@@ -55,8 +55,20 @@ SemaphoreHandle_t g_uni_swap_mux = nullptr;
 //     frames ago.
 // Seeding on the receiver task rather than inside the swap is what keeps it
 // race-free: only the receiver ever writes the back bank.
-static_assert(kNumUniverses <= 64, "the dirty mask is a single uint64_t");
-std::atomic<uint64_t> g_uni_dirty{ 0 };
+// 32-bit words: read-modify-write atomics on the ESP32-P4 must be 32-bit.
+constexpr size_t kDirtyWords = (kNumUniverses + 31) / 32;
+std::atomic<uint32_t> g_uni_dirty[kDirtyWords]{};
+
+bool any_dirty() {
+    for (const auto& w : g_uni_dirty)
+        if (w.load(std::memory_order_acquire)) return true;
+    return false;
+}
+
+void clear_dirty() {
+    for (auto& w : g_uni_dirty)
+        w.store(0, std::memory_order_relaxed);
+}
 
 // Per-channel pixel buffers in internal SRAM, double-buffered.
 struct ChanBufs {
@@ -248,7 +260,7 @@ bool init() {
         return false;
     }
     g_uni_front.store(g_uni_bank_a, std::memory_order_release);
-    g_uni_dirty.store(0, std::memory_order_relaxed);
+    clear_dirty();
 
     g_uni_swap_mux = xSemaphoreCreateMutex();
     if (!g_uni_swap_mux) {
@@ -933,8 +945,8 @@ uint8_t* back_bank_locked() {
 // written after a swap, and mark it dirty so the next swap actually happens.
 // Call with g_uni_swap_mux held.
 void prepare_back_slot(uint16_t slot, uint8_t* back) {
-    const uint64_t bit = 1ull << slot;
-    if (g_uni_dirty.fetch_or(bit, std::memory_order_acq_rel) & bit) return;
+    const uint32_t bit = 1u << (slot % 32);
+    if (g_uni_dirty[slot / 32].fetch_or(bit, std::memory_order_acq_rel) & bit) return;
     const uint8_t* front = g_uni_front.load(std::memory_order_relaxed);
     const size_t base    = static_cast<size_t>(slot) * kUniverseSize;
     memcpy(back + base, front + base, kUniverseSize);
@@ -1112,13 +1124,13 @@ void swap_universes() {
     // A sync is consumed even with nothing new: the next data must wait for its
     // own sync, not ride this one.
     const bool synced = g_sync_pending.exchange(0, std::memory_order_acq_rel) != 0;
-    if (g_uni_dirty.load(std::memory_order_acquire) == 0 || !g_uni_swap_mux) return;
+    if (!any_dirty() || !g_uni_swap_mux) return;
     // Sync mode: what arrived waits in the back bank for the controller's sync,
     // so every universe of a frame goes out together.
     if (sync_mode() && !synced) return;
     xSemaphoreTake(g_uni_swap_mux, portMAX_DELAY);
     g_uni_front.store(back_bank_locked(), std::memory_order_release);
-    g_uni_dirty.store(0, std::memory_order_relaxed);
+    clear_dirty();
     xSemaphoreGive(g_uni_swap_mux);
 }
 
