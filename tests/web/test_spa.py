@@ -353,6 +353,18 @@ def test_auto_patch_compact_whole_pixels_and_per_output_layout(page, device):
     expect(page.locator("#patch-mount")).to_contain_text("whole px")
 
 
+def test_auto_patch_places_an_unsaved_control_universe(page, device):
+    nav(page, "control")
+    page.locator("#ct-en").check(force=True)  # enabled, not saved yet (universe 100)
+    nav(page, "patch")
+    page.locator('[data-action="autopatch"]').click()
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("universes")
+    c = device.get("/api/config")["control"]
+    assert c["enabled"] and c["universe"] != 100 and c["address"] == 1
+    nav(page, "control")
+    expect(page.locator("#ct-uni")).to_have_value(str(c["universe"]))  # no stale 100 to save back
+
+
 def test_fixture_profile_download(page, device):
     nav(page, "control")
     with page.expect_download() as dl:

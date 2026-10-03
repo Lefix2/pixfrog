@@ -2143,7 +2143,10 @@ function doAction(a){
   else if(a==='blackout'){ api('POST','/api/show',{blackout:'toggle'}).then(applyShow); }
   else if(a==='stop-all'){ Promise.all([api('POST','/api/scenes/stop',{}),api('POST','/api/fseq/stop',{})]).then(function(){ toast(t('Outputs stopped')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='autopatch'){ var pb={base:0,compact:(el('ap-place')||{}).value==='compact',packing:(el('ap-pack')||{}).value||'keep'};
-    api('POST','/api/autopatch',pb).then(function(r){ toast(t('Patch — next free universe U')+r.next_free+' · '+r.universes+'/'+r.pool+' '+t('universes')+(r.universes>r.pool?' — '+t('more than the box can map'):''),r.universes>r.pool); reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
+    // An unsaved DMX control change goes first: the patch then places it, and
+    // a later Save cannot put the old universe back (it reloads into CTL).
+    var pre=dirty.has('control')?api('POST','/api/control',ctlBody()).then(function(){ dirty.delete('control'); updateSaveBar(); }):Promise.resolve();
+    pre.then(function(){ return api('POST','/api/autopatch',pb); }).then(function(r){ toast(t('Patch — next free universe U')+r.next_free+' · '+r.universes+'/'+r.pool+' '+t('universes')+(r.universes>r.pool?' — '+t('more than the box can map'):''),r.universes>r.pool); reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='logs-refresh'){ fetchLogs(); }
   else if(a==='logs-download'){ downloadLogs(); }
   else if(a==='export'){ var d=new Date(); downloadUrl('/api/backup?date='+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')); }
