@@ -240,6 +240,18 @@ constexpr uint8_t kSceneFxCount    = 11;
 
 constexpr size_t kSceneColorsMax = 4;
 
+// How a scene's effect spreads over a channel's fixtures (Scene::fixture_mode).
+// A channel without fixtures is one strip whatever the mode.
+constexpr uint8_t kFixtureModeStrip  = 0;  // over the whole strip, fixtures ignored
+constexpr uint8_t kFixtureModeEach   = 1;  // each fixture plays the effect on its own
+constexpr uint8_t kFixtureModeChain  = 2;  // fixtures chained into one strip, end to end
+constexpr uint8_t kFixtureModeMirror = 3;  // chained over the first half, mirrored on the rest
+constexpr uint8_t kFixtureModeCount  = 4;
+inline const char* fixture_mode_id(uint8_t m) {
+    static const char* const kIds[] = { "strip", "each", "chain", "mirror" };
+    return m < kFixtureModeCount ? kIds[m] : "strip";
+}
+
 // Display names, indexed by effect id (fixture profiles, TFT).
 inline const char* scene_fx_label(uint8_t fx) {
     static const char* const kLabels[] = { "Solid",    "Chase", "Rainbow", "Blobs",
@@ -252,14 +264,14 @@ inline const char* scene_fx_label(uint8_t fx) {
 // The first 25 bytes are the pre-palette layout, unchanged (see
 // migrate_scenes_v1): colour 1 stays in r/g/b, colours 2.. are appended.
 struct Scene {
-    char name[kSceneNameMax];  // null-padded
-    uint8_t channel_mask;      // bit n = channel n participates
-    uint8_t effect;            // kSceneFx*
-    uint8_t r, g, b;           // colour 1
-    uint8_t speed;             // per effect — see fill_scene_pattern
-    uint8_t param;             // per effect; 0 = the effect's default
-    uint8_t num_colors;        // 1..kSceneColorsMax; 0 (pre-palette blob) reads as 1
-    uint8_t reserved;
+    char name[kSceneNameMax];               // null-padded
+    uint8_t channel_mask;                   // bit n = channel n participates
+    uint8_t effect;                         // kSceneFx*
+    uint8_t r, g, b;                        // colour 1
+    uint8_t speed;                          // per effect — see fill_scene_pattern
+    uint8_t param;                          // per effect; 0 = the effect's default
+    uint8_t num_colors;                     // 1..kSceneColorsMax; 0 (pre-palette blob) reads as 1
+    uint8_t fixture_mode;                   // kFixtureMode*: how the effect spreads over fixtures
     uint8_t extra[kSceneColorsMax - 1][3];  // colours 2..kSceneColorsMax, RGB
 };
 
@@ -310,7 +322,7 @@ inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* d
         std::memcpy(&dst[i], old_data + i * kSceneV1Size, kSceneV1Size);
         dst[i].name[kSceneNameMax - 1] = '\0';
         dst[i].num_colors              = 1;
-        dst[i].reserved                = 0;
+        dst[i].fixture_mode            = kFixtureModeStrip;
         if (dst[i].effect >= kSceneFxCount) dst[i].effect = kSceneFxSolid;
         if (dst[i].effect == kSceneFxSolid) dst[i].speed = 0;
     }
@@ -378,6 +390,44 @@ inline int remap_scene_index(int idx, SceneEdit op, size_t a, size_t b = 0) {
 // migrates to. Bounds live in led_protocols: they follow from the frame cap.
 constexpr uint32_t kDefaultClockHz = 4'000'000;
 
+// A fixture: a run of physical LEDs the scenes treat as one luminaire (a bar,
+// a tube). Physical positions, like the gaps (pixel 0 = first on the wire);
+// fixtures never overlap each other, a gap inside one only shortens it.
+constexpr size_t kMaxFixtures = 32;
+struct Fixture {
+    uint16_t pos;  // first physical LED, 0-based
+    uint16_t len;  // 0 = unused slot
+};
+
+// Sorts by position, drops empty / out-of-range / overlapping fixtures (the
+// later one of an overlap goes) and packs the rest first. Returns the count.
+inline size_t normalize_fixtures(Fixture* f, size_t n) {
+    size_t used = 0;
+    for (size_t i = 0; i < n; ++i)
+        if (f[i].len && f[i].pos < led::kMaxPixelsPerChannel) f[used++] = f[i];
+    for (size_t i = 1; i < used; ++i)
+        for (size_t j = i; j > 0 && f[j].pos < f[j - 1].pos; --j) {
+            const Fixture t = f[j];
+            f[j]            = f[j - 1];
+            f[j - 1]        = t;
+        }
+    size_t out = 0;
+    for (size_t i = 0; i < used; ++i) {
+        if (out && f[i].pos < static_cast<uint32_t>(f[out - 1].pos) + f[out - 1].len) continue;
+        f[out++] = f[i];
+    }
+    for (size_t i = out; i < n; ++i)
+        f[i] = Fixture{ 0, 0 };
+    return out;
+}
+
+inline size_t fixture_count(const Fixture* f, size_t n) {
+    size_t k = 0;
+    while (k < n && f[k].len)
+        ++k;
+    return k;
+}
+
 struct ChannelConfig {
     led::Protocol protocol;
     led::ColorOrder color_order;
@@ -398,6 +448,9 @@ struct ChannelConfig {
     // Dead physical pixels (normalized: sorted, merged, used slots first;
     // zero-fill migration = none). pixel_count counts LIVE pixels.
     led::PixelGap gaps[led::kMaxPixelGaps];
+    // Fixtures (normalized; zero-fill migration = none: the scenes then see
+    // one strip, as before fixtures existed).
+    Fixture fixtures[kMaxFixtures];
 };
 
 // Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
@@ -431,6 +484,7 @@ inline void sanitize_channel(ChannelConfig& c) {
     for (auto& g : c.gaps)
         if (g.pos >= led::kMaxPixelsPerChannel) g.len = 0;
     led::normalize_gaps(c.gaps, led::kMaxPixelGaps);
+    normalize_fixtures(c.fixtures, kMaxFixtures);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

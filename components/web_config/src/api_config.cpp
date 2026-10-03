@@ -69,6 +69,7 @@ static cJSON* build_scenes_json() {
         cJSON_AddNumberToObject(js, "speed", sc.speed);
         cJSON_AddNumberToObject(js, "param", sc.param);
         cJSON_AddNumberToObject(js, "mask", sc.channel_mask);
+        cJSON_AddStringToObject(js, "fixture_mode", config::fixture_mode_id(sc.fixture_mode));
         cJSON_AddItemToArray(jscenes, js);
     }
     return jscenes;
@@ -101,6 +102,14 @@ static cJSON* build_channels_json() {
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.gaps[k].pos + 1));
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.gaps[k].len));
             cJSON_AddItemToArray(jg, pair);
+        }
+        // [[first LED, 1-based physical], count], ... — same shape as the gaps.
+        cJSON* jf = cJSON_AddArrayToObject(jc, "fixtures");
+        for (size_t k = 0; k < config::fixture_count(c.fixtures, config::kMaxFixtures); ++k) {
+            cJSON* pair = cJSON_CreateArray();
+            cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.fixtures[k].pos + 1));
+            cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.fixtures[k].len));
+            cJSON_AddItemToArray(jf, pair);
         }
         cJSON_AddItemToArray(jchs, jc);
     }
@@ -252,6 +261,38 @@ void refuse(const char** why, const char* msg) {
     if (why && !*why) *why = msg;
 }
 
+// "fixtures": [[first LED (1-based), count], ...] replaces the whole list. A
+// malformed list, or two fixtures sharing an LED, is refused and the stored
+// list kept: fixtures never overlap (a dead LED inside one is fine).
+void apply_fixtures_json(const cJSON* jc, config::ChannelConfig& c, const char** why) {
+    const cJSON* jf = cJSON_GetObjectItemCaseSensitive(jc, "fixtures");
+    if (!jf) return;
+    if (!cJSON_IsArray(jf) || cJSON_GetArraySize(jf) > static_cast<int>(config::kMaxFixtures))
+        return refuse(why, "fixtures: at most 32 [first, count] pairs");
+    config::Fixture parsed[config::kMaxFixtures] = {};
+    size_t n                                     = 0;
+    for (const cJSON* pair = jf->child; pair; pair = pair->next) {
+        const cJSON* jp = cJSON_GetArrayItem(pair, 0);
+        const cJSON* jl = cJSON_GetArrayItem(pair, 1);
+        if (!cJSON_IsNumber(jp) || !cJSON_IsNumber(jl) || jp->valuedouble < 1 ||
+            jl->valuedouble < 1 ||
+            jp->valuedouble + jl->valuedouble - 1 > led::kMaxPixelsPerChannel)
+            return refuse(why, "fixtures: first 1..1024, count 1.., within 1024 LEDs");
+        parsed[n].pos   = static_cast<uint16_t>(jp->valuedouble - 1);
+        parsed[n++].len = static_cast<uint16_t>(jl->valuedouble);
+    }
+    for (size_t a = 0; a < n; ++a)
+        for (size_t b = a + 1; b < n; ++b)
+            if (parsed[a].pos < parsed[b].pos + parsed[b].len &&
+                parsed[b].pos < parsed[a].pos + parsed[a].len) {
+                static char msg[48];
+                snprintf(msg, sizeof(msg), "fixtures %u and %u overlap",
+                         static_cast<unsigned>(a + 1), static_cast<unsigned>(b + 1));
+                return refuse(why, msg);
+            }
+    std::memcpy(c.fixtures, parsed, sizeof(c.fixtures));
+}
+
 }  // namespace
 
 GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const char** why) {
@@ -375,6 +416,7 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         c.wb_b = bl ? static_cast<uint8_t>(bl) : 255;
     }
     apply_gaps_json(j, c);
+    apply_fixtures_json(j, c, why);
 }
 
 static void restore_global(cJSON* jg) {
@@ -418,6 +460,9 @@ void apply_scene_json(const cJSON* js, config::Scene& sc) {
     num("speed", 255, &sc.speed);
     num("param", 255, &sc.param);
     num("mask", 255, &sc.channel_mask);
+    const cJSON* fm = cJSON_GetObjectItemCaseSensitive(js, "fixture_mode");
+    for (uint8_t m = 0; cJSON_IsString(fm) && m < config::kFixtureModeCount; ++m)
+        if (std::strcmp(fm->valuestring, config::fixture_mode_id(m)) == 0) sc.fixture_mode = m;
 
     uint8_t rgb[3];
     const cJSON* cols = cJSON_GetObjectItemCaseSensitive(js, "colors");
@@ -454,9 +499,14 @@ static void restore_scenes(const cJSON* jsc) {
 
 esp_err_t handle_restore(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    // Full backup ≈ 3 kB + ~170 B per scene (30 max); static keeps it off the httpd stack.
-    static char buf[12288];
-    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    // Full backup ≈ 3 kB + ~170 B per scene (30 max) + up to ~400 B of
+    // fixtures per channel. In PSRAM, once: 16 kB of internal RAM is dear.
+    constexpr size_t kRestoreMax = 16384;
+    static char* buf             = nullptr;
+    if (!buf) buf = static_cast<char*>(heap_caps_malloc(kRestoreMax, MALLOC_CAP_SPIRAM));
+    if (!buf) buf = static_cast<char*>(malloc(kRestoreMax));
+    if (!buf) return send_err(req, 500, "out of memory");
+    if (!read_body(req, buf, kRestoreMax - 1)) return send_err(req, 400, "body too large or empty");
     cJSON* j = cJSON_Parse(buf);
     if (!j) return send_err(req, 400, "invalid JSON");
 
@@ -598,7 +648,7 @@ esp_err_t handle_post_channel(httpd_req_t* req) {
         return send_ok(req);
     }
 
-    char buf[512];
+    static char buf[1536];  // 32 fixtures + 8 gaps + the rest; off the httpd stack
     if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
 
     cJSON* j = cJSON_Parse(buf);

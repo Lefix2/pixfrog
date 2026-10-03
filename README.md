@@ -12,7 +12,7 @@
 - **2-source merge** (HTP/LTP) when ArtNet and sACN feed the same universe
 - **FSEQ player**: `.fseq` sequences (xLights/FPP, zstd-compressed) from microSD with hot-plug, uploaded over the web UI, played once, in a loop or as a **playlist** (per-file repeats, loop, autostart at boot), free-running or slaved to ArtTimeCode / **FPP MultiSync**
 - **Standalone scenes**: up to 30 (create / rename / reorder / delete), 11 effects (solid + strobe, chase, rainbow, blobs, gradient, fade, twinkle, fire, scanner, wave, stripes), up to 4 colours each, per-channel mask; playable at boot, from the desk (ArtTrigger), or any UI
-- **Per-line tuning**: gamma, white balance, grouping, invert, and up to 8 dead-pixel gaps anywhere on the line (sacrificial pixel, repeater chip); any refresh rate 20–120 Hz with a non-destructive pixel budget
+- **Per-line tuning**: gamma, white balance, grouping, invert, up to 8 dead-pixel gaps anywhere on the line (sacrificial pixel, repeater chip) and up to 32 fixtures (bars, tubes) that scenes can play per fixture, chained or mirrored; any refresh rate 20–120 Hz with a non-destructive pixel budget
 - **Show control**: grand master, blackout and strobe per output group; scene **zones** (several scenes at once on different outputs) with **crossfades**; a composable **DMX control universe** (master 16-bit, blackout, strobe, scene, speed, param, effect, colours, fade, FSEQ) editable from the web, TFT or UART, with an exportable **OFL fixture profile** for the desk; ArtTrigger KeyMacro blackout
 - **Signal-loss failsafe** per channel: hold / blackout / solid colour / scene after a configurable timeout
 - **Per-channel gamma + white balance**, baked into encode-time LUTs (validated bit-exact on a logic analyzer)

@@ -722,7 +722,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         config::copy_scene(static_cast<size_t>(src), scene);
         if ((scene.channel_mask >> ch) & 1) {
             logic::apply_scene_override(scene, g_ovr[ch]);
-            logic::fill_scene_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, scene, t);
+            logic::fill_scene_on_channel(buf, kMaxBytesPerChan, cc, bpp, scene, t);
             return;
         }
     }
@@ -749,7 +749,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         config::copy_scene(g.failsafe_scene, scene);
         const bool in_mask = (scene.channel_mask >> ch) & 1;
         if (g.failsafe_mode == config::kFailsafeScene && in_mask) {
-            logic::fill_scene_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, scene, t);
+            logic::fill_scene_on_channel(buf, kMaxBytesPerChan, cc, bpp, scene, t);
             return;
         }
         const uint8_t mode = g.failsafe_mode == config::kFailsafeScene ? config::kFailsafeBlackout
