@@ -15,9 +15,11 @@
     "id": 0,
     "invert": false,
     "max_pixels": 512,
+    "packing": "continuous",
     "pixel_count": 300,
     "protocol": "WS2815",
     "universe_start": 1,
+    "universes": 2,
     "wb": "#ffffff"
    },
    {
@@ -32,9 +34,11 @@
     "id": 1,
     "invert": false,
     "max_pixels": 512,
+    "packing": "continuous",
     "pixel_count": 300,
     "protocol": "WS2815",
     "universe_start": 7,
+    "universes": 2,
     "wb": "#ffffff"
    },
    {
@@ -49,9 +53,11 @@
     "id": 2,
     "invert": false,
     "max_pixels": 520,
+    "packing": "continuous",
     "pixel_count": 144,
     "protocol": "WS2812B",
     "universe_start": 13,
+    "universes": 1,
     "wb": "#ffffff"
    },
    {
@@ -66,9 +72,11 @@
     "id": 3,
     "invert": false,
     "max_pixels": 410,
+    "packing": "continuous",
     "pixel_count": 120,
     "protocol": "SK6812",
     "universe_start": 19,
+    "universes": 1,
     "wb": "#ffffff"
    },
    {
@@ -83,9 +91,11 @@
     "id": 4,
     "invert": false,
     "max_pixels": 1024,
+    "packing": "continuous",
     "pixel_count": 240,
     "protocol": "APA102",
     "universe_start": 25,
+    "universes": 2,
     "wb": "#ffffff"
    },
    {
@@ -100,9 +110,11 @@
     "id": 5,
     "invert": false,
     "max_pixels": 520,
+    "packing": "continuous",
     "pixel_count": 50,
     "protocol": "WS2811",
     "universe_start": 31,
+    "universes": 1,
     "wb": "#ffffff"
    },
    {
@@ -117,9 +129,11 @@
     "id": 6,
     "invert": false,
     "max_pixels": 512,
+    "packing": "continuous",
     "pixel_count": 512,
     "protocol": "WS2815",
     "universe_start": 37,
+    "universes": 3,
     "wb": "#ffffff"
    },
    {
@@ -134,9 +148,11 @@
     "id": 7,
     "invert": false,
     "max_pixels": 1024,
+    "packing": "continuous",
     "pixel_count": 144,
     "protocol": "Off",
     "universe_start": 43,
+    "universes": 0,
     "wb": "#ffffff"
    }
   ],
@@ -144,6 +160,8 @@
    "address": 1,
    "enabled": true,
    "footprint": 16,
+   "mapped": true,
+   "pool": 72,
    "slots": [
     {
      "fine": true,
@@ -466,7 +484,7 @@
   },
   "rx": {
    "artnet_ctrl_rx": 0,
-   "artnet_rx": 400,
+   "artnet_rx": 375,
    "bad_rx": 0,
    "sacn_rx": 0
   },
@@ -882,7 +900,7 @@
  "status": {
   "active_scene": 2,
   "alias": true,
-  "artnet_rx": 400,
+  "artnet_rx": 375,
   "audio": true,
   "bad_rx": 0,
   "channels": [

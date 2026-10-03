@@ -332,6 +332,39 @@ def test_auto_patch_places_the_control_universe_after_the_outputs(page, device):
     expect(page.locator("#patch-mount")).to_contain_text(f'U{cfg["control"]["universe"]}')
 
 
+def test_auto_patch_compact_whole_pixels_and_per_output_layout(page, device):
+    nav(page, "channels")
+    page.locator("#cd-pack").select_option("fixture")
+    save(page)
+    assert device.get("/api/config")["channels"][0]["packing"] == "fixture"
+    device.post("/api/channel/1", {"protocol": "WS2815", "pixel_count": 50})  # a second output
+    page.reload()
+    nav(page, "patch")
+    page.locator("#ap-place").select_option("compact")
+    page.locator("#ap-pack").select_option("whole")
+    page.locator('[data-action="autopatch"]').click()
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("universes")
+    chans = device.get("/api/config")["channels"]
+    assert all(c["packing"] == "whole" for c in chans)
+    # Compact: output 2 follows output 1 inside its universe.
+    assert chans[1]["universe_start"] == chans[0]["universe_start"] + chans[0]["universes"] - 1
+    assert chans[1]["dmx_start"] > 1
+    expect(page.locator("#patch-pool")).to_contain_text("/ 72")
+    expect(page.locator("#patch-mount")).to_contain_text("whole px")
+
+
+def test_auto_patch_places_an_unsaved_control_universe(page, device):
+    nav(page, "control")
+    page.locator("#ct-en").check(force=True)  # enabled, not saved yet (universe 100)
+    nav(page, "patch")
+    page.locator('[data-action="autopatch"]').click()
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("universes")
+    c = device.get("/api/config")["control"]
+    assert c["enabled"] and c["universe"] != 100 and c["address"] == 1
+    nav(page, "control")
+    expect(page.locator("#ct-uni")).to_have_value(str(c["universe"]))  # no stale 100 to save back
+
+
 def test_fixture_profile_download(page, device):
     nav(page, "control")
     with page.expect_download() as dl:

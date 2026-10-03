@@ -37,37 +37,17 @@ inline size_t channel_total_bytes(const config::ChannelConfig& cc) {
     return static_cast<size_t>(cc.pixel_count) * led::bytes_per_pixel(cc.protocol);
 }
 
-inline size_t channel_universes_used(const config::ChannelConfig& cc) {
-    const size_t total = channel_total_bytes(cc);
-    return (total + kUniverseSize - 1) / kUniverseSize;
-}
-
-// ── Auto-patch (cascade universe assignment) ─────────────────────────────────
-//
-// Lay channels out contiguously from a flat 15-bit base universe: channel i is
-// placed universe-aligned at the running cursor, which then advances by that
-// channel's universe span (channel_universes_used). A channel spanning 0
-// universes (disabled / 0 px) leaves the cursor where it is. The cursor is a
-// flat 15-bit Port-Address, so it rolls through subnet/net boundaries naturally
-// (universe 15 → 16 crosses into the next subnet). out[i] receives channel i's
-// new universe_start; the caller resets dmx_start to 1 and persists. Returns
-// the next free universe after the last channel (wrapped to 15 bits).
-inline uint16_t compute_auto_patch(uint16_t base, const config::ChannelConfig* chans, size_t n,
-                                   uint16_t* out) {
-    uint32_t cursor = base;
-    for (size_t i = 0; i < n; ++i) {
-        out[i]  = static_cast<uint16_t>(cursor & 0x7FFF);
-        cursor += channel_universes_used(chans[i]);
-    }
-    return static_cast<uint16_t>(cursor & 0x7FFF);
-}
+// Universes the channel's DMX layout spans from its universe_start (see
+// channel_layout below: packing and dmx_start included).
+inline size_t channel_universes_used(const config::ChannelConfig& cc);
 
 // ── Universe → slot map ─────────────────────────────────────────────────────
 //
-// Assign every channel's universe span a slot in the pool, and record the
-// reverse slot → channel mapping. `uni_to_slot` must hold
-// kMaxUniverseNumber + 1 entries and is filled with kNoSlot first;
-// `slot_to_chan` must hold `num_slots` entries.
+// Assign every channel's universe span a slot in the pool, and record which
+// channels each slot feeds (a bit per channel: with compact patching two
+// outputs can share a universe — it gets one slot, both bits). `uni_to_slot`
+// must hold kMaxUniverseNumber + 1 entries and is filled with kNoSlot first;
+// `slot_chans` must hold `num_slots` entries.
 //
 // Two ways a channel's span can fail to map, both reported through
 // `out_unmapped` (number of universes that got no slot) rather than silently
@@ -77,7 +57,7 @@ inline uint16_t compute_auto_patch(uint16_t base, const config::ChannelConfig* c
 //
 // Returns the number of slots used.
 inline uint16_t build_universe_map(const config::ChannelConfig* chans, size_t n,
-                                   uint16_t* uni_to_slot, uint8_t* slot_to_chan, size_t num_slots,
+                                   uint16_t* uni_to_slot, uint8_t* slot_chans, size_t num_slots,
                                    size_t* out_unmapped) {
     for (size_t i = 0; i <= kMaxUniverseNumber; ++i)
         uni_to_slot[i] = kNoSlot;
@@ -88,12 +68,16 @@ inline uint16_t build_universe_map(const config::ChannelConfig* chans, size_t n,
         const size_t universes_used = channel_universes_used(chans[ch]);
         for (size_t u = 0; u < universes_used; ++u) {
             const uint32_t uni = static_cast<uint32_t>(chans[ch].universe_start) + u;
+            if (universe_routable(uni) && uni_to_slot[uni] != kNoSlot) {
+                slot_chans[uni_to_slot[uni]] |= static_cast<uint8_t>(1u << ch);  // shared
+                continue;
+            }
             if (!universe_routable(uni) || slot >= num_slots) {
                 unmapped++;
                 continue;
             }
-            uni_to_slot[uni]   = slot;
-            slot_to_chan[slot] = static_cast<uint8_t>(ch);
+            uni_to_slot[uni] = slot;
+            slot_chans[slot] = static_cast<uint8_t>(1u << ch);
             slot++;
         }
     }
@@ -810,6 +794,150 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
     }
 }
 
+// ── DMX layout ──────────────────────────────────────────────────────────────
+//
+// Where each byte of a channel's pixel buffer comes from on the wire, from
+// (universe_start, dmx_start), as runs of one universe each:
+//   continuous   byte after byte, a pixel may straddle two universes
+//   whole        whole pixels only: a universe ends early rather than split one
+//                (170 RGB / 128 RGBW from slot 1 — the "510 channels" convention)
+//   per fixture  every fixture from slot 1 of a universe of its own (the first
+//                one from dmx_start), whole pixels inside; pixels in no fixture
+//                get no data. Without fixtures: whole.
+struct DmxRun {
+    uint16_t uni_off;  // from universe_start
+    uint16_t slot;     // 0-based in that universe
+    uint16_t dst;      // byte offset in the pixel buffer
+    uint16_t bytes;
+};
+constexpr size_t kMaxDmxRuns = 96;
+
+// Fills `out` (up to `cap`) and returns the number of runs the layout needs —
+// more than `cap` means it did not fit (never for a real config: 1024 px
+// RGBW per fixture-universe is at most 32 fixtures × 2 + 8).
+inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_t cap) {
+    const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(cc.protocol));
+    if (bpp == 0 || cc.pixel_count == 0) return 0;
+    uint32_t uni = 0, slot = cc.dmx_start > 0 ? cc.dmx_start - 1u : 0u;
+    uni        += slot / kUniverseSize;  // a start past slot 512 rolls into the next universe
+    slot       %= kUniverseSize;
+    size_t k    = 0;
+    auto place  = [&](uint32_t dst, uint32_t bytes, bool whole) {
+        while (bytes) {
+            const uint32_t room = kUniverseSize - slot;
+            uint32_t take       = bytes < room ? bytes : room;
+            if (whole) take -= take % bpp;
+            if (take == 0) {  // not a whole pixel left in this universe
+                ++uni;
+                slot = 0;
+                continue;
+            }
+            if (k < cap)
+                out[k] = DmxRun{ static_cast<uint16_t>(uni), static_cast<uint16_t>(slot),
+                                 static_cast<uint16_t>(dst), static_cast<uint16_t>(take) };
+            ++k;
+            dst   += take;
+            bytes -= take;
+            slot  += take;
+            if (slot >= kUniverseSize) {
+                ++uni;
+                slot = 0;
+            }
+        }
+    };
+    const uint32_t total = static_cast<uint32_t>(cc.pixel_count) * bpp;
+    Span sp[config::kMaxFixtures];
+    const size_t nf = cc.packing == config::kPackPerFixture
+                        ? fixture_spans(cc, sp, config::kMaxFixtures)
+                        : 0;
+    if (cc.packing == config::kPackContinuous) {
+        place(0, total, false);
+    } else if (nf == 0) {
+        place(0, total, true);
+    } else {
+        for (size_t i = 0; i < nf; ++i) {
+            if (i > 0 && slot != 0) {  // each fixture opens a universe
+                ++uni;
+                slot = 0;
+            }
+            const uint32_t from = static_cast<uint32_t>(sp[i].first) * bpp;
+            if (from >= total) break;
+            const uint32_t len = static_cast<uint32_t>(sp[i].count) * bpp;
+            place(from, from + len > total ? total - from : len, true);
+        }
+    }
+    return k;
+}
+
+inline size_t channel_universes_used(const config::ChannelConfig& cc) {
+    DmxRun runs[kMaxDmxRuns];
+    const size_t n = channel_layout(cc, runs, kMaxDmxRuns);
+    size_t last    = 0;
+    for (size_t i = 0; i < n && i < kMaxDmxRuns; ++i)
+        if (runs[i].uni_off + 1u > last) last = runs[i].uni_off + 1u;
+    return last;
+}
+
+// ── Auto-patch ──────────────────────────────────────────────────────────────
+//
+// Lays the channels out one after the other from a flat 15-bit `base`
+// universe (the cursor rolls through subnet/net boundaries naturally):
+//   aligned   every channel opens a universe (dmx_start 1)
+//   compact   a channel starts at the slot after the previous one, sharing its
+//             universe; a whole-pixel channel skips to the next universe when
+//             not even one pixel fits, a per-fixture one always opens one.
+// `packing` >= 0 is applied to every channel first (-1 = each keeps its own).
+// A disabled / 0-pixel channel takes no room. out_uni/out_dmx receive each
+// channel's start; returns the first universe nothing uses after them, and
+// *slot_after (if set) the slot the last channel stopped at (0 = a fresh
+// universe), for the control universe to follow in compact mode.
+struct AutoPatchOptions {
+    uint16_t base  = 0;
+    bool compact   = false;
+    int8_t packing = -1;
+};
+
+inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelConfig* chans,
+                                   size_t n, uint16_t* out_uni, uint16_t* out_dmx,
+                                   uint16_t* slot_after = nullptr) {
+    uint32_t cur_uni = o.base, cur_slot = 0;
+    DmxRun runs[kMaxDmxRuns];
+    for (size_t i = 0; i < n; ++i) {
+        auto& c = chans[i];
+        if (o.packing >= 0) c.packing = static_cast<uint8_t>(o.packing);
+        const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(c.protocol));
+        if (bpp == 0 || c.pixel_count == 0) {  // takes no room: parked at the next free one
+            out_uni[i]       = static_cast<uint16_t>((cur_slot ? cur_uni + 1 : cur_uni) & 0x7FFF);
+            out_dmx[i]       = 1;
+            c.universe_start = out_uni[i];
+            c.dmx_start      = 1;
+            continue;
+        }
+        const bool opens = !o.compact || c.packing == config::kPackPerFixture ||
+                           (c.packing == config::kPackWholePixels &&
+                            kUniverseSize - cur_slot < bpp);
+        if (opens && cur_slot > 0) {
+            ++cur_uni;
+            cur_slot = 0;
+        }
+        out_uni[i]       = static_cast<uint16_t>(cur_uni & 0x7FFF);
+        out_dmx[i]       = static_cast<uint16_t>(cur_slot + 1);
+        c.universe_start = out_uni[i];
+        c.dmx_start      = out_dmx[i];
+        size_t nr        = channel_layout(c, runs, kMaxDmxRuns);
+        if (nr > kMaxDmxRuns) nr = kMaxDmxRuns;
+        const DmxRun& last = runs[nr - 1];
+        cur_uni            = cur_uni + last.uni_off;
+        cur_slot           = static_cast<uint32_t>(last.slot) + last.bytes;
+        if (cur_slot >= kUniverseSize) {
+            ++cur_uni;
+            cur_slot = 0;
+        }
+    }
+    if (slot_after) *slot_after = static_cast<uint16_t>(cur_slot);
+    return static_cast<uint16_t>((cur_slot ? cur_uni + 1 : cur_uni) & 0x7FFF);
+}
+
 // ── 2-source merge (HTP/LTP) ────────────────────────────────────────────────
 //
 // Art-Net nodes must merge up to two concurrent senders per universe: HTP
@@ -905,33 +1033,23 @@ inline bool decode_pixels(uint8_t* dst, size_t dst_capacity, const config::Chann
     const size_t total = channel_total_bytes(cc);
     if (total > dst_capacity) return false;
     if (total == 0) return true;
-
-    const uint16_t start_dmx = cc.dmx_start > 0 ? cc.dmx_start : 1;
-    size_t offset_in_uni     = start_dmx - 1;
-    uint16_t universe        = cc.universe_start;
-    size_t bytes_written     = 0;
-
-    while (bytes_written < total) {
-        const uint8_t* src = get_universe(universe);
-        if (!src) {
-            std::memset(dst + bytes_written, 0, total - bytes_written);
-            return false;
+    DmxRun runs[kMaxDmxRuns];
+    size_t n = channel_layout(cc, runs, kMaxDmxRuns);
+    if (n > kMaxDmxRuns) n = kMaxDmxRuns;
+    // Pixels no run covers (per fixture: outside every fixture) stay dark.
+    if (cc.packing != config::kPackContinuous) std::memset(dst, 0, total);
+    bool all = true;
+    for (size_t i = 0; i < n; ++i) {
+        const DmxRun& r    = runs[i];
+        const uint8_t* src = get_universe(static_cast<uint16_t>(cc.universe_start + r.uni_off));
+        if (src) {
+            std::memcpy(dst + r.dst, src + r.slot, r.bytes);
+        } else {
+            std::memset(dst + r.dst, 0, r.bytes);
+            all = false;
         }
-        const size_t available = (kUniverseSize > offset_in_uni) ? (kUniverseSize - offset_in_uni)
-                                                                 : 0;
-        const size_t need      = total - bytes_written;
-        const size_t copy      = need < available ? need : available;
-        if (copy == 0) {
-            universe++;
-            offset_in_uni = 0;
-            continue;
-        }
-        std::memcpy(dst + bytes_written, src + offset_in_uni, copy);
-        bytes_written += copy;
-        universe++;
-        offset_in_uni = 0;
     }
-    return true;
+    return all;
 }
 
 // ── Show control: master, blackout, strobe, crossfade ───────────────────────

@@ -16,6 +16,10 @@ cJSON* build_control_json() {
     cJSON_AddNumberToObject(jc, "universe", c.universe);
     cJSON_AddNumberToObject(jc, "address", c.address);
     cJSON_AddNumberToObject(jc, "footprint", static_cast<double>(config::control_footprint(c)));
+    // Whether the universe pool had a slot left for it (the outputs come
+    // first): false = the desk is not heard. Follows the last LUT rebuild.
+    cJSON_AddBoolToObject(jc, "mapped", !c.enabled || dmx::control_pool_slot() >= 0);
+    cJSON_AddNumberToObject(jc, "pool", static_cast<double>(dmx::kNumUniverses));
     cJSON* js = cJSON_CreateArray();
     for (size_t i = 0; i < c.count; ++i) {
         const auto& sl = c.slots[i];

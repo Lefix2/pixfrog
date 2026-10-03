@@ -104,6 +104,9 @@ static cJSON* build_channels_json() {
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.gaps[k].len));
             cJSON_AddItemToArray(jg, pair);
         }
+        cJSON_AddStringToObject(jc, "packing", config::packing_id(c.packing));
+        cJSON_AddNumberToObject(jc, "universes",
+                                static_cast<double>(dmx::channel_universe_span(c)));
         // [[first LED, 1-based physical], count], ... — same shape as the gaps.
         cJSON* jf = cJSON_AddArrayToObject(jc, "fixtures");
         for (size_t k = 0; k < config::fixture_count(c.fixtures, config::kMaxFixtures); ++k) {
@@ -417,6 +420,13 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         c.wb_g = g ? static_cast<uint8_t>(g) : 255;
         c.wb_b = bl ? static_cast<uint8_t>(bl) : 255;
     }
+    if ((s = json_str(j, "packing"))) {
+        const int p = config::packing_from_id(s);
+        if (p >= 0)
+            c.packing = static_cast<uint8_t>(p);
+        else
+            refuse(why, "packing: continuous|whole|fixture");
+    }
     apply_gaps_json(j, c);
     apply_fixtures_json(j, c, why);
 }
@@ -694,28 +704,40 @@ esp_err_t handle_identify(httpd_req_t* req) {
 }
 
 // ── POST /api/autopatch ─────────────────────────────────────────────────────
-// Re-address every channel contiguously from a base universe (cascade by each
-// channel's pixel span). Body: {"base": <0..32767>}. Replies the next free
-// universe past the last channel.
+// Re-address every channel one after the other from a base universe. Body:
+// {"base": 0..32767, "compact": bool (share universes), "packing": "keep" |
+// "continuous" | "whole" | "fixture" (set on every channel; default keep)}.
+// Replies the next free universe and the universes used against the pool.
 esp_err_t handle_autopatch(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    char buf[64];
+    char buf[128];
     if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
     cJSON* j = cJSON_Parse(buf);
     if (!j) return send_err(req, 400, "invalid JSON");
     cJSON* base_item = cJSON_GetObjectItemCaseSensitive(j, "base");
     const bool ok    = base_item && cJSON_IsNumber(base_item) && base_item->valuedouble >= 0 &&
                     base_item->valuedouble <= 32767;
-    const uint16_t base = ok ? static_cast<uint16_t>(base_item->valuedouble) : 0;
+    dmx::AutoPatch o;
+    o.base = ok ? static_cast<uint16_t>(base_item->valuedouble) : 0;
+    bool b = false;
+    if (json_bool(j, "compact", b)) o.compact = b;
+    const char* p     = json_str(j, "packing");
+    const int packing = p && std::strcmp(p, "keep") != 0 ? config::packing_from_id(p) : -1;
+    const bool bad_p  = p && std::strcmp(p, "keep") != 0 && packing < 0;
+    o.packing         = static_cast<int8_t>(packing);
     cJSON_Delete(j);
     if (!ok) return send_err(req, 400, "base 0..32767");
+    if (bad_p) return send_err(req, 400, "packing: keep|continuous|whole|fixture");
 
-    uint16_t next = 0;
-    dmx::auto_patch_universes(base, &next);
+    uint16_t next    = 0;
+    size_t universes = 0;
+    dmx::auto_patch(o, &next, &universes);
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "ok", true);
     cJSON_AddNumberToObject(root, "next_free", next);
+    cJSON_AddNumberToObject(root, "universes", static_cast<double>(universes));
+    cJSON_AddNumberToObject(root, "pool", static_cast<double>(dmx::kNumUniverses));
     return send_json(req, root);
 }
 

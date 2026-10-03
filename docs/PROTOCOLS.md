@@ -283,8 +283,8 @@ fixtures, the dead LEDs and any overlap.
 - Fixtures never share an LED: the API refuses an overlapping list (400,
   "fixtures N and M overlap"), the web editor flags it and will not save.
   A dead LED inside a fixture is allowed, it only shortens the fixture.
-- They only change scenes (and the failsafe scene); Art-Net/sACN data still
-  fills the live pixels end to end.
+- They change scenes (and the failsafe scene); the DMX data follows them only
+  with the per-fixture layout (§5.6).
 - `Scene::fixture_mode` (`"fixture_mode"` in the API) picks how the effect
   spreads: `strip` (the whole strip, the default), `each` (every fixture plays
   it on its own), `chain` (the fixtures end to end as one strip, without the
@@ -295,6 +295,39 @@ fixtures, the dead LEDs and any overlap.
   `logic::fill_scene_on_channel` draws the effect per span.
 - Edit: web channel editor ("Fixtures & dead LEDs", with a "N × L + K dead"
   fill). API/backup: `"fixtures": [[first_led, count], ...]`.
+
+### 5.6 DMX layout and auto-patch
+
+How a channel's pixels fill its universes is per channel
+(`ChannelConfig::packing`, `"packing"` in the API, `ch N packing` on the
+console), from `(universe_start, dmx_start)`:
+
+| packing | layout | 1024 px RGB |
+|---|---|---|
+| `continuous` (default) | byte after byte; a pixel may straddle two universes | 6 universes |
+| `whole` | whole pixels only: 170 RGB / 128 RGBW per universe (xLights / Falcon / FPP "510 channels") | 7 universes |
+| `fixture` | each fixture (§5.5) from slot 1 of a universe of its own, whole pixels inside; pixels in no fixture get no data; no fixtures = `whole` | 1 + per fixture |
+
+`logic::channel_layout` turns a channel into runs (universe offset, slot,
+buffer offset, bytes); decoding, the universe span (`channel_universe_span`,
+which now counts `dmx_start` — a channel starting late used to lose its last
+universe), the pool map and the sACN joins all follow it.
+
+Auto-patch (`POST /api/autopatch {base, compact, packing}`, console
+`autopatch <base> [compact] [continuous|whole|fixture]`, web Auto-patch
+screen; the TFT/OLED menu keeps the aligned default):
+- **aligned** (default): every output opens a universe at slot 1.
+- **compact**: an output starts at the slot after the previous one, sharing
+  its universe (a `whole` output skips to the next universe when not one pixel
+  fits; a `fixture` output always opens one). A shared universe takes one pool
+  slot feeding both outputs (`g_slot_chans` is a bit per channel), so activity
+  and failsafe follow every output on it.
+- `packing` other than `keep` is set on every output first.
+- An enabled DMX control universe follows the outputs: in the room left in the
+  last universe when compact, else from slot 1 of the next.
+
+The reply carries `universes` against `pool` (72, §DMX pool): a patch needing
+more is flagged in the web UI and the console (`warn=pool_full`).
 
 ---
 

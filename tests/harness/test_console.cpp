@@ -228,6 +228,15 @@ TEST(identify_cal_loglevel_autopatch) {
     EXPECT_TRUE(run("loglevel warn"));
     EXPECT_FALSE(run("loglevel loud"));
     EXPECT_TRUE(run("autopatch 0"));
+    EXPECT_TRUE(run("autopatch 0 compact whole"));
+    EXPECT_TRUE(has("universes="));
+    EXPECT_EQ(config::get_channel(0).packing, config::kPackWholePixels);
+    EXPECT_FALSE(run("autopatch 0 diagonal"));
+    EXPECT_TRUE(run("ch 0 packing fixture"));
+    EXPECT_TRUE(run("ch 0"));
+    EXPECT_TRUE(has("packing=fixture"));
+    EXPECT_FALSE(run("ch 0 packing spiral"));
+    EXPECT_TRUE(run("autopatch 0 continuous"));
     dmx::identify_stop();
 }
 

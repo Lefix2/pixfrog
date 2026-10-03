@@ -410,6 +410,67 @@ TEST(auto_patch_lays_channels_out_contiguously) {
     config::set_control(ctl);
 }
 
+// Compact: channels follow each other inside a universe and share it; the
+// control universe takes the room left. Data on the shared universe makes
+// both outputs active and each decodes its own slots.
+TEST(compact_auto_patch_shares_universes) {
+    config::ChannelConfig saved[3];
+    for (size_t ch = 0; ch < 3; ++ch) {
+        saved[ch]     = config::get_channel(ch);
+        auto c        = saved[ch];
+        c.protocol    = led::Protocol::WS2815;
+        c.pixel_count = 50;  // 150 B
+        c.grouping    = 1;
+        config::set_channel(ch, c);
+    }
+    for (size_t ch = 3; ch < config::kNumChannels; ++ch) {
+        auto c     = config::get_channel(ch);
+        c.protocol = led::Protocol::Off;
+        config::set_channel(ch, c);
+    }
+    enable_control();  // Simple preset: 6 channels
+    dmx::AutoPatch o;
+    o.base        = 10;
+    o.compact     = true;
+    uint16_t next = 0;
+    size_t used   = 0;
+    EXPECT_TRUE(dmx::auto_patch(o, &next, &used));
+    EXPECT_EQ(config::get_channel(1).universe_start, 10);
+    EXPECT_EQ(config::get_channel(1).dmx_start, 151);
+    EXPECT_EQ(config::get_channel(2).dmx_start, 301);
+    EXPECT_EQ(config::get_control().universe, 10);  // in the room after channel 3
+    EXPECT_EQ(config::get_control().address, 451);
+    EXPECT_EQ(next, 11);
+    EXPECT_EQ(used, 1u);
+    dmx::handle_pending_remaps();
+    uint8_t u[512]{};
+    u[150] = 77;  // channel 1's first byte
+    dmx::write_universe_from_source(10, u, sizeof(u), 1, dmx::kArtnetMergeTimeoutUs);
+    dmx::note_universe_activity(10);
+    EXPECT_TRUE(dmx::is_channel_active(0));
+    EXPECT_TRUE(dmx::is_channel_active(1));
+    EXPECT_EQ(dmx::channel_for_universe(10), 0);  // the lowest it feeds
+    dmx::swap_universes();
+    dmx::decode_pixels_for_channel(1);
+    EXPECT_EQ(dmx::pixel_back_buffer(1)[0], 77);
+    dmx::note_universe_terminated(10);  // every output it feeds
+    // Whole pixels on every channel, aligned: each opens a universe.
+    o.compact = false;
+    o.packing = config::kPackWholePixels;
+    EXPECT_TRUE(dmx::auto_patch(o, &next));
+    EXPECT_EQ(config::get_channel(1).universe_start, 11);
+    EXPECT_EQ(config::get_channel(1).packing, config::kPackWholePixels);
+    for (size_t ch = 0; ch < 3; ++ch) {
+        config::set_channel(ch, saved[ch]);
+        dmx::mark_channel_dirty(ch);
+    }
+    auto ctl    = config::get_control();
+    ctl.enabled = 0;
+    config::set_control(ctl);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+}
+
 TEST(artsync_wakes_the_render_wait) {
     const int64_t t0 = shim::now_us();
     EXPECT_FALSE(dmx::wait_for_sync_or_period(10));
@@ -659,6 +720,40 @@ TEST(control_can_share_an_output_universe) {
     EXPECT_EQ(decode0()[0], 200);
 }
 
+// Eight full RGBW outputs take 64 universes: the control universe still gets
+// a pool slot (the 65th — the third word of the dirty mask) and is heard.
+TEST(eight_full_rgbw_outputs_leave_room_for_the_control_universe) {
+    config::ChannelConfig saved[config::kNumChannels];
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        saved[ch]        = config::get_channel(ch);
+        auto c           = saved[ch];
+        c.protocol       = led::Protocol::SK6812;
+        c.pixel_count    = 1024;  // 4096 B: 8 universes
+        c.universe_start = static_cast<uint16_t>(1 + ch * 8);
+        c.dmx_start      = 1;
+        config::set_channel(ch, c);
+        dmx::mark_channel_dirty(ch);
+    }
+    enable_control();
+    EXPECT_EQ(dmx::control_pool_slot(), 64);
+    uint8_t u[6] = { 0x40, 0x00, 0, 0, 0, 0 };  // master a quarter
+    ctrl_frame(u, sizeof(u));
+    EXPECT_TRUE(dmx::control_live());
+    EXPECT_EQ(dmx::master_effective(0), 0x4000);
+    u[0] = 0xFF;
+    u[1] = 0xFF;
+    ctrl_frame(u, sizeof(u));
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        config::set_channel(ch, saved[ch]);
+        dmx::mark_channel_dirty(ch);
+    }
+    auto ctl    = config::get_control();
+    ctl.enabled = 0;
+    config::set_control(ctl);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+}
+
 // ── Accessors and corners ───────────────────────────────────────────────────
 
 TEST(accessors_report_the_current_state) {
@@ -684,7 +779,7 @@ TEST(accessors_report_the_current_state) {
 }
 
 TEST(an_exhausted_pool_is_reported_not_overrun) {
-    // 8 × 1024 px RGBW = 8 universes each: the 64-slot pool is full.
+    // 8 × 1024 px RGBW = 8 universes each: 64 of the 72 slots.
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         auto c           = config::get_channel(ch);
         c.protocol       = led::Protocol::SK6812;
@@ -693,8 +788,8 @@ TEST(an_exhausted_pool_is_reported_not_overrun) {
         config::set_channel(ch, c);
     }
     apply_channels();
-    enable_control();  // all 64 slots taken: no slot left for it
-    EXPECT_EQ(dmx::control_pool_slot(), -1);
+    enable_control();  // the pool keeps room for it
+    EXPECT_EQ(dmx::control_pool_slot(), 64);
     auto top           = config::get_channel(7);
     top.universe_start = 0x7FFE;  // runs past the top of the range: partly unmapped
     config::set_channel(7, top);

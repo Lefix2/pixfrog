@@ -436,6 +436,21 @@ inline size_t fixture_count(const Fixture* f, size_t n) {
     return k;
 }
 
+// How a channel's pixels fill its DMX universes (ChannelConfig::packing).
+constexpr uint8_t kPackContinuous  = 0;  // byte after byte: a pixel may straddle two universes
+constexpr uint8_t kPackWholePixels = 1;  // whole pixels only (170 RGB / 128 RGBW per universe)
+constexpr uint8_t kPackPerFixture  = 2;  // each fixture from slot 1 of a new universe, whole pixels
+constexpr uint8_t kPackCount       = 3;
+inline const char* packing_id(uint8_t p) {
+    static const char* const kIds[] = { "continuous", "whole", "fixture" };
+    return p < kPackCount ? kIds[p] : "continuous";
+}
+inline int packing_from_id(const char* s) {
+    for (uint8_t p = 0; p < kPackCount; ++p)
+        if (std::strcmp(s, packing_id(p)) == 0) return p;
+    return -1;
+}
+
 struct ChannelConfig {
     led::Protocol protocol;
     led::ColorOrder color_order;
@@ -459,6 +474,9 @@ struct ChannelConfig {
     // Fixtures (normalized; zero-fill migration = none: the scenes then see
     // one strip, as before fixtures existed).
     Fixture fixtures[kMaxFixtures];
+    // How the pixels fill the DMX universes (kPack*). Zero-fill migration =
+    // continuous, the only layout before this field.
+    uint8_t packing;
 };
 
 // Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
@@ -493,6 +511,7 @@ inline void sanitize_channel(ChannelConfig& c) {
         if (g.pos >= led::kMaxPixelsPerChannel) g.len = 0;
     led::normalize_gaps(c.gaps, led::kMaxPixelGaps);
     normalize_fixtures(c.fixtures, kMaxFixtures);
+    if (c.packing >= kPackCount) c.packing = kPackContinuous;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

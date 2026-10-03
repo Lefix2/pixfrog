@@ -78,9 +78,7 @@ size_t wanted_universes(uint16_t out[kMaxJoined]) {
     for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
         const auto& cc = config::get_channel(ch);
         if (led::is_off(cc.protocol)) continue;
-        const size_t total = static_cast<size_t>(cc.pixel_count) *
-                             led::bytes_per_pixel(cc.protocol);
-        const size_t used = (total + dmx::kUniverseSize - 1) / dmx::kUniverseSize;
+        const size_t used = dmx::channel_universe_span(cc);  // packing + dmx_start
         for (size_t u = 0; u < used && n < kMaxJoined; ++u) {
             const uint32_t uni = static_cast<uint32_t>(cc.universe_start) + u;
             if (uni < 1 || !dmx::universe_routable(uni)) continue;
@@ -175,8 +173,7 @@ void handle_data(const uint8_t* buf, size_t len) {
     }
     dmx::note_sacn_rx();
 
-    const int ch = dmx::channel_for_universe(f.universe);
-    if (ch >= 0) dmx::note_channel_activity(static_cast<size_t>(ch));
+    dmx::note_universe_activity(f.universe);  // every output it feeds
 
     // E1.31 §6.2.4: data carrying a synchronization address waits for a sync
     // packet on that address; Force_Synchronization keeps waiting if syncs stop.

@@ -516,6 +516,19 @@ TEST(reboot_factory_reset_autopatch) {
     EXPECT_EQ(post("/api/reboot").status, 200);
     EXPECT_EQ(shim::restarts(), r0 + 1);
     EXPECT_EQ(post("/api/autopatch", "{\"base\":0}").status, 200);
+    Json ap(post("/api/autopatch", "{\"base\":0,\"compact\":true,\"packing\":\"whole\"}").body);
+    EXPECT_EQ(cJSON_GetObjectItem(ap.j, "pool")->valueint, 72);
+    EXPECT_TRUE(cJSON_GetObjectItem(ap.j, "universes")->valueint >= 1);
+    EXPECT_EQ(config::get_channel(0).packing, config::kPackWholePixels);
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"packing\":\"spiral\"}").status, 400);
+    EXPECT_EQ(post("/api/channel/0", "{\"protocol\":\"WS2815\",\"packing\":\"fixture\"}").status,
+              200);
+    Json cfg(get("/api/config").body);
+    const cJSON* c0 = cJSON_GetArrayItem(cfg["channels"], 0);
+    EXPECT_STREQ(cJSON_GetObjectItem(c0, "packing")->valuestring, "fixture");
+    EXPECT_TRUE(cJSON_GetObjectItem(c0, "universes")->valueint >= 1);
+    EXPECT_EQ(post("/api/channel/0", "{\"packing\":\"zigzag\"}").status, 400);
+    post("/api/autopatch", "{\"base\":0,\"packing\":\"continuous\"}");
     post("/api/channel/0", "{\"pixel_count\":999}");
     const int r1  = shim::restarts();
     const auto fr = post("/api/factory-reset");
@@ -614,6 +627,8 @@ TEST(show_endpoint_sets_master_blackout_strobe) {
 TEST(control_endpoint_validates_and_applies) {
     Json full(post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":77}").body);
     EXPECT_EQ(static_cast<int>(full["footprint"]->valuedouble), 16);
+    EXPECT_EQ(static_cast<int>(full["pool"]->valuedouble), 72);  // the universe pool
+    EXPECT_TRUE(cJSON_IsBool(full["mapped"]));                   // got a slot of it?
     EXPECT_EQ(dmx::control_universe(), 77);
     const std::string zones =
         "{\"address\":10,\"slots\":[{\"fn\":\"scene\",\"mask\":15},{\"fn\":\"scene\",\"mask\":240},"
