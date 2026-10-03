@@ -42,6 +42,7 @@ cJSON* build_status_json() {
     // false = NVS failed at boot: changes apply but are lost at the next restart.
     cJSON_AddBoolToObject(root, "persist_ok", config::is_persistence_ok());
     cJSON_AddBoolToObject(root, "sacn_running", sacn::is_running());
+    cJSON_AddBoolToObject(root, "audio", audio::ready());  // the speaker test can run
     cJSON_AddBoolToObject(root, "fpp_running", fpp::is_running());
 
     cJSON* jf             = cJSON_CreateObject();

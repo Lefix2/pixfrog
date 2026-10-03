@@ -5,7 +5,7 @@ set(SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/../shims)
 add_library(idf_shims STATIC ${SHIMS}/src/shims.cpp ${SHIMS}/src/net.cpp ${SHIMS}/src/system.cpp
     ${SHIMS}/src/http.cpp ${SHIMS}/src/services.cpp ${SHIMS}/src/vfs.cpp
     ${SHIMS}/src/output.cpp ${SHIMS}/src/lcd.cpp
-    ${SHIMS}/src/ui_hw.cpp ${SHIMS}/src/boot.cpp)
+    ${SHIMS}/src/ui_hw.cpp ${SHIMS}/src/boot.cpp ${SHIMS}/src/i2s.cpp)
 target_include_directories(idf_shims PUBLIC ${SHIMS}/include)
 # Same C++ dialect as the firmware: device models defined in a test (no RTTI)
 # are called through the shims, which UBSan would otherwise vptr-check.
@@ -27,6 +27,7 @@ set(FIRMWARE_INCLUDES
     ${REPO}/components/led_output/include
     ${REPO}/components/ui/include
     ${REPO}/components/web_config/include
+    ${REPO}/components/audio/include
     ${REPO}/components/web_config/src
     ${REPO}/components/config_store/include
     ${REPO}/components/led_protocols/include
@@ -189,10 +190,14 @@ if(PIXFROG_FUZZ)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../fuzz ${CMAKE_BINARY_DIR}/fuzz)
 endif()
 
+# The speaker: the real audio driver on the I2C + I2S shims, an ES8311 model.
+pixfrog_harness(harness_audio test_audio.cpp ${REPO}/components/audio/src/audio.cpp)
+target_include_directories(harness_audio PRIVATE ${REPO}/components/audio/src)
+
 # The UI hardware layer (display, encoder, backlight drivers) and ui.cpp's task
 # loop, once per display Kconfig; menu.cpp is faked (the emulator covers it).
 set(UI_SRC ${REPO}/components/ui/src)
-set(UI_COMMON test_ui.cpp fakes/menu_fake.cpp ${UI_SRC}/ui.cpp ${UI_SRC}/encoder_seesaw.cpp
+set(UI_COMMON test_ui.cpp fakes/menu_fake.cpp fakes/audio_fake.cpp ${UI_SRC}/ui.cpp ${UI_SRC}/encoder_seesaw.cpp
     ${UI_SRC}/splash.cpp ${REPO}/components/config_store/src/config_store.cpp)
 set(UI_TFT ${UI_SRC}/canvas_tft.cpp ${UI_SRC}/backlight.cpp ${UI_SRC}/tft_backlight_pwm.cpp
     ${UI_SRC}/font_data.cpp ${UI_SRC}/splash_anim.cpp)
@@ -236,6 +241,7 @@ pixfrog_harness(harness_boot
     ${REPO}/components/web_config/src/api_system.cpp
     ${REPO}/components/web_config/src/api_fseq.cpp
     ${REPO}/components/web_config/src/web_mdns.cpp
+    ${REPO}/components/audio/src/audio.cpp
     ${REPO}/components/dmx_manager/src/dmx_manager.cpp
     ${REPO}/components/config_store/src/config_store.cpp
     ${LED_OUTPUT_SRC}
@@ -243,7 +249,7 @@ pixfrog_harness(harness_boot
     ${UI_SRC}/ui.cpp ${UI_SRC}/encoder_seesaw.cpp ${UI_SRC}/splash.cpp ${UI_SRC}/oled_ssd1306.cpp
     ${UI_SRC}/canvas_oled.cpp ${UI_SRC}/font_oled.cpp ${UI_SRC}/splash_oled.cpp
 )
-target_include_directories(harness_boot PRIVATE ${REPO}/boards ${REPO}/components/led_output/src
+target_include_directories(harness_boot PRIVATE ${REPO}/boards ${REPO}/components/audio/src ${REPO}/components/led_output/src
     ${REPO}/components/fseq_player/src ${REPO}/components/fseq_player/third_party ${UI_SRC}
     ${CMAKE_CURRENT_SOURCE_DIR}/fakes)
 target_link_libraries(harness_boot PRIVATE cjson webui_blob)

@@ -83,7 +83,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 33);
+    EXPECT_EQ(shim::http_routes(), 34);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -253,6 +253,17 @@ TEST(channel_fixtures_round_trip_and_overlaps_are_refused) {
 }
 
 // The dashboard button: every configured output, or the outputs asked for.
+TEST(speaker_test_endpoint_and_status) {
+    Json s(get("/api/status").body);
+    EXPECT_TRUE(cJSON_IsTrue(s["audio"]));
+    EXPECT_EQ(post("/api/audio/test").status, 200);
+    EXPECT_EQ(fake::modules().audio_tests, 1);
+    fake::modules().audio_ready = false;  // no codec answering
+    EXPECT_EQ(post("/api/audio/test").status, 409);
+    Json off(get("/api/status").body);
+    EXPECT_TRUE(cJSON_IsFalse(off["audio"]));
+}
+
 TEST(identify_endpoint_runs_the_configured_outputs_in_turn) {
     Json all(post("/api/identify", "").body);
     EXPECT_EQ(cJSON_GetObjectItem(all.j, "outputs")->valueint, dmx::identify_configured_outputs());
@@ -710,8 +721,13 @@ TEST(fixture_profile_covers_every_control_function) {
 
 TEST(backup_restore_carries_the_control_mode_and_fade) {
     post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":55,\"address\":7}");
-    post("/api/global", "{\"scene_fade_ms\":2500,\"hub_preferred\":true,\"fseq_universe\":9}");
-    EXPECT_EQ(post("/api/global", "{\"fseq_universe\":0}").status, 200);  // out of range: kept
+    EXPECT_EQ(config::get_global().speaker_volume, 0);  // the default: speaker off
+    post("/api/global", "{\"scene_fade_ms\":2500,\"hub_preferred\":true,\"fseq_universe\":9,"
+                        "\"speaker_volume\":60}");
+    EXPECT_EQ(post("/api/global", "{\"fseq_universe\":0,\"speaker_volume\":101}").status,
+              200);  // out of range: kept
+    EXPECT_EQ(config::get_global().fseq_universe, 9);
+    EXPECT_EQ(config::get_global().speaker_volume, 60);
     EXPECT_EQ(config::get_global().fseq_universe, 9);
     const std::string backup = get("/api/backup").body;
     config::reset_to_defaults();
@@ -723,6 +739,7 @@ TEST(backup_restore_carries_the_control_mode_and_fade) {
     EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
     EXPECT_EQ(config::get_global().hub_preferred, 1);
     EXPECT_EQ(config::get_global().fseq_universe, 9);
+    EXPECT_EQ(config::get_global().speaker_volume, 60);
     // A malformed control object is skipped, the rest still restores.
     std::string bad       = backup;
     const std::string key = "\"fn\":\"master\"";
@@ -731,7 +748,8 @@ TEST(backup_restore_carries_the_control_mode_and_fade) {
     EXPECT_EQ(post("/api/restore", bad).status, 200);
     EXPECT_EQ(config::get_control().universe, config::kDefaultControlUniverse);
     EXPECT_EQ(config::get_global().scene_fade_ms, 2500);
-    post("/api/global", "{\"scene_fade_ms\":0,\"hub_preferred\":false,\"fseq_universe\":1}");
+    post("/api/global", "{\"scene_fade_ms\":0,\"hub_preferred\":false,\"fseq_universe\":1,"
+                        "\"speaker_volume\":0}");
     post("/api/control", "{\"enabled\":false}");
 }
 

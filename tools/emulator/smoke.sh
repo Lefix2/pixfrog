@@ -5,21 +5,23 @@
 # Used by ci.yml and ci-local.sh.
 #
 # Main menu layout (node engine): 0..7 channels, 8 Inputs, 9 Network,
-# 10 Output, 11 Playback, 12 Display, 13 Nerd stats, 14 About,
-# 15 [Back to HOME].
+# 10 Output, 11 Playback, 12 Settings, 13 About, 14 [Back to HOME].
+# Settings (TFT, no speaker): 0 Bright, 1 Idle dim, 2 Dim after,
+# 3 Refresh px, 4 Nerd stats, 5 [Back].
 set -euo pipefail
 cd "$(dirname "$0")"
 BIN=${1:-build/pixfrog_emu}
 
 out=$(printf '%s\n' \
     click state \
-    right right right right right right right right right right right right right state \
+    right right right right right right right right right right right right state \
+    click right right right right state \
     click state \
-    longclick \
+    longclick longclick \
     right state \
     click state \
     longclick \
-    left left left left left left state \
+    left left left left left state \
     click state \
     click state \
     longclick longclick longclick state \
@@ -36,14 +38,15 @@ expect() {
 }
 
 expect '"screen":"MainMenu","cursor":0'   # click on HOME opens the menu
-expect '"screen":"MainMenu","cursor":13'  # 13 detents land on Nerd stats
-expect '"screen":"Stats"'                 # click enters the nerd-stats page
-expect '"screen":"About"'                 # long-press back, +1 detent + click → About
+expect '"screen":"MainMenu","cursor":12'      # 12 detents land on Settings
+expect '"screen":"SettingsMenu","cursor":4'  # in Settings, 4 detents land on Nerd stats
+expect '"screen":"Stats"'                     # click enters the nerd-stats page
+expect '"screen":"About"'                     # back ×2, +1 detent + click → About
 expect '"screen":"InputsMenu"'            # back to menu, left ×5 + click → Inputs
 expect '"screen":"EditValue"'             # Inputs → Net edit
 expect '"screen":"Home"'                  # long-press climbs back: Inputs → Main → Home
 
-# ── Backlight: the Display node previews the level live while editing ────────
+# ── Backlight: the Settings node previews the level live while editing ────────
 out=$(printf '%s\n' \
     click \
     right right right right right right right right right right right right state \
@@ -52,7 +55,7 @@ out=$(printf '%s\n' \
     quit \
     | SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-dummy} timeout 60 "$BIN" --headless)
 
-expect '"screen":"MainMenu","cursor":12'  # 12 detents land on Display
+expect '"screen":"MainMenu","cursor":12'  # 12 detents land on Settings
 expect '"backlight":70'                   # 6 detents down from 100 %, step 5
 
 # ── Dim delay: the panel dims on tft_dim_delay_s, and the next event wakes it ─
@@ -69,7 +72,7 @@ out=$( {
     printf '%s\n' state click state quit
 } | SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-dummy} timeout 60 "$BIN" --headless)
 
-expect '"screen":"DisplayMenu","cursor":2'  # commit lands back on "Dim after"
+expect '"screen":"SettingsMenu","cursor":2'  # commit lands back on "Dim after"
 expect '"screen":"Home","cursor":0,"channel":0,"backlight":40'  # idle: -60 % of 100
 # ...and the event after that is spent waking the panel, not on the menu.
 if ! tail -1 <<<"$out" | grep -qF '"screen":"Home","cursor":0,"channel":0,"backlight":100'; then

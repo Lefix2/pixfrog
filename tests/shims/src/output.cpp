@@ -17,6 +17,7 @@ namespace {
 parlio_tx_unit_t* g_unit = nullptr;
 shim::ParlioLog g_log;
 std::map<int, unsigned> g_levels;
+std::map<int, unsigned> g_inputs;
 int g_gpio_calls = 0;
 }  // namespace
 
@@ -32,6 +33,9 @@ int gpio_calls() {
 }
 unsigned gpio_level(int pin) {
     return g_levels.count(pin) ? g_levels[pin] : 2;  // 2 = never driven
+}
+void gpio_input(int pin, unsigned level) {
+    g_inputs[pin] = level;
 }
 }  // namespace shim
 
@@ -91,4 +95,7 @@ esp_err_t gpio_set_level(gpio_num_t pin, unsigned level) {
     ++g_gpio_calls;
     g_levels[pin] = level;
     return ESP_OK;
+}
+int gpio_get_level(gpio_num_t pin) {
+    return g_inputs.count(pin) ? static_cast<int>(g_inputs[pin]) : 1;
 }

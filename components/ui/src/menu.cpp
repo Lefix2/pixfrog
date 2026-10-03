@@ -12,6 +12,8 @@
 
 namespace pixfrog::ui::detail::menu_impl {
 
+std::atomic<bool> g_speaker{ false };
+
 // ── Node table + engine ──────────────────────────────────────────────────────
 
 struct Node {
@@ -27,9 +29,7 @@ const Node kNodes[static_cast<uint8_t>(NodeId::Count)] = {
     { "NETWORK", NodeId::Main, build_network },
     { "OUTPUT", NodeId::Main, build_output },
     { "PLAYBACK", NodeId::Main, build_playback },
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
-    { "DISPLAY", NodeId::Main, build_display },
-#endif
+    { "SETTINGS", NodeId::Main, build_settings },
     { g_channel_title, NodeId::Main, build_channel },
     { "SCENES", NodeId::Playback, build_scenes },
     { "FSEQ", NodeId::Playback, build_fseq },
@@ -186,17 +186,59 @@ bool menu_is_home() {
     return s.screen == Screen::Home;
 }
 
+float menu_gauge_level() {
+    if (s.screen != Screen::EditValue || !is_gauge_kind(s.edit.kind) || s.edit.max <= s.edit.min)
+        return -1.0f;
+    return static_cast<float>(s.edit.current - s.edit.min) /
+           static_cast<float>(s.edit.max - s.edit.min);
+}
+
+int menu_press_kind(Event e) {
+    if (e == Event::LongPress) return s.screen == Screen::Home ? 0 : -1;
+    if (e != Event::Click) return 0;
+    switch (s.screen) {
+    case Screen::About:
+    case Screen::Stats: return -1;  // a click there goes back
+    case Screen::Menu: {
+        static ListItem items[kMaxRows];
+        static OnClick fns[kMaxRows];
+        const uint8_t count = cur_node().build(items, fns);
+        if (count == 0) return 0;
+        return items[s.cursor < count ? s.cursor : count - 1].back ? -1 : 1;
+    }
+    default: return 1;  // HOME → menu, an edit committed or stepped
+    }
+}
+
+uint32_t menu_fingerprint() {
+    uint32_t h = 2166136261u;  // FNV-1a over what a rotation moves
+    auto mix   = [&h](uint32_t v) {
+        for (int i = 0; i < 4; ++i, v >>= 8)
+            h = (h ^ (v & 0xFF)) * 16777619u;
+    };
+    mix(static_cast<uint32_t>(s.screen));
+    mix(static_cast<uint32_t>(s.node));
+    mix(s.cursor);
+    mix(static_cast<uint32_t>(s.edit.current));
+    mix(s.str_edit.cursor);
+    for (const char* c = s.str_edit.buf; *c; ++c)
+        mix(static_cast<uint8_t>(*c));
+    mix(s.ip_edit.value);
+    mix(s.ip_edit.cursor);
+    mix(s.uni_edit.value);
+    mix(s.uni_edit.cursor);
+    return h;
+}
+
 #ifdef PIXFROG_EMULATOR
 void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     // Node names mirror the old per-screen names so the emulator agent API and
     // existing navigation scripts keep matching.
     static const char* const kNodeNames[] = {
-        "MainMenu",    "InputsMenu",      "NetworkMenu", "OutputMenu",      "PlaybackMenu",
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
-        "DisplayMenu",  // keep aligned with NodeId — a missing entry reads as nullptr
-#endif
-        "ChannelMenu", "ScenesMenu",      "FSeqMenu",    "TestPatternMenu", "GapsMenu",
-        "ControlMenu", "ControlSlotMenu",
+        "MainMenu",     "InputsMenu",      "NetworkMenu", "OutputMenu",      "PlaybackMenu",
+        "SettingsMenu",  // keep aligned with NodeId — a missing entry reads as nullptr
+        "ChannelMenu",  "ScenesMenu",      "FSeqMenu",    "TestPatternMenu", "GapsMenu",
+        "ControlMenu",  "ControlSlotMenu",
     };
     static_assert(sizeof(kNodeNames) / sizeof(kNodeNames[0]) == static_cast<size_t>(NodeId::Count),
                   "one emulator name per menu node");
@@ -219,3 +261,9 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
 #endif
 
 }  // namespace pixfrog::ui::detail
+
+namespace pixfrog::ui {
+void set_speaker_present(bool present) {
+    detail::menu_impl::g_speaker.store(present, std::memory_order_relaxed);
+}
+}  // namespace pixfrog::ui

@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "audio.h"
 #include "config_store.h"
 #include "dmx_manager.h"
 #include "fpp_sync.h"
@@ -254,6 +255,7 @@ void print_global(const config::GlobalConfig& g) {
     printf("language=%s\n", g.language == config::kLangFrench ? "fr" : "en");
     printf("hub_preferred=%d\n", g.hub_preferred ? 1 : 0);
     printf("fseq_universe=%u\n", config::fseq_universe(g));
+    printf("speaker_volume=%u\n", config::speaker_volume_pct(g));
 }
 
 int cmd_global(int argc, char** argv) {
@@ -287,6 +289,9 @@ int cmd_global(int argc, char** argv) {
         if (!parse_u32_in(val, 1, dmx::kMaxUniverseNumber, u))
             return err("fseq_universe: 1..32767");
         g.fseq_universe = static_cast<uint16_t>(u);
+    } else if (strcmp(key, "speaker_volume") == 0) {  // 0 = off
+        if (!parse_u32_in(val, 0, 100, u)) return err("speaker_volume: 0..100 (0=off)");
+        g.speaker_volume = static_cast<uint8_t>(u);
     } else if (strcmp(key, "ip_fallback") == 0) {
         const int fb = config::ip_fallback_from_id(val);
         if (fb < 0) return err("ip_fallback: linklocal|artnet");
@@ -372,7 +377,8 @@ int cmd_global(int argc, char** argv) {
         printf("web_auth=%d\n", config::web_password_set() ? 1 : 0);
         return ok();
     } else {
-        return err("unknown key (dhcp ip_fallback language hub_preferred fseq_universe ip mask gw "
+        return err("unknown key (dhcp ip_fallback language hub_preferred fseq_universe "
+                   "speaker_volume ip mask gw "
                    "net subnet "
                    "short_name long_name "
                    "reply_unicast "
@@ -672,6 +678,18 @@ int cmd_crash(int argc, char** argv) {
 }
 
 // ── channel identify ────────────────────────────────────────────────────────
+
+int cmd_audio(int argc, char** argv) {
+    if (argc == 2 && strcmp(argv[1], "test") == 0)
+        return audio::start_test() ? ok() : err("no sound: no speaker, volume off, or busy");
+    uint32_t hz = 0, ms = 500;
+    if (argc >= 3 && argc <= 4 && strcmp(argv[1], "tone") == 0 &&
+        parse_u32_in(argv[2], 20, 8000, hz) && (argc == 3 || parse_u32_in(argv[3], 10, 5000, ms)))
+        return audio::play_tone(static_cast<uint16_t>(hz), static_cast<uint16_t>(ms))
+                 ? ok()
+                 : err("no sound: no speaker, volume off, or busy");
+    return err("usage: audio test | audio tone <20..8000 Hz> [10..5000 ms]");
+}
 
 int cmd_identify(int argc, char** argv) {
     if (argc == 2 && strcmp(argv[1], "stop") == 0) {
@@ -1140,7 +1158,9 @@ void start() {
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
-    register_cmd("identify", "identify <ch> [s] — blink a strip white to locate it", cmd_identify);
+    register_cmd("identify", "identify <ch>|all [blinks] — blink strips white to locate them",
+                 cmd_identify);
+    register_cmd("audio", "audio test | audio tone <Hz> [ms] — the speaker", cmd_audio);
     register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|set] — standalone scenes",
                  cmd_scene);
     register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",

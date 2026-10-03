@@ -264,6 +264,7 @@
    "sacn_enabled": true,
    "scene_fade_ms": 1500,
    "short_name": "pixfrog-stage",
+   "speaker_volume": 0,
    "subnet": 0,
    "tft_brightness": 100,
    "tft_dim_delay_s": 30,
@@ -882,6 +883,7 @@
   "active_scene": 2,
   "alias": true,
   "artnet_rx": 400,
+  "audio": true,
   "bad_rx": 0,
   "channels": [
    {

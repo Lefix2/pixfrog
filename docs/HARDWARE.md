@@ -131,6 +131,30 @@ fails with `send_op_cond … 0x107`, visible with `loglevel debug`).
 
 GPIO 39–48 sit in the **VDD_IO_5** pad domain, powered by the SoC's internal LDO output **VO4**. Left unprogrammed, VO4 idles near **1.2 V**, so those pads only swing ~1.2 V — not enough to drive a 5 V buffer or an SD card. `main::power_vdd_io5_pads()` programs VO4 to **3.3 V** at boot. This domain covers **CH5 CLOCK (46)**, **CH7 DATA/CLOCK (47/48)** and the entire **microSD** bus (39–44), so the LDO step is mandatory for those outputs.
 
+### 2.7 Speaker (ES8311 codec + NS4150B amp) — the R52 mod
+
+The module has an ES8311 codec (I2C `0x18` on the shared bus; I2S MCLK 13,
+BCLK 12, WS 10, DSDIN ← GPIO 9, ASDOUT → GPIO 11) feeding an NS4150B class-D
+amplifier. Stock, the amp's enable `PA_CTRL` comes from **GPIO 53 through R52
+(0 Ω)**, with **R58 (10 kΩ) to ground** — but GPIO 53 is LED output 8 DATA,
+so the amp would follow the LED data.
+
+**Mod:** remove R52 and pull `PA_CTRL` up with a 10 kΩ to 3.3 V: the amp is
+always on, the firmware mutes the codec after 10 s of quiet.
+
+**Detection:** at boot, before the LED outputs take it, GPIO 53 is read with
+its internal pull-up (~45 kΩ). Stock, R52 + R58 hold it near 0.6 V (low); with
+R52 removed nothing pulls it down (high). A stock board gets no audio at all
+(no task, no menu entry, no web card). It cannot see the added pull-up itself,
+and an external pull-down on CH8 DATA (≤ ~15 kΩ), or an unpowered shield
+clamping the line, reads as stock.
+
+Sounds (`components/audio`): knob tick / end-stop bump, confirm / cancel on
+clicks, a frog croak at the end of the splash, a test chime. Volume
+`speaker_volume` 0 (off, the default) … 100 %, even in dB (-40 … 0 dB); every
+sound normalized to 0.6 of full scale (the amp clipped above). One request
+waits at most: a newer one cuts the playing sound short (2 ms fade).
+
 ---
 
 ## 3. Level shifters

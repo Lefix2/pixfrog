@@ -1,3 +1,6 @@
+#include "freertos/queue.h"
+#include <deque>
+#include <mutex>
 // Host implementations of the IDF APIs the portable firmware components use.
 // Single-threaded by design: tests drive every task explicitly, and a blocking
 // call advances the fake clock by its timeout instead of sleeping.
@@ -313,6 +316,52 @@ void vTaskDelay(TickType_t ticks) {
     else
         shim::advance_ms(ticks);
     shim::task_delay_point();
+}
+// ── Queues ──────────────────────────────────────────────────────────────────
+struct QueueDefinition {
+    UBaseType_t length, item_size;
+    std::deque<std::vector<uint8_t>> items;
+    std::mutex mux;
+};
+QueueHandle_t xQueueCreate(UBaseType_t length, UBaseType_t item_size) {
+    if (shim::should_fail(shim::Fault::QueueCreate)) return nullptr;
+    auto* q      = new QueueDefinition;
+    q->length    = length;
+    q->item_size = item_size;
+    return q;
+}
+BaseType_t xQueueSend(QueueHandle_t q, const void* item, TickType_t) {
+    std::lock_guard<std::mutex> lock(q->mux);
+    if (q->items.size() >= q->length) return pdFALSE;  // full: the caller drops it
+    const auto* p = static_cast<const uint8_t*>(item);
+    q->items.emplace_back(p, p + q->item_size);
+    return pdTRUE;
+}
+BaseType_t xQueueOverwrite(QueueHandle_t q, const void* item) {
+    std::lock_guard<std::mutex> lock(q->mux);
+    q->items.clear();
+    const auto* p = static_cast<const uint8_t*>(item);
+    q->items.emplace_back(p, p + q->item_size);
+    return pdTRUE;
+}
+BaseType_t xQueueReceive(QueueHandle_t q, void* item, TickType_t ticks) {
+    {
+        std::lock_guard<std::mutex> lock(q->mux);
+        if (!q->items.empty()) {
+            std::memcpy(item, q->items.front().data(), q->item_size);
+            q->items.pop_front();
+            return pdTRUE;
+        }
+    }
+    vTaskDelay(ticks == portMAX_DELAY ? 1000 : ticks);  // nothing came: a blocking point
+    return pdFALSE;
+}
+UBaseType_t uxQueueMessagesWaiting(QueueHandle_t q) {
+    std::lock_guard<std::mutex> lock(q->mux);
+    return static_cast<UBaseType_t>(q->items.size());
+}
+void vQueueDelete(QueueHandle_t q) {
+    delete q;
 }
 void vTaskDelayUntil(TickType_t* previous_wake, TickType_t increment) {
     *previous_wake    += increment;

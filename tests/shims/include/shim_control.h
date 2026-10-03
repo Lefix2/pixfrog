@@ -127,6 +127,9 @@ enum class Fault {
     I2cAddDevice,    // i2c_master_bus_add_device → ESP_FAIL
     I2cTransmit,     // i2c_master_transmit → ESP_FAIL
     I2cReceive,      // i2c_master_receive → ESP_FAIL
+    QueueCreate,     // xQueueCreate → nullptr
+    I2sNew,          // i2s_new_channel → ESP_FAIL
+    I2sWrite,        // i2s_channel_write → ESP_FAIL
     LedcTimer,       // ledc_timer_config → ESP_FAIL
     LedcChannel,     // ledc_channel_config → ESP_FAIL
     LedcFade,        // ledc_fade_func_install → ESP_FAIL
@@ -162,9 +165,10 @@ struct ParlioLog {
 ParlioLog& parlio_log();
 void parlio_reset();
 int gpio_calls();
-unsigned gpio_level(int pin);            // last level driven, 2 if never driven
-void psram_present(bool present);        // heap_caps_get_total_size(SPIRAM)
-void psram_largest_block(size_t bytes);  // heap_caps_get_largest_free_block (0 = default)
+unsigned gpio_level(int pin);              // last level driven, 2 if never driven
+void gpio_input(int pin, unsigned level);  // what gpio_get_level() reads (default 1)
+void psram_present(bool present);          // heap_caps_get_total_size(SPIRAM)
+void psram_largest_block(size_t bytes);    // heap_caps_get_largest_free_block (0 = default)
 
 // ── LCD (esp_lcd_panel_rgb.h, esp_lcd_panel_io.h, esp_lcd_panel_vendor.h) ───
 struct LcdLog {
@@ -202,6 +206,20 @@ struct I2cDevice {
 };
 void i2c_attach(uint16_t addr, I2cDevice* dev);  // nullptr detaches (address NACKs)
 void i2c_nack_probes(int n);                     // the next n probes NACK anyway
+
+// ── I2S (driver/i2s_std.h) ──────────────────────────────────────────────────
+struct I2sLog {
+    int channels = 0, deleted = 0;
+    bool enabled = false, auto_clear = false;
+    uint32_t sample_rate = 0, mclk_multiple = 0;
+    int mclk = -1, bclk = -1, ws = -1, dout = -1;
+    std::vector<int16_t> samples;                          // interleaved L/R, everything written
+    void (*on_write)(size_t writes, void* ctx) = nullptr;  // after each write (writes so far)
+    void* on_write_ctx                         = nullptr;
+    size_t writes                              = 0;
+};
+I2sLog& i2s_log();
+void i2s_reset();
 
 // ── LEDC (driver/ledc.h) ────────────────────────────────────────────────────
 struct LedcLog {

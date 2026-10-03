@@ -436,6 +436,12 @@ void commit_edit() {
         dmx::mark_global_dirty();
         break;
     }
+    case Field::SpeakerVolume: {
+        auto g           = config::get_global();
+        g.speaker_volume = static_cast<uint8_t>(v);
+        config::set_global(g);
+        break;
+    }
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     case Field::DisplayBrightness: {
         auto g           = config::get_global();

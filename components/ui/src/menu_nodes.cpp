@@ -38,16 +38,12 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
     fns[n++]  = [](uint8_t) { go(NodeId::Output); };
     items[n]  = { "Playback", "" };
     fns[n++]  = [](uint8_t) { go(NodeId::Playback); };
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
-    items[n] = { "Display", "" };
-    fns[n++] = [](uint8_t) { go(NodeId::Display); };
-#endif
-    items[n] = { "Nerd stats", "" };
-    fns[n++] = [](uint8_t) { s.screen = Screen::Stats; };
-    items[n] = { "About", "" };
-    fns[n++] = [](uint8_t) { s.screen = Screen::About; };
-    items[n] = back_item("HOME");
-    fns[n++] = [](uint8_t) { go_back(); };
+    items[n]  = { "Settings", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Settings); };
+    items[n]  = { "About", "" };
+    fns[n++]  = [](uint8_t) { s.screen = Screen::About; };
+    items[n]  = back_item("HOME");
+    fns[n++]  = [](uint8_t) { go_back(); };
     return n;
 }
 
@@ -400,15 +396,17 @@ uint8_t build_output(ListItem* items, OnClick* fns) {
     return 8;
 }
 
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
-// ── DISPLAY NODE ─────────────────────────────────────────────────────────────
-// Backlight level, how far it drops once the UI goes idle, and after how long.
-// The dim delay is the backlight's own — unrelated to `home_timeout_s`, which
-// only decides when the menu walks back to HOME.
+// ── SETTINGS NODE ────────────────────────────────────────────────────────────
+// The box itself rather than the show: the backlight (TFT builds), the
+// speaker volume (boards with the speaker mod), the nerd stats. The dim delay
+// is the backlight's own — unrelated to `home_timeout_s`, which only decides
+// when the menu walks back to HOME.
 
-uint8_t build_display(ListItem* items, OnClick* fns) {
-    static char vbright[8], vdim[8], vdelay[8];
+uint8_t build_settings(ListItem* items, OnClick* fns) {
+    uint8_t n     = 0;
     const auto& g = config::get_global();
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+    static char vbright[8], vdim[8], vdelay[8];
     std::snprintf(vbright, sizeof(vbright), "%u%%", config::tft_brightness_pct(g));
     const uint8_t dim = config::tft_idle_dim_pct(g);
     if (dim == 0)
@@ -421,36 +419,52 @@ uint8_t build_display(ListItem* items, OnClick* fns) {
     else
         std::snprintf(vdelay, sizeof(vdelay), "%us", delay);
 
-    items[0] = { "Bright", vbright };
-    fns[0]   = [](uint8_t) {
+    items[n] = { "Bright", vbright };
+    fns[n++] = [](uint8_t) {
         const auto& g = config::get_global();
         enter_edit(Field::DisplayBrightness, ValueKind::Int, config::tft_brightness_pct(g),
-                     config::kTftBrightnessMin, 100, 5, "Bright", Screen::Menu);
+                   config::kTftBrightnessMin, 100, 5, "Bright", Screen::Menu);
     };
-    items[1] = { "Idle dim", vdim };
-    fns[1]   = [](uint8_t) {
+    items[n] = { "Idle dim", vdim };
+    fns[n++] = [](uint8_t) {
         const auto& g = config::get_global();
         enter_edit(Field::DisplayIdleDim, ValueKind::Int, config::tft_idle_dim_pct(g), 0, 100, 5,
-                     "Idle dim", Screen::Menu);
+                   "Idle dim", Screen::Menu);
     };
-    items[2] = { "Dim after", vdelay };
-    fns[2]   = [](uint8_t) {
+    items[n] = { "Dim after", vdelay };
+    fns[n++] = [](uint8_t) {
         const auto& g = config::get_global();
         enter_edit(Field::DisplayDimDelay, ValueKind::Int, config::tft_dim_delay_s(g), 0,
-                     config::kTftDimDelayMaxS, 5, "Dim after", Screen::Menu);
+                   config::kTftDimDelayMaxS, 5, "Dim after", Screen::Menu);
     };
     static char vrefresh[8];
     std::snprintf(vrefresh, sizeof(vrefresh), "%ds", static_cast<int>(g_pixel_refresh_s));
-    items[3] = { "Refresh px", vrefresh };
-    fns[3]   = [](uint8_t) {
+    items[n] = { "Refresh px", vrefresh };
+    fns[n++] = [](uint8_t) {
         enter_edit(Field::DisplayPixelRefresh, ValueKind::Int, g_pixel_refresh_s, kPixelRefreshMinS,
-                     kPixelRefreshMaxS, 5, "Refresh px", Screen::PixelRefresh);
+                   kPixelRefreshMaxS, 5, "Refresh px", Screen::PixelRefresh);
     };
-    items[4] = back_item();
-    fns[4]   = [](uint8_t) { go_back(); };
-    return 5;
+#endif
+    if (g_speaker.load(std::memory_order_relaxed)) {
+        static char vvol[8];
+        const uint8_t v = config::speaker_volume_pct(g);
+        if (v == 0)
+            std::snprintf(vvol, sizeof(vvol), "Off");
+        else
+            std::snprintf(vvol, sizeof(vvol), "%u%%", v);
+        items[n] = { "Volume", vvol };
+        fns[n++] = [](uint8_t) {
+            enter_edit(Field::SpeakerVolume, ValueKind::Int,
+                       config::speaker_volume_pct(config::get_global()), 0, 100, 5, "Volume",
+                       Screen::Menu);
+        };
+    }
+    items[n] = { "Nerd stats", "" };
+    fns[n++] = [](uint8_t) { s.screen = Screen::Stats; };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
 }
-#endif  // CONFIG_PIXFROG_DISPLAY_TFT
 
 // ── PLAYBACK NODE ────────────────────────────────────────────────────────────
 // Output sources that aren't live DMX-over-IP: stored scenes, SD-card FSEQ

@@ -42,6 +42,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/web_config`        | Opt-in HTTP server: config SPA, REST API, OTA (see below) |
 | `components/ui`                | Display drivers (NV3007 default; ST7789 / SSD1306 alternates), canvas, seesaw encoder, menu FSM, backlight PWM |
 | `components/control_console`   | UART0 command server: full config get/set, telemetry, DMX injection |
+| `components/audio`             | ES8311 codec + speaker (boards with the R52 mod, docs/HARDWARE.md §2.7): synthesized UI sounds, volume |
 | `main/main.cpp`                | Boot orchestration + `render_task`                      |
 | `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased TFT font) |
 | `tools/oledfont`               | Host tool: hand-drawn 5×7 → `font_oled.cpp` (crisp 1bpp OLED font) |
@@ -93,7 +94,9 @@ behind the optional password):
   as `{"type":"status",…}` text frames + a 5 Hz binary output preview — `'P'`,
   output count, per output n + n RGB triplets, n ≤ 64), `GET /api/diag`, `GET /api/logs`, `POST /api/loglevel`,
   `GET|DELETE /api/coredump`, `POST /api/rollback/ack`, `POST /api/ota` (raw .bin body),
-  `POST /api/reboot`, `POST /api/factory-reset`, `GET /api/peers`, `GET /` (SPA)
+  `POST /api/reboot`, `POST /api/factory-reset`, `GET /api/peers`,
+  `POST /api/audio/test` (the speaker chime; 409 without a speaker or at volume 0),
+  `GET /` (SPA)
 
 Multi-node: every box is `pixfrog-<last 4 hex of MAC>.local`; the alias
 `pixfrog.local` is published (delegated hostname) by one box at a time —

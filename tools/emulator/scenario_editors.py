@@ -14,7 +14,8 @@ sys.path.insert(0, HERE)
 from crawl import Emu, goto, home  # noqa: E402
 
 MAIN_CH1, MAIN_INPUTS, MAIN_NETWORK, MAIN_OUTPUT, MAIN_PLAYBACK = 0, 8, 9, 10, 11
-MAIN_STATS, MAIN_ABOUT = 13, 14
+MAIN_SETTINGS, MAIN_ABOUT = 12, 13
+SETTINGS_STATS = 4  # after Bright, Idle dim, Dim after, Refresh px (no speaker here)
 
 
 def expect(cond, what):
@@ -74,12 +75,41 @@ def main():
         emu.cmd("left")
         expect(click_until_leaves(emu, "EditUni"), "universe editor commits")
 
-        # Stats and About: a click returns to the menu.
-        for row, screen in ((MAIN_STATS, "Stats"), (MAIN_ABOUT, "About")):
-            st = goto(emu, [0, row])
+        # Stats (under Settings) and About: a click returns to their menu.
+        for path, screen, back in (([0, MAIN_SETTINGS, SETTINGS_STATS], "Stats", "SettingsMenu"),
+                                   ([0, MAIN_ABOUT], "About", "MainMenu")):
+            st = goto(emu, path)
             expect(st["screen"] == screen, f"{screen} opens")
             emu.cmd("click")
-            expect(emu.state()["screen"] == "MainMenu", f"{screen} click returns")
+            expect(emu.state()["screen"] == back, f"{screen} click returns")
+
+        # Sounds: what a press means (+1 confirm, -1 cancel) and the gauge level.
+        home(emu)
+        st = emu.state()
+        expect(st["click"] == 1 and st["long"] == 0, f"HOME: a click confirms, no long sound ({st})")
+        st = goto(emu, [0])
+        expect(st["long"] == -1, "a long press in the menu cancels")
+        for _ in range(MAIN_ABOUT + 1):
+            emu.cmd("right")
+        expect(emu.state()["click"] == -1, "the [Back] row cancels")
+        st = goto(emu, [0, MAIN_SETTINGS, SETTINGS_STATS])
+        expect(st["click"] == -1, "a click on Stats goes back: cancel")
+        # Speaker: Volume appears in Settings, its gauge pitch follows the value.
+        emu.cmd("set speaker 1")
+        st = goto(emu, [0, MAIN_SETTINGS, SETTINGS_STATS])
+        expect(st["screen"] == "EditValue", f"Volume sits before Nerd stats ({st})")
+        expect(st["gauge"] == 0.0, f"volume off: the gauge at its low bound ({st})")
+        before = st["fp"]
+        emu.cmd("right")
+        st = emu.state()
+        expect(abs(st["gauge"] - 0.05) < 1e-3 and st["fp"] != before, f"a step moves it ({st})")
+        expect(st["click"] == 1, "committing confirms")
+        emu.cmd("click")
+        st = goto(emu, [0, MAIN_SETTINGS, SETTINGS_STATS])  # back in: 5 % kept
+        expect(abs(st["gauge"] - 0.05) < 1e-3, f"the volume was saved ({st})")
+        emu.cmd("left")
+        emu.cmd("click")
+        emu.cmd("set speaker 0")
 
         # FSEQ browser on a fake SD card: play a file, see it starred, stop.
         emu.cmd("set sd 3")

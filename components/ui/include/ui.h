@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "driver/i2c_master.h"
+
 #include <stdint.h>
 
 namespace pixfrog::ui {
@@ -40,6 +42,13 @@ struct InitConfig {
 // Initialize I2C, display, seesaw. Spawns ui_task on core 0 prio 4.
 // Must be called after config_store::init().
 bool start(const InitConfig& cfg);
+
+// The shared I2C bus (OLED/encoder/codec), created by start(); nullptr before.
+i2c_master_bus_handle_t i2c_bus();
+
+// The board drives its speaker (the R52 mod, audio up): the menu then offers
+// the speaker volume. Off by default.
+void set_speaker_present(bool present);
 
 // ── IP propagation ─────────────────────────────────────────────────────────
 // Called from a network event handler when Ethernet acquires (or loses)

@@ -11,6 +11,7 @@
 #include "artnet_parser.h"
 #include "config_store.h"
 #include "dmx_manager.h"
+#include "esp32_p4_devkit.h"
 #include "harness.h"
 #include "led_output.h"
 #include "shim_control.h"
@@ -324,6 +325,19 @@ TEST(a_pending_image_is_confirmed_only_by_a_live_render_loop) {
     EXPECT_FALSE(shim::ota_marked_valid());
     EXPECT_EQ(shim::restarts(), restarts + 1);
     EXPECT_TRUE(shim::now_us() - t0 >= 60'000'000);
+}
+
+// GPIO53 pulled up at boot: high = R52 removed, the speaker can be driven;
+// low = stock board (R52 into R58's 10 kΩ), the amp follows LED CH8: no audio.
+TEST(the_speaker_is_only_driven_on_a_board_with_the_r52_mod) {
+    configure(true);
+    shim::i2s_reset();
+    shim::gpio_input(board::kAmpProbeGpio, 0);
+    boot();
+    EXPECT_EQ(shim::i2s_log().channels, 0);  // stock: audio not even tried
+    shim::gpio_input(board::kAmpProbeGpio, 1);
+    boot();
+    EXPECT_EQ(shim::i2s_log().channels, 1);  // modded: tried (no codec here: given back)
 }
 
 int main(int argc, char** argv) {

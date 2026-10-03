@@ -164,7 +164,8 @@
     }
     if (p === '/api/factory-reset') { S = clone(SNAP); return ok({ rebooting: true }); }
     if (p === '/api/ota') return bad(400, t('demo: no firmware update on a simulated box'));
-    if (p === '/api/reboot' || p === '/api/rollback/ack' || p === '/api/loglevel') return ok();
+    if (p === '/api/reboot' || p === '/api/rollback/ack' || p === '/api/loglevel' ||
+        p === '/api/audio/test') return ok();
     return bad(404, 'not found');
   }
   function t(s) { return S.config.global.lang === 1 ? 'démo : pas de mise à jour sur un boîtier simulé' : s; }

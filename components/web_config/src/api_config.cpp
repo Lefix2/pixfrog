@@ -43,6 +43,7 @@ static cJSON* build_global_json() {
     cJSON_AddBoolToObject(jg, "hub_preferred", g.hub_preferred);
     cJSON_AddNumberToObject(jg, "scene_fade_ms", g.scene_fade_ms);
     cJSON_AddNumberToObject(jg, "fseq_universe", config::fseq_universe(g));
+    cJSON_AddNumberToObject(jg, "speaker_volume", config::speaker_volume_pct(g));
     char fscol[8];
     snprintf(fscol, sizeof(fscol), "#%02x%02x%02x", g.failsafe_r, g.failsafe_g, g.failsafe_b);
     cJSON_AddStringToObject(jg, "failsafe_color", fscol);
@@ -375,6 +376,7 @@ GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const c
         g.scene_fade_ms = static_cast<uint16_t>(u);
     if (json_u32(j, "fseq_universe", 1, dmx::kMaxUniverseNumber, u))
         g.fseq_universe = static_cast<uint16_t>(u);
+    if (json_u32(j, "speaker_volume", 0, 100, u)) g.speaker_volume = static_cast<uint8_t>(u);
     return fx;
 }
 
