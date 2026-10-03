@@ -52,6 +52,19 @@ bool running() {
 uint16_t g_joined[kMaxJoined];
 size_t g_joined_count = 0;
 
+void (*g_overflow_hook)(bool) = nullptr;
+bool g_overflow               = false;
+
+// Tells the board when the joined groups outgrow the MAC's filter table.
+void update_overflow() {
+    const bool over = g_joined_count > kHwMulticastSlots;
+    if (over == g_overflow || !g_overflow_hook) return;
+    g_overflow = over;
+    g_overflow_hook(over);
+    ESP_LOGI(TAG, "%u groups: MAC %s", static_cast<unsigned>(g_joined_count),
+             over ? "passes all multicast" : "back to its address filter");
+}
+
 // Two sources per universe on average: each (universe, CID) pair is an entry.
 parser::SourceGate g_gates[dmx::kNumUniverses * 2];
 
@@ -124,6 +137,7 @@ void refresh_memberships() {
             }
         }
     }
+    update_overflow();
 }
 
 void handle_data(const uint8_t* buf, size_t len) {
@@ -243,6 +257,7 @@ void task_main(void*) {
     for (size_t i = 0; i < g_joined_count; ++i)
         membership(g_joined[i], IP_DROP_MEMBERSHIP);
     g_joined_count = 0;
+    update_overflow();
     close(g_sock);
     g_sock = -1;
     vTaskDelete(nullptr);
@@ -265,6 +280,10 @@ void start() {
         ESP_LOGE(TAG, "task create failed");
         g_state.store(kOff, std::memory_order_release);
     }
+}
+
+void set_multicast_overflow_hook(void (*hook)(bool pass_all)) {
+    g_overflow_hook = hook;
 }
 
 void stop() {

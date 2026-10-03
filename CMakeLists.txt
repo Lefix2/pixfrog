@@ -24,6 +24,14 @@ endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
+# sACN joins one multicast group per universe through the socket API, whose
+# membership table is LWIP_SOCKET_MAX_MEMBERSHIPS entries — by default
+# CONFIG_LWIP_MAX_SOCKETS (10), so universes past the 10th never received
+# multicast (measured on the bench: 16 asked, 6 "IGMP join failed"). Sized for
+# the universe pool (dmx::kNumUniverses = 64) + the control universe + spare.
+# The IGMP groups themselves come from the heap (MEMP_MEM_MALLOC), no cap there.
+idf_build_set_property(COMPILE_DEFINITIONS "LWIP_SOCKET_MAX_MEMBERSHIPS=72" APPEND)
+
 project(pixfrog
     VERSION 0.1.0
     LANGUAGES C CXX ASM

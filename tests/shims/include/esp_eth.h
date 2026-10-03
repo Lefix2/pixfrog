@@ -71,3 +71,5 @@ esp_eth_phy_t* esp_eth_phy_new_ip101(const eth_phy_config_t* cfg);
 esp_err_t esp_eth_driver_install(const esp_eth_config_t* cfg, esp_eth_handle_t* out);
 esp_netif_iodriver_handle esp_eth_new_netif_glue(esp_eth_handle_t eth);
 esp_err_t esp_eth_start(esp_eth_handle_t eth);
+typedef enum { ETH_CMD_S_ALL_MULTICAST = 18 } esp_eth_io_cmd_t;
+esp_err_t esp_eth_ioctl(esp_eth_handle_t eth, esp_eth_io_cmd_t cmd, void* data);

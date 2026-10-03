@@ -152,6 +152,11 @@ esp_err_t esp_eth_driver_install(const esp_eth_config_t* cfg, esp_eth_handle_t* 
 esp_netif_iodriver_handle esp_eth_new_netif_glue(esp_eth_handle_t eth) {
     return eth;
 }
+esp_err_t esp_eth_ioctl(esp_eth_handle_t eth, esp_eth_io_cmd_t cmd, void* data) {
+    if (!eth || !data) return ESP_ERR_INVALID_ARG;
+    if (cmd == ETH_CMD_S_ALL_MULTICAST) g_netif.all_multicast = *static_cast<bool*>(data) ? 1 : 0;
+    return ESP_OK;
+}
 esp_err_t esp_eth_start(esp_eth_handle_t) {
     if (shim::should_fail(shim::Fault::EthStart)) return ESP_FAIL;
     g_netif.eth_started = true;
