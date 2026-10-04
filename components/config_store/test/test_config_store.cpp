@@ -419,6 +419,28 @@ static void test_scene_bank_load_all_layouts() {
     }
 }
 
+// Groups: counts capped, out-of-range and repeated members dropped (order
+// kept), names terminated, slots past the count cleared.
+static void test_groups_sanitize() {
+    static GroupsConfig g{};
+    g.count = 20;  // past kMaxGroups
+    std::memset(g.groups[0].name, 'x', sizeof(g.groups[0].name));
+    g.groups[0].count      = 5;
+    g.groups[0].members[0] = { 2, 3 };
+    g.groups[0].members[1] = { 9, 0 };   // no output 9
+    g.groups[0].members[2] = { 2, 3 };   // repeated
+    g.groups[0].members[3] = { 1, 40 };  // no fixture 40
+    g.groups[0].members[4] = { 0, 1 };
+    sanitize_groups(g);
+    EXPECT_EQ(g.count, kMaxGroups);
+    EXPECT_EQ(g.groups[0].count, 2);
+    EXPECT_EQ(g.groups[0].members[1].output, 0);
+    EXPECT_EQ(g.groups[0].name[kGroupNameMax - 1], 0);
+    g.count = 1;
+    sanitize_groups(g);
+    EXPECT_EQ(g.groups[1].count, 0);
+}
+
 static void test_scene_index_remap() {
     // Delete scene 2 of [0 1 2 3 4].
     EXPECT_EQ(remap_scene_index(1, SceneEdit::Delete, 2), 1);
@@ -452,6 +474,7 @@ int main() {
     test_scene_colour_accessors();
     test_scene_bank_load_all_layouts();
     test_scene_index_remap();
+    test_groups_sanitize();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

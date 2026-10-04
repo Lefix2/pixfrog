@@ -302,6 +302,23 @@ fixtures, the dead LEDs and any overlap.
   from the order (drag to reorder), the pixel count from the list; a "N × L +
   K dead" fill. API/backup: `"fixtures": [[first_led, count], ...]`.
 
+### 5.5b Fixture groups
+
+Up to 16 named groups (`config::GroupsConfig`, own NVS blob `groups`), each an
+ordered list of up to 64 fixtures taken on any outputs (`FixtureRef {output,
+fixture}`, the fixture by its index in the output's strip order). A group is
+where a scene plays, and its order is the strip the effect runs along —
+"Top" listed from the left edge to the right one, whatever the wiring.
+
+- API: `"groups": [{"name", "members": [[output, fixture], ...]}]` in
+  `/api/config` and the backup; `POST /api/groups {"groups": [...]}`
+  replaces the list (all or nothing; repeated or out-of-range members are
+  refused or dropped).
+- Web: the Groups screen — pick fixtures per output (or all of one), drag to
+  reorder, reverse the order.
+- Editing an output's fixture list can shift what a member points at (it is
+  an index); the editor flags members that no longer exist.
+
 ### 5.6 DMX layout and auto-patch
 
 How a channel's pixels fill its universes is per channel

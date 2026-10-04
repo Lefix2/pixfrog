@@ -129,6 +129,7 @@
 
     <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:18px 8px 6px" data-i18n="CONFIGURATION">CONFIGURATION</div>
     <div data-nav="channels" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Channels">Channels</span></div>
+    <div data-nav="groups" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="layers"></i><span data-i18n="Groups">Groups</span></div>
     <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
     <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i>ArtNet / sACN</div>
     <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="DMX control">DMX control</span></div>
@@ -304,6 +305,18 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ===== GROUPS ===== -->
+      <div data-screen="groups" style="display:none">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
+          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
+            <div id="grp-list"></div>
+            <button class="btn-sec" data-grp-new style="display:inline-flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New group">New group</span></button>
+            <div class="hint" style="margin-top:6px" data-i18n="A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.">A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.</div>
+          </div>
+          <div id="grp-editor" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px"></div>
         </div>
       </div>
 
@@ -733,6 +746,8 @@ var PF_ICONS = {
   'list-plus':'<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>',
   'list-video':'<path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/><path d="m16 12 5 3-5 3v-6Z"/>',
   'copy':'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  'layers':'<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+  'arrow-up-down':'<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
   'grip-vertical':'<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
   'check':'<path d="M20 6 9 17l-5-5"/>',
   'droplet':'<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
@@ -887,7 +902,7 @@ var FR={
   'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
   'Firmware update rolled back':'Mise à jour du firmware annulée','Acknowledge':'Acquitter','last rollback':'dernier rollback','none':'aucun',
   '{v} on {slot} was rejected ({why}) — running {run}':'{v} sur {slot} a été rejeté ({why}) — version active {run}',
-  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','Mounted the other way round: the effects run through it backwards':'Montée à l’envers : les effets la parcourent dans l’autre sens','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
+  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','Groups':'Groupes','New group':'Nouveau groupe','A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.':'Un groupe est un ensemble ordonné de fixtures, sur n’importe quelles sorties : là où une scène joue. Son ordre est le ruban que l’effet parcourt.','Unnamed':'Sans nom','No group yet':'Aucun groupe','Create a group to start':'Crée un groupe pour commencer','Out':'Sortie','no such fixture now':'cette fixture n’existe plus','Remove from the group':'Retirer du groupe','Add to the group':'Ajouter au groupe','all':'toutes','No fixture yet: describe them in the channel editor (Fixtures & dead LEDs)':'Aucune fixture : décris-les dans l’éditeur de canal (Fixtures et LEDs mortes)','NAME':'NOM','FIXTURES, IN ORDER':'FIXTURES, DANS L’ORDRE','Reverse the order':'Inverser l’ordre','Delete the group':'Supprimer le groupe','Empty: add fixtures below':'Vide : ajoute des fixtures ci-dessous','ADD FIXTURES':'AJOUTER DES FIXTURES','Group':'Groupe','Mounted the other way round: the effects run through it backwards':'Montée à l’envers : les effets la parcourent dans l’autre sens','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
   'Fixtures overlap: LED {a}–{b}':'Des fixtures se chevauchent : LED {a}–{b}','A fixture ends past the strip (LED {n})':'Une fixture dépasse la fin du strip (LED {n})','Dead LEDs inside a fixture at LED {a}: the fixture is shorter':'LEDs mortes dans une fixture à la LED {a} : la fixture est plus courte',
   'At most {n} dead runs: fewer fixtures, or no dead LEDs between':'{n} zones de LEDs mortes au plus : moins de fixtures, ou pas de LEDs mortes entre elles','At most 32 fixtures':'32 fixtures au plus','At most 8 dead runs':'8 zones de LEDs mortes au plus',
   'Channel {n}: the layout list is not valid — fix it before saving':'Canal {n} : la liste n’est pas valide — corrige-la avant d’enregistrer',
@@ -1300,7 +1315,7 @@ function buildPatch(){
 }
 
 /* ─────────── navigation ─────────── */
-var TITLES={dashboard:'Dashboard',scenes:'Scenes',fseq:'FSEQ sequences',channels:'Channels',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
+var TITLES={dashboard:'Dashboard',scenes:'Scenes',fseq:'FSEQ sequences',channels:'Channels',groups:'Groups',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
 var SUBS={control:'Drive the box from any desk: compose its DMX channels',dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · 11 effects · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
 var curScreen='dashboard';
 function go(name){
@@ -1899,6 +1914,7 @@ function reloadConfig(){
     if(el('s-boot')) el('s-boot').value=String(g.boot_scene||0);
     if(el('s-fade')) el('s-fade').value=((g.scene_fade_ms||0)/1000).toFixed(1);
     if(el('spk-vol')){ el('spk-vol').value=g.speaker_volume||0; spkVolLabel(); spkButtons(); }
+    if(d.groups && !dirty.has('groups')){ GROUPS=d.groups.map(function(g){ return {name:g.name,members:g.members.map(function(m){ return [m[0],m[1]]; })}; }); if(curGroup>=GROUPS.length) curGroup=GROUPS.length-1; }
     if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,mapped:d.control.mapped!==false,pool:d.control.pool||72,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
     renderControl();
     if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
@@ -1910,7 +1926,7 @@ function reloadConfig(){
     if(curScene>=SCENES.length) curScene=Math.max(0,SCENES.length-1);
     renderScenes(); renderSceneSelects(g);
     var pm=el('patch-mount'); if(pm){ pm.innerHTML=buildPatch(); createIcons(pm); }
-    applyChanStates(); renderLists();
+    applyChanStates(); renderLists(); renderGroups();
     if(curChan>=CHANS.length) curChan=0;
     selectChan(curChan);
   });
@@ -1967,6 +1983,69 @@ function sceneBody(s){ return {name:s.name,effect:s.effectIdx,colors:s.colors,sp
 // How the effect spreads over a channel's fixtures (a channel without any is one strip).
 var FIX_MODES=[['each','Each fixture'],['strip','Whole strip'],['chain','Fixtures in a row'],['mirror','Mirrored']];
 var FIX_HINTS={strip:'The effect runs over the whole strip, fixtures ignored.',each:'Every fixture plays the effect on its own.',chain:'The fixtures end to end, as one strip without what lies between.',mirror:'In a row over the first half, mirrored on the second.'};
+/* ─────────── fixture groups ─────────── */
+// GROUPS[i] = {name, members: [[output, fixture], ...]} (0-based, in order).
+var GROUPS=[], curGroup=-1, MAX_GROUPS=16, MAX_MEMBERS=64;
+function fixtureCount(o){ var c=CHANS[o]; if(!c||c.protoRaw==='Off') return 0; return (c.lay||[]).filter(function(it){ return it.t==='f'; }).length; }
+function memberLabel(m){ return t('Out')+' '+(m[0]+1)+' · F'+(m[1]+1); }
+function renderGroups(){
+  var l=el('grp-list'); if(!l) return;
+  if(curGroup<0 && GROUPS.length) curGroup=0;
+  l.innerHTML=GROUPS.map(function(g,i){ var on=i===curGroup;
+    return '<div data-grp-row="'+i+'" style="display:flex;align-items:center;gap:9px;padding:9px 10px;cursor:pointer;background:'+(on?'rgba(63,212,99,.07)':'var(--well)')+';border:1px solid '+(on?'rgba(63,212,99,.45)':'var(--line)')+'">'
+      +'<i data-lucide="layers" class="ic14 '+(on?'fg-accent':'fg-5')+'"></i><span style="flex:1;font:600 13px \'Figtree\'">'+esc(g.name||t('Unnamed'))+'</span>'
+      +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4)">'+g.members.length+' '+t('fixtures')+'</span></div>'; }).join('')
+    ||'<div class="hint" style="padding:8px" data-i18n="No group yet">'+esc(t('No group yet'))+'</div>';
+  var nb=document.querySelector('[data-grp-new]'); if(nb){ nb.disabled=GROUPS.length>=MAX_GROUPS; nb.style.opacity=nb.disabled?'.4':'1'; }
+  createIcons(l); renderGroupEditor();
+}
+function renderGroupEditor(){
+  var e=el('grp-editor'); if(!e) return;
+  var g=GROUPS[curGroup];
+  if(!g){ e.innerHTML='<div class="hint">'+esc(t('Create a group to start'))+'</div>'; return; }
+  var inp='background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:600 15px \'Figtree\';width:100%';
+  var chip=function(on,dim){ return 'display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:28px;padding:0 8px;cursor:pointer;font:500 12px \'DM Mono\';border:1px solid '+(on?'var(--accent)':'var(--line-3)')+';background:'+(on?'rgba(63,212,99,.15)':'rgba(237,238,234,.04)')+';color:'+(on?'var(--accent)':dim?'var(--fg-5)':'var(--fg-2)'); };
+  var mem=g.members.map(function(m,k){
+    var gone=m[1]>=fixtureCount(m[0]);
+    return '<div data-gm-row="'+k+'" style="display:flex;align-items:center;gap:8px">'
+      +'<span data-gm-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
+      +'<span style="font:500 11px \'DM Mono\';color:var(--fg-5);width:24px">'+(k+1)+'</span>'
+      +'<span style="flex:1;font:500 13px \'DM Mono\';color:'+(gone?'var(--warn)':'var(--fg)')+'">'+esc(memberLabel(m))+(gone?' — '+esc(t('no such fixture now')):'')+'</span>'
+      +sqBtn('data-gm-del="'+k+'"','x','Remove')+'</div>'; }).join('');
+  var pick='';
+  for(var o=0;o<8;o++){ var nf=fixtureCount(o); if(!nf) continue;
+    var chips='';
+    for(var f=0;f<nf;f++){ var inG=g.members.some(function(m){ return m[0]===o&&m[1]===f; });
+      chips+='<span data-gm-add="'+o+','+f+'" title="'+esc(inG?t('Remove from the group'):t('Add to the group'))+'" style="'+chip(inG)+'">F'+(f+1)+'</span>'; }
+    pick+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font:500 12px \'DM Mono\';color:var(--fg-3);width:76px">'+esc(t('Out'))+' '+(o+1)+'</span>'+chips
+      +'<button class="btn-sec" data-gm-all="'+o+'" style="'+chip(false)+'">'+esc(t('all'))+'</button></div>'; }
+  if(!pick) pick='<div class="hint">'+esc(t('No fixture yet: describe them in the channel editor (Fixtures & dead LEDs)'))+'</div>';
+  e.innerHTML='<div><label class="f-label-caps" data-i18n="NAME">'+esc(t('NAME'))+'</label><input id="grp-name" maxlength="15" value="'+esc(g.name)+'" style="'+inp+'"/></div>'
+    +'<div><div class="row-between-c"><span class="eyebrow-sm">'+esc(t('FIXTURES, IN ORDER'))+'</span>'
+    +'<span style="display:flex;gap:6px">'+sqBtn('data-gm-rev','arrow-up-down','Reverse the order')+sqBtn('data-grp-del','trash-2','Delete the group')+'</span></div>'
+    +'<div style="display:flex;flex-direction:column;gap:5px;margin-top:8px">'+(mem||'<div class="hint">'+esc(t('Empty: add fixtures below'))+'</div>')+'</div></div>'
+    +'<div><div class="eyebrow-sm">'+esc(t('ADD FIXTURES'))+'</div><div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">'+pick+'</div></div>';
+  createIcons(e);
+}
+function groupsChanged(){ markDirty('groups'); renderGroups(); }
+var gmDrag=null;
+function gmDragStart(e){
+  var g=e.target.closest('[data-gm-grip]'); if(!g) return;
+  e.preventDefault();
+  var row=g.closest('[data-gm-row]'); gmDrag={from:+row.getAttribute('data-gm-row'),to:-1}; row.style.opacity='.45';
+  document.addEventListener('pointermove',gmDragMove); document.addEventListener('pointerup',gmDragEnd); document.addEventListener('pointercancel',gmDragEnd);
+}
+function gmDragMove(e){
+  if(!gmDrag) return;
+  var best=-1,bestD=Infinity;
+  document.querySelectorAll('[data-gm-row]').forEach(function(r){ var b=r.getBoundingClientRect(), d=Math.abs(e.clientY-(b.top+b.height/2)); if(d<bestD){ bestD=d; best=+r.getAttribute('data-gm-row'); } });
+  gmDrag.to=best;
+}
+function gmDragEnd(){
+  document.removeEventListener('pointermove',gmDragMove); document.removeEventListener('pointerup',gmDragEnd); document.removeEventListener('pointercancel',gmDragEnd);
+  var d=gmDrag; gmDrag=null; var g=GROUPS[curGroup];
+  if(d && g && d.to>=0 && d.to!==d.from){ var it=g.members.splice(d.from,1)[0]; g.members.splice(d.to,0,it); groupsChanged(); } else renderGroupEditor();
+}
 /* ─────────── DMX control universe ─────────── */
 var CTL={enabled:false,universe:100,address:1,slots:[]}, CTL_STATE='off';
 var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq'];
@@ -2052,6 +2131,7 @@ function saveAll(){
   CHANS.forEach(function(c,i){ if(dirty.has('ch'+i)) ops.push(api('POST','/api/channel/'+i,chanBody(c))); });
   SCENES.forEach(function(s,i){ if(dirty.has('scene'+i)) ops.push(api('POST','/api/scene/'+i,sceneBody(s))); });
   if(dirty.has('control')) ops.push(api('POST','/api/control',ctlBody()));
+  if(dirty.has('groups')) ops.push(api('POST','/api/groups',{groups:GROUPS}));
   toast(t('Saving…'));
   Promise.all(ops).then(function(){ dirty.clear(); langDirty=false; updateSaveBar(); toast(t('✓ saved')); return reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
 }
@@ -2268,6 +2348,16 @@ function onClick(e){
   var reboot=e.target.closest('[data-reboot]'); if(reboot){ openModal('reboot'); return; }
   var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
   var nav=e.target.closest('[data-nav]'); if(nav){ go(nav.getAttribute('data-nav')); return; }
+  var grow=e.target.closest('[data-grp-row]'); if(grow){ curGroup=+grow.getAttribute('data-grp-row'); renderGroups(); return; }
+  if(e.target.closest('[data-grp-new]')){ if(GROUPS.length<MAX_GROUPS){ GROUPS.push({name:t('Group')+' '+(GROUPS.length+1),members:[]}); curGroup=GROUPS.length-1; groupsChanged(); } return; }
+  if(e.target.closest('[data-grp-del]')){ if(GROUPS[curGroup]){ GROUPS.splice(curGroup,1); curGroup=Math.min(curGroup,GROUPS.length-1); groupsChanged(); } return; }
+  if(e.target.closest('[data-gm-rev]')){ if(GROUPS[curGroup]){ GROUPS[curGroup].members.reverse(); groupsChanged(); } return; }
+  var gdel=e.target.closest('[data-gm-del]'); if(gdel){ GROUPS[curGroup].members.splice(+gdel.getAttribute('data-gm-del'),1); groupsChanged(); return; }
+  var gadd=e.target.closest('[data-gm-add]'); if(gadd){ var of=gadd.getAttribute('data-gm-add').split(',').map(Number), gm=GROUPS[curGroup].members, at=-1;
+      gm.forEach(function(m,k){ if(m[0]===of[0]&&m[1]===of[1]) at=k; });
+      if(at>=0) gm.splice(at,1); else if(gm.length<MAX_MEMBERS) gm.push(of); groupsChanged(); return; }
+  var gall=e.target.closest('[data-gm-all]'); if(gall){ var oo=+gall.getAttribute('data-gm-all'), ga=GROUPS[curGroup].members;
+      for(var ff=0;ff<fixtureCount(oo)&&ga.length<MAX_MEMBERS;ff++) if(!ga.some(function(m){ return m[0]===oo&&m[1]===ff; })) ga.push([oo,ff]); groupsChanged(); return; }
   var ladd=e.target.closest('[data-lay-add]'); if(ladd){ var ca=CHANS[curChan]; if(ca){ var kind=ladd.getAttribute('data-lay-add'); ca.lay=ca.lay||[];
       if(!ca.lay.length && ca.pixels>0 && kind!=='s') ca.lay.push({t:'s',n:ca.pixels});  // the strip as it was, then the new entry
       var last=ca.lay.filter(function(it){ return it.t==='f'; }).pop();
@@ -2286,6 +2376,7 @@ function onInput(e){
   if(t.hasAttribute&&t.hasAttribute('data-sc-param')){ var pn=+t.getAttribute('data-sc-param'); SCENES[pn-1].param=parseInt(t.value,10)||0; var pv=document.querySelector('[data-sc-paramval="'+pn+'"]'); if(pv) pv.textContent=paramText(SCENES[pn-1]); markDirty('scene'+(pn-1)); return; }
   if(t.hasAttribute&&t.hasAttribute('data-sc-fixmode')){ var xm=+t.getAttribute('data-sc-fixmode'); SCENES[xm-1].fixmode=t.value; markDirty('scene'+(xm-1)); renderScene(xm); return; }
   if(t.hasAttribute&&t.hasAttribute('data-sc-fxsel')){ var fn=+t.getAttribute('data-sc-fxsel'); SCENES[fn-1].effectIdx=parseInt(t.value,10)||0; markDirty('scene'+(fn-1)); renderScene(fn); return; }
+  if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }
   if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }
   if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); return; }
   if(['n-ip','n-mask','n-gw','n-host','n-long','n-fallback','n-hub'].indexOf(t.id)>=0){ markDirty('network'); return; }
@@ -2319,6 +2410,7 @@ function init(){
   app.addEventListener('pointerdown',scDragStart);
   app.addEventListener('pointerdown',srDragStart);
   app.addEventListener('pointerdown',lyDragStart);
+  app.addEventListener('pointerdown',gmDragStart);
   app.addEventListener('input',onInput);
   app.addEventListener('change',onInput);
   el('ota-file').addEventListener('change',otaUpload);

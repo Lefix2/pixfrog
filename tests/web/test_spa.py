@@ -229,6 +229,26 @@ def test_fixtures_by_size_in_order_and_reordered_by_drag(page, device):
     assert len(device.get("/api/config")["channels"][0]["fixtures"]) == 4
 
 
+def test_fixture_groups_pick_order_and_save(page, device):
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 295, "fixtures": [[1, 59], [61, 59], [121, 59], [181, 59], [241, 59]], "gaps": [[60, 1], [120, 1], [180, 1], [240, 1]]})
+    page.reload()
+    nav(page, "groups")
+    page.locator("[data-grp-new]").click()
+    page.locator("#grp-name").fill("Top")
+    page.locator("#grp-name").dispatch_event("change")
+    page.locator('[data-gm-add="0,2"]').click()
+    page.locator('[data-gm-all="0"]').click()  # the rest of output 1, after it
+    expect(page.locator("[data-gm-row]")).to_have_count(5)
+    page.locator('[data-gm-add="0,4"]').click()  # picked again: removed
+    page.locator("[data-gm-rev]").click()
+    save(page)
+    g = device.get("/api/config")["groups"]
+    assert g == [{"name": "Top", "members": [[0, 3], [0, 1], [0, 0], [0, 2]]}]
+    drag(page, page.locator("[data-gm-row='3'] [data-gm-grip]"), page.locator("[data-gm-row='0']"))
+    save(page)
+    assert device.get("/api/config")["groups"][0]["members"][0] == [0, 2]
+
+
 def test_scene_fixture_mode(page, device):
     nav(page, "scenes")
     page.locator("[data-sc-fixmode]").first.select_option("mirror")

@@ -25,6 +25,7 @@ ChannelConfig g_channels[kNumChannels]{};
 SceneBank g_bank{};
 ControlConfig g_control{};
 FseqPlaylist g_playlist{};
+GroupsConfig g_groups{};
 bool g_nvs_ok = false;
 
 // The config lock (see ScopedLock). Created by init(); before that (and if
@@ -45,6 +46,7 @@ constexpr const char* kKeyScenes   = "scenes";
 constexpr const char* kKeyRollback = "rollback";
 constexpr const char* kKeyControl  = "control";
 constexpr const char* kKeyPlaylist = "playlist";
+constexpr const char* kKeyGroups   = "groups";
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
@@ -253,6 +255,7 @@ bool nvs_hard_reset() {
 void fill_ram_defaults() {
     g_control  = default_control();
     g_playlist = FseqPlaylist{};
+    g_groups   = GroupsConfig{};
     g_global   = make_default_global();
     for (size_t i = 0; i < kNumChannels; ++i)
         g_channels[i] = make_default_channel(i);
@@ -367,6 +370,10 @@ void init() {
     if (!nvs_load_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist)))
         g_playlist = FseqPlaylist{};
     sanitize_playlist(g_playlist);
+
+    // Fixture groups: absent before they existed — none.
+    if (!nvs_load_blob(h, kKeyGroups, &g_groups, sizeof(g_groups))) g_groups = GroupsConfig{};
+    sanitize_groups(g_groups);
 
     nvs_commit(h);
     nvs_close(h);
@@ -696,6 +703,7 @@ void reset_to_defaults() {
     save_scenes(h);
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
     nvs_save_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist));
+    nvs_save_blob(h, kKeyGroups, &g_groups, sizeof(g_groups));
     nvs_commit(h);
     nvs_close(h);
 }
@@ -712,6 +720,23 @@ bool set_control(const ControlConfig& cfg) {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
+}
+
+const GroupsConfig& get_groups() {
+    return g_groups;
+}
+
+bool set_groups(const GroupsConfig& g) {
+    ScopedLock lock;
+    g_groups = g;
+    sanitize_groups(g_groups);
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_save_blob(h, kKeyGroups, &g_groups, sizeof(g_groups));
     nvs_commit(h);
     nvs_close(h);
     return true;

@@ -779,6 +779,64 @@ inline void sanitize_playlist(FseqPlaylist& p) {
 const FseqPlaylist& get_playlist();
 bool set_playlist(const FseqPlaylist& p);
 
+// ── Fixture groups ──────────────────────────────────────────────────────────
+// Named, ordered sets of fixtures taken on any outputs ("Top", "Bottom",
+// "Centre", one bar…): where a scene plays. The order is the virtual strip a
+// scene runs along (chain / mirror), whatever the wiring. A member is a
+// fixture by output and index in that output's strip order — editing an
+// output's fixture list can shift what a group points at. Own NVS blob,
+// absent on an upgrade (= no groups).
+constexpr size_t kMaxGroups       = 16;
+constexpr size_t kMaxGroupMembers = 64;
+constexpr size_t kGroupNameMax    = 16;
+struct FixtureRef {
+    uint8_t output;   // 0..kNumChannels-1
+    uint8_t fixture;  // 0..kMaxFixtures-1, in the output's strip order
+};
+struct FixtureGroup {
+    char name[kGroupNameMax];  // NUL-terminated
+    uint8_t count;             // members in use
+    uint8_t reserved[3];
+    FixtureRef members[kMaxGroupMembers];
+};
+struct GroupsConfig {
+    uint8_t count;  // groups in use
+    uint8_t reserved[3];
+    FixtureGroup groups[kMaxGroups];
+};
+
+// Counts capped, names terminated, members out of range or repeated dropped
+// (the rest close up), unused slots zeroed. A group keeps its place even
+// when empty (scenes and the desk refer to groups by index).
+inline void sanitize_groups(GroupsConfig& g) {
+    if (g.count > kMaxGroups) g.count = kMaxGroups;
+    std::memset(g.reserved, 0, sizeof(g.reserved));
+    for (size_t i = 0; i < kMaxGroups; ++i) {
+        FixtureGroup& fg = g.groups[i];
+        if (i >= g.count) {
+            fg = FixtureGroup{};
+            continue;
+        }
+        fg.name[kGroupNameMax - 1] = '\0';
+        std::memset(fg.reserved, 0, sizeof(fg.reserved));
+        if (fg.count > kMaxGroupMembers) fg.count = kMaxGroupMembers;
+        size_t keep = 0;
+        for (size_t m = 0; m < fg.count; ++m) {
+            const FixtureRef r = fg.members[m];
+            bool dup           = r.output >= kNumChannels || r.fixture >= kMaxFixtures;
+            for (size_t k = 0; k < keep && !dup; ++k)
+                dup = fg.members[k].output == r.output && fg.members[k].fixture == r.fixture;
+            if (!dup) fg.members[keep++] = r;
+        }
+        for (size_t m = keep; m < kMaxGroupMembers; ++m)
+            fg.members[m] = FixtureRef{};
+        fg.count = static_cast<uint8_t>(keep);
+    }
+}
+
+const GroupsConfig& get_groups();
+bool set_groups(const GroupsConfig& g);
+
 // Restore defaults (factory reset). Does NOT reboot.
 void reset_to_defaults();
 
