@@ -51,9 +51,10 @@ on the one before.
 
 - [ ] ★ **GDTF export of a profile** — a native fixture file for GrandMA3, next
       to the OFL one.
-- [ ] **Fixture groups as a scene target** — a scene part aimed at a fixture
-      group (across outputs, in the group's order) rather than an output mask;
-      the groups are stored but nothing renders by them yet.
+- [ ] **Scene parts aimed at fixture groups** — on a group a scene plays its
+      first part only; let each part target a group (across outputs, in the
+      group's order) next to the parts on outputs, so one scene holds several
+      effects on several groups.
 - [ ] **Smooth live speed changes** — the phase is `time × speed`, so riding a
       speed fader makes the pattern jump; accumulate the phase per fixture.
 
