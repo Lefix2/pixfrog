@@ -241,7 +241,12 @@ ctrl add wings f0
 ctrl set 0 master ff 0 1
 ctrl del 1
 scene play 1 0f
-scene stop 1""".splitlines()
+scene stop 1
+scene part 0 0f 1 mirror rev
+scene group 0 1
+scene play 0 group 0
+ctrl add bank g0
+ctrl add direction g1""".splitlines()
 
 # fuzz_web_api: byte 0 = route index (kRoutes order), byte 1 = wildcard index.
 ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/scene",
@@ -296,6 +301,13 @@ WEB = [
     (R["GET /api/control/fixture"], 0, ""),
     (R["/api/scene"], 1, '{"outputs":240}'),
     (R["/api/global"], 0, '{"scene_fade_ms":2500}'),
+    # Scenes on fixture groups: a default group, a part from the far end, a
+    # play on a group, control channels aimed at one.
+    (R["/api/scene"], 0, '{"group":0,"parts":[{"mask":0,"effect":2,"fixture_mode":"mirror",'
+                         '"reverse":true}]}'),
+    (R["/api/scene"], 1, '{"group":0}'),
+    (R["/api/control"], 0, '{"slots":[{"fn":"bank","group":0},{"fn":"direction","group":1},'
+                           '{"fn":"fixmode","mask":3}]}'),
 ]
 
 

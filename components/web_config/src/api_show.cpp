@@ -28,6 +28,7 @@ cJSON* build_control_json() {
         cJSON_AddNumberToObject(j, "mask", sl.mask);
         cJSON_AddNumberToObject(j, "index", sl.index);
         cJSON_AddBoolToObject(j, "fine", (sl.flags & config::kCtlFlagFine) != 0);
+        cJSON_AddNumberToObject(j, "group", config::control_slot_group(sl));  // -1 = its outputs
         cJSON_AddItemToArray(js, j);
     }
     cJSON_AddItemToObject(jc, "slots", js);
@@ -91,6 +92,14 @@ bool apply_control_json(const cJSON* jc, config::ControlConfig& c, const char** 
             if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(js, "fine")) &&
                 f == static_cast<int>(config::CtlFn::Master))
                 sl.flags = config::kCtlFlagFine;
+            // "group": g acts on that fixture group instead of the outputs.
+            const cJSON* gr = cJSON_GetObjectItemCaseSensitive(js, "group");
+            if (cJSON_IsNumber(gr) && gr->valuedouble >= 0) {
+                if (gr->valuedouble >= config::kMaxGroups)
+                    return *why = "slots[].group: 0..15 (-1 = its outputs)", false;
+                sl.mask   = static_cast<uint8_t>(gr->valuedouble);
+                sl.flags |= config::kCtlFlagGroup;
+            }
             parsed[n++] = sl;
         }
         std::memcpy(c.slots, parsed, sizeof(c.slots));
@@ -297,6 +306,27 @@ static cJSON* ofl_channel(const config::ControlSlot& sl) {
         cJSON_AddItemToObject(ch, "capability", c);
         break;
     }
+    case config::CtlFn::Direction: {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        cJSON* c = ofl_cap("EffectParameter");
+        cJSON_AddStringToObject(c, "comment", "Forward");
+        ofl_range(caps, 1, 127, c);
+        c = ofl_cap("EffectParameter");
+        cJSON_AddStringToObject(c, "comment", "From the far end (mirror: centre out)");
+        ofl_range(caps, 128, 255, c);
+        break;
+    }
+    case config::CtlFn::FixMode: {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        const char* const kModes[4] = { "Each fixture", "Fixtures in a row", "Mirrored",
+                                        "Whole strip" };
+        for (int b = 0; b < 4; ++b) {
+            cJSON* c = ofl_cap("EffectParameter");
+            cJSON_AddStringToObject(c, "comment", kModes[b]);
+            ofl_range(caps, b ? b * 64 : 1, b * 64 + 63, c);
+        }
+        break;
+    }
     case config::CtlFn::Fseq: {
         cJSON* c = ofl_cap("Generic");
         cJSON_AddStringToObject(c, "comment", "Stop the show file");
@@ -334,6 +364,8 @@ static const char* ofl_base_name(const config::ControlSlot& sl, char* buf, size_
     case config::CtlFn::Effect: return "Generator";
     case config::CtlFn::Fade: return "Fade time";
     case config::CtlFn::Fseq: return "Show file";
+    case config::CtlFn::Direction: return "Direction";
+    case config::CtlFn::FixMode: return "Fixture mode";
     case config::CtlFn::Bank: return "Effect";
     case config::CtlFn::PhWave: return "Phaser wave";
     case config::CtlFn::PhRate: return "Phaser rate";
@@ -425,7 +457,11 @@ static cJSON* build_fixture_json() {
             cJSON_AddItemToArray(mode_chs, cJSON_CreateNull());
             continue;
         }
-        ofl_channel_name(base, sizeof(base), b, sl.mask);
+        const int grp = config::control_slot_group(sl);
+        if (grp >= 0 && grp < config::get_groups().count)  // "Master (Top)"
+            snprintf(base, sizeof(base), "%s (%s)", b, config::get_groups().groups[grp].name);
+        else
+            ofl_channel_name(base, sizeof(base), b, sl.mask);
         ofl_add_channel(avail, mode_chs, base, ofl_channel(sl),
                         config::control_slot_width(sl) == 2);
     }
@@ -487,6 +523,17 @@ cJSON* build_show_json() {
     for (size_t o = 0; o < config::kNumChannels; ++o)
         cJSON_AddItemToArray(jso, cJSON_CreateNumber(dmx::scene_on_output(o)));
     cJSON_AddItemToObject(js, "scenes", jso);
+    // Scenes on groups: [[scene, group], ...] (the fixtures they own).
+    dmx::PlayInfo plays[16];
+    const size_t np = dmx::active_plays(plays, 16);
+    cJSON* jpl      = cJSON_CreateArray();
+    for (size_t i = 0; i < np && i < 16; ++i) {
+        cJSON* p = cJSON_CreateArray();
+        cJSON_AddItemToArray(p, cJSON_CreateNumber(plays[i].scene));
+        cJSON_AddItemToArray(p, cJSON_CreateNumber(plays[i].group));
+        cJSON_AddItemToArray(jpl, p);
+    }
+    cJSON_AddItemToObject(js, "plays", jpl);
     return js;
 }
 
@@ -852,20 +899,30 @@ esp_err_t handle_post_scene(httpd_req_t* req) {
         return send_err(req, 404, "no such scene");
 
     if (strstr(tail, "/play")) {
-        // Optional {"outputs": mask}: the zone to claim (∩ the scene's mask).
+        // Optional {"outputs": mask}: the zone to claim (∩ the scene's mask),
+        // or {"group": g}: play on that fixture group.
         uint8_t outs = dmx::kAllOutputs;
+        int group    = -1;
         if (req->content_len > 0) {
             char pb[64];
             if (!read_body(req, pb, sizeof(pb) - 1)) return send_err(req, 400, "body too large");
             cJSON* pj       = cJSON_Parse(pb);
             const cJSON* jo = pj ? cJSON_GetObjectItemCaseSensitive(pj, "outputs") : nullptr;
-            const bool bad  = !pj || (jo && (!cJSON_IsNumber(jo) ||
-                                            !(jo->valuedouble >= 1 && jo->valuedouble <= 255)));
+            const cJSON* jg = pj ? cJSON_GetObjectItemCaseSensitive(pj, "group") : nullptr;
+            const bool bad  = !pj ||
+                             (jo && (!cJSON_IsNumber(jo) ||
+                                     !(jo->valuedouble >= 1 && jo->valuedouble <= 255))) ||
+                             (jg && (!cJSON_IsNumber(jg) || jg->valuedouble < 0 ||
+                                     jg->valuedouble >= config::get_groups().count));
             if (!bad && jo) outs = static_cast<uint8_t>(jo->valuedouble);
+            if (!bad && jg) group = static_cast<int>(jg->valuedouble);
             cJSON_Delete(pj);
-            if (bad) return send_err(req, 400, "outputs: 1..255");
+            if (bad) return send_err(req, 400, "outputs: 1..255, or group: an existing group");
         }
-        dmx::scene_start_on(static_cast<uint8_t>(idx), outs);
+        if (group >= 0)
+            dmx::group_play(static_cast<uint8_t>(idx), static_cast<uint8_t>(group));
+        else
+            dmx::scene_start_on(static_cast<uint8_t>(idx), outs);
         return send_ok(req);
     }
     if (strstr(tail, "/stop")) {

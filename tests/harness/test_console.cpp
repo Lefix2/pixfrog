@@ -312,7 +312,7 @@ TEST(profile_commands_edit_the_bank) {
 
 TEST(scene_commands_manage_the_list) {
     EXPECT_TRUE(run("scene"));
-    EXPECT_TRUE(has("scene1 name=Chase mask=ff parts=ff:1:each"));
+    EXPECT_TRUE(has("scene1 name=Chase mask=ff group=-1 parts=ff:1:each"));
     EXPECT_TRUE(run("scene add Extra"));
     EXPECT_TRUE(has("index="));
     const size_t n = config::num_scenes();
@@ -330,7 +330,21 @@ TEST(scene_commands_manage_the_list) {
     EXPECT_EQ(config::get_scene(0).parts[0].effect, 3);
     EXPECT_EQ(config::get_scene(0).parts[0].fixture_mode, config::kFixtureModeEach);
     EXPECT_TRUE(run("scene"));
-    EXPECT_TRUE(has("scene0 name=Warm white mask=ff parts=ff:3:each"));
+    EXPECT_TRUE(has("scene0 name=Warm white mask=ff group=-1 parts=ff:3:each"));
+    // From the far end, and a default group.
+    EXPECT_TRUE(run("scene part 0 ff 3 mirror rev"));
+    EXPECT_TRUE(config::scene_reverse_of(config::get_scene(0).parts[0].fixture_mode));
+    EXPECT_TRUE(run("scene group 0 4"));
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), 4);
+    EXPECT_TRUE(run("scene"));
+    EXPECT_TRUE(has("scene0 name=Warm white mask=ff group=4 parts=ff:3:mirror:rev"));
+    EXPECT_TRUE(run("scene group 0 none"));
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), -1);
+    EXPECT_FALSE(run("scene group 0 16"));
+    EXPECT_FALSE(run("scene group 0"));
+    EXPECT_TRUE(run("scene part 0 ff 3 rev"));  // the mode left out: each
+    EXPECT_EQ(config::get_scene(0).parts[0].fixture_mode, config::kSceneReverseBit);
+    EXPECT_TRUE(run("scene part 0 ff 3"));
     for (int o = 0; o < 8; ++o) {  // one part per output: the eight are taken
         char line[40];
         std::snprintf(line, sizeof(line), "scene part 0 %02x %d strip", 1 << o, o);
@@ -348,6 +362,19 @@ TEST(scene_commands_manage_the_list) {
 
     EXPECT_TRUE(run("scene play 0"));
     EXPECT_EQ(dmx::active_scene(), 0);
+    {  // on a fixture group
+        static config::GroupsConfig g{};
+        g       = config::GroupsConfig{};
+        g.count = 1;
+        std::strcpy(g.groups[0].name, "A");
+        g.groups[0].count      = 1;
+        g.groups[0].members[0] = { 0, 0 };
+        config::set_groups(g);
+        EXPECT_TRUE(run("scene play 0 group 0"));
+        EXPECT_TRUE(has("group=0"));
+        EXPECT_FALSE(run("scene play 0 group 3"));  // no such group
+        config::set_groups(config::GroupsConfig{});
+    }
     EXPECT_TRUE(run("scene move 0 1"));
     EXPECT_EQ(dmx::active_scene(), 1);  // the playing scene followed
     EXPECT_TRUE(run("scene del 1"));
@@ -600,6 +627,10 @@ TEST(ctrl_composes_the_control_mode) {
     EXPECT_EQ(dmx::control_universe(), -1);
     run("ctrl address 1");
     run("ctrl preset simple");
+    EXPECT_TRUE(run("ctrl clear"));
+    EXPECT_TRUE(run("ctrl add direction g1"));  // on fixture group 1
+    EXPECT_TRUE(has("group=1"));
+    EXPECT_FALSE(run("ctrl add scene g99"));
 }
 
 TEST(scene_play_on_a_zone_and_stop_one_scene) {

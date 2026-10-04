@@ -116,6 +116,37 @@ std::atomic<uint16_t> g_fade_len_ms[config::kNumChannels];
 // Crossfade source render target (render task only), internal SRAM.
 uint8_t* g_scratch = nullptr;
 
+// ── Scenes on groups ──
+// Writers (any task, under g_play_mux): the plays (scene × group) and which
+// play owns each fixture (-1 = none: the fixture shows its output's own
+// source), plus a crossfade request per fixture whose owner changed. The
+// render task copies all that once a frame (plays_frame_begin) and draws each
+// play once along its group, then lays the slices over the outputs.
+constexpr size_t kMaxPlays    = 16;
+constexpr size_t kMaxStripPx  = 4096;  // a group's virtual strip
+constexpr uint16_t kNoFadeReq = 0xFFFF;
+struct Play {
+    int8_t scene = -1;  // -1 = slot free
+    int8_t group = -1;
+};
+SemaphoreHandle_t g_play_mux = nullptr;
+Play g_plays[kMaxPlays];
+int8_t g_owner[config::kNumChannels][config::kMaxFixtures];
+uint16_t g_fade_req[config::kNumChannels][config::kMaxFixtures];  // ms, kNoFadeReq = none
+// Render task only: this frame's copy, the spans, the strips, the fades.
+Play g_plays_r[kMaxPlays];
+int8_t g_owner_r[config::kNumChannels][config::kMaxFixtures];
+uint16_t g_fade_req_r[config::kNumChannels][config::kMaxFixtures];
+config::FixtureGroup g_group_r[kMaxPlays];
+logic::Span g_spans_r[config::kNumChannels][config::kMaxFixtures];
+uint8_t* g_play_strip[kMaxPlays]{};  // PSRAM, kMaxStripPx RGB each
+uint32_t g_play_offs[kMaxPlays][config::kMaxGroupMembers];
+uint16_t g_play_lens[kMaxPlays][config::kMaxGroupMembers];
+bool g_play_ok[kMaxPlays];
+uint8_t* g_fix_snap[config::kNumChannels]{};  // PSRAM: what a fading fixture showed
+uint32_t g_fix_fade_start[config::kNumChannels][config::kMaxFixtures];
+uint16_t g_fix_fade_len[config::kNumChannels][config::kMaxFixtures];
+
 // Local show values (web/TFT/UART/ArtTrigger).
 std::atomic<uint16_t> g_local_master[config::kNumChannels];
 // Read-modify-write atomics (exchange, fetch_*) must be 32-bit on the P4: a
@@ -131,6 +162,11 @@ std::atomic<uint8_t> g_dmx_strobe[config::kNumChannels];
 std::atomic<int32_t> g_dmx_fade_ms{ -1 };
 // Render-task-only control state.
 logic::EffectOverride g_ovr[config::kNumChannels];
+// The same for group-targeted control slots (render task only): overrides for
+// the scenes playing on each group, and a master / blackout over its bars.
+logic::EffectOverride g_govr[config::kMaxGroups];
+uint16_t g_gmaster[config::kMaxGroups];
+uint32_t g_gblackout = 0;
 uint8_t g_ctrl_prev_band[config::kMaxControlSlots];
 int16_t g_ctrl_prev_fseq = -1;
 bool g_ctrl_was_live     = false;
@@ -319,6 +355,39 @@ bool init() {
     g_sync_sem = xSemaphoreCreateBinary();
     if (!g_sync_sem) {
         ESP_LOGE(TAG, "sync semaphore alloc failed");
+        return false;
+    }
+
+    // Scenes on groups: a strip per play and a snapshot per output, in PSRAM
+    // (allocated once: init() may run again).
+    for (auto& m : g_gmaster)
+        m = kMasterFull;
+    if (!g_play_mux) g_play_mux = xSemaphoreCreateMutex();
+    if (!g_play_mux) {
+        ESP_LOGE(TAG, "group plays mutex alloc failed");
+        return false;
+    }
+    for (auto& row : g_owner)
+        for (auto& o : row)
+            o = -1;
+    for (auto& row : g_fade_req)
+        for (auto& r : row)
+            r = kNoFadeReq;
+    for (size_t i = 0; i < kMaxPlays; ++i)
+        if (!g_play_strip[i])
+            g_play_strip[i] = static_cast<uint8_t*>(
+                heap_caps_calloc(1, kMaxStripPx * 3, MALLOC_CAP_SPIRAM));
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if (!g_fix_snap[o])
+            g_fix_snap[o] = static_cast<uint8_t*>(
+                heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_SPIRAM));
+    bool all = g_play_mux != nullptr;
+    for (auto* p : g_play_strip)
+        all = all && p;
+    for (auto* p : g_fix_snap)
+        all = all && p;
+    if (!all) {
+        ESP_LOGE(TAG, "alloc for the group scenes failed");
         return false;
     }
 
@@ -558,6 +627,102 @@ void assign_output(size_t o, int8_t to, int32_t fade_ms) {
 
 }  // namespace
 
+namespace {
+
+uint16_t fade_len(int32_t fade_ms) {
+    const uint32_t len = fade_ms < 0 ? scene_fade_ms() : static_cast<uint32_t>(fade_ms);
+    return static_cast<uint16_t>(len > config::kMaxSceneFadeMs ? config::kMaxSceneFadeMs : len);
+}
+
+// With g_play_mux held: fixture (o, f) to `play` (-1 = back to its output),
+// crossfading; plays left without a fixture free their slot.
+void set_owner_locked(size_t o, size_t f, int8_t play, uint16_t fade) {
+    if (g_owner[o][f] == play) return;
+    g_owner[o][f]    = play;
+    g_fade_req[o][f] = fade;
+}
+
+void collect_plays_locked() {
+    for (size_t p = 0; p < kMaxPlays; ++p) {
+        if (g_plays[p].scene < 0) continue;
+        bool used = false;
+        for (size_t o = 0; o < config::kNumChannels && !used; ++o)
+            for (size_t f = 0; f < config::kMaxFixtures && !used; ++f)
+                used = g_owner[o][f] == static_cast<int8_t>(p);
+        if (!used) g_plays[p] = Play{};
+    }
+}
+
+// Releases every fixture whose owner matches `pred(play)` (or on `outputs`).
+template <typename Pred> void release_locked(uint8_t outputs, Pred pred, uint16_t fade) {
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        for (size_t f = 0; f < config::kMaxFixtures; ++f) {
+            const int8_t p = g_owner[o][f];
+            if (p >= 0 && (((outputs >> o) & 1) || pred(g_plays[p])))
+                set_owner_locked(o, f, -1, fade);
+        }
+    collect_plays_locked();
+}
+
+struct PlayLock {
+    PlayLock() {
+        if (g_play_mux) xSemaphoreTake(g_play_mux, portMAX_DELAY);
+    }
+    ~PlayLock() {
+        if (g_play_mux) xSemaphoreGive(g_play_mux);
+    }
+};
+
+}  // namespace
+
+void group_play(uint8_t scene_index, uint8_t group, int32_t fade_ms) {
+    if (scene_index >= config::num_scenes() || group >= config::get_groups().count) return;
+    const config::FixtureGroup g = config::get_groups().groups[group];
+    const uint16_t fade          = fade_len(fade_ms);
+    PlayLock lock;
+    int slot = -1;
+    for (size_t p = 0; p < kMaxPlays && slot < 0; ++p)
+        if (g_plays[p].scene == static_cast<int8_t>(scene_index) &&
+            g_plays[p].group == static_cast<int8_t>(group))
+            slot = static_cast<int>(p);
+    for (size_t p = 0; p < kMaxPlays && slot < 0; ++p)
+        if (g_plays[p].scene < 0) slot = static_cast<int>(p);
+    if (slot < 0) {
+        ESP_LOGW(TAG, "%u plays at once: no slot left", static_cast<unsigned>(kMaxPlays));
+        return;
+    }
+    g_plays[slot] = Play{ static_cast<int8_t>(scene_index), static_cast<int8_t>(group) };
+    for (size_t m = 0; m < g.count; ++m)
+        set_owner_locked(g.members[m].output, g.members[m].fixture, static_cast<int8_t>(slot),
+                         fade);
+    collect_plays_locked();
+}
+
+void group_stop(uint8_t group, int32_t fade_ms) {
+    PlayLock lock;
+    release_locked(
+        0, [group](const Play& p) { return p.group == static_cast<int8_t>(group); },
+        fade_len(fade_ms));
+}
+
+int fixture_scene(size_t ch, size_t fixture) {
+    if (ch >= config::kNumChannels || fixture >= config::kMaxFixtures) return -1;
+    PlayLock lock;
+    const int8_t p = g_owner[ch][fixture];
+    return p < 0 ? -1 : g_plays[p].scene;
+}
+
+size_t active_plays(PlayInfo* out, size_t cap) {
+    PlayLock lock;
+    size_t n = 0;
+    for (size_t p = 0; p < kMaxPlays; ++p)
+        if (g_plays[p].scene >= 0) {
+            if (n < cap) out[n] = PlayInfo{ g_plays[p].scene, g_plays[p].group };
+            ++n;
+        }
+    return n;
+}
+
 uint32_t scene_fade_ms() {
     const int32_t desk = g_dmx_fade_ms.load(std::memory_order_relaxed);
     return desk >= 0 ? static_cast<uint32_t>(desk) : config::get_global().scene_fade_ms;
@@ -571,7 +736,17 @@ void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t fade_ms) {
     if (scene_index >= config::num_scenes()) return;
     config::Scene scene;
     config::copy_scene(scene_index, scene);
+    // A scene with a default group, started everywhere: it plays on its group.
+    const int group = config::scene_group(scene);
+    if (outputs == kAllOutputs && group >= 0 && group < config::get_groups().count) {
+        group_play(scene_index, static_cast<uint8_t>(group), fade_ms);
+        return;
+    }
     const uint8_t mask = outputs & config::scene_mask(scene);
+    {
+        PlayLock lock;  // the outputs it takes show it whole: their fixtures too
+        release_locked(mask, [](const Play&) { return false; }, fade_len(fade_ms));
+    }
     for (size_t o = 0; o < config::kNumChannels; ++o)
         if ((mask >> o) & 1) assign_output(o, static_cast<int8_t>(scene_index), fade_ms);
 }
@@ -581,15 +756,35 @@ void scene_stop() {
 }
 
 void scene_stop_on(uint8_t outputs, int32_t fade_ms) {
+    {
+        PlayLock lock;
+        release_locked(outputs, [](const Play&) { return false; }, fade_len(fade_ms));
+    }
     for (size_t o = 0; o < config::kNumChannels; ++o)
         if ((outputs >> o) & 1) assign_output(o, -1, fade_ms);
 }
 
 void scene_stop_scene(uint8_t scene_index) {
+    {
+        PlayLock lock;
+        release_locked(
+            0, [scene_index](const Play& p) { return p.scene == static_cast<int8_t>(scene_index); },
+            fade_len(kDefaultFade));
+    }
     scene_stop_on(scene_outputs(scene_index));
 }
 
 void scene_list_edited(config::SceneEdit op, size_t a, size_t b) {
+    {
+        PlayLock lock;  // plays follow their scene too (a deleted one stops)
+        for (auto& p : g_plays)
+            if (p.scene >= 0)
+                p.scene = static_cast<int8_t>(config::remap_scene_index(p.scene, op, a, b));
+        for (size_t o = 0; o < config::kNumChannels; ++o)
+            for (size_t f = 0; f < config::kMaxFixtures; ++f)
+                if (g_owner[o][f] >= 0 && g_plays[g_owner[o][f]].scene < 0) g_owner[o][f] = -1;
+        collect_plays_locked();
+    }
     for (size_t o = 0; o < config::kNumChannels; ++o) {
         g_scene_out[o].store(static_cast<int8_t>(config::remap_scene_index(
                                  g_scene_out[o].load(std::memory_order_relaxed), op, a, b)),
@@ -720,14 +915,20 @@ void update_show_control() {
             }
             g_dmx_blackout.store(0, std::memory_order_relaxed);
             g_dmx_fade_ms.store(-1, std::memory_order_relaxed);
+            for (auto& m : g_gmaster)
+                m = kMasterFull;
+            g_gblackout     = 0;
             g_ctrl_was_live = false;
             ESP_LOGW(TAG, "control universe lost: master/blackout/strobe released");
         }
         // Scene overrides survive a lost signal (the look holds), but not the
         // control universe being switched off.
-        if (!config::get_control().enabled)
+        if (!config::get_control().enabled) {
             for (auto& o : g_ovr)
                 o = logic::EffectOverride{};
+            for (auto& o : g_govr)
+                o = logic::EffectOverride{};
+        }
         return;
     }
     const auto& c        = config::get_control();
@@ -743,16 +944,29 @@ void update_show_control() {
     }
     g_dmx_blackout.store(ev.blackout, std::memory_order_relaxed);
     g_dmx_fade_ms.store(ev.fade_ms, std::memory_order_relaxed);
+    for (size_t gi = 0; gi < config::kMaxGroups; ++gi) {
+        g_govr[gi]    = ev.govr[gi];
+        g_gmaster[gi] = ev.gmaster[gi];
+    }
+    g_gblackout = ev.gblackout;
 
     const bool first = !g_ctrl_was_live;
     for (uint8_t i = 0; i < ev.n_scene; ++i) {
         const uint8_t band = ev.scene_band[i];
         if (!first && band == g_ctrl_prev_band[i]) continue;
         g_ctrl_prev_band[i] = band;
+        const int group     = ev.scene_group[i];
         if (band == 0) {
-            if (!first) scene_stop_on(ev.scene_mask[i]);
+            if (first) continue;
+            if (group >= 0)
+                group_stop(static_cast<uint8_t>(group));
+            else
+                scene_stop_on(ev.scene_mask[i]);
         } else if (band - 1u < config::num_scenes()) {
-            scene_start_on(static_cast<uint8_t>(band - 1), ev.scene_mask[i]);
+            if (group >= 0)
+                group_play(static_cast<uint8_t>(band - 1), static_cast<uint8_t>(group));
+            else
+                scene_start_on(static_cast<uint8_t>(band - 1), ev.scene_mask[i]);
         }
     }
     if (ev.fseq_band >= 0 && (first || ev.fseq_band != g_ctrl_prev_fseq)) {
@@ -798,6 +1012,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
                 config::copy_effect(static_cast<size_t>(g_ovr[ch].bank), picked))
                 effect = picked;
             logic::apply_effect_override(effect, g_ovr[ch]);
+            mode = logic::apply_mode_override(mode, g_ovr[ch]);
             logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, mode, t);
             return;
         }
@@ -835,6 +1050,109 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
     }
 
     decode_live(cc, buf, t);
+}
+
+}  // namespace
+
+namespace {
+
+// Render task, once a frame: this frame's plays, owners and fade requests, the
+// fixture spans of every output, and each play's strip drawn once.
+void plays_frame_begin(uint64_t t) {
+    {
+        PlayLock lock;
+        std::memcpy(g_plays_r, g_plays, sizeof(g_plays));
+        std::memcpy(g_owner_r, g_owner, sizeof(g_owner));
+        std::memcpy(g_fade_req_r, g_fade_req, sizeof(g_fade_req));
+        for (auto& row : g_fade_req)
+            for (auto& r : row)
+                r = kNoFadeReq;
+    }
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        logic::fixture_spans_by_index(effective_channel(o), g_spans_r[o]);
+    const auto& groups = config::get_groups();
+    for (size_t p = 0; p < kMaxPlays; ++p) {
+        g_play_ok[p]  = false;
+        const Play pl = g_plays_r[p];
+        if (pl.scene < 0 || pl.group < 0 || pl.group >= groups.count || !g_play_strip[p] ||
+            static_cast<size_t>(pl.scene) >= config::num_scenes())
+            continue;
+        g_group_r[p]  = groups.groups[pl.group];
+        const auto& g = g_group_r[p];
+        uint32_t at   = 0;
+        for (size_t m = 0; m < g.count; ++m) {
+            const auto& r      = g.members[m];
+            g_play_offs[p][m]  = at;
+            g_play_lens[p][m]  = g_spans_r[r.output][r.fixture].count;
+            at                += g_play_lens[p][m];
+        }
+        // A group plays the scene's look: its first part's effect and mode.
+        config::Effect effect;
+        uint8_t mode;
+        if (!config::copy_scene_look(static_cast<size_t>(pl.scene), effect, mode)) continue;
+        const logic::EffectOverride& ovr = g_govr[pl.group];  // the desk, on this group
+        config::Effect picked;
+        if (ovr.bank >= 0 && config::copy_effect(static_cast<size_t>(ovr.bank), picked))
+            effect = picked;
+        logic::apply_effect_override(effect, ovr);
+        mode         = logic::apply_mode_override(mode, ovr);
+        g_play_ok[p] = logic::render_group_strip(g_play_strip[p], kMaxStripPx * 3, g_play_lens[p],
+                                                 g.count, effect, mode, t) > 0;
+    }
+}
+
+// The plays' slices over output `ch`, then the per-fixture crossfades from
+// what each changed fixture showed.
+void overlay_plays(size_t ch, uint8_t* dst, uint8_t bpp, uint64_t t) {
+    const uint8_t* front = pixel_front_buffer(ch);
+    for (size_t f = 0; f < config::kMaxFixtures; ++f) {
+        const logic::Span& sp = g_spans_r[ch][f];
+        if (sp.count == 0) continue;
+        const size_t at    = static_cast<size_t>(sp.first) * bpp;
+        const size_t bytes = static_cast<size_t>(sp.count) * bpp;
+        if (g_fade_req_r[ch][f] != kNoFadeReq) {  // its owner changed: fade from what it shows
+            g_fix_fade_len[ch][f]   = g_fade_req_r[ch][f];
+            g_fix_fade_start[ch][f] = static_cast<uint32_t>(t);
+            if (front && g_fix_snap[ch]) std::memcpy(g_fix_snap[ch] + at, front + at, bytes);
+        }
+        const int8_t p = g_owner_r[ch][f];
+        if (p >= 0 && g_play_ok[p]) {
+            const auto& g = g_group_r[p];
+            for (size_t m = 0; m < g.count; ++m)
+                if (g.members[m].output == ch && g.members[m].fixture == f) {
+                    logic::put_member(dst, bpp, sp, g_play_strip[p] + g_play_offs[p][m] * 3,
+                                      g_play_lens[p][m]);
+                    break;
+                }
+        }
+        const uint16_t len = g_fix_fade_len[ch][f];
+        if (len && g_fix_snap[ch]) {
+            const uint32_t elapsed = static_cast<uint32_t>(t) - g_fix_fade_start[ch][f];
+            if (elapsed < len)
+                logic::blend_into(dst + at, g_fix_snap[ch] + at, bytes,
+                                  logic::fade_weight(elapsed, len));
+            else
+                g_fix_fade_len[ch][f] = 0;
+        }
+    }
+}
+
+// A desk's group master / blackout over that group's bars on output `ch`.
+void dim_groups(size_t ch, uint8_t* dst, uint8_t bpp) {
+    const auto& groups = config::get_groups();
+    for (size_t gi = 0; gi < groups.count; ++gi) {
+        const bool dark      = (g_gblackout >> gi) & 1;
+        const uint16_t level = dark ? 0 : g_gmaster[gi];
+        if (level == kMasterFull) continue;
+        const auto& g = groups.groups[gi];
+        for (size_t m = 0; m < g.count; ++m) {
+            if (g.members[m].output != ch) continue;
+            const logic::Span& sp = g_spans_r[ch][g.members[m].fixture];
+            if (sp.count)
+                logic::apply_master(dst + static_cast<size_t>(sp.first) * bpp,
+                                    static_cast<size_t>(sp.count) * bpp, level);
+        }
+    }
 }
 
 }  // namespace
@@ -895,6 +1213,10 @@ bool decode_pixels_for_channel(size_t ch) {
             g_fade_len_ms[ch].store(0, std::memory_order_relaxed);
         }
     }
+
+    // Scenes on groups: their fixtures, over whatever the output shows.
+    overlay_plays(ch, dst, led::bytes_per_pixel(cc.protocol), t);
+    dim_groups(ch, dst, led::bytes_per_pixel(cc.protocol));
 
     // Show control last: it dims whatever the output renders.
     if (((blackout_effective() >> ch) & 1) || !logic::strobe_lit(t, strobe_effective(ch)))
@@ -1198,6 +1520,7 @@ bool wait_for_sync_or_period(uint32_t period_ticks) {
 }
 
 void swap_universes() {
+    plays_frame_begin(static_cast<uint64_t>(esp_timer_get_time() / 1000));
     // Nothing arrived since the last swap: keep presenting the current front.
     // Swapping here would re-present the other bank, one source frame behind,
     // which is what made a 10 Hz source flicker between its last two frames.

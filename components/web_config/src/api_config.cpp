@@ -96,9 +96,12 @@ static cJSON* build_scenes_json() {
             cJSON* jp     = cJSON_CreateObject();
             cJSON_AddNumberToObject(jp, "mask", p.mask);
             cJSON_AddNumberToObject(jp, "effect", p.effect);
-            cJSON_AddStringToObject(jp, "fixture_mode", config::fixture_mode_id(p.fixture_mode));
+            cJSON_AddStringToObject(jp, "fixture_mode",
+                                    config::fixture_mode_id(config::scene_mode_of(p.fixture_mode)));
+            cJSON_AddBoolToObject(jp, "reverse", config::scene_reverse_of(p.fixture_mode));
             cJSON_AddItemToArray(jparts, jp);
         }
+        cJSON_AddNumberToObject(js, "group", config::scene_group(sc));
         cJSON_AddItemToArray(jscenes, js);
     }
     return jscenes;
@@ -490,7 +493,7 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         if (p >= 0)
             c.packing = static_cast<uint8_t>(p);
         else
-            refuse(why, "packing: continuous|whole|fixture|control");
+            refuse(why, "packing: continuous|whole|fixture|colour|control");
     }
     apply_gaps_json(j, c);
     apply_fixtures_json(j, c, why);
@@ -584,6 +587,10 @@ void apply_effect_json(const cJSON* je, config::Effect& e) {
 // taken whole or not at all: false, with the reason in *why, on a bad part.
 bool apply_scene_json(const cJSON* js, config::Scene& sc, const char** why) {
     apply_name_json(js, sc.name, sizeof(sc.name));
+    const cJSON* jgr = cJSON_GetObjectItemCaseSensitive(js, "group");  // -1 = its outputs
+    if (cJSON_IsNumber(jgr) && jgr->valuedouble >= -1 &&
+        jgr->valuedouble < static_cast<double>(config::kMaxGroups))
+        sc.group = static_cast<uint8_t>(static_cast<int>(jgr->valuedouble) + 1);
     const cJSON* jparts = cJSON_GetObjectItemCaseSensitive(js, "parts");
     if (!jparts) return true;
     auto fail = [&](const char* msg) {
@@ -614,6 +621,8 @@ bool apply_scene_json(const cJSON* js, config::Scene& sc, const char** why) {
             if (mode < 0) return fail("part fixture_mode: each, strip, chain or mirror");
             p.fixture_mode = static_cast<uint8_t>(mode);
         }
+        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(jp, "reverse")))
+            p.fixture_mode |= config::kSceneReverseBit;
     }
     std::memcpy(sc.parts, parts, sizeof(parts));
     sc.num_parts = static_cast<uint8_t>(n);
@@ -628,9 +637,20 @@ static void apply_scene_v3_json(const cJSON* js, config::SceneV3& sc) {
     apply_u8_json(js, "speed", 255, &sc.speed);
     apply_u8_json(js, "param", 255, &sc.param);
     apply_u8_json(js, "mask", 255, &sc.channel_mask);
+    // fixture_mode, reverse and group share one byte (pack_scene_mode).
+    uint8_t mode    = config::scene_mode_of(sc.fixture_mode);
+    bool reverse    = config::scene_reverse_of(sc.fixture_mode);
+    int group       = config::scene_group_of(sc.fixture_mode);
     const cJSON* fm = cJSON_GetObjectItemCaseSensitive(js, "fixture_mode");
     for (uint8_t m = 0; cJSON_IsString(fm) && m < config::kFixtureModeCount; ++m)
-        if (std::strcmp(fm->valuestring, config::fixture_mode_id(m)) == 0) sc.fixture_mode = m;
+        if (std::strcmp(fm->valuestring, config::fixture_mode_id(m)) == 0) mode = m;
+    const cJSON* jrv = cJSON_GetObjectItemCaseSensitive(js, "reverse");
+    if (cJSON_IsBool(jrv)) reverse = cJSON_IsTrue(jrv);
+    const cJSON* jgr = cJSON_GetObjectItemCaseSensitive(js, "group");  // -1 = its outputs
+    if (cJSON_IsNumber(jgr) && jgr->valuedouble >= -1 &&
+        jgr->valuedouble < static_cast<double>(config::kMaxGroups))
+        group = static_cast<int>(jgr->valuedouble);
+    sc.fixture_mode = config::pack_scene_mode(mode, reverse, group);
     uint8_t rgb[3];
     uint8_t parsed[config::kSceneColorsMax][3];
     const int n = parse_colors_json(js, parsed);
@@ -921,7 +941,7 @@ esp_err_t handle_autopatch(httpd_req_t* req) {
     if (!ok) return send_err(req, 400, "base 0..32767");
     // "control" is an output's mode, not a pixel layout to give every output.
     if (bad_p || packing == config::kPackControl)
-        return send_err(req, 400, "packing: keep|continuous|whole|fixture");
+        return send_err(req, 400, "packing: keep|continuous|whole|fixture|colour");
 
     uint16_t next    = 0;
     size_t universes = 0;

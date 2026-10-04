@@ -381,7 +381,7 @@
                 </div>
                 <div id="cd-row-pack">
                   <label class="f-label-caps" data-i18n="DMX layout">DMX layout</label>
-                  <select class="field field-text" id="cd-pack"><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="control" data-i18n="DMX control: no pixel data, each fixture on its profile">DMX control: no pixel data, each fixture on its profile</option></select>
+                  <select class="field field-text" id="cd-pack"><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="colour" data-i18n="One colour per fixture (3 or 4 channels a bar)">One colour per fixture (3 or 4 channels a bar)</option><option value="control" data-i18n="DMX control: no pixel data, each fixture on its profile">DMX control: no pixel data, each fixture on its profile</option></select>
                 </div>
                 <div id="cd-row-order">
                   <label class="f-label-caps" data-i18n="Color order">Color order</label>
@@ -515,7 +515,7 @@
           </div>
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:16px 24px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
             <div><label class="f-label-caps" data-i18n="PLACEMENT">PLACEMENT</label><select class="field field-text" id="ap-place"><option value="aligned" data-i18n="Each output opens a universe">Each output opens a universe</option><option value="compact" data-i18n="Compact: outputs follow each other inside a universe">Compact: outputs follow each other inside a universe</option></select></div>
-            <div><label class="f-label-caps" data-i18n="DMX LAYOUT">DMX LAYOUT</label><select class="field field-text" id="ap-pack"><option value="keep" data-i18n="Keep each output's own">Keep each output's own</option><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option></select></div>
+            <div><label class="f-label-caps" data-i18n="DMX LAYOUT">DMX LAYOUT</label><select class="field field-text" id="ap-pack"><option value="keep" data-i18n="Keep each output's own">Keep each output's own</option><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="colour" data-i18n="One colour per fixture (3 or 4 channels a bar)">One colour per fixture (3 or 4 channels a bar)</option></select></div>
           </div>
 
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden">
@@ -932,7 +932,7 @@ var FR={
   'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
   'Firmware update rolled back':'Mise à jour du firmware annulée','Acknowledge':'Acquitter','last rollback':'dernier rollback','none':'aucun',
   '{v} on {slot} was rejected ({why}) — running {run}':'{v} sur {slot} a été rejeté ({why}) — version active {run}',
-  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','Groups':'Groupes','New group':'Nouveau groupe','A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.':'Un groupe est un ensemble ordonné de fixtures, sur n’importe quelles sorties : là où une scène joue. Son ordre est le ruban que l’effet parcourt.','Unnamed':'Sans nom','No group yet':'Aucun groupe','Create a group to start':'Crée un groupe pour commencer','Out':'Sortie','no such fixture now':'cette fixture n’existe plus','Remove from the group':'Retirer du groupe','Add to the group':'Ajouter au groupe','all':'toutes','No fixture yet: describe them in the channel editor (Fixtures & dead LEDs)':'Aucune fixture : décris-les dans l’éditeur de canal (Fixtures et LEDs mortes)','NAME':'NOM','FIXTURES, IN ORDER':'FIXTURES, DANS L’ORDRE','Reverse the order':'Inverser l’ordre','Delete the group':'Supprimer le groupe','Empty: add fixtures below':'Vide : ajoute des fixtures ci-dessous','ADD FIXTURES':'AJOUTER DES FIXTURES','Group':'Groupe','Mounted the other way round: the effects run through it backwards':'Montée à l’envers : les effets la parcourent dans l’autre sens','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
+  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','One colour per fixture (3 or 4 channels a bar)':'Une couleur par fixture (3 ou 4 canaux par barre)','colour/fixture':'couleur/fixture','Outputs':'Sorties','Direction':'Direction','Fixture mode':'Mode fixtures','PLAYS ON':'JOUE SUR','The outputs of its parts':'Les sorties de ses parties','On a group the scene plays its first part: that effect, along the group.':'Sur un groupe, la scène joue sa première partie : cet effet, le long du groupe.','From the far end (in mirror: from the centre out)':'Depuis l’autre bout (en miroir : du centre vers les bords)','group':'groupe','Groups':'Groupes','New group':'Nouveau groupe','A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.':'Un groupe est un ensemble ordonné de fixtures, sur n’importe quelles sorties : là où une scène joue. Son ordre est le ruban que l’effet parcourt.','Unnamed':'Sans nom','No group yet':'Aucun groupe','Create a group to start':'Crée un groupe pour commencer','Out':'Sortie','no such fixture now':'cette fixture n’existe plus','Remove from the group':'Retirer du groupe','Add to the group':'Ajouter au groupe','all':'toutes','No fixture yet: describe them in the channel editor (Fixtures & dead LEDs)':'Aucune fixture : décris-les dans l’éditeur de canal (Fixtures et LEDs mortes)','NAME':'NOM','FIXTURES, IN ORDER':'FIXTURES, DANS L’ORDRE','Reverse the order':'Inverser l’ordre','Delete the group':'Supprimer le groupe','Empty: add fixtures below':'Vide : ajoute des fixtures ci-dessous','ADD FIXTURES':'AJOUTER DES FIXTURES','Group':'Groupe','Mounted the other way round: the effects run through it backwards':'Montée à l’envers : les effets la parcourent dans l’autre sens','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
   'Fixtures overlap: LED {a}–{b}':'Des fixtures se chevauchent : LED {a}–{b}','A fixture ends past the strip (LED {n})':'Une fixture dépasse la fin du strip (LED {n})','Dead LEDs inside a fixture at LED {a}: the fixture is shorter':'LEDs mortes dans une fixture à la LED {a} : la fixture est plus courte',
   'At most {n} dead runs: fewer fixtures, or no dead LEDs between':'{n} zones de LEDs mortes au plus : moins de fixtures, ou pas de LEDs mortes entre elles','At most 32 fixtures':'32 fixtures au plus','At most 8 dead runs':'8 zones de LEDs mortes au plus',
   'Channel {n}: the layout list is not valid — fix it before saving':'Canal {n} : la liste n’est pas valide — corrige-la avant d’enregistrer',
@@ -1291,6 +1291,7 @@ function partRowHTML(sc,k){
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
     +'<div><div class="eyebrow-sm">'+t('EFFECT')+'</div><select data-pt-fx="'+k+'" style="'+SEL_STYLE+'">'+fxOpts+'</select></div>'
     +'<div><div class="eyebrow-sm">'+t('FIXTURES')+'</div><select data-pt-mode="'+k+'" title="'+esc(t(FIX_HINTS[p.mode||'each']))+'" style="'+SEL_STYLE+'">'+modeOpts+'</select></div>'
+    +'<label style="grid-column:1/-1;display:flex;align-items:center;gap:8px;font:500 12px \'DM Mono\';color:var(--fg-2);cursor:pointer"><input type="checkbox" data-pt-rev="'+k+'"'+(p.rev?' checked':'')+'/>'+esc(t('From the far end (in mirror: from the centre out)'))+'</label>'
     +'</div></div>';
 }
 function sceneMask(sc){ var m=0; sc.parts.forEach(function(p){ m|=p.mask; }); return m; }
@@ -1307,6 +1308,10 @@ function sceneCardHTML(sc){
     +'<div style="display:flex;flex-direction:column;gap:7px">'+(rows||'<div class="hint">'+esc(t('No part: this scene plays nowhere'))+'</div>')+'</div>'
     +(canAdd?'<button class="btn-sec" data-pt-add style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer"><i data-lucide="plus" class="ic14"></i>'+t('Add a part')+'</button>':'')
     +'<div class="hint" style="margin-top:7px">'+esc(t('Each part plays one effect on its outputs; an output belongs to one part.'))+'</div></div>'
+    +'<div><div class="eyebrow-sm">'+t('PLAYS ON')+'</div><select data-sc-group="'+sc.n+'" style="'+SEL_STYLE+'">'
+      +'<option value="-1"'+(sc.group<0?' selected':'')+'>'+esc(t('The outputs of its parts'))+'</option>'
+      +GROUPS.map(function(g,gi){ return '<option value="'+gi+'"'+(sc.group===gi?' selected':'')+'>'+esc(t('Group')+' · '+(g.name||'?'))+'</option>'; }).join('')+'</select>'
+      +(sc.group>=0?'<div class="hint" style="margin-top:5px">'+esc(t('On a group the scene plays its first part: that effect, along the group.'))+'</div>':'')+'</div>'
     +playOnHTML(sc)
     +cardFooter('scene-dup','scene-del')
     +'</div>';
@@ -1329,20 +1334,21 @@ function playOnHTML(sc){
     +'<button class="btn-sec" data-sc-stop="'+sc.n+'" style="'+btn+'background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg)"><i data-lucide="square" class="ic14"></i>'+t('Stop')+'</button></div>'
     +'<div data-sc-playing="'+sc.n+'" style="font:500 11px \'DM Mono\';color:var(--accent);margin-top:6px;min-height:14px">'+esc(playingText(i))+'</div></div>';
 }
-function playingText(i){ return PLAYING[i]?(t('Playing')+' · '+outsText(PLAYING[i])):''; }
+function playsText(i){ var a=[]; if(PLAYING[i]) a.push(outsText(PLAYING[i])); (PLAYING_G[i]||[]).forEach(function(g){ a.push((GROUPS[g]&&GROUPS[g].name)||(t('group')+' '+(g+1))); }); return a.join(' + '); }
+function playingText(i){ var p=playsText(i); return p?(t('Playing')+' · '+p):''; }
 function sceneRowHTML(sc,i,active){
   var on=i===curScene;
   return '<div data-scene-row="'+i+'" class="pf-row" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:0;cursor:pointer;background:'+(on?'rgba(63,212,99,.07)':'var(--well)')+';border:1px solid '+(on?'rgba(63,212,99,.45)':'var(--line)')+'">'
     +'<span data-srow-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
     +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4);width:18px;text-align:right;flex:none">'+(i+1)+'</span>'
     +'<span style="width:22px;height:22px;background:'+sceneSwatch(sc)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div class="mono-11">'+esc(sceneSummary(sc))+(PLAYING[i]?'<span class="fg-accent" data-sc-outs="'+i+'"> · '+esc(outsText(PLAYING[i]))+'</span>':'')+'</div></div>'
+    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div class="mono-11">'+esc(sceneSummary(sc))+(playsText(i)?'<span class="fg-accent" data-sc-outs="'+i+'"> · '+esc(playsText(i))+'</span>':'')+'</div></div>'
     +'<button class="'+(i===active?'btn-pri':'btn-sec')+'" data-sc-play="'+sc.n+'" style="width:28px;height:28px;border-radius:0;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;'+(i===active?'background:var(--accent);border:1px solid var(--accent);color:var(--on-accent)':'background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2)')+'"><i data-lucide="play" class="ic14"></i></button></div>';
 }
 var lastActiveScene=-1;
 function renderSceneList(){
   var m=el('scene-list-mount'); if(!m) return;
-  m.innerHTML=SCENES.length?SCENES.map(function(sc,i){ return sceneRowHTML(sc,i,PLAYING[i]?i:-1); }).join('')
+  m.innerHTML=SCENES.length?SCENES.map(function(sc,i){ return sceneRowHTML(sc,i,playsText(i)?i:-1); }).join('')
     :'<div style="padding:14px 6px;font:500 12px \'DM Mono\';color:var(--fg-4)">'+esc(t('No scene yet'))+'</div>';
   createIcons(m);
   var c=el('scene-count'); if(c) c.textContent=SCENES.length+' / '+MAX_SCENES;
@@ -1471,7 +1477,7 @@ function srDragEnd(){
 // Zones: several scenes may play at once (PLAYING: scene index → outputs).
 var lastPlayingKey='';
 function applySceneActive(scn){
-  var key=JSON.stringify(PLAYING);
+  var key=JSON.stringify(PLAYING)+JSON.stringify(PLAYING_G);
   if(scn===lastActiveScene && key===lastPlayingKey) return;
   lastActiveScene=scn; lastPlayingKey=key; renderSceneList();
   document.querySelectorAll('[data-sc-playing]').forEach(function(e){ e.textContent=playingText(+e.getAttribute('data-sc-playing')-1); });
@@ -1500,7 +1506,7 @@ function patchRow(n,proto,range,dmx){
     +'<span style="font:500 13px \'DM Mono\';color:var(--accent)">'+range+'</span>'
     +'<span style="font:500 13px \'DM Mono\';color:var(--fg-3)">'+dmx+'</span></div>';
 }
-var PACK_SHORT={whole:'whole px',fixture:'per fixture',control:'DMX control'};
+var PACK_SHORT={whole:'whole px',fixture:'per fixture',colour:'colour/fixture',control:'DMX control'};
 function buildPatch(){
   var rows='', maxEnd=-1, used=0;
   CHANS.forEach(function(c){
@@ -2146,7 +2152,7 @@ function reloadConfig(){
     if(el('spk-vol')){ el('spk-vol').value=g.speaker_volume||0; spkVolLabel(); spkButtons(); }
     if(d.profiles && !dirty.has('profiles')){ PROFILES=d.profiles.map(function(p){ return {name:p.name||'',slots:(p.slots||[]).map(function(sl){ return {fn:sl.fn,index:sl.index||0,fine:!!sl.fine}; })}; }); }
     if(d.groups && !dirty.has('groups')){ GROUPS=d.groups.map(function(g){ return {name:g.name,members:g.members.map(function(m){ return [m[0],m[1]]; })}; }); if(curGroup>=GROUPS.length) curGroup=GROUPS.length-1; }
-    if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,mapped:d.control.mapped!==false,pool:d.control.pool||72,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
+    if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,mapped:d.control.mapped!==false,pool:d.control.pool||72,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine,group:sl.group!=null?sl.group:-1}; })}; }
     renderControl();
     if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
     setLive('fw-name','pixfrog '+(d.version||'')); setLive('fw-sub','esp32-p4 · partition '+(d.ota_partition||'?'));
@@ -2154,7 +2160,7 @@ function reloadConfig(){
     setLive('part-line',(d.version||'')+' · '+(d.ota_partition||''));
     CHANS=(d.channels||[]).map(buildChan);
     EFFECTS=(d.effects||[]).map(function(e,i){ return {n:i+1,name:e.name||'',gen:e.generator||0,colors:(e.colors&&e.colors.length)?e.colors.slice(0,MAX_COLORS):['#000000'],speed:e.speed||0,param:e.param||0,ph:phaserOf(e.phaser),invert:!!e.invert,mx:matricksOf(e.matricks)}; });
-    SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',parts:(sc.parts||[]).map(function(p){ return {mask:p.mask||0,effect:p.effect||0,mode:p.fixture_mode||'each'}; })}; });
+    SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',group:sc.group!=null?sc.group:-1,parts:(sc.parts||[]).map(function(p){ return {mask:p.mask||0,effect:p.effect||0,mode:p.fixture_mode||'each',rev:!!p.reverse}; })}; });
     if(curEffect>=EFFECTS.length) curEffect=Math.max(0,EFFECTS.length-1);
     if(curScene>=SCENES.length) curScene=Math.max(0,SCENES.length-1);
     renderEffects(); renderScenes(); renderSceneSelects(g);
@@ -2215,7 +2221,7 @@ function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_s
 function phaserOf(p){ p=p||{}; return {wave:p.wave||'none',rate:p.rate||0,spread:p.spread||0,width:p.width||0,low:p.low||0,reverse:!!p.reverse}; }
 function matricksOf(m){ m=m||{}; return {block:m.block||0,groups:m.groups||0,wings:m.wings||0}; }
 function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param,phaser:e.ph,invert:e.invert,matricks:e.mx}; }
-function sceneBody(s){ return {name:s.name,parts:s.parts.map(function(p){ return {mask:p.mask,effect:p.effect,fixture_mode:p.mode||'each'}; })}; }
+function sceneBody(s){ return {name:s.name,group:s.group!=null?s.group:-1,parts:s.parts.map(function(p){ return {mask:p.mask,effect:p.effect,fixture_mode:p.mode||'each',reverse:!!p.rev}; })}; }
 // How the effect spreads over a channel's fixtures (a channel without any is one strip).
 var FIX_MODES=[['each','Each fixture'],['strip','Whole strip'],['chain','Fixtures in a row'],['mirror','Mirrored']];
 var FIX_HINTS={strip:'The effect runs over the whole strip, fixtures ignored.',each:'Every fixture plays the effect on its own.',chain:'The fixtures end to end, as one strip without what lies between.',mirror:'In a row over the first half, mirrored on the second.'};
@@ -2344,8 +2350,9 @@ function gmDragEnd(){
 }
 /* ─────────── DMX control universe ─────────── */
 var CTL={enabled:false,universe:100,address:1,slots:[]}, CTL_STATE='off';
-var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq','bank','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings'];
-var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Effect speed',param:'Effect parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Generator',fade:'Fade time',fseq:'Show file',bank:'Effect of the bank',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings'};
+var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq','direction','fixmode','bank','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings'];
+var CTL_GROUP_FNS=CTL_FNS.filter(function(f){ return ['none','strobe','fade','fseq'].indexOf(f)<0; });  // can target a group
+var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Effect speed',param:'Effect parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Generator',fade:'Fade time',fseq:'Show file',direction:'Direction',fixmode:'Fixture mode',bank:'Effect of the bank',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings'};
 function ctlWidth(sl){ return (sl.fn==='master'&&sl.fine)?2:1; }
 function ctlFootprint(){ return CTL.slots.reduce(function(n,sl){ return n+ctlWidth(sl); },0); }
 function ctlPreset(which){
@@ -2372,7 +2379,10 @@ function renderControl(){
   CTL.slots.forEach(function(sl,i){
     var w=ctlWidth(sl), dmx=w===2?(at+'-'+(at+1)):String(at); at+=w;
     var opts=CTL_FNS.map(function(f){ return '<option value="'+f+'"'+(f===sl.fn?' selected':'')+'>'+esc(t(CTL_LABELS[f]))+'</option>'; }).join('');
-    var outs=''; for(var o=0;o<8;o++){ var on=(sl.mask>>o)&1;
+    var grpOk=CTL_GROUP_FNS.indexOf(sl.fn)>=0 && GROUPS.length>0, onGroup=grpOk&&sl.group>=0;
+    var tgt=grpOk?'<select data-ct-tgt="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:5px 7px;font:500 12px \'DM Mono\';margin-right:6px"><option value="-1">'+esc(t('Outputs'))+'</option>'
+      +GROUPS.map(function(g,gi){ return '<option value="'+gi+'"'+(sl.group===gi?' selected':'')+'>'+esc(g.name||('#'+(gi+1)))+'</option>'; }).join('')+'</select>':'';
+    var outs=''; for(var o=0;o<8&&!onGroup;o++){ var on=(sl.mask>>o)&1;
       outs+='<button data-ct-out="'+i+'" data-o="'+o+'" style="width:26px;height:26px;border-radius:0;cursor:pointer;font:500 11px \'DM Mono\';'+(on?'background:rgba(63,212,99,.14);border:1px solid rgba(63,212,99,.5);color:var(--accent)':'background:var(--well);border:1px solid var(--line-2);color:var(--fg-6)')+'">'+(o+1)+'</button>'; }
     var opt='';
     if(['red','green','blue'].indexOf(sl.fn)>=0){ opt='<select data-ct-idx="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:6px 8px;font:500 12px \'DM Mono\'">'+[0,1,2,3].map(function(k){ return '<option value="'+k+'"'+(k===sl.index?' selected':'')+'>'+t('Colour')+' '+(k+1)+'</option>'; }).join('')+'</select>'; }
@@ -2380,7 +2390,7 @@ function renderControl(){
     rows+='<div data-ct-row="'+i+'" style="display:grid;grid-template-columns:70px 1.3fr 2fr 1fr 70px 70px;gap:10px;align-items:center;padding:8px 18px;border-bottom:1px solid var(--rule)">'
       +'<span style="font:500 13px \'DM Mono\';color:var(--accent)">'+dmx+'</span>'
       +'<select data-ct-fn="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:7px 9px;font:500 13px \'Figtree\'">'+opts+'</select>'
-      +'<span style="display:flex;gap:4px">'+outs+'</span>'
+      +'<span style="display:flex;gap:4px;align-items:center">'+tgt+outs+'</span>'
       +'<span>'+opt+'</span>'
       +'<span style="display:flex;gap:4px"><button class="btn-sec" data-ct-up="'+i+'" title="'+esc(t('Move up'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↑</button><button class="btn-sec" data-ct-down="'+i+'" title="'+esc(t('Move down'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↓</button></span>'
       +'<button class="btn-dng" data-ct-del="'+i+'" title="'+esc(t('Delete'))+'" style="width:26px;height:26px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);cursor:pointer;justify-self:end">×</button>'
@@ -2399,10 +2409,10 @@ function renderCtlState(){
   var st=el('ct-state'); if(st){ st.textContent=t(CTL_STATE==='live'?'receiving':CTL_STATE==='idle'?'waiting for the desk':'off'); st.style.color=CTL_STATE==='live'?'var(--accent)':CTL_STATE==='idle'?'var(--warn)':'var(--fg-4)'; }
   var sc=el('sh-ctl'); if(sc){ sc.textContent=t('DMX ctrl')+' · '+t(CTL_STATE==='live'?'receiving':CTL_STATE==='idle'?'waiting':'off'); sc.style.color=CTL_STATE==='live'?'var(--accent)':CTL_STATE==='idle'?'var(--warn)':'var(--fg-4)'; }
 }
-function ctlBody(){ return {enabled:!!CTL.enabled,universe:CTL.universe,address:CTL.address,slots:CTL.slots.map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index,fine:!!sl.fine}; })}; }
+function ctlBody(){ return {enabled:!!CTL.enabled,universe:CTL.universe,address:CTL.address,slots:CTL.slots.map(function(sl){ var g=CTL_GROUP_FNS.indexOf(sl.fn)>=0&&sl.group>=0?sl.group:-1; return {fn:sl.fn,mask:g>=0?255:sl.mask,index:sl.index,fine:!!sl.fine,group:g}; })}; }
 
 /* ─────────── show (master / blackout / strobe) ─────────── */
-var SHOW={master:100,blackout:0,strobe:0}, PLAYING={};
+var SHOW={master:100,blackout:0,strobe:0}, PLAYING={}, PLAYING_G={};
 function applyShow(sh){
   if(!sh) return;
   var ml=(sh.master_local&&sh.master_local.length)?Math.round(sh.master_local[0]):100;
@@ -2413,6 +2423,7 @@ function applyShow(sh){
   var bo=el('sh-bo'); if(bo){ var on=!!SHOW.blackout; bo.style.background=on?'var(--danger-2)':'transparent'; bo.style.color=on?'#1a0908':'var(--danger)'; bo.style.borderColor=on?'var(--danger-2)':'var(--danger-line)'; bo.classList.toggle('btn-dng',!on); }
   CTL_STATE=sh.control||'off'; renderCtlState();
   var pl={}; (sh.scenes||[]).forEach(function(sc,o){ if(sc>=0){ pl[sc]=(pl[sc]||0)|(1<<o); } }); PLAYING=pl;
+  var pg={}; (sh.plays||[]).forEach(function(p){ (pg[p[0]]=pg[p[0]]||[]).push(p[1]); }); PLAYING_G=pg;
 }
 function setLive2(id,v){ var e=el(id); if(e) e.textContent=v; }
 function outsText(mask){ var a=[]; for(var o=0;o<8;o++) if((mask>>o)&1) a.push(o+1); return a.length===8?t('all outputs'):(t('out')+' '+a.join(',')); }
@@ -2616,7 +2627,7 @@ function fseqUpload(){
 function onClick(e){
   var act=e.target.closest('[data-action]'); if(act){ doAction(act.getAttribute('data-action')); return; }
   var cpr=e.target.closest('[data-ct-preset]'); if(cpr){ ctlPreset(cpr.getAttribute('data-ct-preset')); markDirty('control'); renderControl(); return; }
-  if(e.target.closest('[data-ct-add]')){ if(CTL.slots.length<32){ CTL.slots.push({fn:'master',mask:255,index:0,fine:false}); markDirty('control'); renderControl(); } return; }
+  if(e.target.closest('[data-ct-add]')){ if(CTL.slots.length<32){ CTL.slots.push({fn:'master',mask:255,index:0,fine:false,group:-1}); markDirty('control'); renderControl(); } return; }
   var cto=e.target.closest('[data-ct-out]'); if(cto){ var si=+cto.getAttribute('data-ct-out'), nm=CTL.slots[si].mask^(1<<+cto.getAttribute('data-o')); if(nm){ CTL.slots[si].mask=nm; markDirty('control'); renderControl(); } return; }
   var ctd=e.target.closest('[data-ct-del]'); if(ctd){ CTL.slots.splice(+ctd.getAttribute('data-ct-del'),1); markDirty('control'); renderControl(); return; }
   var ctu=e.target.closest('[data-ct-up]'); if(ctu){ var ui=+ctu.getAttribute('data-ct-up'); if(ui>0){ var tmp=CTL.slots[ui-1]; CTL.slots[ui-1]=CTL.slots[ui]; CTL.slots[ui]=tmp; markDirty('control'); renderControl(); } return; }
@@ -2642,14 +2653,15 @@ function onClick(e){
     if(pa.parts.length<MAX_PARTS && free){ pa.parts.push({mask:free,effect:0,mode:'each'}); markDirty('scene'+curScene); renderScene(curScene+1); } return; }
 
   var dh=e.target.closest('[data-dhcp]'); if(dh){ netDhcp=(+dh.getAttribute('data-dhcp'))===1; setDhcpUI(); markDirty('network'); return; }
-  var spo=e.target.closest('[data-sc-playon]'); if(spo){ var on=+spo.getAttribute('data-sc-playon')-1, om=sceneMask(SCENES[on]);
-    if(!om){ toast(t('Select at least one output'),true); return; }
+  var spo=e.target.closest('[data-sc-playon]'); if(spo){ var on=+spo.getAttribute('data-sc-playon')-1, om=sceneMask(SCENES[on]), og=SCENES[on].group;
+    if(og<0 && !om){ toast(t('Select at least one output'),true); return; }
+    var where=og>=0?{group:og}:{outputs:om}, wtxt=og>=0?((GROUPS[og]&&GROUPS[og].name)||''):outsText(om);
     // Unsaved parts go first: the box plays the scene as it is saved.
     var pre=dirty.has('scene'+on)?api('POST','/api/scene/'+on,sceneBody(SCENES[on])).then(function(){ dirty.delete('scene'+on); updateSaveBar(); }):Promise.resolve();
-    pre.then(function(){ return api('POST','/api/scene/'+on+'/play',{outputs:om}); }).then(function(){ toast(t('Playing scene ')+(on+1)+' · '+outsText(om)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
+    pre.then(function(){ return api('POST','/api/scene/'+on+'/play',where); }).then(function(){ toast(t('Playing scene ')+(on+1)+' · '+wtxt); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var sst=e.target.closest('[data-sc-stop]'); if(sst){ var sn2=+sst.getAttribute('data-sc-stop')-1;
     api('POST','/api/scene/'+sn2+'/stop',{}).then(function(){ toast(t('Stopped scene ')+(sn2+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
-  var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1, stop=!!PLAYING[n3];
+  var spl=e.target.closest('[data-sc-play]'); if(spl){ var n3=+spl.getAttribute('data-sc-play')-1, stop=!!playsText(n3);
     api('POST','/api/scene/'+n3+(stop?'/stop':'/play'),{}).then(function(){ toast(t(stop?'Stopped scene ':'Playing scene ')+(n3+1)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var fad=e.target.closest('[data-fseq-add]'); if(fad){ if(PL.items.length>=16){ toast(t('The playlist holds 16 files'),true); return; } PL.items.push({name:fad.getAttribute('data-fseq-add'),repeat:1}); savePlaylist(); return; }
   var pup=e.target.closest('[data-pl-up]'), pdn=e.target.closest('[data-pl-down]'), pdl=e.target.closest('[data-pl-del]');
@@ -2689,6 +2701,8 @@ function onInput(e){
   var t=e.target;
   if(t.hasAttribute&&t.hasAttribute('data-sc-name')){ var n=+t.getAttribute('data-sc-name'); SCENES[n-1].name=t.value; markDirty('scene'+(n-1)); renderSceneList(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-pt-fx')){ SCENES[curScene].parts[+t.getAttribute('data-pt-fx')].effect=parseInt(t.value,10)||0; markDirty('scene'+curScene); renderScene(curScene+1); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-sc-group')){ var gs=+t.getAttribute('data-sc-group'); SCENES[gs-1].group=parseInt(t.value,10); markDirty('scene'+(gs-1)); renderScene(gs); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-pt-rev')){ SCENES[curScene].parts[+t.getAttribute('data-pt-rev')].rev=t.checked; markDirty('scene'+curScene); return; }
   if(t.hasAttribute&&t.hasAttribute('data-pt-mode')){ SCENES[curScene].parts[+t.getAttribute('data-pt-mode')].mode=t.value; markDirty('scene'+curScene); renderScene(curScene+1); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-name')){ var en=+t.getAttribute('data-fx-name'); EFFECTS[en-1].name=t.value; markDirty('fx'+(en-1)); renderEffectList(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-speed')){ var sn=+t.getAttribute('data-fx-speed'); EFFECTS[sn-1].speed=parseInt(t.value,10)||0; var sv=document.querySelector('[data-fx-speedval="'+sn+'"]'); if(sv) sv.textContent=speedText(EFFECTS[sn-1]); markDirty('fx'+(sn-1)); return; }
@@ -2719,6 +2733,7 @@ function onInput(e){
   if(t.id==='ct-uni'){ CTL.universe=Math.max(0,Math.min(32767,parseInt(t.value,10)||0)); markDirty('control'); renderControl(); return; }
   if(t.id==='ct-addr'){ CTL.address=Math.max(1,Math.min(512,parseInt(t.value,10)||1)); markDirty('control'); renderControl(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-ct-fn')){ var ci=+t.getAttribute('data-ct-fn'); CTL.slots[ci].fn=t.value; if(t.value!=='master') CTL.slots[ci].fine=false; markDirty('control'); renderControl(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-ct-tgt')){ CTL.slots[+t.getAttribute('data-ct-tgt')].group=parseInt(t.value,10); markDirty('control'); renderControl(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-ct-idx')){ CTL.slots[+t.getAttribute('data-ct-idx')].index=+t.value; markDirty('control'); return; }
   if(t.hasAttribute&&t.hasAttribute('data-ct-fine')){ CTL.slots[+t.getAttribute('data-ct-fine')].fine=t.checked; markDirty('control'); renderControl(); return; }
   if(t.id==='s-auth'){ setAuthUI(); markDirty('sysauth'); return; }

@@ -319,6 +319,31 @@ where a scene plays, and its order is the strip the effect runs along —
 - Editing an output's fixture list can shift what a member points at (it is
   an index); the editor flags members that no longer exist.
 
+Scenes on groups (`dmx::group_play / group_stop`, the render task draws them):
+- A scene playing on a group is drawn **once a frame** along the group's
+  virtual strip (members end to end, in order — `logic::render_group_strip`):
+  `each` member on its own, `strip`/`chain` one effect across, `mirror` over the
+  first half mirrored on the rest; the part's **reverse** bit runs it from the
+  far end (in mirror: from the centre out). Each member's slice then goes into
+  its fixture (`put_member`: flipped for a reversed bar or an inverted output;
+  RGB, W off on RGBW).
+- Ownership is per fixture: a play takes its group's fixtures over from any
+  other play, the rest keep theirs; a fixture nobody owns shows its output's
+  own source (live, FSEQ, an output scene). Starting a scene on outputs, or
+  stopping them, takes their fixtures back. Fixtures crossfade from a snapshot
+  of what they showed (`scene_fade_ms` / the desk's Fade).
+- On a group a scene plays its **first part**: that effect of the bank, with
+  the part's fixture mode and direction (`config::copy_scene_look`); the
+  part's outputs do not matter there, and a scene may keep a part without any
+  output for that purpose alone.
+- Up to 16 plays; strips up to 4096 pixels (PSRAM). A scene's default group is
+  `Scene::group`; a part's reverse bit shares `ScenePart::fixture_mode` with
+  the mode. A scene with a default group plays there when started whole (web
+  ▶, boot, menu). API: `POST /api/scene/n/play {"group": g}`, `"group"` on a
+  scene and `"reverse"` on its parts, `show.plays` = `[[scene, group], …]` in
+  the status; console `scene play <n> group <g>`, `scene group <n> <g|none>`,
+  `scene part … [rev]`.
+
 ### 5.6 DMX layout and auto-patch
 
 How a channel's pixels fill its universes is per channel
@@ -330,6 +355,7 @@ console), from `(universe_start, dmx_start)`:
 | `continuous` (default) | byte after byte; a pixel may straddle two universes | 6 universes |
 | `whole` | whole pixels only: 170 RGB / 128 RGBW per universe (xLights / Falcon / FPP "510 channels") | 7 universes |
 | `fixture` | each fixture (§5.5) from slot 1 of a universe of its own, whole pixels inside; pixels in no fixture get no data; no fixtures = `whole` | 1 + per fixture |
+| `colour` | one colour per fixture: 3 channels a bar (4 RGBW), bars in strip order, the bar lit with it — patch each bar as a plain RGB fixture; no fixtures = one colour for all | a few slots |
 | `control` | **DMX control mode**: no pixel data. Each fixture takes the channels of its DMX profile, one after the other | 3 channels with one RGB fixture |
 
 **DMX control mode** turns pixel mapping off for an output and drives its

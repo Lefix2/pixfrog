@@ -50,6 +50,13 @@ static void fill_scene_on_channel(uint8_t* dst, size_t cap, const config::Channe
     });
 }
 
+// A v3 scene along a group's strip: its look, with its packed mode byte.
+static uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* lens, size_t n,
+                                   const config::SceneV3& s, uint64_t t) {
+    return render_group_strip(strip, cap, lens, n, config::effect_from_scene_v3(s), s.fixture_mode,
+                              t);
+}
+
 // ── Sizing helpers ──────────────────────────────────────────────────────────
 
 static void test_total_bytes_rgb() {
@@ -188,6 +195,37 @@ static void test_layout_one_fixture_per_universe() {
     EXPECT_EQ(channel_universes_used(none), 2u);
     EXPECT_EQ(channel_layout(none, r, kMaxDmxRuns), 2u);
     EXPECT_EQ(r[0].bytes, 510);
+}
+
+// One colour per fixture: 3 channels a bar, in strip order, the bar filled
+// with it; 170 bars a universe at most (whole pixels).
+static void test_one_colour_per_fixture() {
+    auto c = rgb_chan(20, config::kPackFixtureColour);
+    for (uint16_t k = 0; k < 5; ++k)
+        c.fixtures[k] = { static_cast<uint16_t>(k * 4), 4 };
+    c.invert_direction = true;  // DMX bar 1 = strip bar 1 whatever the direction
+    DmxRun r[kMaxDmxRuns];
+    EXPECT_EQ(channel_layout(c, r, kMaxDmxRuns), 5u);
+    EXPECT_EQ(r[1].slot, 3);
+    EXPECT_EQ(r[1].fill, 4);
+    EXPECT_EQ(channel_universes_used(c), 1u);
+    uint8_t u1[512]{};
+    for (int b = 0; b < 5; ++b)
+        u1[b * 3] = static_cast<uint8_t>(10 * (b + 1));  // bar b+1: red 10(b+1)
+    auto get = [&](uint16_t u) -> const uint8_t* { return u == 1 ? u1 : nullptr; };
+    uint8_t px[20 * 3];
+    EXPECT_TRUE(decode_pixels(px, sizeof(px), c, get));
+    EXPECT_EQ(px[(19 - 0) * 3], 10);  // inverted: bar 1 at the buffer's end
+    EXPECT_EQ(px[(19 - 3) * 3], 10);
+    EXPECT_EQ(px[0], 50);  // bar 5 at its start
+    // No fixtures: one colour for the whole strip.
+    auto all = rgb_chan(20, config::kPackFixtureColour);
+    EXPECT_EQ(channel_layout(all, r, kMaxDmxRuns), 1u);
+    EXPECT_EQ(r[0].fill, 20);
+    // A start at slot 511: not one RGB colour left there, the next universe.
+    auto late = rgb_chan(20, config::kPackFixtureColour, 511);
+    channel_layout(late, r, kMaxDmxRuns);
+    EXPECT_EQ(r[0].uni_off, 1);
 }
 
 static void test_decode_per_fixture_leaves_the_rest_dark() {
@@ -824,6 +862,64 @@ static void test_reversed_fixture_runs_backwards() {
     pixfrog::config::normalize_fixtures(f, 2);
     EXPECT_TRUE(pixfrog::config::fixture_reversed(f[1]));
     EXPECT_EQ(pixfrog::config::fixture_len(f[1]), 4);
+}
+
+// A scene along a group's virtual strip: chained over members of any
+// length, each member on its own, mirrored about the middle, reversed.
+static void test_group_strip_modes() {
+    const uint16_t lens[4] = { 4, 6, 6, 4 };
+    auto sc                = with_color(mk_scene(4 /*gradient*/, 255, 0, 0, 0, 1), 0, 0, 255);
+    uint8_t strip[20 * 3], ref[20 * 3];
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeChain, false,
+                                                       -1);
+    EXPECT_EQ(render_group_strip(strip, sizeof(strip), lens, 4, sc, 0), 20u);
+    fill_scene_pattern(ref, sizeof(ref), 20, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(strip, ref, sizeof(ref)) == 0);  // one strip, end to end
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeChain, true,
+                                                       -1);
+    render_group_strip(strip, sizeof(strip), lens, 4, sc, 0);
+    for (int j = 0; j < 20; ++j)  // reversed: from the far end
+        EXPECT_TRUE(std::memcmp(strip + j * 3, ref + (19 - j) * 3, 3) == 0);
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeEach, false,
+                                                       -1);
+    render_group_strip(strip, sizeof(strip), lens, 4, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 6, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(strip + 4 * 3, ref, 6 * 3) == 0);  // member 2 on its own
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeMirror, false,
+                                                       -1);
+    render_group_strip(strip, sizeof(strip), lens, 4, sc, 0);
+    for (int j = 0; j < 4; ++j)  // last member = first, back to front
+        EXPECT_TRUE(std::memcmp(strip + (16 + j) * 3, strip + (3 - j) * 3, 3) == 0);
+    for (int j = 0; j < 6; ++j)  // third = second, back to front
+        EXPECT_TRUE(std::memcmp(strip + (10 + j) * 3, strip + (9 - j) * 3, 3) == 0);
+    EXPECT_EQ(render_group_strip(strip, 10, lens, 4, sc, 0), 0u);  // does not fit
+    // A slice into a fixture: RGBW output, flipped (bar reversed).
+    uint8_t out[6 * 4];
+    std::memset(out, 0xEE, sizeof(out));
+    const uint8_t slice[3 * 3] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    put_member(out, 4, Span{ 2, 3, true, 0 }, slice, 3);
+    EXPECT_EQ(out[2 * 4], 7);      // its first pixel holds the slice's last
+    EXPECT_EQ(out[2 * 4 + 3], 0);  // W off
+    EXPECT_EQ(out[4 * 4], 1);
+    EXPECT_EQ(out[0], 0xEE);  // outside the span: untouched
+}
+
+// Spans by fixture index; flip = reversed bar XOR inverted output.
+static void test_fixture_spans_by_index() {
+    auto cc        = fixture_chan(10);
+    cc.fixtures[0] = { 0, 4 };
+    cc.fixtures[1] = { 4, static_cast<uint16_t>(6 | pixfrog::config::kFixtureReversed) };
+    Span sp[pixfrog::config::kMaxFixtures];
+    fixture_spans_by_index(cc, sp);
+    EXPECT_EQ(sp[1].first, 4);
+    EXPECT_TRUE(sp[1].reversed);
+    EXPECT_TRUE(!sp[0].reversed);
+    EXPECT_EQ(sp[2].count, 0);
+    cc.invert_direction = true;
+    fixture_spans_by_index(cc, sp);
+    EXPECT_EQ(sp[0].first, 6);  // index order kept, positions from the far end
+    EXPECT_TRUE(sp[0].reversed);
+    EXPECT_TRUE(!sp[1].reversed);  // reversed twice
 }
 
 static void test_fixtures_normalize_drops_overlaps() {
@@ -2116,6 +2212,102 @@ static void test_control_sanitize() {
     EXPECT_EQ(d.count, 3);
 }
 
+// Slots aimed at a fixture group: their values land on the group, not on
+// any output; Direction / FixMode bands; group 0 survives sanitize (mask 0).
+static void test_control_group_slots() {
+    config::ControlConfig c{};
+    c.enabled  = 1;
+    c.address  = 1;
+    c.count    = 6;
+    c.slots[0] = config::control_slot(config::CtlFn::Master, 1, 0, config::kCtlFlagGroup);
+    c.slots[1] = config::control_slot(config::CtlFn::Scene, 0, 0, config::kCtlFlagGroup);
+    c.slots[2] = config::control_slot(config::CtlFn::Direction, 1, 0, config::kCtlFlagGroup);
+    c.slots[3] = config::control_slot(config::CtlFn::FixMode, 1, 0, config::kCtlFlagGroup);
+    c.slots[4] = config::control_slot(config::CtlFn::Red, 1, 2, config::kCtlFlagGroup);
+    c.slots[5] = config::control_slot(config::CtlFn::Blackout, 0, 0, config::kCtlFlagGroup);
+    config::sanitize_control(c);
+    EXPECT_EQ(config::control_slot_group(c.slots[1]), 0);  // group 0 kept
+    uint8_t u[16]{};
+    u[0] = 0x80;  // group 1 master half
+    u[1] = 24;    // group 0: scene band 3
+    u[2] = 200;   // group 1: from the far end
+    u[3] = 150;   // group 1: mirror
+    u[4] = 90;    // group 1: colour 3 red
+    u[5] = 255;   // group 0 blackout
+    ControlEval ev;
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_EQ(ev.gmaster[1], 0x8080);
+    EXPECT_EQ(ev.master[0], kMasterFull);  // no output dimmed
+    EXPECT_EQ(ev.n_scene, 1);
+    EXPECT_EQ(ev.scene_group[0], 0);
+    EXPECT_EQ(ev.scene_band[0], 3);
+    EXPECT_EQ(ev.govr[1].reverse, 1);
+    EXPECT_EQ(ev.govr[1].fix_mode, config::kFixtureModeMirror);
+    EXPECT_EQ(ev.govr[1].color[2][0], 90);
+    EXPECT_EQ(ev.gblackout, 1u);
+    EXPECT_EQ(fix_mode_from_dmx(0), -1);
+    EXPECT_EQ(fix_mode_from_dmx(10), config::kFixtureModeEach);
+    EXPECT_EQ(fix_mode_from_dmx(100), config::kFixtureModeChain);
+    EXPECT_EQ(fix_mode_from_dmx(250), config::kFixtureModeStrip);
+    // Applied to a part: mode and direction land in its mode byte.
+    const uint8_t pm = apply_mode_override(config::kFixtureModeEach, ev.govr[1]);
+    EXPECT_EQ(config::scene_mode_of(pm), config::kFixtureModeMirror);
+    EXPECT_TRUE(config::scene_reverse_of(pm));
+    // Speed / Param / Effect on a group; Direction / FixMode on outputs.
+    config::ControlConfig d{};
+    d.enabled          = 1;
+    d.address          = 1;
+    d.count            = 5;
+    d.slots[0]         = config::control_slot(config::CtlFn::Speed, 2, 0, config::kCtlFlagGroup);
+    d.slots[1]         = config::control_slot(config::CtlFn::Param, 2, 0, config::kCtlFlagGroup);
+    d.slots[2]         = config::control_slot(config::CtlFn::Effect, 2, 0, config::kCtlFlagGroup);
+    d.slots[3]         = config::control_slot(config::CtlFn::Direction, 0x01);
+    d.slots[4]         = config::control_slot(config::CtlFn::FixMode, 0x01);
+    const uint8_t w[5] = { 40, 50, 255, 10, 70 };
+    evaluate_control(d, w, sizeof(w), ev);
+    EXPECT_EQ(ev.govr[2].speed, 40);
+    EXPECT_EQ(ev.govr[2].param, 50);
+    EXPECT_TRUE(ev.govr[2].generator >= 0);
+    EXPECT_EQ(ev.ovr[0].reverse, 0);  // 10: forward
+    EXPECT_EQ(ev.ovr[0].fix_mode, config::kFixtureModeChain);
+    EXPECT_EQ(ev.ovr[1].reverse, -1);  // output 2 not in the mask
+    EffectOverride only_dir;
+    only_dir.reverse  = 0;  // the mode stays the part's own
+    const uint8_t pm2 = apply_mode_override(
+        config::pack_scene_mode(config::kFixtureModeMirror, true, -1), only_dir);
+    EXPECT_EQ(config::scene_mode_of(pm2), config::kFixtureModeMirror);
+    EXPECT_TRUE(!config::scene_reverse_of(pm2));
+    EXPECT_EQ(apply_mode_override(pm2, EffectOverride{}), pm2);  // nothing asked: untouched
+    // The effect bank, the phaser and the MAtricks on a group.
+    config::ControlConfig e{};
+    e.enabled                   = 1;
+    e.address                   = 1;
+    e.count                     = 8;
+    const config::CtlFn kFns[8] = { config::CtlFn::Bank,    config::CtlFn::PhWave,
+                                    config::CtlFn::PhRate,  config::CtlFn::PhSpread,
+                                    config::CtlFn::PhWidth, config::CtlFn::Block,
+                                    config::CtlFn::Groups,  config::CtlFn::Wings };
+    for (size_t i = 0; i < 8; ++i)
+        e.slots[i] = config::control_slot(kFns[i], 3, 0, config::kCtlFlagGroup);
+    config::sanitize_control(e);
+    EXPECT_EQ(config::control_slot_group(e.slots[0]), 3);
+    const uint8_t x[8] = { 16, 16, 30, 40, 50, 2, 3, 4 };
+    evaluate_control(e, x, sizeof(x), ev);
+    EXPECT_EQ(ev.govr[3].bank, 1);  // band 2 = the second effect
+    EXPECT_EQ(ev.govr[3].ph_wave, phaser_wave_from_dmx(16));
+    EXPECT_EQ(ev.govr[3].ph_rate, 30);
+    EXPECT_EQ(ev.govr[3].ph_spread, 40);
+    EXPECT_EQ(ev.govr[3].ph_width, 50);
+    EXPECT_EQ(ev.govr[3].block, 2);
+    EXPECT_EQ(ev.govr[3].groups, 3);
+    EXPECT_EQ(ev.govr[3].wings, 4);
+    EXPECT_EQ(ev.ovr[3].bank, -1);  // no output touched
+    // A group target on a function that has none is dropped.
+    c.slots[0] = config::control_slot(config::CtlFn::Strobe, 3, 0, config::kCtlFlagGroup);
+    config::sanitize_control(c);
+    EXPECT_EQ(config::control_slot_group(c.slots[0]), -1);
+}
+
 static void test_control_evaluate() {
     config::ControlConfig c{};
     c.enabled  = 1;
@@ -2337,12 +2529,15 @@ int main() {
     test_layout_counts_the_start_address();
     test_layout_one_fixture_per_universe();
     test_decode_per_fixture_leaves_the_rest_dark();
+    test_one_colour_per_fixture();
     test_auto_patch_compact_and_forced_packing();
     test_universe_map_shares_a_universe();
     test_fixture_spans_skip_the_dead_leds();
     test_fixture_spans_follow_invert_and_grouping();
     test_fixture_modes_each_chain_mirror();
     test_fixtures_normalize_drops_overlaps();
+    test_group_strip_modes();
+    test_fixture_spans_by_index();
     test_reversed_fixture_runs_backwards();
     test_scene_solid();
     test_scene_solid_rgbw_white_off();
@@ -2394,6 +2589,7 @@ int main() {
     test_control_sanitize();
     test_control_evaluate();
     test_control_effect_functions();
+    test_control_group_slots();
     test_effect_override_applies();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);

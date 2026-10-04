@@ -104,6 +104,8 @@ def save(page):
 
 def drag(page, handle, target):
     """Pointer drag from a grip to the centre of another element."""
+    expect(handle).to_be_visible()  # a list re-rendered after a save has no box yet
+    expect(target).to_be_visible()
     hb, tb = handle.bounding_box(), target.bounding_box()
     page.mouse.move(hb["x"] + hb["width"] / 2, hb["y"] + hb["height"] / 2)
     page.mouse.down()
@@ -160,14 +162,14 @@ def test_scene_parts_send_an_effect_to_each_output_group(page, device):
     page.locator('[data-pt-out="1"][data-o="0"]').click()  # output 1 moves to the second part
     save(page)
     parts = device.get("/api/config")["scenes"][0]["parts"]
-    assert parts == [{"mask": 0x0E, "effect": 0, "fixture_mode": "each"},
-                     {"mask": 0xF1, "effect": 2, "fixture_mode": "chain"}]
+    assert parts == [{"mask": 0x0E, "effect": 0, "fixture_mode": "each", "reverse": False},
+                     {"mask": 0xF1, "effect": 2, "fixture_mode": "chain", "reverse": False}]
     expect(page.locator('[data-scene-row="0"]')).to_contain_text("Warm white + 1")
 
     page.locator('[data-pt-del="0"]').click()
     save(page)
     assert device.get("/api/config")["scenes"][0]["parts"] == [
-        {"mask": 0xF1, "effect": 2, "fixture_mode": "chain"}]
+        {"mask": 0xF1, "effect": 2, "fixture_mode": "chain", "reverse": False}]
 
 
 def test_scene_fixture_mode(page, device):
@@ -370,6 +372,40 @@ def test_fixture_groups_pick_order_and_save(page, device):
     assert device.get("/api/config")["groups"][0]["members"][0] == [0, 2]
 
 
+def test_scenes_play_on_groups_and_take_over_only_their_bars(page, device):
+    bars = {"protocol": "WS2815", "pixel_count": 20, "fixtures": [[1, 4], [5, 4], [9, 4], [13, 4], [17, 4]], "gaps": []}
+    device.post("/api/channel/0", bars)
+    device.post("/api/channel/1", bars)
+    device.post("/api/groups", {"groups": [
+        {"name": "Top", "members": [[0, 4], [0, 3], [0, 2], [0, 1], [0, 0], [1, 0], [1, 1], [1, 2], [1, 3], [1, 4]]},
+        {"name": "Centre", "members": [[0, 0], [1, 0]]}]})
+    page.reload()
+    nav(page, "scenes")
+    page.locator('[data-scene-row="0"]').click()
+    page.locator('[data-sc-group="1"]').select_option("0")  # scene 1 plays on Top
+    page.locator('[data-pt-rev="0"]').check()  # its first part, from the far end
+    page.locator('[data-sc-playon="1"]').click()  # saved first, then played
+    page.locator('[data-scene-row="1"]').click()
+    page.locator('[data-sc-group="2"]').select_option("1")  # scene 2 on Centre
+    page.locator('[data-sc-playon="2"]').click()
+    for _ in range(40):
+        plays = device.get("/api/status")["show"]["plays"]
+        if sorted(plays) == [[0, 0], [1, 1]]:
+            break
+        time.sleep(0.05)
+    assert sorted(device.get("/api/status")["show"]["plays"]) == [[0, 0], [1, 1]]
+    sc = device.get("/api/config")["scenes"]
+    assert sc[0]["group"] == 0 and sc[1]["group"] == 1
+    assert sc[0]["parts"][0]["reverse"] is True
+    expect(page.locator('[data-sc-playing="2"]')).to_contain_text("Centre")
+    page.locator('[data-sc-stop="2"]').click()  # Centre back to Top's scene? no: to its outputs
+    for _ in range(40):
+        if device.get("/api/status")["show"]["plays"] == [[0, 0]]:
+            break
+        time.sleep(0.05)
+    assert device.get("/api/status")["show"]["plays"] == [[0, 0]]
+
+
 # ── DMX profiles ─────────────────────────────────────────────────────────────
 
 def test_dmx_profiles_editor(page, device):
@@ -532,10 +568,23 @@ def test_control_editor_preset_zone_and_save(page, device):
     save(page)
     c = device.get("/api/config")["control"]
     assert c["enabled"] and c["universe"] == 77 and len(c["slots"]) == 15
-    assert c["slots"][3] == {"fn": "scene", "mask": 15, "index": 0, "fine": False}
+    assert c["slots"][3] == {"fn": "scene", "mask": 15, "index": 0, "fine": False, "group": -1}
     assert c["slots"][4]["fn"] == "fseq"
     assert c["slots"][5]["fn"] == "bank" and c["slots"][6]["fn"] == "ph_wave"
     expect(page.locator("#ct-state")).to_contain_text("waiting")
+
+
+def test_control_channel_aimed_at_a_group(page, device):
+    device.post("/api/groups", {"groups": [{"name": "Top", "members": [[0, 0]]}]})
+    page.reload()
+    nav(page, "control")
+    page.locator('[data-ct-preset="simple"]').click()
+    page.locator('[data-ct-tgt="3"]').select_option("0")  # the Scene channel on Top
+    expect(page.locator('[data-ct-out="3"]')).to_have_count(0)  # no output chips then
+    page.locator("#ct-en").check(force=True)
+    save(page)
+    sl = device.get("/api/config")["control"]["slots"][3]
+    assert sl["fn"] == "scene" and sl["group"] == 0
 
 
 def test_control_overlap_and_overflow_warnings(page, device):
@@ -566,6 +615,9 @@ def test_auto_patch_compact_whole_pixels_and_per_output_layout(page, device):
     page.locator("#cd-pack").select_option("fixture")
     save(page)
     assert device.get("/api/config")["channels"][0]["packing"] == "fixture"
+    page.locator("#cd-pack").select_option("colour")  # one colour a bar
+    save(page)
+    assert device.get("/api/config")["channels"][0]["packing"] == "colour"
     device.post("/api/channel/1", {"protocol": "WS2815", "pixel_count": 50})  # a second output
     page.reload()
     nav(page, "patch")

@@ -944,6 +944,7 @@ template <typename FillRun>
 inline void fill_on_channel(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
                             uint8_t bpp, uint8_t mode, FillRun fill_run) {
     Span sp[config::kMaxFixtures];
+    mode               = config::scene_mode_of(mode);  // it may carry the direction bit too
     const size_t n     = mode == config::kFixtureModeStrip || mode >= config::kFixtureModeCount
                            ? 0
                            : fixture_spans(cc, sp, config::kMaxFixtures);
@@ -1007,6 +1008,121 @@ inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
     });
 }
 
+// ── Scenes on groups ────────────────────────────────────────────────────────
+//
+// A group is an ordered list of fixtures on any outputs (config::FixtureGroup).
+// A scene playing on it is drawn once along the group's "virtual strip" — the
+// members end to end, in group order — then each member's slice is copied
+// into its fixture on its output.
+
+// Pixels a..a+n of a buffer, back to front.
+inline void reverse_px(uint8_t* d, uint8_t bpp, uint32_t n) {
+    uint8_t tmp[8];
+    if (n < 2) return;
+    for (uint8_t *a = d, *b = d + static_cast<size_t>(n - 1) * bpp; a < b; a += bpp, b -= bpp) {
+        std::memcpy(tmp, a, bpp);
+        std::memcpy(a, b, bpp);
+        std::memcpy(b, tmp, bpp);
+    }
+}
+
+// Each fixture of `cc` by its index (strip order), as a source-buffer span;
+// count 0 for a fixture cut off by the strip's end. `flip` is set when the
+// buffer runs through the fixture against its strip order (an inverted output)
+// or the fixture is mounted backwards — not both.
+inline void fixture_spans_by_index(const config::ChannelConfig& cc,
+                                   Span out[config::kMaxFixtures]) {
+    const size_t nf       = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+    const size_t ng       = led::gap_count(cc.gaps, led::kMaxPixelGaps);
+    const uint32_t live_n = cc.pixel_count;
+    const uint32_t group  = cc.grouping ? cc.grouping : 1;
+    for (size_t i = 0; i < config::kMaxFixtures; ++i) {
+        out[i] = Span{ 0, 0, false, 0 };
+        if (i >= nf) continue;
+        const uint32_t end = static_cast<uint32_t>(cc.fixtures[i].pos) +
+                             config::fixture_len(cc.fixtures[i]);
+        uint32_t a = led::live_within(cc.fixtures[i].pos, cc.gaps, ng);
+        uint32_t b = led::live_within(end, cc.gaps, ng);
+        if (b > live_n) b = live_n;
+        if (b <= a) continue;
+        if (cc.invert_direction) {
+            const uint32_t t = a;
+            a                = live_n - b;
+            b                = live_n - t;
+        }
+        const uint32_t ga = a / group, gb = (b + group - 1) / group;
+        out[i] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga),
+                       config::fixture_reversed(cc.fixtures[i]) != cc.invert_direction,
+                       config::fixture_profile(cc.fixtures[i]) };
+    }
+}
+
+// Draws `effect` along a virtual strip of members `lens[0..n)` (pixels each,
+// end to end) into `strip` (RGB, 3 bytes a pixel), honouring the fixture mode
+// and direction packed in `fixture_mode` (config::scene_mode_of / _reverse_of):
+//   each           every member plays the effect on its own
+//   strip, chain   one effect over the whole strip
+//   mirror         over the first half of the members, mirrored on the rest
+//   reverse        the effect runs from the far end (each: from each member's)
+// Returns the strip length, 0 when it does not fit `cap` bytes.
+inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* lens, size_t n,
+                                   const config::Effect& effect, uint8_t fixture_mode,
+                                   uint64_t phase_ms) {
+    constexpr uint8_t bpp = 3;
+    uint32_t total        = 0;
+    for (size_t i = 0; i < n; ++i)
+        total += lens[i];
+    if (total == 0 || static_cast<size_t>(total) * bpp > cap) return 0;
+    const uint8_t mode = config::scene_mode_of(fixture_mode);
+    const bool rev     = config::scene_reverse_of(fixture_mode);
+    if (mode == config::kFixtureModeEach) {
+        uint32_t at = 0;
+        for (size_t i = 0; i < n; at += lens[i++]) {
+            fill_effect_run(strip + static_cast<size_t>(at) * bpp, cap - at * bpp, lens[i], bpp,
+                            effect, phase_ms);
+            if (rev) reverse_px(strip + static_cast<size_t>(at) * bpp, bpp, lens[i]);
+        }
+        return total;
+    }
+    if (mode != config::kFixtureModeMirror) {
+        fill_effect_run(strip, cap, static_cast<uint16_t>(total), bpp, effect, phase_ms);
+        if (rev) reverse_px(strip, bpp, total);
+        return total;
+    }
+    // Mirror: the first half drawn as one strip, then member n-1-i is member
+    // i back to front (resampled when the two differ in length).
+    const size_t half = (n + 1) / 2;
+    uint32_t hlen     = 0;
+    for (size_t i = 0; i < half; ++i)
+        hlen += lens[i];
+    fill_effect_run(strip, cap, static_cast<uint16_t>(hlen), bpp, effect, phase_ms);
+    if (rev) reverse_px(strip, bpp, hlen);
+    uint32_t offs[config::kMaxGroupMembers + 1];
+    offs[0] = 0;
+    for (size_t i = 0; i < n && i < config::kMaxGroupMembers; ++i)
+        offs[i + 1] = offs[i] + lens[i];
+    for (size_t i = half; i < n; ++i) {
+        const size_t from = n - 1 - i;
+        for (uint32_t j = 0; j < lens[i]; ++j) {
+            const uint32_t src = lens[from] ? lens[from] - 1 - j * lens[from] / lens[i] : 0;
+            std::memcpy(strip + static_cast<size_t>(offs[i] + j) * bpp,
+                        strip + static_cast<size_t>(offs[from] + src) * bpp, bpp);
+        }
+    }
+    return total;
+}
+
+// One member's slice (`count` RGB pixels) into its fixture's span of an
+// output buffer of `bpp` bytes a pixel (W off), back to front when `flip`.
+inline void put_member(uint8_t* dst, uint8_t bpp, const Span& sp, const uint8_t* slice,
+                       uint32_t count) {
+    const uint32_t n = count < sp.count ? count : sp.count;
+    for (uint32_t j = 0; j < n; ++j) {
+        const uint8_t* p = slice + static_cast<size_t>(sp.reversed ? n - 1 - j : j) * 3;
+        set_px(dst, bpp, static_cast<uint16_t>(sp.first + j), p[0], p[1], p[2]);
+    }
+}
+
 // ── DMX layout ──────────────────────────────────────────────────────────────
 //
 // Where each byte of a channel's pixel buffer comes from on the wire, from
@@ -1022,6 +1138,7 @@ struct DmxRun {
     uint16_t slot;     // 0-based in that universe
     uint16_t dst;      // byte offset in the pixel buffer
     uint16_t bytes;
+    uint16_t fill = 0;  // > 1: these bytes are one pixel, repeated over `fill` pixels
 };
 constexpr size_t kMaxDmxRuns = 96;
 
@@ -1130,6 +1247,29 @@ inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit,
     const uint32_t total = static_cast<uint32_t>(cc.pixel_count) * bpp;
     if (cc.packing == config::kPackContinuous) {
         place(0, total, false);
+        return k;
+    }
+    if (cc.packing == config::kPackFixtureColour) {
+        // One colour per fixture, in strip order, one pixel's channels each,
+        // never split across universes; no fixtures = one colour for all.
+        Span by[config::kMaxFixtures];
+        fixture_spans_by_index(cc, by);
+        const size_t nf = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+        auto one        = [&](uint32_t first, uint32_t count) {
+            if (kUniverseSize - slot < bpp) {
+                ++uni;
+                slot = 0;
+            }
+            DmxRun r{ static_cast<uint16_t>(uni), static_cast<uint16_t>(slot),
+                      static_cast<uint16_t>(first * bpp), static_cast<uint16_t>(bpp) };
+            r.fill = static_cast<uint16_t>(count);
+            visit(r);
+            ++k;
+            slot += bpp;
+        };
+        if (nf == 0) one(0, cc.pixel_count);
+        for (size_t i = 0; i < nf; ++i)
+            if (by[i].count) one(by[i].first, by[i].count);
         return k;
     }
     Span sp[config::kMaxFixtures];
@@ -1349,7 +1489,10 @@ inline bool decode_pixels(uint8_t* dst, size_t dst_capacity, const config::Chann
     bool all = true;
     for_each_dmx_run(cc, [&](const DmxRun& r) {
         const uint8_t* src = get_universe(static_cast<uint16_t>(cc.universe_start + r.uni_off));
-        if (src) {
+        if (src && r.fill > 1) {  // one colour over a whole fixture
+            for (uint32_t p = 0; p < r.fill && r.dst + (p + 1) * r.bytes <= total; ++p)
+                std::memcpy(dst + r.dst + p * r.bytes, src + r.slot, r.bytes);
+        } else if (src) {
             std::memcpy(dst + r.dst, src + r.slot, r.bytes);
         } else {
             std::memset(dst + r.dst, 0, r.bytes);
@@ -1421,7 +1564,7 @@ inline int effect_from_dmx(uint8_t v) {
 }
 
 // Per-output scene overrides from the control universe (-1 = not overridden).
-// What a desk asks of the effect an output plays; -1 = the effect's own.
+// What a desk asks of the effect a scene plays; -1 = its own.
 struct EffectOverride {
     int16_t bank      = -1;  // another effect of the bank altogether
     int16_t speed     = -1;
@@ -1434,6 +1577,8 @@ struct EffectOverride {
     int16_t block     = -1;
     int16_t groups    = -1;
     int16_t wings     = -1;
+    int8_t reverse    = -1;  // 0 forward, 1 from the far end
+    int8_t fix_mode   = -1;  // config::kFixtureMode*
     int16_t color[config::kSceneColorsMax][3];
     EffectOverride() {
         for (auto& c : color)
@@ -1441,8 +1586,16 @@ struct EffectOverride {
     }
 };
 
-// Everything but `bank`: swapping the effect itself is the caller's, which
-// holds the bank (see dmx_manager's render_source).
+// A part's fixture-mode byte with the desk's Direction / Fixture mode on it.
+inline uint8_t apply_mode_override(uint8_t fixture_mode, const EffectOverride& o) {
+    if (o.reverse < 0 && o.fix_mode < 0) return fixture_mode;
+    return config::pack_scene_mode(
+        o.fix_mode >= 0 ? static_cast<uint8_t>(o.fix_mode) : config::scene_mode_of(fixture_mode),
+        o.reverse >= 0 ? o.reverse == 1 : config::scene_reverse_of(fixture_mode), -1);
+}
+
+// Everything but `bank` and the fixture mode: swapping the effect itself is
+// the caller's, which holds the bank (see dmx_manager's render_source).
 inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
     auto take = [](uint8_t& field, int16_t v) {
         if (v >= 0) field = static_cast<uint8_t>(v);
@@ -1482,10 +1635,16 @@ struct ControlEval {
     EffectOverride ovr[config::kNumChannels];
     int32_t fade_ms;    // -1 = no Fade slot
     int16_t fseq_band;  // -1 = no Fseq slot
-    // Scene selectors in slot order: band (0 = none) + outputs.
+    // Scene selectors in slot order: band (0 = none) + outputs, or a group.
     uint8_t n_scene;
     uint8_t scene_band[config::kMaxControlSlots];
     uint8_t scene_mask[config::kMaxControlSlots];
+    int8_t scene_group[config::kMaxControlSlots];  // -1 = on scene_mask
+    // Group-targeted slots: what they ask of the scenes playing on each group,
+    // and a master / blackout over its fixtures.
+    EffectOverride govr[config::kMaxGroups];
+    uint16_t gmaster[config::kMaxGroups];
+    uint32_t gblackout;  // bit per group
 
     ControlEval() { reset(); }
     void reset() {
@@ -1498,8 +1657,86 @@ struct ControlEval {
         fade_ms   = -1;
         fseq_band = -1;
         n_scene   = 0;
+        for (auto& o : govr)
+            o = EffectOverride{};
+        for (auto& m : gmaster)
+            m = kMasterFull;
+        gblackout = 0;
     }
 };
+
+// A FixMode channel's value: 0 = the scene's own (-1), then four bands.
+inline int fix_mode_from_dmx(uint8_t v) {
+    if (v == 0) return -1;
+    if (v < 64) return config::kFixtureModeEach;
+    if (v < 128) return config::kFixtureModeChain;
+    if (v < 192) return config::kFixtureModeMirror;
+    return config::kFixtureModeStrip;
+}
+
+// One group-targeted slot (its value `v`, `v2` the next channel for a fine
+// Master) into the group's fields of `out`; colours gathered in `gcol`.
+inline void apply_group_slot(ControlEval& out, int16_t (*gcol)[config::kSceneColorsMax][3],
+                             int group, config::CtlFn fn, const config::ControlSlot& s, uint8_t v,
+                             uint8_t v2) {
+    if (group < 0 || group >= static_cast<int>(config::kMaxGroups)) return;
+    EffectOverride& o = out.govr[group];
+    switch (fn) {
+    case config::CtlFn::Master: {
+        const uint32_t lvl = (s.flags & config::kCtlFlagFine) ? (static_cast<uint32_t>(v) << 8) | v2
+                                                              : static_cast<uint32_t>(v) * 257u;
+        out.gmaster[group] = static_cast<uint16_t>(out.gmaster[group] * lvl / kMasterFull);
+        break;
+    }
+    case config::CtlFn::Blackout:
+        if (v >= 128) out.gblackout |= 1u << group;
+        break;
+    case config::CtlFn::Speed:
+        if (v) o.speed = v;
+        break;
+    case config::CtlFn::Param:
+        if (v) o.param = v;
+        break;
+    case config::CtlFn::Effect:
+        if (v) o.generator = static_cast<int16_t>(effect_from_dmx(v));
+        break;
+    case config::CtlFn::Bank:
+        if (dmx_band(v)) o.bank = static_cast<int16_t>(dmx_band(v) - 1);
+        break;
+    case config::CtlFn::PhWave: o.ph_wave = static_cast<int16_t>(phaser_wave_from_dmx(v)); break;
+    case config::CtlFn::PhRate:
+        if (v) o.ph_rate = v;
+        break;
+    case config::CtlFn::PhSpread:
+        if (v) o.ph_spread = v;
+        break;
+    case config::CtlFn::PhWidth:
+        if (v) o.ph_width = v;
+        break;
+    case config::CtlFn::Block:
+        if (v) o.block = v;
+        break;
+    case config::CtlFn::Groups:
+        if (v) o.groups = v;
+        break;
+    case config::CtlFn::Wings:
+        if (v) o.wings = v;
+        break;
+    case config::CtlFn::Direction:
+        if (v) o.reverse = v >= 128 ? 1 : 0;
+        break;
+    case config::CtlFn::FixMode:
+        if (v) o.fix_mode = static_cast<int8_t>(fix_mode_from_dmx(v));
+        break;
+    case config::CtlFn::Red:
+    case config::CtlFn::Green:
+    case config::CtlFn::Blue:
+        gcol[group][s.index % config::kSceneColorsMax]
+            [static_cast<size_t>(fn) - static_cast<size_t>(config::CtlFn::Red)] = v;
+        break;
+    default: break;
+    }
+}
 
 // `dmx` is the control universe from slot 1; `len` how many slots it holds
 // (a short packet leaves the rest at 0). Colour slots override a colour only
@@ -1512,11 +1749,15 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
     // Colour channels are gathered first, then applied per colour triple.
     int16_t col[config::kNumChannels][config::kSceneColorsMax][3];
     std::memset(col, 0xFF, sizeof(col));  // -1
+    int16_t gcol[config::kMaxGroups][config::kSceneColorsMax][3];
+    std::memset(gcol, 0xFF, sizeof(gcol));
     for (size_t i = 0; i < c.count && i < config::kMaxControlSlots; ++i) {
         const config::ControlSlot& s = c.slots[i];
         const uint8_t v              = slot(at);
-        const uint8_t mask           = s.mask ? s.mask : 0xFF;
+        const int group              = config::control_slot_group(s);
+        const uint8_t mask           = group >= 0 ? 0 : (s.mask ? s.mask : 0xFF);
         const auto fn                = static_cast<config::CtlFn>(s.fn);
+        if (group >= 0) apply_group_slot(out, gcol, group, fn, s, v, slot(at + 1));
         for (size_t o = 0; o < config::kNumChannels; ++o) {
             if (!((mask >> o) & 1)) continue;
             switch (fn) {
@@ -1568,6 +1809,12 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             case config::CtlFn::Wings:
                 if (v) out.ovr[o].wings = v;
                 break;
+            case config::CtlFn::Direction:
+                if (v) out.ovr[o].reverse = v >= 128 ? 1 : 0;
+                break;
+            case config::CtlFn::FixMode:
+                if (v) out.ovr[o].fix_mode = static_cast<int8_t>(fix_mode_from_dmx(v));
+                break;
             case config::CtlFn::Red:
             case config::CtlFn::Green:
             case config::CtlFn::Blue: {
@@ -1580,8 +1827,9 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             }
         }
         if (fn == config::CtlFn::Scene) {
-            out.scene_band[out.n_scene] = dmx_band(v);
-            out.scene_mask[out.n_scene] = mask;
+            out.scene_band[out.n_scene]  = dmx_band(v);
+            out.scene_mask[out.n_scene]  = mask;
+            out.scene_group[out.n_scene] = static_cast<int8_t>(group);
             ++out.n_scene;
         } else if (fn == config::CtlFn::Fade) {
             out.fade_ms = static_cast<int32_t>(v) * 100;
@@ -1596,6 +1844,13 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             if (c3[0] <= 0 && c3[1] <= 0 && c3[2] <= 0) continue;  // unpatched or all zero
             for (int j = 0; j < 3; ++j)
                 out.ovr[o].color[k][j] = c3[j] < 0 ? 0 : c3[j];
+        }
+    for (size_t g = 0; g < config::kMaxGroups; ++g)
+        for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
+            const int16_t* c3 = gcol[g][k];
+            if (c3[0] <= 0 && c3[1] <= 0 && c3[2] <= 0) continue;
+            for (int j = 0; j < 3; ++j)
+                out.govr[g].color[k][j] = c3[j] < 0 ? 0 : c3[j];
         }
 }
 

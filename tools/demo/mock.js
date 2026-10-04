@@ -36,15 +36,19 @@
     return -1;
   }
   // A scene's parts as the firmware keeps them: an output in one part only,
-  // empty parts dropped; `mask` is every output it plays on.
+  // empty parts dropped — a scene left with none keeps its first, the look it
+  // plays on a group; `mask` is every output it plays on.
   function tidyScene(sc) {
     var seen = 0;
-    sc.parts = (sc.parts || []).map(function (p) {
+    var all = (sc.parts || []).map(function (p) {
       var m = p.mask & ~seen;
       seen |= m;
-      return { mask: m, effect: p.effect, fixture_mode: p.fixture_mode || 'each' };
-    }).filter(function (p) { return p.mask; });
+      return { mask: m, effect: p.effect, fixture_mode: p.fixture_mode || 'each', reverse: !!p.reverse };
+    });
+    sc.parts = all.filter(function (p) { return p.mask; });
+    if (!sc.parts.length && all.length) sc.parts = [all[0]];
     sc.mask = seen;
+    if (sc.group == null) sc.group = -1;
     return sc;
   }
   function inUse(fx) {
@@ -54,9 +58,17 @@
   function remapEffects(fn) {
     S.config.scenes.forEach(function (sc) { sc.parts.forEach(function (p) { p.effect = fn(p.effect); }); });
   }
-  function playScene(n, mask) {
+  // Scenes on fixture groups: [[scene, group], …], one scene a group.
+  function plays() { return S.status.show.plays || (S.status.show.plays = []); }
+  function playScene(n, mask, group) {
     var sc = S.config.scenes[n];
     if (!sc) return bad(400, 'scene index');
+    if (group === undefined && mask === undefined && sc.group >= 0) group = sc.group;
+    if (group !== undefined) {
+      if (!(S.config.groups || [])[group]) return bad(400, 'outputs: 1..255, or group: an existing group');
+      S.status.show.plays = plays().filter(function (pl) { return pl[1] !== group; }).concat([[n, group]]);
+      return ok();
+    }
     mask = mask === undefined ? sc.mask : (mask & sc.mask);  // the zone, within the scene's own
     for (var o = 0; o < 8; ++o) if (mask & (1 << o)) S.status.show.scenes[o] = n;
     S.status.active_scene = activeScene();
@@ -64,6 +76,7 @@
   }
   function stopScenes(pred) {
     for (var o = 0; o < 8; ++o) if (pred(S.status.show.scenes[o], o)) S.status.show.scenes[o] = -1;
+    S.status.show.plays = plays().filter(function (pl) { return !pred(pl[0], -1); });
     S.status.active_scene = activeScene();
   }
   var identify = { mask: 0, t0: 0 };
@@ -165,12 +178,13 @@
     if ((m = p.match(/^\/api\/scene\/(\d+)(\/(play|stop|delete))?$/))) {
       var n = +m[1];
       if (!S.config.scenes[n]) return bad(400, 'scene index');
-      if (m[3] === 'play') return playScene(n, body.outputs);
+      if (m[3] === 'play') return playScene(n, body.outputs, body.group);
       if (m[3] === 'stop') { stopScenes(function (s) { return s === n; }); return ok(); }
       if (m[3] === 'delete') {
         S.config.scenes.splice(n, 1);
         stopScenes(function (s) { return s === n; });
         S.status.show.scenes = S.status.show.scenes.map(function (s) { return s > n ? s - 1 : s; });
+        S.status.show.plays = plays().map(function (pl) { return [pl[0] > n ? pl[0] - 1 : pl[0], pl[1]]; });
         return ok();
       }
       Object.keys(body).forEach(function (k) { S.config.scenes[n][k] = body[k]; });
@@ -181,7 +195,7 @@
       if (S.config.scenes.length >= 30) return bad(409, 'scene list full');
       // Optional body: the new scene's fields (a duplicate sends a whole scene).
       S.config.scenes.push(tidyScene(Object.assign(
-        { name: 'New scene', parts: [{ mask: 255, effect: 0, fixture_mode: 'each' }] }, body)));
+        { name: 'New scene', group: -1, parts: [{ mask: 255, effect: 0, fixture_mode: 'each' }] }, body)));
       return ok({ index: S.config.scenes.length - 1 });
     }
     if (p === '/api/scenes/move') {

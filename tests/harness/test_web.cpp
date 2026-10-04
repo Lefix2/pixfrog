@@ -289,6 +289,37 @@ TEST(fixture_groups_round_trip_and_bad_lists_are_refused) {
     EXPECT_EQ(config::get_groups().count, 0);
 }
 
+// A scene on a group: {"group": g} plays it there, the status lists it.
+TEST(scene_play_on_a_group_and_the_status_lists_it) {
+    post("/api/groups", "{\"groups\":[{\"name\":\"A\",\"members\":[[0,0]]}]}");
+    post("/api/channel/0", "{\"protocol\":\"WS2815\",\"pixel_count\":10,\"fixtures\":[[1,5]]}");
+    EXPECT_EQ(post("/api/scene/0/play", "{\"group\":0}").status, 200);
+    Json st(get("/api/status").body);
+    const cJSON* plays = cJSON_GetObjectItem(st["show"], "plays");
+    EXPECT_EQ(cJSON_GetArraySize(plays), 1);
+    EXPECT_EQ(post("/api/scene/0/play", "{\"group\":5}").status, 400);  // no such group
+    // The default group is the scene's, the direction its part's.
+    EXPECT_EQ(post("/api/scene/0", "{\"group\":0,\"parts\":[{\"mask\":255,\"effect\":0,"
+                                   "\"fixture_mode\":\"chain\",\"reverse\":true}]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), 0);
+    EXPECT_TRUE(config::scene_reverse_of(config::get_scene(0).parts[0].fixture_mode));
+    EXPECT_EQ(config::scene_mode_of(config::get_scene(0).parts[0].fixture_mode),
+              config::kFixtureModeChain);
+    Json cfg(get("/api/config").body);
+    const cJSON* js = cJSON_GetArrayItem(cfg["scenes"], 0);
+    EXPECT_EQ(cJSON_GetObjectItem(js, "group")->valueint, 0);
+    const cJSON* jp = cJSON_GetArrayItem(cJSON_GetObjectItem(js, "parts"), 0);
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(jp, "reverse")));
+    EXPECT_STREQ(cJSON_GetObjectItem(jp, "fixture_mode")->valuestring, "chain");
+    post("/api/scene/0", "{\"group\":-1,\"parts\":[{\"mask\":255,\"effect\":0}]}");
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), -1);
+    EXPECT_TRUE(!config::scene_reverse_of(config::get_scene(0).parts[0].fixture_mode));
+    EXPECT_EQ(post("/api/scene/0/stop").status, 200);
+    post("/api/groups", "{\"groups\":[]}");
+}
+
 // The dashboard button: every configured output, or the outputs asked for.
 TEST(speaker_test_endpoint_and_status) {
     Json s(get("/api/status").body);
@@ -961,6 +992,30 @@ TEST(show_endpoint_sets_master_blackout_strobe) {
     EXPECT_TRUE(cJSON_IsObject(st["show"]));
     EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(st["show"], "scenes")), 8);
     post("/api/show", "{\"strobe_hz\":0}");
+}
+
+// A control slot can aim at a fixture group; the fixture profile names it.
+TEST(control_slots_target_groups) {
+    post("/api/groups", "{\"groups\":[{\"name\":\"Top\",\"members\":[[0,0]]}]}");
+    EXPECT_EQ(post("/api/control", "{\"slots\":[{\"fn\":\"scene\",\"group\":0},"
+                                   "{\"fn\":\"direction\",\"group\":0},{\"fn\":\"master\"}]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::control_slot_group(config::get_control().slots[0]), 0);
+    EXPECT_EQ(config::control_slot_group(config::get_control().slots[2]), -1);
+    Json cj(get("/api/config").body);
+    const cJSON* s0 = cJSON_GetArrayItem(cJSON_GetObjectItem(cj["control"], "slots"), 0);
+    EXPECT_EQ(cJSON_GetObjectItem(s0, "group")->valueint, 0);
+    EXPECT_EQ(post("/api/control", "{\"slots\":[{\"fn\":\"scene\",\"group\":20}]}").status, 400);
+    const std::string prof = get("/api/control/fixture").body;
+    EXPECT_TRUE(prof.find("Scene (Top)") != std::string::npos);
+    EXPECT_TRUE(prof.find("From the far end") != std::string::npos);
+    post("/api/control", "{\"slots\":[{\"fn\":\"fixmode\"}]}");  // on outputs
+    const std::string prof2 = get("/api/control/fixture").body;
+    EXPECT_TRUE(prof2.find("Fixture mode") != std::string::npos);
+    EXPECT_TRUE(prof2.find("Mirrored") != std::string::npos);
+    post("/api/control", "{\"preset\":\"simple\"}");
+    post("/api/groups", "{\"groups\":[]}");
 }
 
 TEST(control_endpoint_validates_and_applies) {

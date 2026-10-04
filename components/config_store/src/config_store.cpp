@@ -816,6 +816,17 @@ bool copy_scene_part(size_t i, size_t output, Effect& effect, uint8_t& fixture_m
     return ok;
 }
 
+bool copy_scene_look(size_t i, Effect& effect, uint8_t& fixture_mode) {
+    bool ok = false;
+    read_banks([&] {
+        ok                 = i < g_bank.count && g_bank.scenes[i].num_parts > 0;
+        const ScenePart* p = ok ? &g_bank.scenes[i].parts[0] : nullptr;
+        effect             = ok && p->effect < g_fx.count ? g_fx.effects[p->effect] : Effect{};
+        fixture_mode       = ok ? p->fixture_mode : kFixtureModeEach;
+    });
+    return ok;
+}
+
 bool set_scene(size_t i, const Scene& scene) {
     ScopedLock lock;
     if (i >= g_bank.count) return false;

@@ -215,90 +215,105 @@
     {
      "fine": true,
      "fn": "master",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "blackout",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "strobe",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "scene",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "speed",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "param",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "effect",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "red",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "green",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "blue",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "red",
+     "group": -1,
      "index": 1,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "green",
+     "group": -1,
      "index": 1,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "blue",
+     "group": -1,
      "index": 1,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "fade",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "fseq",
+     "group": -1,
      "index": 0,
      "mask": 255
     }
@@ -745,95 +760,112 @@
   ],
   "scenes": [
    {
+    "group": -1,
     "mask": 127,
     "name": "Wash",
     "parts": [
      {
       "effect": 0,
       "fixture_mode": "each",
-      "mask": 15
+      "mask": 15,
+      "reverse": false
      },
      {
       "effect": 8,
       "fixture_mode": "each",
-      "mask": 112
+      "mask": 112,
+      "reverse": false
      }
     ]
    },
    {
+    "group": -1,
     "mask": 255,
     "name": "Chase",
     "parts": [
      {
       "effect": 1,
       "fixture_mode": "each",
-      "mask": 255
+      "mask": 255,
+      "reverse": false
      }
     ]
    },
    {
+    "group": -1,
     "mask": 255,
     "name": "Rainbow",
     "parts": [
      {
       "effect": 2,
       "fixture_mode": "each",
-      "mask": 255
+      "mask": 255,
+      "reverse": false
      }
     ]
    },
    {
+    "group": -1,
     "mask": 255,
     "name": "Blobs",
     "parts": [
      {
       "effect": 3,
       "fixture_mode": "each",
-      "mask": 255
+      "mask": 255,
+      "reverse": false
      }
     ]
    },
    {
+    "group": -1,
     "mask": 255,
     "name": "Fire",
     "parts": [
      {
       "effect": 4,
       "fixture_mode": "each",
-      "mask": 255
+      "mask": 255,
+      "reverse": false
      }
     ]
    },
    {
+    "group": -1,
     "mask": 255,
     "name": "Twinkle",
     "parts": [
      {
       "effect": 5,
       "fixture_mode": "each",
-      "mask": 255
+      "mask": 255,
+      "reverse": false
      }
     ]
    },
    {
+    "group": -1,
     "mask": 255,
     "name": "Scanner",
     "parts": [
      {
       "effect": 6,
       "fixture_mode": "each",
-      "mask": 255
+      "mask": 255,
+      "reverse": false
      }
     ]
    },
    {
+    "group": -1,
     "mask": 255,
     "name": "Strobe",
     "parts": [
      {
       "effect": 7,
       "fixture_mode": "each",
-      "mask": 255
+      "mask": 255,
+      "reverse": false
      }
     ]
    }
@@ -1300,7 +1332,7 @@
    "loop.fseq"
   ]
  },
- "logs": "I (1000) WEB: log capture ring installed (8192 B)\nI (1000) WEB: HTTP server started on port 80\nI (1000) WEB: mDNS: pixfrog-3456.local\nI (1001) WEB: mDNS: pixfrog.local now points here\n",
+ "logs": "I (1000) WEB: log capture ring installed (8192 B)\nI (1000) WEB: HTTP server started on port 80\nI (1000) WEB: mDNS: pixfrog-3456.local\nI (1000) WEB: mDNS: pixfrog.local now points here\n",
  "playlist": {
   "autostart": false,
   "items": [
@@ -1405,6 +1437,7 @@
     100,
     100
    ],
+   "plays": [],
    "scenes": [
     -1,
     -1,

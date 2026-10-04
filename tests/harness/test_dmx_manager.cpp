@@ -991,6 +991,203 @@ TEST(eight_full_rgbw_outputs_leave_room_for_the_control_universe) {
     dmx::handle_pending_remaps();
 }
 
+// ── Scenes on groups ─────────────────────────────────────────────────────────
+// Outputs 1-2, 5 bars of 4 LEDs each. "Top" runs from output 1's last bar
+// (left edge) to output 2's last bar (right edge); "Centre" = the two bars
+// next to the middle.
+namespace {
+config::ChannelConfig g_saved_ch[2];
+void two_outputs_of_bars() {
+    for (size_t ch = 0; ch < 2; ++ch) {
+        g_saved_ch[ch]     = config::get_channel(ch);
+        auto c             = g_saved_ch[ch];
+        c.protocol         = led::Protocol::WS2815;
+        c.pixel_count      = 20;
+        c.grouping         = 1;
+        c.invert_direction = false;
+        std::memset(c.gaps, 0, sizeof(c.gaps));
+        std::memset(c.fixtures, 0, sizeof(c.fixtures));
+        for (uint16_t k = 0; k < 5; ++k)
+            c.fixtures[k] = { static_cast<uint16_t>(k * 4), 4 };
+        c.universe_start = static_cast<uint16_t>(200 + ch);
+        config::set_channel(ch, c);
+        dmx::mark_channel_dirty(ch);
+    }
+    dmx::handle_pending_remaps();
+    static config::GroupsConfig g{};
+    g       = config::GroupsConfig{};
+    g.count = 2;
+    std::strcpy(g.groups[0].name, "Top");
+    g.groups[0].count = 10;
+    for (uint8_t k = 0; k < 5; ++k) {
+        g.groups[0].members[k]     = { 0, static_cast<uint8_t>(4 - k) };
+        g.groups[0].members[5 + k] = { 1, k };
+    }
+    std::strcpy(g.groups[1].name, "Centre");
+    g.groups[1].count      = 2;
+    g.groups[1].members[0] = { 0, 0 };
+    g.groups[1].members[1] = { 1, 0 };
+    config::set_groups(g);
+}
+const uint8_t* frame(size_t ch) {
+    dmx::swap_universes();
+    dmx::decode_pixels_for_channel(ch);
+    return dmx::pixel_back_buffer(ch);
+}
+}  // namespace
+
+TEST(a_scene_on_a_group_spans_outputs_and_yields_to_a_smaller_one) {
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);  // nothing left on the outputs
+    auto gl          = config::get_global();
+    gl.failsafe_mode = config::kFailsafeHold;  // live = what arrived: nothing here
+    config::set_global(gl);
+    two_outputs_of_bars();
+    solid_scene(0, 200, 0, 0);
+    solid_scene(1, 0, 0, 150);
+    const uint8_t live0 = frame(0)[0], live1 = frame(1)[19 * 3];  // whatever the banks hold
+    dmx::group_play(0, 0, 0);                                     // red on Top, no fade
+    EXPECT_EQ(frame(0)[0], 200);
+    EXPECT_EQ(frame(1)[19 * 3], 200);
+    dmx::group_play(1, 1, 0);  // blue on Centre: those two bars only
+    EXPECT_EQ(dmx::fixture_scene(0, 0), 1);
+    EXPECT_EQ(dmx::fixture_scene(0, 1), 0);
+    const uint8_t* o1 = frame(0);
+    EXPECT_EQ(o1[0 * 3 + 2], 150);  // bar 1 of output 1: blue
+    EXPECT_EQ(o1[4 * 3], 200);      // bar 2: still red
+    dmx::PlayInfo plays[4];
+    EXPECT_EQ(dmx::active_plays(plays, 4), 2u);
+    dmx::group_stop(1, 0);  // Centre stops: its bars go back to their output (live)
+    EXPECT_EQ(dmx::fixture_scene(0, 0), -1);
+    EXPECT_EQ(frame(0)[0], live0);
+    dmx::scene_start_on(1, 0x01, 0);  // output 1 whole: takes its Top bars back
+    EXPECT_EQ(dmx::fixture_scene(0, 3), -1);
+    EXPECT_EQ(dmx::fixture_scene(1, 3), 0);  // output 2 keeps Top
+    EXPECT_EQ(frame(0)[8 * 3 + 2], 150);
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);  // everything back to live
+    EXPECT_EQ(dmx::active_plays(plays, 4), 0u);
+    EXPECT_EQ(frame(1)[19 * 3], live1);
+}
+
+// Chained along Top: the strip continues from output 1's left bar to output
+// 2's right bar, whatever the wiring; reversed it runs from the right edge.
+TEST(a_chained_scene_runs_along_the_group_order) {
+    reset_show();
+    two_outputs_of_bars();
+    config::Effect e{};
+    e.generator    = config::kSceneFxGradient;
+    e.num_colors   = 2;
+    e.colors[0][0] = 255;
+    e.colors[1][2] = 255;
+    e.param        = 1;
+    config::set_effect(2, e);
+    config::set_scene(2, config::make_scene("Along Top", 0xFF, 2, config::kFixtureModeChain, 0));
+    uint8_t ref[40 * 3];
+    dmx::scene_start(2);  // its default group: Top
+    EXPECT_EQ(dmx::fixture_scene(1, 4), 2);
+    const uint8_t* a = frame(0);
+    uint8_t out1[20 * 3];
+    std::memcpy(out1, a, sizeof(out1));
+    const uint8_t* b = frame(1);
+    // Member 1 (output 1, bar 5 = LEDs 16-19) holds the strip's start, member
+    // 10 (output 2, bar 5) its end: they differ, and member 5 (output 1, bar
+    // 1) meets member 6 (output 2, bar 1) in the middle.
+    EXPECT_TRUE(std::memcmp(out1 + 16 * 3, b + 16 * 3, 3) != 0);
+    (void)ref;
+    dmx::scene_stop();
+}
+
+// On a group a scene plays its first part, whatever outputs that part has —
+// none here — and the desk's Effect and Direction channels aimed at the group
+// act on that play alone.
+TEST(a_group_plays_the_first_part_and_follows_its_desk_channels) {
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
+    auto gl          = config::get_global();
+    gl.failsafe_mode = config::kFailsafeHold;
+    config::set_global(gl);
+    two_outputs_of_bars();
+    solid_scene(0, 200, 0, 0);
+    solid_scene(1, 0, 0, 90);  // effect 1: what the group's Effect channel picks
+    config::set_scene(0, config::make_scene("Look", 0, 0));  // a look, on no output
+    EXPECT_EQ(config::get_scene(0).num_parts, 1);
+    EXPECT_EQ(config::scene_mask(config::get_scene(0)), 0);
+    const uint8_t live0 = frame(0)[0], live4 = frame(0)[4 * 3];  // whatever the banks hold
+    dmx::scene_start(0);  // no output, no default group: nothing plays
+    EXPECT_EQ(frame(0)[0], live0);
+    dmx::group_play(0, 1, 0);  // Centre
+    EXPECT_EQ(frame(0)[0], 200);
+    EXPECT_EQ(frame(0)[4 * 3], live4);  // a bar outside Centre
+
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = kCtrlUni;
+    c.address  = 1;
+    c.count    = 3;
+    c.slots[0] = config::control_slot(config::CtlFn::Bank, 1, 0, config::kCtlFlagGroup);
+    c.slots[1] = config::control_slot(config::CtlFn::Direction, 1, 0, config::kCtlFlagGroup);
+    c.slots[2] = config::control_slot(config::CtlFn::Bank, 0, 0, config::kCtlFlagGroup);  // Top
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    uint8_t u[3] = { 16, 200, 0 };  // Centre: effect 2, from the far end
+    ctrl_frame(u, sizeof(u));
+    const uint8_t* px = frame(0);
+    EXPECT_EQ(px[0], 0);
+    EXPECT_EQ(px[2], 90);
+    EXPECT_EQ(dmx::fixture_scene(0, 0), 0);  // still the same scene playing
+    u[0] = 0;
+    u[2] = 16;  // Top's channel: not Centre's play
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(frame(0)[0], 200);
+
+    // A scene with a default group plays there when started whole.
+    config::set_scene(0, config::make_scene("Look", 0, 0, config::kFixtureModeChain, 0));
+    dmx::group_stop(1, 0);
+    dmx::scene_start(0);
+    EXPECT_EQ(dmx::fixture_scene(1, 4), 0);  // Top's last bar
+    EXPECT_EQ(frame(1)[19 * 3 + 2], 90);     // ... on Top's Effect channel
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
+}
+
+// The desk on a group: a Scene channel plays on "Top", a Master channel dims
+// only "Centre"'s bars; the selector at 0 stops the group.
+TEST(the_control_universe_drives_scenes_and_masters_on_groups) {
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
+    auto gl          = config::get_global();
+    gl.failsafe_mode = config::kFailsafeHold;
+    config::set_global(gl);
+    two_outputs_of_bars();
+    solid_scene(0, 200, 0, 0);
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = kCtrlUni;
+    c.address  = 1;
+    c.count    = 2;
+    c.slots[0] = config::control_slot(config::CtlFn::Scene, 0, 0, config::kCtlFlagGroup);  // Top
+    c.slots[1] = config::control_slot(config::CtlFn::Master, 1, 0,
+                                      config::kCtlFlagGroup);  // Centre
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    uint8_t u[2] = { 8, 0 };  // scene 1 on Top, Centre's master at 0
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::fixture_scene(0, 3), 0);
+    const uint8_t* o1 = frame(0);
+    EXPECT_EQ(o1[4 * 3], 200);  // a Top bar: red
+    EXPECT_EQ(o1[0], 0);        // a Centre bar: mastered to 0
+    u[1] = 255;
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(frame(0)[0], 200);  // Centre back up
+    u[0] = 0;                     // selector to 0: Top stops
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::fixture_scene(0, 3), -1);
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
+}
+
 // ── Accessors and corners ───────────────────────────────────────────────────
 
 TEST(accessors_report_the_current_state) {

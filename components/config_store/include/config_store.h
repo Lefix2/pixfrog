@@ -31,6 +31,7 @@
 namespace pixfrog::config {
 
 constexpr size_t kNumChannels = 8;
+constexpr size_t kMaxGroups   = 16;  // fixture groups (GroupsConfig below)
 
 constexpr size_t kArtnetNameShortMax = 18;
 constexpr size_t kArtnetNameLongMax  = 64;
@@ -262,6 +263,27 @@ inline const char* fixture_mode_id(uint8_t m) {
     return m < kFixtureModeCount ? kIds[m] : "each";
 }
 
+// A fixture-mode byte packs up to three settings:
+//   bits 0-1  the mode above
+//   bit  2    reverse: the effect runs from the far end (edges → centre)
+//   bits 3-7  default group + 1 (0 = none: the scene plays on its outputs)
+// A v3 scene (SceneV3::fixture_mode, layout frozen) holds all three; a scene
+// part (ScenePart::fixture_mode) the first two, the group being the scene's.
+constexpr uint8_t kSceneReverseBit = 0x04;
+inline uint8_t scene_mode_of(uint8_t packed) {
+    return packed & 0x03;
+}
+inline bool scene_reverse_of(uint8_t packed) {
+    return (packed & kSceneReverseBit) != 0;
+}
+inline int scene_group_of(uint8_t packed) {
+    return static_cast<int>(packed >> 3) - 1;
+}
+inline uint8_t pack_scene_mode(uint8_t mode, bool reverse, int group) {
+    const int g = group < 0 || group > 30 ? 0 : group + 1;
+    return static_cast<uint8_t>((mode & 0x03) | (reverse ? kSceneReverseBit : 0) | (g << 3));
+}
+
 // Display names, indexed by effect id (fixture profiles, TFT).
 inline const char* scene_fx_label(uint8_t fx) {
     static const char* const kLabels[] = { "Solid",    "Chase", "Rainbow", "Blobs",
@@ -486,16 +508,22 @@ inline size_t effect_bank_bytes(size_t count) {
 // A scene: a memory of which effect plays where. Each part sends one effect
 // of the bank to a set of outputs; an output belongs to one part at most.
 constexpr size_t kMaxSceneParts = 8;
+constexpr uint8_t kPartModeMask = 0x03 | kSceneReverseBit;
 struct ScenePart {
     uint8_t mask;          // bit n = output n
     uint8_t effect;        // index in the effect bank; a missing effect renders black
-    uint8_t fixture_mode;  // kFixtureMode*: how the effect spreads over the fixtures
+    uint8_t fixture_mode;  // kFixtureMode* | kSceneReverseBit (scene_mode_of / scene_reverse_of)
     uint8_t reserved;
 };
+// The first part is also the scene's look on a fixture group (its effect,
+// mode and direction, drawn along the group): it may have no output at all.
 struct Scene {
     char name[kSceneNameMax];  // NUL-terminated
     uint8_t num_parts;
-    uint8_t reserved[3];
+    // Default fixture group + 1 (0 = none): started everywhere, the scene
+    // plays on that group rather than on its parts' outputs.
+    uint8_t group;
+    uint8_t reserved[2];
     ScenePart parts[kMaxSceneParts];
 };
 static_assert(sizeof(Scene) == 52, "Scene is an NVS record: bytes only, no padding");
@@ -508,6 +536,11 @@ struct SceneBank {
 static_assert(sizeof(SceneBank) == 4 + kMaxScenes * sizeof(Scene), "SceneBank is packed");
 inline size_t scene_bank_bytes(size_t count) {
     return 4 + count * sizeof(Scene);
+}
+
+// The scene's default group, -1 = none (it plays on its outputs).
+inline int scene_group(const Scene& s) {
+    return static_cast<int>(s.group) - 1;
 }
 
 // Every output the scene plays on.
@@ -525,7 +558,9 @@ inline const ScenePart* scene_part_for(const Scene& s, size_t output) {
     return nullptr;
 }
 
-// Empty parts go, an output claimed twice stays with the first part.
+// Empty parts go, and an output claimed twice stays with the first part. A
+// scene left with none keeps its first part, outputless: it is still the look
+// the scene plays on a group.
 inline void sanitize_scene(Scene& s) {
     s.name[kSceneNameMax - 1] = '\0';
     const size_t n            = s.num_parts > kMaxSceneParts ? kMaxSceneParts : s.num_parts;
@@ -535,25 +570,34 @@ inline void sanitize_scene(Scene& s) {
         ScenePart p = s.parts[i];
         p.mask      = static_cast<uint8_t>(p.mask & ~seen);
         if (!p.mask) continue;
-        if (p.fixture_mode >= kFixtureModeCount) p.fixture_mode = kFixtureModeEach;
+        p.fixture_mode &= kPartModeMask;
         p.reserved      = 0;
         seen           |= p.mask;
         s.parts[out++]  = p;
     }
+    if (out == 0 && n > 0) {
+        s.parts[0].mask          = 0;
+        s.parts[0].fixture_mode &= kPartModeMask;
+        s.parts[0].reserved      = 0;
+        out                      = 1;
+    }
     for (size_t i = out; i < kMaxSceneParts; ++i)
         s.parts[i] = ScenePart{};
     s.num_parts = static_cast<uint8_t>(out);
+    if (s.group > kMaxGroups) s.group = 0;
     std::memset(s.reserved, 0, sizeof(s.reserved));
 }
 
-// A one-part scene: `effect` on the outputs of `mask`.
+// A one-part scene: `effect` on the outputs of `mask`. `fixture_mode` may
+// carry the reverse bit; `group` is the default group (-1 = none).
 inline Scene make_scene(const char* name, uint8_t mask, uint8_t effect,
-                        uint8_t fixture_mode = kFixtureModeEach) {
+                        uint8_t fixture_mode = kFixtureModeEach, int group = -1) {
     Scene s{};
     for (size_t i = 0; i + 1 < kSceneNameMax && name[i]; ++i)
         s.name[i] = name[i];
     s.num_parts = 1;
     s.parts[0]  = ScenePart{ mask, effect, fixture_mode, 0 };
+    s.group     = static_cast<uint8_t>(group < 0 ? 0 : group + 1);
     sanitize_scene(s);
     return s;
 }
@@ -567,8 +611,10 @@ inline void migrate_scenes_v3(const SceneBankV3& old, EffectBank& effects, Scene
     for (size_t i = 0; i < n; ++i) {
         const SceneV3& o   = old.scenes[i];
         effects.effects[i] = effect_from_scene_v3(o);
-        scenes.scenes[i]   = make_scene(effects.effects[i].name, o.channel_mask,
-                                        static_cast<uint8_t>(i), o.fixture_mode);
+        // The v3 byte held the mode, the direction and the default group.
+        scenes.scenes[i] = make_scene(effects.effects[i].name, o.channel_mask,
+                                      static_cast<uint8_t>(i), o.fixture_mode & kPartModeMask,
+                                      scene_group_of(o.fixture_mode));
     }
     effects.count = static_cast<uint8_t>(n);
     scenes.count  = static_cast<uint8_t>(n);
@@ -668,13 +714,14 @@ inline size_t fixture_count(const Fixture* f, size_t n) {
 constexpr uint8_t kPackContinuous  = 0;  // byte after byte: a pixel may straddle two universes
 constexpr uint8_t kPackWholePixels = 1;  // whole pixels only (170 RGB / 128 RGBW per universe)
 constexpr uint8_t kPackPerFixture  = 2;  // each fixture from slot 1 of a new universe, whole pixels
+constexpr uint8_t kPackFixtureColour = 3;  // one colour per fixture: 3 (RGBW: 4) channels a bar
 // DMX control mode: no pixel data at all. Each fixture takes the channels of
 // its DMX profile, one after the other from dmx_start; a fixture never
 // straddles two universes. An output without fixtures is one fixture.
-constexpr uint8_t kPackControl = 3;
-constexpr uint8_t kPackCount   = 4;
+constexpr uint8_t kPackControl = 4;
+constexpr uint8_t kPackCount   = 5;
 inline const char* packing_id(uint8_t p) {
-    static const char* const kIds[] = { "continuous", "whole", "fixture", "control" };
+    static const char* const kIds[] = { "continuous", "whole", "fixture", "colour", "control" };
     return p < kPackCount ? kIds[p] : "continuous";
 }
 inline int packing_from_id(const char* s) {
@@ -802,6 +849,9 @@ bool copy_scene(size_t scene_index, Scene& out);
 // another task cannot pair a part with the wrong effect. False when the scene
 // leaves that output alone; a part whose effect is gone gives a blank effect.
 bool copy_scene_part(size_t scene_index, size_t output, Effect& effect, uint8_t& fixture_mode);
+// The look a scene shows on a fixture group: its first part's effect and
+// fixture mode. False, with `effect` blanked, when the scene has no part.
+bool copy_scene_look(size_t scene_index, Effect& effect, uint8_t& fixture_mode);
 bool set_scene(size_t scene_index, const Scene& scene);
 // Structural edits also remap boot_scene / failsafe_scene; a deleted
 // reference is cleared (boot → none, failsafe scene mode → blackout).
@@ -841,39 +891,44 @@ constexpr size_t kMaxControlSlots = 32;
 
 // Persisted: append only, never renumber.
 enum class CtlFn : uint8_t {
-    None     = 0,  // spare channel (keeps the layout of a desk profile)
-    Master   = 1,  // intensity 0..100 % (16-bit with kCtlFlagFine)
-    Blackout = 2,  // >= 128 = outputs dark
-    Strobe   = 3,  // 0 = off, 1..255 = 1..25 Hz
-    Scene    = 4,  // bands of 8: 0-7 = no scene, 8-15 = scene 1, ...
-    Speed    = 5,  // 0 = the effect's own, 1..255 = override
-    Param    = 6,  // 0 = the effect's own, 1..255 = override
-    Red      = 7,  // colour `index` override (R, G and B all 0 = the effect's own)
-    Green    = 8,
-    Blue     = 9,
-    Effect   = 10,  // generator: 0 = the effect's own, 1..255 spread over the generators
-    Fade     = 11,  // scene crossfade, value × 100 ms
-    Fseq     = 12,  // bands of 8: 0-7 = stop, 8-15 = file 1, ...
-    // What follows acts, like Speed and Param, on the effect an output's scene plays.
-    Bank     = 13,  // bands of 8: 0-7 = the scene's own effect, 8-15 = effect 1 of the bank, ...
-    PhWave   = 14,  // bands of 8: 0-7 = the effect's own, 8-15 = no phaser, 16-23 = sine, ...
-    PhRate   = 15,  // 0 = the effect's own, 1..255 = override
-    PhSpread = 16,
-    PhWidth  = 17,
-    Block    = 18,  // 0 = the effect's own, 1 = off, 2..255 = N
-    Groups   = 19,
-    Wings    = 20,
+    None      = 0,  // spare channel (keeps the layout of a desk profile)
+    Master    = 1,  // intensity 0..100 % (16-bit with kCtlFlagFine)
+    Blackout  = 2,  // >= 128 = outputs dark
+    Strobe    = 3,  // 0 = off, 1..255 = 1..25 Hz
+    Scene     = 4,  // bands of 8: 0-7 = no scene, 8-15 = scene 1, ...
+    Speed     = 5,  // 0 = the effect's own, 1..255 = override
+    Param     = 6,  // 0 = the effect's own, 1..255 = override
+    Red       = 7,  // colour `index` override (R, G and B all 0 = the effect's own)
+    Green     = 8,
+    Blue      = 9,
+    Effect    = 10,  // generator: 0 = the effect's own, 1..255 spread over the generators
+    Fade      = 11,  // scene crossfade, value × 100 ms
+    Fseq      = 12,  // bands of 8: 0-7 = stop, 8-15 = file 1, ...
+    Direction = 13,  // 0 = the part's own, 1-127 = forward, 128-255 = from the far end
+    FixMode   = 14,  // 0 = the part's own, 1-63 each, 64-127 chain, 128-191 mirror, 192+ strip
+    // What follows acts, like Speed and Param, on the effect a scene plays.
+    Bank     = 15,  // bands of 8: 0-7 = the scene's own effect, 8-15 = effect 1 of the bank, ...
+    PhWave   = 16,  // bands of 8: 0-7 = the effect's own, 8-15 = no phaser, 16-23 = sine, ...
+    PhRate   = 17,  // 0 = the effect's own, 1..255 = override
+    PhSpread = 18,
+    PhWidth  = 19,
+    Block    = 20,  // 0 = the effect's own, 1 = off, 2..255 = N
+    Groups   = 21,
+    Wings    = 22,
     Count,
 };
 constexpr uint8_t kCtlFlagFine = 0x01;  // Master only: coarse + fine channel
+// The slot acts on a fixture group instead of outputs: `mask` holds the group
+// index (every function but Strobe, Fade and Fseq, which ignore it).
+constexpr uint8_t kCtlFlagGroup = 0x02;
 
 // Lower-case ids (console, REST, backup) — indexed by CtlFn.
 inline const char* ctl_fn_id(uint8_t fn) {
-    static const char* const kIds[] = { "none",    "master",    "blackout", "strobe", "scene",
-                                        "speed",   "param",     "red",      "green",  "blue",
-                                        "effect",  "fade",      "fseq",     "bank",   "ph_wave",
-                                        "ph_rate", "ph_spread", "ph_width", "block",  "groups",
-                                        "wings" };
+    static const char* const kIds[] = { "none",   "master",  "blackout", "strobe",    "scene",
+                                        "speed",  "param",   "red",      "green",     "blue",
+                                        "effect", "fade",    "fseq",     "direction", "fixmode",
+                                        "bank",   "ph_wave", "ph_rate",  "ph_spread", "ph_width",
+                                        "block",  "groups",  "wings" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(CtlFn::Count),
                   "one id per control function");
     return fn < static_cast<uint8_t>(CtlFn::Count) ? kIds[fn] : "none";
@@ -902,6 +957,11 @@ struct ControlConfig {
 };
 
 constexpr uint16_t kDefaultControlUniverse = 100;
+
+// The group a slot targets, -1 = its outputs.
+inline int control_slot_group(const ControlSlot& s) {
+    return (s.flags & kCtlFlagGroup) ? s.mask : -1;
+}
 
 inline uint8_t control_slot_width(const ControlSlot& s) {
     return (s.fn == static_cast<uint8_t>(CtlFn::Master) && (s.flags & kCtlFlagFine)) ? 2 : 1;
@@ -968,11 +1028,18 @@ inline void sanitize_control(ControlConfig& c) {
             continue;
         }
         if (s.fn >= static_cast<uint8_t>(CtlFn::Count)) s.fn = static_cast<uint8_t>(CtlFn::None);
-        if (s.mask == 0) s.mask = 0xFF;
+        // A group target needs a group (its index in `mask`) and a function
+        // that acts on one.
+        const auto fn       = static_cast<CtlFn>(s.fn);
+        const bool group_fn = fn != CtlFn::None && fn != CtlFn::Strobe && fn != CtlFn::Fade &&
+                              fn != CtlFn::Fseq;
+        const bool group_valid = (s.flags & kCtlFlagGroup) && group_fn && s.mask < kMaxGroups;
+        if (!group_valid) s.flags &= static_cast<uint8_t>(~kCtlFlagGroup);
+        if (!group_valid && s.mask == 0) s.mask = 0xFF;
         if (s.index >= kSceneColorsMax) s.index = 0;
         if (s.fn != static_cast<uint8_t>(CtlFn::Master))
             s.flags &= static_cast<uint8_t>(~kCtlFlagFine);
-        s.flags &= kCtlFlagFine;
+        s.flags &= kCtlFlagFine | kCtlFlagGroup;
     }
     size_t used = 0, keep = 0;
     for (; keep < c.count; ++keep) {
@@ -1222,7 +1289,6 @@ bool set_profiles(const ProfileBank& b);
 // fixture by output and index in that output's strip order — editing an
 // output's fixture list can shift what a group points at. Own NVS blob,
 // absent on an upgrade (= no groups).
-constexpr size_t kMaxGroups       = 16;
 constexpr size_t kMaxGroupMembers = 64;
 constexpr size_t kGroupNameMax    = 16;
 struct FixtureRef {

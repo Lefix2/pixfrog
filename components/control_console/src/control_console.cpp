@@ -590,7 +590,7 @@ int cmd_ch(int argc, char** argv) {
             return err("gaps: pos:len[,pos:len...] (pos 1-based, max 8) or -");
     } else if (strcmp(key, "packing") == 0) {
         const int p = config::packing_from_id(val);
-        if (p < 0) return err("packing: continuous|whole|fixture|control");
+        if (p < 0) return err("packing: continuous|whole|fixture|colour|control");
         c.packing = static_cast<uint8_t>(p);
     } else if (strcmp(key, "fixtures") == 0) {
         if (!parse_fixtures(val, c.fixtures))
@@ -607,9 +607,10 @@ int cmd_ch(int argc, char** argv) {
     return ok();
 }
 
-// autopatch <base> [compact] [continuous|whole|fixture]
+// autopatch <base> [compact] [continuous|whole|fixture|colour]
 int cmd_autopatch(int argc, char** argv) {
-    const char* usage = "usage: autopatch <base_universe> [compact] [continuous|whole|fixture]";
+    const char* usage =
+        "usage: autopatch <base_universe> [compact] [continuous|whole|fixture|colour]";
     if (argc < 2 || argc > 4) return err(usage);
     uint32_t base = 0;
     if (!parse_u32_in(argv[1], 0, 32767, base)) return err("base_universe: 0..32767");
@@ -991,18 +992,29 @@ int cmd_scene(int argc, char** argv) {
         printf("\n");
         for (size_t i = 0; i < config::num_scenes(); ++i) {
             const auto& sc = config::get_scene(i);
-            // parts: <outputs-hex>:<effect>:<fixture mode>, comma-separated
-            printf("scene%u name=%s mask=%02x parts=", static_cast<unsigned>(i), sc.name,
-                   config::scene_mask(sc));
+            // parts: <outputs-hex>:<effect>:<fixture mode>[:rev], comma-separated
+            printf("scene%u name=%s mask=%02x group=%d parts=", static_cast<unsigned>(i), sc.name,
+                   config::scene_mask(sc), config::scene_group(sc));
             for (size_t k = 0; k < sc.num_parts; ++k)
-                printf("%s%02x:%u:%s", k ? "," : "", sc.parts[k].mask, sc.parts[k].effect,
-                       config::fixture_mode_id(sc.parts[k].fixture_mode));
+                printf("%s%02x:%u:%s%s", k ? "," : "", sc.parts[k].mask, sc.parts[k].effect,
+                       config::fixture_mode_id(config::scene_mode_of(sc.parts[k].fixture_mode)),
+                       config::scene_reverse_of(sc.parts[k].fixture_mode) ? ":rev" : "");
             printf("\n");
         }
         return ok();
     }
 
     uint32_t n = 0;
+    if (strcmp(argv[1], "play") == 0 && argc == 5 && strcmp(argv[3], "group") == 0) {
+        // scene play <n> group <g> — on that fixture group (0-based)
+        uint32_t g = 0;
+        if (!parse_scene_index(argv[2], n) || !parse_u32_in(argv[4], 0, 15, g) ||
+            g >= config::get_groups().count)
+            return err("usage: scene play <index> group <group 0..count-1>");
+        dmx::group_play(static_cast<uint8_t>(n), static_cast<uint8_t>(g));
+        printf("active=%u\ngroup=%u\n", static_cast<unsigned>(n), static_cast<unsigned>(g));
+        return ok();
+    }
     if (strcmp(argv[1], "play") == 0) {
         // scene play <n> [outputs-hex] — on the scene's mask (∩ outputs)
         uint8_t outs = dmx::kAllOutputs;
@@ -1034,12 +1046,15 @@ int cmd_scene(int argc, char** argv) {
         return ok();
     }
     if (strcmp(argv[1], "part") == 0) {
-        // scene part <n> <outputs-hex> <effect> [mode] — those outputs play that
-        // effect; they leave the part they were in.
+        // scene part <n> <outputs-hex> <effect> [mode] [rev] — those outputs play
+        // that effect; they leave the part they were in. `rev`: from the far end.
         uint8_t mask[1];
-        uint32_t fx = 0;
+        uint32_t fx    = 0;
+        const bool rev = argc >= 6 && strcmp(argv[argc - 1], "rev") == 0;
+        if (rev) --argc;
         if ((argc != 5 && argc != 6) || !parse_scene_index(argv[2], n))
-            return err("usage: scene part <n> <outputs-hex> <effect> [each|strip|chain|mirror]");
+            return err(
+                "usage: scene part <n> <outputs-hex> <effect> [each|strip|chain|mirror] [rev]");
         if (parse_hex(argv[3], mask, 1) != 1 || mask[0] == 0)
             return err("outputs: 2-digit hex, 01..ff");
         if (!parse_effect_index(argv[4], fx)) return err("effect: an existing index (see `fx`)");
@@ -1056,8 +1071,24 @@ int cmd_scene(int argc, char** argv) {
             sc.parts[k].mask = static_cast<uint8_t>(sc.parts[k].mask & ~mask[0]);
         config::sanitize_scene(sc);  // drops the parts left without an output
         if (sc.num_parts == config::kMaxSceneParts) return err("scene parts full (8)");
-        sc.parts[sc.num_parts++] = config::ScenePart{ mask[0], static_cast<uint8_t>(fx),
-                                                      static_cast<uint8_t>(mode), 0 };
+        sc.parts[sc.num_parts++] = config::ScenePart{
+            mask[0], static_cast<uint8_t>(fx),
+            static_cast<uint8_t>(mode | (rev ? config::kSceneReverseBit : 0)), 0
+        };
+        if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "group") == 0) {
+        // scene group <n> <g|none> — the fixture group it plays on by default
+        uint32_t g = 0;
+        if (argc != 4 || !parse_scene_index(argv[2], n))
+            return err("usage: scene group <index> <group 0..15|none>");
+        const bool none = strcmp(argv[3], "none") == 0;
+        if (!none && !parse_u32_in(argv[3], 0, config::kMaxGroups - 1, g))
+            return err("group: 0..15, or none");
+        config::ScopedLock lock;
+        auto sc  = config::get_scene(n);
+        sc.group = static_cast<uint8_t>(none ? 0 : g + 1);
         if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
         return ok();
     }
@@ -1377,8 +1408,14 @@ void print_control(const config::ControlConfig& c) {
     for (size_t i = 0; i < c.count; ++i) {
         const auto& s    = c.slots[i];
         const unsigned w = config::control_slot_width(s);
-        printf("slot%u dmx=%u%s fn=%s mask=%02x index=%u fine=%u\n", static_cast<unsigned>(i), at,
-               w == 2 ? "+1" : "", config::ctl_fn_id(s.fn), s.mask, s.index,
+        const int g      = config::control_slot_group(s);
+        char target[12];
+        if (g >= 0)
+            snprintf(target, sizeof(target), "group=%d", g);  // a fixture group
+        else
+            snprintf(target, sizeof(target), "mask=%02x", s.mask);
+        printf("slot%u dmx=%u%s fn=%s %s index=%u fine=%u\n", static_cast<unsigned>(i), at,
+               w == 2 ? "+1" : "", config::ctl_fn_id(s.fn), target, s.index,
                (s.flags & config::kCtlFlagFine) ? 1u : 0u);
         at += w;
     }
@@ -1391,7 +1428,15 @@ bool parse_ctl_slot(int argc, char** argv, int at, config::ControlSlot& out) {
     if (fn < 0) return false;
     out        = config::control_slot(static_cast<config::CtlFn>(fn));
     uint32_t v = 0;
-    if (argc > at + 1 && parse_hex(argv[at + 1], &out.mask, 1) != 1) return false;
+    // The target: outputs as a hex mask, or g<n> for fixture group n (0-based).
+    bool group = false;
+    if (argc > at + 1 && argv[at + 1][0] == 'g') {
+        if (!parse_u32_in(argv[at + 1] + 1, 0, config::kMaxGroups - 1, v)) return false;
+        out.mask = static_cast<uint8_t>(v);
+        group    = true;
+    } else if (argc > at + 1 && parse_hex(argv[at + 1], &out.mask, 1) != 1) {
+        return false;
+    }
     if (argc > at + 2) {
         if (!parse_u32_in(argv[at + 2], 0, config::kSceneColorsMax - 1, v)) return false;
         out.index = static_cast<uint8_t>(v);
@@ -1400,6 +1445,7 @@ bool parse_ctl_slot(int argc, char** argv, int at, config::ControlSlot& out) {
         if (!parse_u32_in(argv[at + 3], 0, 1, v)) return false;
         out.flags = v ? config::kCtlFlagFine : 0;
     }
+    if (group) out.flags |= config::kCtlFlagGroup;
     return argc <= at + 4;
 }
 
@@ -1442,14 +1488,14 @@ int cmd_ctrl(int argc, char** argv) {
     } else if (strcmp(sub, "add") == 0) {
         config::ControlSlot s{};
         if (!parse_ctl_slot(argc, argv, 2, s))
-            return err("usage: ctrl add <fn> [mask-hex] [colour 0..3] [fine 0|1]");
+            return err("usage: ctrl add <fn> [mask-hex|g<group>] [colour 0..3] [fine 0|1]");
         if (c.count >= config::kMaxControlSlots) return err("control mode full (32 slots)");
         c.slots[c.count++] = s;
     } else if (strcmp(sub, "set") == 0) {
         config::ControlSlot s{};
         if (argc < 4 || !parse_u32_in(argv[2], 0, c.count ? c.count - 1u : 0u, v) || !c.count ||
             !parse_ctl_slot(argc, argv, 3, s))
-            return err("usage: ctrl set <slot> <fn> [mask-hex] [colour 0..3] [fine 0|1]");
+            return err("usage: ctrl set <slot> <fn> [mask-hex|g<group>] [colour 0..3] [fine 0|1]");
         c.slots[v] = s;
     } else if (strcmp(sub, "del") == 0) {
         if (argc != 3 || !c.count || !parse_u32_in(argv[2], 0, c.count - 1u, v))
@@ -1506,9 +1552,10 @@ void start() {
     register_cmd("chstat", "Per-channel activity + capacity flags", cmd_chstat);
     register_cmd("global", "global [<key> <value>] — get/set GlobalConfig", cmd_global);
     register_cmd("ch", "ch <n> [<key> <value>] — get/set ChannelConfig", cmd_ch);
-    register_cmd("autopatch",
-                 "autopatch <base> [compact] [continuous|whole|fixture] — re-address all channels",
-                 cmd_autopatch);
+    register_cmd(
+        "autopatch",
+        "autopatch <base> [compact] [continuous|whole|fixture|colour] — re-address all channels",
+        cmd_autopatch);
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
@@ -1517,8 +1564,10 @@ void start() {
     register_cmd("audio", "audio test | audio tone <Hz> [ms] — the speaker", cmd_audio);
     register_cmd("fx", "fx [name|set|phaser|invert|matricks|add|del|move] — the effect bank",
                  cmd_fx);
-    register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|part|clear] — standalone scenes",
-                 cmd_scene);
+    register_cmd(
+        "scene",
+        "scene [play <n> [outputs|group <g>]|stop [n]|name|part|group|clear] — standalone scenes",
+        cmd_scene);
     register_cmd("profile", "profile [add|del|name|preset|slots] — fixture DMX profiles",
                  cmd_profile);
     register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",

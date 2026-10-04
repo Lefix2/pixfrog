@@ -23,7 +23,7 @@ void setup() {
 
 // Allocation order in init(): bank A, bank B, merge staging, crossfade scratch,
 // then 2 buffers per channel (heap_caps); swap mutex, then sync semaphore;
-// one event group.
+// one event group; then the group plays: their mutex, 16 strips, 8 snapshots.
 TEST(every_allocation_failure_is_reported) {
     shim::fail_next(shim::Fault::HeapCaps);  // universe bank
     EXPECT_FALSE(dmx::init());
@@ -39,6 +39,10 @@ TEST(every_allocation_failure_is_reported) {
     EXPECT_FALSE(dmx::init());
     shim::fail_next(shim::Fault::Semaphore, 1, 1);  // ArtSync semaphore
     EXPECT_FALSE(dmx::init());
+    shim::fail_next(shim::Fault::Semaphore, 1, 2);  // group plays mutex (created once)
+    EXPECT_FALSE(dmx::init());
+    shim::fail_next(shim::Fault::HeapCaps, 1, 20);  // a group strip (after 2 banks,
+    EXPECT_FALSE(dmx::init());                      // staging, scratch, 16 pixel buffers)
 }
 
 TEST(a_clean_init_still_works) {

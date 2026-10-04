@@ -492,18 +492,22 @@ static void test_effect_from_scene_v3_and_sanitize() {
 }
 
 // Scene parts: disjoint masks (the first part keeps a contested output),
-// empty parts dropped, modes in range, the slots past the count cleared.
+// empty parts dropped, stray mode bits cleared, the slots past the count
+// cleared; a scene left without an output keeps its first part as its look.
 static void test_scene_parts_sanitize() {
     Scene s{};
     std::memset(s.name, 'y', sizeof(s.name));
-    s.num_parts   = 200;  // past the capacity
-    s.parts[0]    = { 0x0F, 3, kFixtureModeChain, 9 };
-    s.parts[1]    = { 0x00, 4, 0, 0 };   // empty: dropped
-    s.parts[2]    = { 0x3C, 5, 77, 0 };  // overlaps part 0 on outputs 2-3; bad mode
-    s.parts[3]    = { 0x03, 6, 0, 0 };   // wholly inside part 0: dropped
+    s.num_parts = 200;  // past the capacity
+    s.parts[0]  = { 0x0F, 3, kFixtureModeChain, 9 };
+    s.parts[1]  = { 0x00, 4, 0, 0 };  // empty: dropped
+    // Overlaps part 0 on outputs 2-3; stray bits above the mode and direction.
+    s.parts[2]    = { 0x3C, 5, 0xF8 | kSceneReverseBit | kFixtureModeStrip, 0 };
+    s.parts[3]    = { 0x03, 6, 0, 0 };  // wholly inside part 0: dropped
     s.parts[7]    = { 0x80, 30, kFixtureModeMirror, 0 };
     s.reserved[1] = 5;
+    s.group       = 99;  // past the groups
     sanitize_scene(s);
+    EXPECT_EQ(scene_group(s), -1);
     EXPECT_EQ(s.name[kSceneNameMax - 1], '\0');
     EXPECT_EQ(s.num_parts, 3);
     EXPECT_EQ(s.parts[0].mask, 0x0F);
@@ -511,7 +515,9 @@ static void test_scene_parts_sanitize() {
     EXPECT_EQ(s.parts[0].reserved, 0);
     EXPECT_EQ(s.parts[1].mask, 0x30);
     EXPECT_EQ(s.parts[1].effect, 5);
-    EXPECT_EQ(s.parts[1].fixture_mode, kFixtureModeEach);
+    EXPECT_EQ(scene_mode_of(s.parts[1].fixture_mode), kFixtureModeStrip);
+    EXPECT_TRUE(scene_reverse_of(s.parts[1].fixture_mode));
+    EXPECT_EQ(s.parts[1].fixture_mode & 0xF8, 0);
     EXPECT_EQ(s.parts[2].mask, 0x80);
     EXPECT_EQ(s.parts[2].effect, 30);
     EXPECT_EQ(s.parts[3].mask + s.parts[7].mask, 0);
@@ -529,7 +535,20 @@ static void test_scene_parts_sanitize() {
     EXPECT_EQ(one.parts[0].mask, 0xF0);
     EXPECT_EQ(one.parts[0].effect, 2);
     EXPECT_EQ(one.parts[0].fixture_mode, kFixtureModeStrip);
-    EXPECT_EQ(make_scene("nowhere", 0, 0).num_parts, 0);  // no output: no part
+    // No output: the part stays, as the look the scene plays on a group.
+    const Scene look = make_scene("on a group", 0, 4, kFixtureModeChain | kSceneReverseBit, 2);
+    EXPECT_EQ(look.num_parts, 1);
+    EXPECT_EQ(look.parts[0].mask, 0);
+    EXPECT_EQ(look.parts[0].effect, 4);
+    EXPECT_TRUE(scene_reverse_of(look.parts[0].fixture_mode));
+    EXPECT_EQ(scene_group(look), 2);
+    EXPECT_EQ(scene_mask(look), 0);
+    Scene two     = look;  // ... but not next to a part that has outputs
+    two.parts[1]  = { 0x01, 7, 0, 0 };
+    two.num_parts = 2;
+    sanitize_scene(two);
+    EXPECT_EQ(two.num_parts, 1);
+    EXPECT_EQ(two.parts[0].effect, 7);
     EXPECT_EQ(scene_mask(Scene{}), 0);
 }
 
@@ -554,8 +573,9 @@ static void test_scenes_v3_migration() {
     old.scenes[1].fixture_mode = kFixtureModeMirror;
     old.scenes[1].num_colors   = 2;
     old.scenes[1].extra[0][2]  = 44;
-    std::strcpy(old.scenes[2].name, "Nowhere");  // no output: a scene without a part
-    old.scenes[2].effect = kSceneFxFire;
+    std::strcpy(old.scenes[2].name, "Nowhere");  // no output: a look for its group
+    old.scenes[2].effect       = kSceneFxFire;
+    old.scenes[2].fixture_mode = pack_scene_mode(kFixtureModeChain, true, 5);
 
     std::memset(&effects, 0xEE, sizeof(effects));  // stale content must go
     std::memset(&scenes, 0xEE, sizeof(scenes));
@@ -576,7 +596,13 @@ static void test_scenes_v3_migration() {
     EXPECT_EQ(scenes.scenes[1].parts[0].mask, 0x0F);
     EXPECT_EQ(scenes.scenes[1].parts[0].effect, 1);
     EXPECT_EQ(scenes.scenes[1].parts[0].fixture_mode, kFixtureModeMirror);
-    EXPECT_EQ(scenes.scenes[2].num_parts, 0);
+    EXPECT_EQ(scene_group(scenes.scenes[1]), -1);
+    EXPECT_EQ(scenes.scenes[2].num_parts, 1);  // the v3 byte: mode, direction, group
+    EXPECT_EQ(scenes.scenes[2].parts[0].mask, 0);
+    EXPECT_EQ(scenes.scenes[2].parts[0].effect, 2);
+    EXPECT_EQ(scene_mode_of(scenes.scenes[2].parts[0].fixture_mode), kFixtureModeChain);
+    EXPECT_TRUE(scene_reverse_of(scenes.scenes[2].parts[0].fixture_mode));
+    EXPECT_EQ(scene_group(scenes.scenes[2]), 5);
     EXPECT_EQ(effects.effects[2].generator, kSceneFxFire);
     EXPECT_EQ(effects.effects[3].name[0], 0);  // past the count: blank
     EXPECT_EQ(scenes.scenes[3].num_parts, 0);
