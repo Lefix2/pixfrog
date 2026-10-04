@@ -62,7 +62,9 @@ The fade is global, and the desk's Fade channel overrides it.
 A fixture mode you compose yourself. It starts at an address in a universe
 (Art-Net port-address, or the same sACN universe), and each slot below takes
 one DMX channel (two for a 16-bit master) in list order. Every slot acts on
-an output group.
+a set of outputs, or on a **fixture group** (docs/PROTOCOLS.md §5.5b): master,
+blackout, scene, speed, param, effect, colours, direction and fixture mode can
+aim at a group — "Top", "Centre", one bar.
 
 | Function | Value |
 |---|---|
@@ -75,6 +77,8 @@ an output group.
 | Red / Green / Blue (colour n) | overrides colour n of the playing scene; all three at 0 = the scene's own |
 | Fade | scene fade time, value × 0.1 s |
 | FSEQ | bands of 8: 0–7 = stop, 8–15 = file 1 … (the order of the file list) |
+| Direction | 0 = the scene's own, 1–127 forward, 128–255 from the far end (in mirror: centre out) |
+| Fixture mode | 0 = the scene's own, 1–63 each fixture, 64–127 in a row, 128–191 mirrored, 192–255 whole strip |
 | Spare | nothing; it keeps a channel free |
 
 **How the desk and local actions interact:**
@@ -85,8 +89,12 @@ an output group.
     stays put.
   - When the universe first appears, only non-zero bands act, so a desk at 0
     does not stop a local scene. A desk already sitting on a scene starts it.
-- **Zones from the desk:** use two Scene slots with different groups (for
-  example outputs 1–4 and 5–8).
+- **Zones from the desk:** use two Scene slots with different targets: outputs
+  1–4 and 5–8, or groups — a Scene slot on "Top" and one on "Bottom" play two
+  scenes at once; one on a single bar takes only that bar. A group's selector
+  at 0 stops that group (its bars show their outputs again).
+- **On a group**, a Master / Blackout dims only its bars, and the overrides
+  (speed, colours, direction, fixture mode…) apply to the scenes playing on it.
 - **When the desk goes silent (3 s):**
   - master, blackout and strobe return to neutral, so the rig is never left
     dark;
@@ -104,7 +112,7 @@ an output group.
 **Editors:**
 - web: *DMX control*, with the channel map and overlap and overflow warnings;
 - TFT: INPUTS → DMX ctrl;
-- UART: `ctrl`, `ctrl preset simple|full`, `ctrl add <fn> [mask] [colour] [fine]`, `ctrl set|del`, `ctrl universe|address|enable`;
+- UART: `ctrl`, `ctrl preset simple|full`, `ctrl add <fn> [mask|g<group>] [colour] [fine]`, `ctrl set|del`, `ctrl universe|address|enable`;
 - REST: `POST /api/control`.
 
 The control universe may share a universe with an output, for example at

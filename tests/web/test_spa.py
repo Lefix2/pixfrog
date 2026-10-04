@@ -368,9 +368,22 @@ def test_control_editor_preset_zone_and_save(page, device):
     save(page)
     c = device.get("/api/config")["control"]
     assert c["enabled"] and c["universe"] == 77 and len(c["slots"]) == 15
-    assert c["slots"][3] == {"fn": "scene", "mask": 15, "index": 0, "fine": False}
+    assert c["slots"][3] == {"fn": "scene", "mask": 15, "index": 0, "fine": False, "group": -1}
     assert c["slots"][4]["fn"] == "fseq"
     expect(page.locator("#ct-state")).to_contain_text("waiting")
+
+
+def test_control_channel_aimed_at_a_group(page, device):
+    device.post("/api/groups", {"groups": [{"name": "Top", "members": [[0, 0]]}]})
+    page.reload()
+    nav(page, "control")
+    page.locator('[data-ct-preset="simple"]').click()
+    page.locator('[data-ct-tgt="3"]').select_option("0")  # the Scene channel on Top
+    expect(page.locator('[data-ct-out="3"]')).to_have_count(0)  # no output chips then
+    page.locator("#ct-en").check(force=True)
+    save(page)
+    sl = device.get("/api/config")["control"]["slots"][3]
+    assert sl["fn"] == "scene" and sl["group"] == 0
 
 
 def test_control_overlap_and_overflow_warnings(page, device):

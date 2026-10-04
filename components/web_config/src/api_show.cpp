@@ -28,6 +28,7 @@ cJSON* build_control_json() {
         cJSON_AddNumberToObject(j, "mask", sl.mask);
         cJSON_AddNumberToObject(j, "index", sl.index);
         cJSON_AddBoolToObject(j, "fine", (sl.flags & config::kCtlFlagFine) != 0);
+        cJSON_AddNumberToObject(j, "group", config::control_slot_group(sl));  // -1 = its outputs
         cJSON_AddItemToArray(js, j);
     }
     cJSON_AddItemToObject(jc, "slots", js);
@@ -91,6 +92,14 @@ bool apply_control_json(const cJSON* jc, config::ControlConfig& c, const char** 
             if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(js, "fine")) &&
                 f == static_cast<int>(config::CtlFn::Master))
                 sl.flags = config::kCtlFlagFine;
+            // "group": g acts on that fixture group instead of the outputs.
+            const cJSON* gr = cJSON_GetObjectItemCaseSensitive(js, "group");
+            if (cJSON_IsNumber(gr) && gr->valuedouble >= 0) {
+                if (gr->valuedouble >= config::kMaxGroups)
+                    return *why = "slots[].group: 0..15 (-1 = its outputs)", false;
+                sl.mask   = static_cast<uint8_t>(gr->valuedouble);
+                sl.flags |= config::kCtlFlagGroup;
+            }
             parsed[n++] = sl;
         }
         std::memcpy(c.slots, parsed, sizeof(c.slots));
@@ -229,6 +238,27 @@ static cJSON* ofl_channel(const config::ControlSlot& sl) {
         cJSON_AddItemToObject(ch, "capability", c);
         break;
     }
+    case config::CtlFn::Direction: {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        cJSON* c = ofl_cap("EffectParameter");
+        cJSON_AddStringToObject(c, "comment", "Forward");
+        ofl_range(caps, 1, 127, c);
+        c = ofl_cap("EffectParameter");
+        cJSON_AddStringToObject(c, "comment", "From the far end (mirror: centre out)");
+        ofl_range(caps, 128, 255, c);
+        break;
+    }
+    case config::CtlFn::FixMode: {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        const char* const kModes[4] = { "Each fixture", "Fixtures in a row", "Mirrored",
+                                        "Whole strip" };
+        for (int b = 0; b < 4; ++b) {
+            cJSON* c = ofl_cap("EffectParameter");
+            cJSON_AddStringToObject(c, "comment", kModes[b]);
+            ofl_range(caps, b ? b * 64 : 1, b * 64 + 63, c);
+        }
+        break;
+    }
     case config::CtlFn::Fseq: {
         cJSON* c = ofl_cap("Generic");
         cJSON_AddStringToObject(c, "comment", "Stop the show file");
@@ -266,6 +296,8 @@ static const char* ofl_base_name(const config::ControlSlot& sl, char* buf, size_
     case config::CtlFn::Effect: return "Effect";
     case config::CtlFn::Fade: return "Fade time";
     case config::CtlFn::Fseq: return "Show file";
+    case config::CtlFn::Direction: return "Direction";
+    case config::CtlFn::FixMode: return "Fixture mode";
     default: return nullptr;
     }
 }
@@ -311,7 +343,11 @@ static cJSON* build_fixture_json() {
             cJSON_AddItemToArray(mode_chs, cJSON_CreateNull());
             continue;
         }
-        ofl_channel_name(base, sizeof(base), b, sl.mask);
+        const int grp = config::control_slot_group(sl);
+        if (grp >= 0 && grp < config::get_groups().count)  // "Master (Top)"
+            snprintf(base, sizeof(base), "%s (%s)", b, config::get_groups().groups[grp].name);
+        else
+            ofl_channel_name(base, sizeof(base), b, sl.mask);
         snprintf(unique, sizeof(unique), "%s", base);
         for (int k = 2; cJSON_GetObjectItemCaseSensitive(avail, unique); ++k)
             snprintf(unique, sizeof(unique), "%s %d", base, k);

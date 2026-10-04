@@ -902,7 +902,7 @@ var FR={
   'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
   'Firmware update rolled back':'Mise à jour du firmware annulée','Acknowledge':'Acquitter','last rollback':'dernier rollback','none':'aucun',
   '{v} on {slot} was rejected ({why}) — running {run}':'{v} sur {slot} a été rejeté ({why}) — version active {run}',
-  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','PLAYS ON':'JOUE SUR','Its target channels':'Ses canaux cibles','From the far end (in mirror: from the centre out)':'Depuis l’autre bout (en miroir : du centre vers les bords)','group':'groupe','Groups':'Groupes','New group':'Nouveau groupe','A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.':'Un groupe est un ensemble ordonné de fixtures, sur n’importe quelles sorties : là où une scène joue. Son ordre est le ruban que l’effet parcourt.','Unnamed':'Sans nom','No group yet':'Aucun groupe','Create a group to start':'Crée un groupe pour commencer','Out':'Sortie','no such fixture now':'cette fixture n’existe plus','Remove from the group':'Retirer du groupe','Add to the group':'Ajouter au groupe','all':'toutes','No fixture yet: describe them in the channel editor (Fixtures & dead LEDs)':'Aucune fixture : décris-les dans l’éditeur de canal (Fixtures et LEDs mortes)','NAME':'NOM','FIXTURES, IN ORDER':'FIXTURES, DANS L’ORDRE','Reverse the order':'Inverser l’ordre','Delete the group':'Supprimer le groupe','Empty: add fixtures below':'Vide : ajoute des fixtures ci-dessous','ADD FIXTURES':'AJOUTER DES FIXTURES','Group':'Groupe','Mounted the other way round: the effects run through it backwards':'Montée à l’envers : les effets la parcourent dans l’autre sens','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
+  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','Outputs':'Sorties','Direction':'Direction','Fixture mode':'Mode fixtures','PLAYS ON':'JOUE SUR','Its target channels':'Ses canaux cibles','From the far end (in mirror: from the centre out)':'Depuis l’autre bout (en miroir : du centre vers les bords)','group':'groupe','Groups':'Groupes','New group':'Nouveau groupe','A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.':'Un groupe est un ensemble ordonné de fixtures, sur n’importe quelles sorties : là où une scène joue. Son ordre est le ruban que l’effet parcourt.','Unnamed':'Sans nom','No group yet':'Aucun groupe','Create a group to start':'Crée un groupe pour commencer','Out':'Sortie','no such fixture now':'cette fixture n’existe plus','Remove from the group':'Retirer du groupe','Add to the group':'Ajouter au groupe','all':'toutes','No fixture yet: describe them in the channel editor (Fixtures & dead LEDs)':'Aucune fixture : décris-les dans l’éditeur de canal (Fixtures et LEDs mortes)','NAME':'NOM','FIXTURES, IN ORDER':'FIXTURES, DANS L’ORDRE','Reverse the order':'Inverser l’ordre','Delete the group':'Supprimer le groupe','Empty: add fixtures below':'Vide : ajoute des fixtures ci-dessous','ADD FIXTURES':'AJOUTER DES FIXTURES','Group':'Groupe','Mounted the other way round: the effects run through it backwards':'Montée à l’envers : les effets la parcourent dans l’autre sens','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
   'Fixtures overlap: LED {a}–{b}':'Des fixtures se chevauchent : LED {a}–{b}','A fixture ends past the strip (LED {n})':'Une fixture dépasse la fin du strip (LED {n})','Dead LEDs inside a fixture at LED {a}: the fixture is shorter':'LEDs mortes dans une fixture à la LED {a} : la fixture est plus courte',
   'At most {n} dead runs: fewer fixtures, or no dead LEDs between':'{n} zones de LEDs mortes au plus : moins de fixtures, ou pas de LEDs mortes entre elles','At most 32 fixtures':'32 fixtures au plus','At most 8 dead runs':'8 zones de LEDs mortes au plus',
   'Channel {n}: the layout list is not valid — fix it before saving':'Canal {n} : la liste n’est pas valide — corrige-la avant d’enregistrer',
@@ -1920,7 +1920,7 @@ function reloadConfig(){
     if(el('s-fade')) el('s-fade').value=((g.scene_fade_ms||0)/1000).toFixed(1);
     if(el('spk-vol')){ el('spk-vol').value=g.speaker_volume||0; spkVolLabel(); spkButtons(); }
     if(d.groups && !dirty.has('groups')){ GROUPS=d.groups.map(function(g){ return {name:g.name,members:g.members.map(function(m){ return [m[0],m[1]]; })}; }); if(curGroup>=GROUPS.length) curGroup=GROUPS.length-1; }
-    if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,mapped:d.control.mapped!==false,pool:d.control.pool||72,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
+    if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,mapped:d.control.mapped!==false,pool:d.control.pool||72,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine,group:sl.group!=null?sl.group:-1}; })}; }
     renderControl();
     if(el('s-auth')){ el('s-auth').checked=!!g.auth_enabled; setAuthUI(); }
     setLive('fw-name','pixfrog '+(d.version||'')); setLive('fw-sub','esp32-p4 · partition '+(d.ota_partition||'?'));
@@ -2053,8 +2053,9 @@ function gmDragEnd(){
 }
 /* ─────────── DMX control universe ─────────── */
 var CTL={enabled:false,universe:100,address:1,slots:[]}, CTL_STATE='off';
-var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq'];
-var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Scene speed',param:'Scene parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Effect',fade:'Fade time',fseq:'Show file'};
+var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq','direction','fixmode'];
+var CTL_GROUP_FNS=['master','blackout','scene','speed','param','red','green','blue','effect','direction','fixmode'];  // can target a group
+var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Scene speed',param:'Scene parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Effect',fade:'Fade time',fseq:'Show file',direction:'Direction',fixmode:'Fixture mode'};
 function ctlWidth(sl){ return (sl.fn==='master'&&sl.fine)?2:1; }
 function ctlFootprint(){ return CTL.slots.reduce(function(n,sl){ return n+ctlWidth(sl); },0); }
 function ctlPreset(which){
@@ -2081,7 +2082,10 @@ function renderControl(){
   CTL.slots.forEach(function(sl,i){
     var w=ctlWidth(sl), dmx=w===2?(at+'-'+(at+1)):String(at); at+=w;
     var opts=CTL_FNS.map(function(f){ return '<option value="'+f+'"'+(f===sl.fn?' selected':'')+'>'+esc(t(CTL_LABELS[f]))+'</option>'; }).join('');
-    var outs=''; for(var o=0;o<8;o++){ var on=(sl.mask>>o)&1;
+    var grpOk=CTL_GROUP_FNS.indexOf(sl.fn)>=0 && GROUPS.length>0, onGroup=grpOk&&sl.group>=0;
+    var tgt=grpOk?'<select data-ct-tgt="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:5px 7px;font:500 12px \'DM Mono\';margin-right:6px"><option value="-1">'+esc(t('Outputs'))+'</option>'
+      +GROUPS.map(function(g,gi){ return '<option value="'+gi+'"'+(sl.group===gi?' selected':'')+'>'+esc(g.name||('#'+(gi+1)))+'</option>'; }).join('')+'</select>':'';
+    var outs=''; for(var o=0;o<8&&!onGroup;o++){ var on=(sl.mask>>o)&1;
       outs+='<button data-ct-out="'+i+'" data-o="'+o+'" style="width:26px;height:26px;border-radius:0;cursor:pointer;font:500 11px \'DM Mono\';'+(on?'background:rgba(63,212,99,.14);border:1px solid rgba(63,212,99,.5);color:var(--accent)':'background:var(--well);border:1px solid var(--line-2);color:var(--fg-6)')+'">'+(o+1)+'</button>'; }
     var opt='';
     if(['red','green','blue'].indexOf(sl.fn)>=0){ opt='<select data-ct-idx="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:6px 8px;font:500 12px \'DM Mono\'">'+[0,1,2,3].map(function(k){ return '<option value="'+k+'"'+(k===sl.index?' selected':'')+'>'+t('Colour')+' '+(k+1)+'</option>'; }).join('')+'</select>'; }
@@ -2089,7 +2093,7 @@ function renderControl(){
     rows+='<div data-ct-row="'+i+'" style="display:grid;grid-template-columns:70px 1.3fr 2fr 1fr 70px 70px;gap:10px;align-items:center;padding:8px 18px;border-bottom:1px solid var(--rule)">'
       +'<span style="font:500 13px \'DM Mono\';color:var(--accent)">'+dmx+'</span>'
       +'<select data-ct-fn="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:7px 9px;font:500 13px \'Figtree\'">'+opts+'</select>'
-      +'<span style="display:flex;gap:4px">'+outs+'</span>'
+      +'<span style="display:flex;gap:4px;align-items:center">'+tgt+outs+'</span>'
       +'<span>'+opt+'</span>'
       +'<span style="display:flex;gap:4px"><button class="btn-sec" data-ct-up="'+i+'" title="'+esc(t('Move up'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↑</button><button class="btn-sec" data-ct-down="'+i+'" title="'+esc(t('Move down'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↓</button></span>'
       +'<button class="btn-dng" data-ct-del="'+i+'" title="'+esc(t('Delete'))+'" style="width:26px;height:26px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);cursor:pointer;justify-self:end">×</button>'
@@ -2108,7 +2112,7 @@ function renderCtlState(){
   var st=el('ct-state'); if(st){ st.textContent=t(CTL_STATE==='live'?'receiving':CTL_STATE==='idle'?'waiting for the desk':'off'); st.style.color=CTL_STATE==='live'?'var(--accent)':CTL_STATE==='idle'?'var(--warn)':'var(--fg-4)'; }
   var sc=el('sh-ctl'); if(sc){ sc.textContent=t('DMX ctrl')+' · '+t(CTL_STATE==='live'?'receiving':CTL_STATE==='idle'?'waiting':'off'); sc.style.color=CTL_STATE==='live'?'var(--accent)':CTL_STATE==='idle'?'var(--warn)':'var(--fg-4)'; }
 }
-function ctlBody(){ return {enabled:!!CTL.enabled,universe:CTL.universe,address:CTL.address,slots:CTL.slots.map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index,fine:!!sl.fine}; })}; }
+function ctlBody(){ return {enabled:!!CTL.enabled,universe:CTL.universe,address:CTL.address,slots:CTL.slots.map(function(sl){ var g=CTL_GROUP_FNS.indexOf(sl.fn)>=0&&sl.group>=0?sl.group:-1; return {fn:sl.fn,mask:g>=0?255:sl.mask,index:sl.index,fine:!!sl.fine,group:g}; })}; }
 
 /* ─────────── show (master / blackout / strobe) ─────────── */
 var SHOW={master:100,blackout:0,strobe:0}, PLAYING={}, PLAYING_G={};
@@ -2321,7 +2325,7 @@ function fseqUpload(){
 function onClick(e){
   var act=e.target.closest('[data-action]'); if(act){ doAction(act.getAttribute('data-action')); return; }
   var cpr=e.target.closest('[data-ct-preset]'); if(cpr){ ctlPreset(cpr.getAttribute('data-ct-preset')); markDirty('control'); renderControl(); return; }
-  if(e.target.closest('[data-ct-add]')){ if(CTL.slots.length<32){ CTL.slots.push({fn:'master',mask:255,index:0,fine:false}); markDirty('control'); renderControl(); } return; }
+  if(e.target.closest('[data-ct-add]')){ if(CTL.slots.length<32){ CTL.slots.push({fn:'master',mask:255,index:0,fine:false,group:-1}); markDirty('control'); renderControl(); } return; }
   var cto=e.target.closest('[data-ct-out]'); if(cto){ var si=+cto.getAttribute('data-ct-out'), nm=CTL.slots[si].mask^(1<<+cto.getAttribute('data-o')); if(nm){ CTL.slots[si].mask=nm; markDirty('control'); renderControl(); } return; }
   var ctd=e.target.closest('[data-ct-del]'); if(ctd){ CTL.slots.splice(+ctd.getAttribute('data-ct-del'),1); markDirty('control'); renderControl(); return; }
   var ctu=e.target.closest('[data-ct-up]'); if(ctu){ var ui=+ctu.getAttribute('data-ct-up'); if(ui>0){ var tmp=CTL.slots[ui-1]; CTL.slots[ui-1]=CTL.slots[ui]; CTL.slots[ui]=tmp; markDirty('control'); renderControl(); } return; }
@@ -2400,6 +2404,7 @@ function onInput(e){
   if(t.id==='ct-uni'){ CTL.universe=Math.max(0,Math.min(32767,parseInt(t.value,10)||0)); markDirty('control'); renderControl(); return; }
   if(t.id==='ct-addr'){ CTL.address=Math.max(1,Math.min(512,parseInt(t.value,10)||1)); markDirty('control'); renderControl(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-ct-fn')){ var ci=+t.getAttribute('data-ct-fn'); CTL.slots[ci].fn=t.value; if(t.value!=='master') CTL.slots[ci].fine=false; markDirty('control'); renderControl(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-ct-tgt')){ CTL.slots[+t.getAttribute('data-ct-tgt')].group=parseInt(t.value,10); markDirty('control'); renderControl(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-ct-idx')){ CTL.slots[+t.getAttribute('data-ct-idx')].index=+t.value; markDirty('control'); return; }
   if(t.hasAttribute&&t.hasAttribute('data-ct-fine')){ CTL.slots[+t.getAttribute('data-ct-fine')].fine=t.checked; markDirty('control'); renderControl(); return; }
   if(t.id==='s-auth'){ setAuthUI(); markDirty('sysauth'); return; }

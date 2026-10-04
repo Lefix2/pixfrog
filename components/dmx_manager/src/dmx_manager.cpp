@@ -162,6 +162,11 @@ std::atomic<uint8_t> g_dmx_strobe[config::kNumChannels];
 std::atomic<int32_t> g_dmx_fade_ms{ -1 };
 // Render-task-only control state.
 logic::SceneOverride g_ovr[config::kNumChannels];
+// The same for group-targeted control slots (render task only): overrides for
+// the scenes playing on each group, and a master / blackout over its bars.
+logic::SceneOverride g_govr[config::kMaxGroups];
+uint16_t g_gmaster[config::kMaxGroups];
+uint32_t g_gblackout = 0;
 uint8_t g_ctrl_prev_band[config::kMaxControlSlots];
 int16_t g_ctrl_prev_fseq = -1;
 bool g_ctrl_was_live     = false;
@@ -354,6 +359,8 @@ bool init() {
 
     // Scenes on groups: a strip per play and a snapshot per output, in PSRAM
     // (allocated once: init() may run again).
+    for (auto& m : g_gmaster)
+        m = kMasterFull;
     if (!g_play_mux) g_play_mux = xSemaphoreCreateMutex();
     if (!g_play_mux) {
         ESP_LOGE(TAG, "group plays mutex alloc failed");
@@ -894,14 +901,20 @@ void update_show_control() {
             }
             g_dmx_blackout.store(0, std::memory_order_relaxed);
             g_dmx_fade_ms.store(-1, std::memory_order_relaxed);
+            for (auto& m : g_gmaster)
+                m = kMasterFull;
+            g_gblackout     = 0;
             g_ctrl_was_live = false;
             ESP_LOGW(TAG, "control universe lost: master/blackout/strobe released");
         }
         // Scene overrides survive a lost signal (the look holds), but not the
         // control universe being switched off.
-        if (!config::get_control().enabled)
+        if (!config::get_control().enabled) {
             for (auto& o : g_ovr)
                 o = logic::SceneOverride{};
+            for (auto& o : g_govr)
+                o = logic::SceneOverride{};
+        }
         return;
     }
     const auto& c        = config::get_control();
@@ -917,16 +930,29 @@ void update_show_control() {
     }
     g_dmx_blackout.store(ev.blackout, std::memory_order_relaxed);
     g_dmx_fade_ms.store(ev.fade_ms, std::memory_order_relaxed);
+    for (size_t gi = 0; gi < config::kMaxGroups; ++gi) {
+        g_govr[gi]    = ev.govr[gi];
+        g_gmaster[gi] = ev.gmaster[gi];
+    }
+    g_gblackout = ev.gblackout;
 
     const bool first = !g_ctrl_was_live;
     for (uint8_t i = 0; i < ev.n_scene; ++i) {
         const uint8_t band = ev.scene_band[i];
         if (!first && band == g_ctrl_prev_band[i]) continue;
         g_ctrl_prev_band[i] = band;
+        const int group     = ev.scene_group[i];
         if (band == 0) {
-            if (!first) scene_stop_on(ev.scene_mask[i]);
+            if (first) continue;
+            if (group >= 0)
+                group_stop(static_cast<uint8_t>(group));
+            else
+                scene_stop_on(ev.scene_mask[i]);
         } else if (band - 1u < config::num_scenes()) {
-            scene_start_on(static_cast<uint8_t>(band - 1), ev.scene_mask[i]);
+            if (group >= 0)
+                group_play(static_cast<uint8_t>(band - 1), static_cast<uint8_t>(group));
+            else
+                scene_start_on(static_cast<uint8_t>(band - 1), ev.scene_mask[i]);
         }
     }
     if (ev.fseq_band >= 0 && (first || ev.fseq_band != g_ctrl_prev_fseq)) {
@@ -1030,6 +1056,7 @@ void plays_frame_begin(uint64_t t) {
         }
         config::Scene scene;
         config::copy_scene(static_cast<size_t>(pl.scene), scene);
+        logic::apply_scene_override(scene, g_govr[pl.group]);  // the desk, on this group
         g_play_ok[p] = logic::render_group_strip(g_play_strip[p], kMaxStripPx * 3, g_play_lens[p],
                                                  g.count, scene, t) > 0;
     }
@@ -1067,6 +1094,24 @@ void overlay_plays(size_t ch, uint8_t* dst, uint8_t bpp, uint64_t t) {
                                   logic::fade_weight(elapsed, len));
             else
                 g_fix_fade_len[ch][f] = 0;
+        }
+    }
+}
+
+// A desk's group master / blackout over that group's bars on output `ch`.
+void dim_groups(size_t ch, uint8_t* dst, uint8_t bpp) {
+    const auto& groups = config::get_groups();
+    for (size_t gi = 0; gi < groups.count; ++gi) {
+        const bool dark      = (g_gblackout >> gi) & 1;
+        const uint16_t level = dark ? 0 : g_gmaster[gi];
+        if (level == kMasterFull) continue;
+        const auto& g = groups.groups[gi];
+        for (size_t m = 0; m < g.count; ++m) {
+            if (g.members[m].output != ch) continue;
+            const logic::Span& sp = g_spans_r[ch][g.members[m].fixture];
+            if (sp.count)
+                logic::apply_master(dst + static_cast<size_t>(sp.first) * bpp,
+                                    static_cast<size_t>(sp.count) * bpp, level);
         }
     }
 }
@@ -1132,6 +1177,7 @@ bool decode_pixels_for_channel(size_t ch) {
 
     // Scenes on groups: their fixtures, over whatever the output shows.
     overlay_plays(ch, dst, led::bytes_per_pixel(cc.protocol), t);
+    dim_groups(ch, dst, led::bytes_per_pixel(cc.protocol));
 
     // Show control last: it dims whatever the output renders.
     if (((blackout_effective() >> ch) & 1) || !logic::strobe_lit(t, strobe_effective(ch)))

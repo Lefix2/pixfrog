@@ -30,6 +30,7 @@
 namespace pixfrog::config {
 
 constexpr size_t kNumChannels = 8;
+constexpr size_t kMaxGroups   = 16;  // fixture groups (GroupsConfig below)
 
 constexpr size_t kArtnetNameShortMax = 18;
 constexpr size_t kArtnetNameLongMax  = 64;
@@ -618,28 +619,34 @@ constexpr size_t kMaxControlSlots = 32;
 
 // Persisted: append only, never renumber.
 enum class CtlFn : uint8_t {
-    None     = 0,  // spare channel (keeps the layout of a desk profile)
-    Master   = 1,  // intensity 0..100 % (16-bit with kCtlFlagFine)
-    Blackout = 2,  // >= 128 = outputs dark
-    Strobe   = 3,  // 0 = off, 1..255 = 1..25 Hz
-    Scene    = 4,  // bands of 8: 0-7 = no scene, 8-15 = scene 1, ...
-    Speed    = 5,  // 0 = the scene's own, 1..255 = override
-    Param    = 6,  // 0 = the scene's own, 1..255 = override
-    Red      = 7,  // colour `index` override (R, G and B all 0 = the scene's own)
-    Green    = 8,
-    Blue     = 9,
-    Effect   = 10,  // 0 = the scene's own, 1..255 spread over the effects
-    Fade     = 11,  // scene crossfade, value × 100 ms
-    Fseq     = 12,  // bands of 8: 0-7 = stop, 8-15 = file 1, ...
+    None      = 0,  // spare channel (keeps the layout of a desk profile)
+    Master    = 1,  // intensity 0..100 % (16-bit with kCtlFlagFine)
+    Blackout  = 2,  // >= 128 = outputs dark
+    Strobe    = 3,  // 0 = off, 1..255 = 1..25 Hz
+    Scene     = 4,  // bands of 8: 0-7 = no scene, 8-15 = scene 1, ...
+    Speed     = 5,  // 0 = the scene's own, 1..255 = override
+    Param     = 6,  // 0 = the scene's own, 1..255 = override
+    Red       = 7,  // colour `index` override (R, G and B all 0 = the scene's own)
+    Green     = 8,
+    Blue      = 9,
+    Effect    = 10,  // 0 = the scene's own, 1..255 spread over the effects
+    Fade      = 11,  // scene crossfade, value × 100 ms
+    Fseq      = 12,  // bands of 8: 0-7 = stop, 8-15 = file 1, ...
+    Direction = 13,  // 0 = the scene's own, 1-127 = forward, 128-255 = from the far end
+    FixMode   = 14,  // 0 = the scene's own, 1-63 each, 64-127 chain, 128-191 mirror, 192+ strip
     Count,
 };
 constexpr uint8_t kCtlFlagFine = 0x01;  // Master only: coarse + fine channel
+// The slot acts on a fixture group instead of outputs: `mask` holds the group
+// index (Master, Blackout, Scene, Speed, Param, Effect, colours, Direction,
+// FixMode; the others ignore it).
+constexpr uint8_t kCtlFlagGroup = 0x02;
 
 // Lower-case ids (console, REST, backup) — indexed by CtlFn.
 inline const char* ctl_fn_id(uint8_t fn) {
-    static const char* const kIds[] = { "none",   "master", "blackout", "strobe", "scene",
-                                        "speed",  "param",  "red",      "green",  "blue",
-                                        "effect", "fade",   "fseq" };
+    static const char* const kIds[] = { "none",   "master", "blackout", "strobe",    "scene",
+                                        "speed",  "param",  "red",      "green",     "blue",
+                                        "effect", "fade",   "fseq",     "direction", "fixmode" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(CtlFn::Count),
                   "one id per control function");
     return fn < static_cast<uint8_t>(CtlFn::Count) ? kIds[fn] : "none";
@@ -668,6 +675,11 @@ struct ControlConfig {
 };
 
 constexpr uint16_t kDefaultControlUniverse = 100;
+
+// The group a slot targets, -1 = its outputs.
+inline int control_slot_group(const ControlSlot& s) {
+    return (s.flags & kCtlFlagGroup) ? s.mask : -1;
+}
 
 inline uint8_t control_slot_width(const ControlSlot& s) {
     return (s.fn == static_cast<uint8_t>(CtlFn::Master) && (s.flags & kCtlFlagFine)) ? 2 : 1;
@@ -734,11 +746,18 @@ inline void sanitize_control(ControlConfig& c) {
             continue;
         }
         if (s.fn >= static_cast<uint8_t>(CtlFn::Count)) s.fn = static_cast<uint8_t>(CtlFn::None);
-        if (s.mask == 0) s.mask = 0xFF;
+        // A group target needs a group (its index in `mask`) and a function
+        // that acts on one.
+        const auto fn       = static_cast<CtlFn>(s.fn);
+        const bool group_fn = fn != CtlFn::None && fn != CtlFn::Strobe && fn != CtlFn::Fade &&
+                              fn != CtlFn::Fseq;
+        const bool group_valid = (s.flags & kCtlFlagGroup) && group_fn && s.mask < kMaxGroups;
+        if (!group_valid) s.flags &= static_cast<uint8_t>(~kCtlFlagGroup);
+        if (!group_valid && s.mask == 0) s.mask = 0xFF;
         if (s.index >= kSceneColorsMax) s.index = 0;
         if (s.fn != static_cast<uint8_t>(CtlFn::Master))
             s.flags &= static_cast<uint8_t>(~kCtlFlagFine);
-        s.flags &= kCtlFlagFine;
+        s.flags &= kCtlFlagFine | kCtlFlagGroup;
     }
     size_t used = 0, keep = 0;
     for (; keep < c.count; ++keep) {
@@ -805,7 +824,6 @@ bool set_playlist(const FseqPlaylist& p);
 // fixture by output and index in that output's strip order — editing an
 // output's fixture list can shift what a group points at. Own NVS blob,
 // absent on an upgrade (= no groups).
-constexpr size_t kMaxGroups       = 16;
 constexpr size_t kMaxGroupMembers = 64;
 constexpr size_t kGroupNameMax    = 16;
 struct FixtureRef {

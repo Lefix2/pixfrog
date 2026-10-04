@@ -407,6 +407,10 @@ TEST(ctrl_composes_the_control_mode) {
     EXPECT_EQ(dmx::control_universe(), -1);
     run("ctrl address 1");
     run("ctrl preset simple");
+    EXPECT_TRUE(run("ctrl clear"));
+    EXPECT_TRUE(run("ctrl add direction g1"));  // on fixture group 1
+    EXPECT_TRUE(has("group=1"));
+    EXPECT_FALSE(run("ctrl add scene g99"));
 }
 
 TEST(scene_play_on_a_zone_and_stop_one_scene) {
