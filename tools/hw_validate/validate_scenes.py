@@ -50,6 +50,7 @@ def run(board: Board):
     d = board.get("pixr 0", "data", deadline=8) or ""  # full strip: head anywhere
     c.check("chase renders head+background", "ff0000" in d and "000000" in d)
 
+    board.cmd("fx set 2 rainbow ffffff 25 1")  # the board's bank may not be the factory one
     board.cmd("scene play 2")
     board.cmd("status")
     d = board.get("pixr 0 0 30", "data") or ""
