@@ -809,7 +809,7 @@ TEST(a_scene_on_a_group_spans_outputs_and_yields_to_a_smaller_one) {
     solid_scene(0, 200, 0, 0);
     solid_scene(1, 0, 0, 150);
     const uint8_t live0 = frame(0)[0], live1 = frame(1)[19 * 3];  // whatever the banks hold
-    dmx::group_play(0, 0, 0);  // red on Top, no fade
+    dmx::group_play(0, 0, 0);                                     // red on Top, no fade
     EXPECT_EQ(frame(0)[0], 200);
     EXPECT_EQ(frame(1)[19 * 3], 200);
     dmx::group_play(1, 1, 0);  // blue on Centre: those two bars only
