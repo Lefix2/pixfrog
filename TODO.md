@@ -29,7 +29,8 @@ a password protects once set; none of them may make it mandatory.
       DMX arrives on its outputs, resumes on failsafe). Surface it in the
       ArtPollReply NodeReport and on HOME.
 - [ ] **Per-scene fade time** — the fade is global (`scene_fade_ms`, desk
-      overridable); a per-scene value needs a v4 Scene layout.
+      overridable); a per-scene value takes the bytes reserved for it in the
+      scene memories of "Pro lighting control" below.
 - [ ] **Shared scene clock across boxes** — each box animates from its own
       `esp_timer` phase, so neighbours drift. Share a phase origin (FPP
       MultiSync, ArtTrigger timestamp, or a small broadcast).
@@ -41,6 +42,48 @@ a password protects once set; none of them may make it mandatory.
       staple.
 - [ ] **Time-of-day scheduling** — start/stop scenes or playlists on a
       schedule; needs opt-in SNTP and/or an RTC on the shield.
+
+## Pro lighting control
+
+Feedback from a lighting operator (GrandMA): drive the box like a conventional
+fixture, not only as a pixel-mapped node. In landing order — each item builds
+on the one before.
+
+- [ ] ★ **Effect bank, scenes as memories** — today a scene is an effect, its
+      settings and its target outputs in one. Split them: an *effect* is a
+      reusable look in a bank (generator, palette, speed, param — no target), a
+      *scene* is a memory of parts, "this effect on these outputs". Existing
+      scenes migrate to one effect + one scene each (new NVS keys, the old blob
+      untouched for an OTA rollback).
+- [ ] **Effect speed range doubled** — the 0-255 speed reaches twice the rate
+      (coarser steps); stored speeds are halved in the migration so existing
+      looks keep their pace. Solid's speed is a strobe frequency: unchanged.
+- [ ] **Dimmer phaser on an effect** — a dimmer layer over any generator:
+      Sin, Cos, Ramp+, Ramp−, Triangle, PWM, Bump, with rate, phase spread
+      along the pixels, width and floor.
+- [ ] **Dimmer invert on an effect** — intensity negative of the whole effect
+      (lit becomes dark, dark takes colour 1), with or without a phaser.
+- [ ] **Block / Groups / Wings on an effect** — MAtricks at pixel level, stored
+      in the effect: N neighbours share a value, the pattern repeats every N,
+      the run splits in N mirrored parts.
+- [ ] **Control universe: bank and phaser functions** — slots for the bank
+      effect, the phaser (wave, rate, spread, width) and Block / Groups / Wings
+      on the scene an output plays.
+- [ ] **Fixture DMX profiles** — a small library of composable profiles (ordered
+      channel functions: dimmer, colours, shutter, effect bank, speed, param,
+      phaser, MAtricks), one per fixture, presets from 3 to 16 channels, an
+      Open Fixture Library export per profile.
+- [ ] **DMX control mode per output** — pixel mapping off: the output reserves
+      no pixel universes, its fixtures follow each other on the wire with the
+      footprint of their profile (a fixture never straddles two universes),
+      auto-patch chains such outputs, and the web shows the patch sheet.
+- [ ] **GDTF export of a profile** — a native fixture file for GrandMA3, next
+      to the OFL one.
+- [ ] **Fixture groups as a scene target** — a scene part aimed at a fixture
+      group (across outputs, in the group's order) rather than an output mask;
+      the groups are stored but nothing renders by them yet.
+- [ ] **Smooth live speed changes** — the phase is `time × speed`, so riding a
+      speed fader makes the pattern jump; accumulate the phase per fixture.
 
 ## FSEQ / standalone playback
 
