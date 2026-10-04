@@ -698,6 +698,7 @@ inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel
 // A run of the channel's source buffer (the pixels a scene writes).
 struct Span {
     uint16_t first, count;
+    bool reversed = false;  // the fixture is mounted the other way round
 };
 
 // Each fixture of `cc` as a source-buffer span, ascending: dead LEDs inside a
@@ -711,9 +712,10 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
     const uint32_t group  = cc.grouping ? cc.grouping : 1;
     size_t k              = 0;
     for (size_t i = 0; i < nf && k < cap; ++i) {
-        const uint32_t end = static_cast<uint32_t>(cc.fixtures[i].pos) + cc.fixtures[i].len;
-        uint32_t a         = led::live_within(cc.fixtures[i].pos, cc.gaps, ng);
-        uint32_t b         = led::live_within(end, cc.gaps, ng);
+        const uint32_t end = static_cast<uint32_t>(cc.fixtures[i].pos) +
+                             config::fixture_len(cc.fixtures[i]);
+        uint32_t a = led::live_within(cc.fixtures[i].pos, cc.gaps, ng);
+        uint32_t b = led::live_within(end, cc.gaps, ng);
         if (b > live_n) b = live_n;
         if (b <= a) continue;
         if (cc.invert_direction) {
@@ -722,7 +724,8 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
             b                = live_n - t;
         }
         const uint32_t ga = a / group, gb = (b + group - 1) / group;
-        out[k++] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga) };
+        out[k++] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga),
+                         config::fixture_reversed(cc.fixtures[i]) };
     }
     if (cc.invert_direction)
         for (size_t i = 0; i < k / 2; ++i) {
@@ -736,6 +739,22 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
 // Renders `scene` on channel `cc`, spread over its fixtures as the scene's
 // fixture_mode says; pixels outside every fixture stay dark. A channel
 // without fixtures (or a Strip scene) gets the plain whole-strip pattern.
+// A fixture mounted the other way round runs the effect backwards: its
+// pixels are flipped in place once the pattern is drawn.
+inline void reverse_fixtures(uint8_t* dst, uint8_t bpp, const Span* sp, size_t n) {
+    uint8_t tmp[8];
+    for (size_t i = 0; i < n; ++i) {
+        if (!sp[i].reversed || sp[i].count < 2) continue;
+        uint8_t* a = dst + static_cast<size_t>(sp[i].first) * bpp;
+        uint8_t* b = a + static_cast<size_t>(sp[i].count - 1) * bpp;
+        for (; a < b; a += bpp, b -= bpp) {
+            std::memcpy(tmp, a, bpp);
+            std::memcpy(a, b, bpp);
+            std::memcpy(b, tmp, bpp);
+        }
+    }
+}
+
 inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
                                   const config::ChannelConfig& cc, uint8_t bpp,
                                   const config::Scene& scene, uint64_t phase_ms) {
@@ -755,6 +774,7 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
             fill_scene_pattern(dst + static_cast<size_t>(sp[i].first) * bpp,
                                dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count,
                                bpp, scene, phase_ms);
+        reverse_fixtures(dst, bpp, sp, n);
         return;
     }
     // Chain / Mirror: one pattern as long as the chained fixtures, drawn at the
@@ -792,6 +812,7 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
         if (i<n&& static_cast<uint32_t>(sp[i].first) + sp[i].count> cursor)
             cursor = static_cast<uint32_t>(sp[i].first) + sp[i].count;
     }
+    reverse_fixtures(dst, bpp, sp, n);
 }
 
 // ── DMX layout ──────────────────────────────────────────────────────────────

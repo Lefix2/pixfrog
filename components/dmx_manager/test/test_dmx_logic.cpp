@@ -783,6 +783,34 @@ static void test_fixture_modes_each_chain_mirror() {
     EXPECT_EQ(buf[10 * 3], 0);  // past the short fixture: dark
 }
 
+// A fixture mounted the other way round runs the effect backwards, in every
+// mode but the whole strip; the flag survives the sort.
+static void test_reversed_fixture_runs_backwards() {
+    auto cc         = fixture_chan(8);
+    cc.fixtures[0]  = { 0, 4 };
+    cc.fixtures[1]  = { 4, static_cast<uint16_t>(4 | pixfrog::config::kFixtureReversed) };
+    auto sc         = with_color(mk_scene(4 /*gradient*/, 255, 0, 0, 0, 1), 0, 0, 255);
+    sc.fixture_mode = pixfrog::config::kFixtureModeEach;
+    uint8_t buf[8 * 3];
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    for (int j = 0; j < 4; ++j)  // the second fixture is the first one flipped
+        EXPECT_TRUE(std::memcmp(buf + (4 + j) * 3, buf + (3 - j) * 3, 3) == 0);
+    sc.fixture_mode = pixfrog::config::kFixtureModeChain;
+    uint8_t ref[8 * 3];
+    fill_scene_pattern(ref, sizeof(ref), 8, 3, sc, 0);
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(buf, ref, 4 * 3) == 0);
+    for (int j = 0; j < 4; ++j)
+        EXPECT_TRUE(std::memcmp(buf + (4 + j) * 3, ref + (7 - j) * 3, 3) == 0);
+    sc.fixture_mode = pixfrog::config::kFixtureModeStrip;  // fixtures ignored
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(buf, ref, sizeof(buf)) == 0);
+    pixfrog::config::Fixture f[2] = { cc.fixtures[1], cc.fixtures[0] };
+    pixfrog::config::normalize_fixtures(f, 2);
+    EXPECT_TRUE(pixfrog::config::fixture_reversed(f[1]));
+    EXPECT_EQ(pixfrog::config::fixture_len(f[1]), 4);
+}
+
 static void test_fixtures_normalize_drops_overlaps() {
     pixfrog::config::Fixture f[4] = { { 20, 5 }, { 0, 10 }, { 5, 3 }, { 2000, 4 } };
     EXPECT_EQ(pixfrog::config::normalize_fixtures(f, 4), 2u);
@@ -1467,6 +1495,7 @@ int main() {
     test_fixture_spans_follow_invert_and_grouping();
     test_fixture_modes_each_chain_mirror();
     test_fixtures_normalize_drops_overlaps();
+    test_reversed_fixture_runs_backwards();
     test_scene_solid();
     test_scene_solid_rgbw_white_off();
     test_scene_chase_position_and_width();
