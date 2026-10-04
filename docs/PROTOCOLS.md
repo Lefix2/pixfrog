@@ -280,6 +280,10 @@ tube). Physical positions like the gaps, so the two describe one layout; the
 web editor shows them as one list over a bar that draws the strip, the
 fixtures, the dead LEDs and any overlap.
 
+- A fixture can be marked mounted the other way round (`kFixtureReversed`,
+  a flag bit in `Fixture::len`; `[first, count, 1]` in the API, ⇄ in the
+  editor): the scenes run through it backwards. Its DMX pixel data is left
+  as wired.
 - Fixtures never share an LED: the API refuses an overlapping list (400,
   "fixtures N and M overlap"), the web editor flags it and will not save.
   A dead LED inside a fixture is allowed, it only shortens the fixture.

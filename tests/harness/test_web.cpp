@@ -225,6 +225,14 @@ TEST(channel_fixtures_round_trip_and_overlaps_are_refused) {
     const cJSON* jf = cJSON_GetObjectItem(cJSON_GetArrayItem(cfg["channels"], 4), "fixtures");
     EXPECT_EQ(cJSON_GetArraySize(jf), 3);
     EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetArrayItem(jf, 2), 0)->valueint, 121);
+    // [first, count, 1]: mounted the other way round, kept through the API.
+    EXPECT_EQ(post("/api/channel/4", "{\"fixtures\":[[1,59],[61,59,1],[121,59]]}").status, 200);
+    EXPECT_TRUE(config::fixture_reversed(config::get_channel(4).fixtures[1]));
+    EXPECT_EQ(config::fixture_len(config::get_channel(4).fixtures[1]), 59);
+    Json rv(get("/api/config").body);
+    const cJSON* rf = cJSON_GetObjectItem(cJSON_GetArrayItem(rv["channels"], 4), "fixtures");
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetArrayItem(rf, 1)), 3);
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetArrayItem(rf, 0)), 2);
     const auto overlap = post("/api/channel/4", "{\"fixtures\":[[1,59],[50,20]]}");
     EXPECT_EQ(overlap.status, 400);
     EXPECT_TRUE(overlap.body.find("fixtures 1 and 2 overlap") != std::string::npos);

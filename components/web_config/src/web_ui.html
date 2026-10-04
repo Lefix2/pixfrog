@@ -887,7 +887,7 @@ var FR={
   'Only {n} driven at {hz} Hz — lower the frame rate to drive them all':'Seulement {n} pilotés à {hz} Hz — baissez la fréquence pour tous les piloter',
   'Firmware update rolled back':'Mise à jour du firmware annulée','Acknowledge':'Acquitter','last rollback':'dernier rollback','none':'aucun',
   '{v} on {slot} was rejected ({why}) — running {run}':'{v} sur {slot} a été rejeté ({why}) — version active {run}',
-  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
+  'Dead pixels':'Pixels morts','Fixtures &amp; dead LEDs':'Fixtures et LEDs mortes','LEDs without fixture':'LEDs sans fixture','Mounted the other way round: the effects run through it backwards':'Montée à l’envers : les effets la parcourent dans l’autre sens','in strip order, sizes in LEDs':'dans l’ordre du strip, tailles en LEDs','More than 1024 live LEDs':'Plus de 1024 LEDs vivantes','{n} fixtures, {p} live LEDs':'{n} fixtures, {p} LEDs vivantes','Set by the list below':'Donné par la liste ci-dessous','Fixtures & dead LEDs':'Fixtures et LEDs mortes','Fixture':'Fixture','Dead LEDs':'LEDs mortes','Fill:':'Remplir :','fixtures':'fixtures','LEDs per fixture':'LEDs par fixture','dead LEDs between':'LEDs mortes entre deux','dead':'mortes','Replace the list with this pattern':'Remplacer la liste par ce motif',
   'Fixtures overlap: LED {a}–{b}':'Des fixtures se chevauchent : LED {a}–{b}','A fixture ends past the strip (LED {n})':'Une fixture dépasse la fin du strip (LED {n})','Dead LEDs inside a fixture at LED {a}: the fixture is shorter':'LEDs mortes dans une fixture à la LED {a} : la fixture est plus courte',
   'At most {n} dead runs: fewer fixtures, or no dead LEDs between':'{n} zones de LEDs mortes au plus : moins de fixtures, ou pas de LEDs mortes entre elles','At most 32 fixtures':'32 fixtures au plus','At most 8 dead runs':'8 zones de LEDs mortes au plus',
   'Channel {n}: the layout list is not valid — fix it before saving':'Canal {n} : la liste n’est pas valide — corrige-la avant d’enregistrer',
@@ -1378,13 +1378,13 @@ var MAX_GAPS=8, MAX_FIX=32;
    fixtures, 1-based); layToWire / layFromWire translate. */
 var LAY_TYPES=[['f','Fixture'],['d','Dead LEDs'],['s','LEDs without fixture']];
 function layFromWire(c,gaps,fix){
-  var ev=gaps.map(function(g){ return {t:'d',a:g[0],n:g[1]}; }).concat(fix.map(function(g){ return {t:'f',a:g[0],n:g[1]}; }))
+  var ev=gaps.map(function(g){ return {t:'d',a:g[0],n:g[1]}; }).concat(fix.map(function(g){ return {t:'f',a:g[0],n:g[1],rev:!!g[2]}; }))
     .sort(function(x,y){ return x.a-y.a; });
   var out=[], phys=1, live=0;
   ev.forEach(function(e){
     if(e.a<phys){ var cut=phys-e.a; e.n-=cut; e.a=phys; if(e.n<=0) return; }  // an old overlap: clipped
     if(e.a>phys){ out.push({t:'s',n:e.a-phys}); live+=e.a-phys; }
-    out.push({t:e.t,n:e.n}); if(e.t==='f') live+=e.n; phys=e.a+e.n;
+    out.push(e.rev?{t:e.t,n:e.n,rev:true}:{t:e.t,n:e.n}); if(e.t==='f') live+=e.n; phys=e.a+e.n;
   });
   if(out.length && c.pixel_count>live) out.push({t:'s',n:c.pixel_count-live});
   return out;
@@ -1394,7 +1394,7 @@ function layLive(lay){ var n=0; lay.forEach(function(it){ if(it.t!=='d') n+=it.n
 function layToWire(c){
   var gaps=[], fix=[], phys=1;
   (c.lay||[]).forEach(function(it){
-    if(it.t==='f') fix.push([phys,it.n]);
+    if(it.t==='f') fix.push(it.rev?[phys,it.n,1]:[phys,it.n]);
     else if(it.t==='d'){ var g=gaps[gaps.length-1]; if(g && g[0]+g[1]===phys) g[1]+=it.n; else gaps.push([phys,it.n]); }
     phys+=it.n;
   });
@@ -1416,7 +1416,7 @@ function renderLayViz(){
   lay.forEach(function(it){ span+=it.n; }); span=Math.max(span,1);
   var html='', phys=0, nf=0;
   lay.forEach(function(it){
-    var label=it.t==='f'?'F'+(++nf):it.t==='d'?'✕':'', bg=it.t==='f'?(nf%2?'var(--accent)':'var(--accent-deep)'):it.t==='d'?'var(--danger)':'rgba(237,238,234,.08)';
+    var label=it.t==='f'?'F'+(++nf)+(it.rev?' ⇄':''):it.t==='d'?'✕':'', bg=it.t==='f'?(nf%2?'var(--accent)':'var(--accent-deep)'):it.t==='d'?'var(--danger)':'rgba(237,238,234,.08)';
     html+='<div title="'+esc(label||t('LEDs without fixture'))+' · '+it.n+'" style="position:absolute;top:0;bottom:0;left:'+(phys/span*100)+'%;width:'+Math.max(it.n/span*100,.4)+'%;background:'+bg+';border-right:1px solid var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden;font:600 10px \'DM Mono\';color:var(--on-accent)">'+(it.n/span>.04?esc(label):'')+'</div>';
     phys+=it.n;
   });
@@ -1438,6 +1438,7 @@ function renderGaps(){
       +'<select id="cd-lay-t-'+k+'" style="'+inp+';width:190px">'+LAY_TYPES.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===it.t?' selected':'')+'>'+esc(t(o[1]))+'</option>'; }).join('')+'</select>'
       +'<input id="cd-lay-n-'+k+'" type="number" min="1" max="1024" value="'+it.n+'" style="width:80px;'+inp+'"/>'
       +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4)">LED</span>'
+      +(it.t==='f'?'<button class="btn-sec" data-lay-rev="'+k+'" title="'+esc(t('Mounted the other way round: the effects run through it backwards'))+'" style="width:30px;height:30px;border-radius:0;background:'+(it.rev?'rgba(63,212,99,.15)':'rgba(237,238,234,.04)')+';border:1px solid '+(it.rev?'var(--accent)':'var(--line-3)')+';color:'+(it.rev?'var(--accent)':'var(--fg-3)')+';cursor:pointer;font:600 13px \'DM Mono\'">⇄</button>':'<span style="width:30px"></span>')
       +'<span style="font:500 11px \'DM Mono\';color:var(--fg-5);min-width:90px">'+(it.n>1?from+'–'+(phys-1):from)+'</span>'
       +sqBtn('data-lay-del="'+k+'"','x','Remove')+'</div>';
   }).join('');
@@ -1862,7 +1863,7 @@ function buildChrome(){
 function buildChan(c,i){
   var off=c.protocol==='Off';
   return {idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
-    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),fix:(c.fixtures||[]).map(function(g){ return [g[0],g[1]]; }),lay:layFromWire(c,c.gaps||[],c.fixtures||[]),pack:c.packing||'continuous',unis:c.universes,
+    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),fix:(c.fixtures||[]).map(function(g){ return [g[0],g[1],g[2]||0]; }),lay:layFromWire(c,c.gaps||[],c.fixtures||[]),pack:c.packing||'continuous',unis:c.universes,
     state:'off',px:pxLabel({protoRaw:c.protocol,pixels:c.pixel_count,maxpx:c.max_pixels||1024}),uni:off?'—':'U'+c.universe_start,
     dot:ST.off.dot,txt:ST.off.txt,label:ST.off.label,chip:ST.off.chip,bd:ST.off.bd};
 }
@@ -2271,6 +2272,7 @@ function onClick(e){
       if(!ca.lay.length && ca.pixels>0 && kind!=='s') ca.lay.push({t:'s',n:ca.pixels});  // the strip as it was, then the new entry
       var last=ca.lay.filter(function(it){ return it.t==='f'; }).pop();
       ca.lay.push({t:kind,n:kind==='d'?1:(kind==='f'&&last?last.n:10)}); markDirty('ch'+curChan); readChanEditor(); renderGaps(); } return; }
+  var lrev=e.target.closest('[data-lay-rev]'); if(lrev){ var cr=CHANS[curChan], kr=+lrev.getAttribute('data-lay-rev'); if(cr&&cr.lay&&cr.lay[kr]){ cr.lay[kr].rev=!cr.lay[kr].rev; markDirty('ch'+curChan); renderGaps(); } return; }
   var ldel=e.target.closest('[data-lay-del]'); if(ldel){ var cd=CHANS[curChan]; if(cd&&cd.lay){ cd.lay.splice(+ldel.getAttribute('data-lay-del'),1); if(cd.lay.length) cd.pixels=layLive(cd.lay); markDirty('ch'+curChan); renderGaps(); } return; }
   var lfill=e.target.closest('[data-lay-fill]'); if(lfill){ var cf=CHANS[curChan]; if(cf){ var iv=function(id){ return parseInt((el(id)||{}).value,10)||0; }; if(layFill(cf,iv('lay-rep-n'),Math.max(1,iv('lay-rep-l')),iv('lay-rep-k'))){ markDirty('ch'+curChan); renderGaps(); readChanEditor(); } } return; }
   var srow=e.target.closest('[data-scene-row]'); if(srow && !e.target.closest('[data-srow-grip]') && !e.target.closest('[data-sc-play]')){ selectScene(+srow.getAttribute('data-scene-row')); return; }

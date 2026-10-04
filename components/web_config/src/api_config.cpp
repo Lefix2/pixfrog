@@ -112,7 +112,9 @@ static cJSON* build_channels_json() {
         for (size_t k = 0; k < config::fixture_count(c.fixtures, config::kMaxFixtures); ++k) {
             cJSON* pair = cJSON_CreateArray();
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.fixtures[k].pos + 1));
-            cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.fixtures[k].len));
+            cJSON_AddItemToArray(pair, cJSON_CreateNumber(config::fixture_len(c.fixtures[k])));
+            if (config::fixture_reversed(c.fixtures[k]))  // [first, count, 1]: mounted backwards
+                cJSON_AddItemToArray(pair, cJSON_CreateNumber(1));
             cJSON_AddItemToArray(jf, pair);
         }
         cJSON_AddItemToArray(jchs, jc);
@@ -282,13 +284,16 @@ void apply_fixtures_json(const cJSON* jc, config::ChannelConfig& c, const char**
             jl->valuedouble < 1 ||
             jp->valuedouble + jl->valuedouble - 1 > led::kMaxPixelsPerChannel)
             return refuse(why, "fixtures: first 1..1024, count 1.., within 1024 LEDs");
+        const cJSON* jr = cJSON_GetArrayItem(pair, 2);  // optional third: 1 = reversed
+        const bool rev  = cJSON_IsNumber(jr) && jr->valuedouble != 0;
         parsed[n].pos   = static_cast<uint16_t>(jp->valuedouble - 1);
-        parsed[n++].len = static_cast<uint16_t>(jl->valuedouble);
+        parsed[n++].len = static_cast<uint16_t>(static_cast<uint16_t>(jl->valuedouble) |
+                                                (rev ? config::kFixtureReversed : 0));
     }
     for (size_t a = 0; a < n; ++a)
         for (size_t b = a + 1; b < n; ++b)
-            if (parsed[a].pos < parsed[b].pos + parsed[b].len &&
-                parsed[b].pos < parsed[a].pos + parsed[a].len) {
+            if (parsed[a].pos < parsed[b].pos + config::fixture_len(parsed[b]) &&
+                parsed[b].pos < parsed[a].pos + config::fixture_len(parsed[a])) {
                 static char msg[48];
                 snprintf(msg, sizeof(msg), "fixtures %u and %u overlap",
                          static_cast<unsigned>(a + 1), static_cast<unsigned>(b + 1));

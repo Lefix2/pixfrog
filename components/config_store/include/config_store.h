@@ -405,15 +405,25 @@ constexpr uint32_t kDefaultClockHz = 4'000'000;
 constexpr size_t kMaxFixtures = 32;
 struct Fixture {
     uint16_t pos;  // first physical LED, 0-based
-    uint16_t len;  // 0 = unused slot
+    uint16_t len;  // LEDs (0 = unused slot) | kFixtureReversed
 };
+// In Fixture::len: the fixture is mounted the other way round — the scenes run
+// through it backwards (its LEDs on the wire are untouched). A flag bit, not a
+// field, so the NVS layout and the sort keep it for free.
+constexpr uint16_t kFixtureReversed = 0x8000;
+inline uint16_t fixture_len(const Fixture& f) {
+    return f.len & 0x7FFF;
+}
+inline bool fixture_reversed(const Fixture& f) {
+    return (f.len & kFixtureReversed) != 0;
+}
 
 // Sorts by position, drops empty / out-of-range / overlapping fixtures (the
 // later one of an overlap goes) and packs the rest first. Returns the count.
 inline size_t normalize_fixtures(Fixture* f, size_t n) {
     size_t used = 0;
     for (size_t i = 0; i < n; ++i)
-        if (f[i].len && f[i].pos < led::kMaxPixelsPerChannel) f[used++] = f[i];
+        if (fixture_len(f[i]) && f[i].pos < led::kMaxPixelsPerChannel) f[used++] = f[i];
     for (size_t i = 1; i < used; ++i)
         for (size_t j = i; j > 0 && f[j].pos < f[j - 1].pos; --j) {
             const Fixture t = f[j];
@@ -422,7 +432,8 @@ inline size_t normalize_fixtures(Fixture* f, size_t n) {
         }
     size_t out = 0;
     for (size_t i = 0; i < used; ++i) {
-        if (out && f[i].pos < static_cast<uint32_t>(f[out - 1].pos) + f[out - 1].len) continue;
+        if (out && f[i].pos < static_cast<uint32_t>(f[out - 1].pos) + fixture_len(f[out - 1]))
+            continue;
         f[out++] = f[i];
     }
     for (size_t i = out; i < n; ++i)

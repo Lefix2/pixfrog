@@ -218,6 +218,11 @@ def test_fixtures_by_size_in_order_and_reordered_by_drag(page, device):
     save(page)
     ch = device.get("/api/config")["channels"][0]
     assert ch["fixtures"][0] == [1, 20] and ch["fixtures"][1] == [21, 70]
+    # A fixture mounted the other way round.
+    page.locator('[data-lay-rev="0"]').click()
+    expect(page.locator("#cd-lay-viz")).to_contain_text("⇄")
+    save(page)
+    assert device.get("/api/config")["channels"][0]["fixtures"][0] == [1, 20, 1]
     # A row turned into LEDs without fixture leaves the fixtures.
     page.locator("#cd-lay-t-0").select_option("s")
     save(page)
