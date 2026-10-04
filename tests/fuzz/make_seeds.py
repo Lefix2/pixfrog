@@ -210,6 +210,10 @@ profile slots 0 dimmer+fine,red:1,none,bank,wings
 profile preset 1 rgb_fx
 profile name 0 Renamed
 profile del 0
+ch 1 fixtures 1:20,21:20:r:p2,41:20:p1
+ch 1 packing control
+ch 1
+ch 1 fixtures -
 fx move 0 1
 fx del 8
 fseq list
@@ -270,7 +274,8 @@ WEB = [
     (R["/api/profiles"], 0, '{"profiles":[{"preset":"rgb_fx","name":"Bars"},{"name":"Spots","slots":['
                             '{"fn":"dimmer","fine":true},{"fn":"red","index":1},{"fn":"bank"}]}]}'),
     (R["GET /api/profile/2/fixture"], 0, ""),
-    (R["/api/channel"], 1, '{"protocol":"WS2815","pixel_count":60,"fixtures":[[1,20,0,2],[21,20,1,3]]}'),
+    (R["/api/channel"], 1, '{"protocol":"WS2815","pixel_count":60,"packing":"control",'
+                           '"dmx_start":500,"fixtures":[[1,20,0,2],[21,20,1,3]]}'),
     # A backup from before the effect bank: scenes that carry their own look.
     (R["/api/restore"], 0, '{"backup_version":1,"scenes":[{"name":"Old","effect":1,"speed":60,'
                            '"colors":["#ff0000","#0000ff"],"mask":15,"fixture_mode":"mirror"}]}'),

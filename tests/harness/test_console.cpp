@@ -233,6 +233,43 @@ TEST(fx_commands_manage_the_bank) {
     config::replace_effects(saved.data(), saved.size());
 }
 
+TEST(channel_fixtures_and_control_mode) {
+    const auto before = config::get_channel(5);
+    EXPECT_TRUE(run("ch 5 protocol WS2815"));
+    EXPECT_TRUE(run("ch 5 pixels 60"));
+    EXPECT_TRUE(run("ch 5 universe 30"));
+    EXPECT_TRUE(run("ch 5 dmx_start 1"));
+    EXPECT_TRUE(run("ch 5 fixtures 41:20:r:p1,1:20,21:20:p2"));  // any order: sorted by position
+    const auto& c = config::get_channel(5);
+    EXPECT_EQ(config::fixture_count(c.fixtures, config::kMaxFixtures), 3);
+    EXPECT_EQ(config::fixture_profile(c.fixtures[1]), 2);
+    EXPECT_TRUE(config::fixture_reversed(c.fixtures[2]));
+    EXPECT_EQ(config::fixture_profile(c.fixtures[2]), 1);
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("fixtures=1:20,21:20:p2,41:20:r:p1"));
+    EXPECT_FALSE(has("patch="));  // a pixel layout has no patch sheet
+    EXPECT_TRUE(has("universes=1"));
+
+    EXPECT_TRUE(run("ch 5 packing control"));
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("packing=control"));
+    EXPECT_TRUE(has("patch=30.1+3,30.4+6,30.10+4"));
+    EXPECT_TRUE(run("ch 5 fixtures -"));  // none: one fixture, the whole strip
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("fixtures=-"));
+    EXPECT_TRUE(has("patch=30.1+3"));
+    for (const char* bad :
+         { "ch 5 fixtures 1", "ch 5 fixtures 0:10", "ch 5 fixtures 1:0", "ch 5 fixtures 1:10:x",
+           "ch 5 fixtures 1:10:p8", "ch 5 fixtures 1:10,5:10", "ch 5 fixtures 1020:10",
+           "ch 5 packing sideways", "autopatch 0 control" })
+        EXPECT_FALSE(run(bad));
+    EXPECT_TRUE(run("autopatch 0 compact whole"));  // control outputs keep their mode
+    EXPECT_EQ(config::get_channel(5).packing, config::kPackControl);
+    config::set_channel(5, before);
+    dmx::mark_channel_dirty(5);
+    dmx::handle_pending_remaps();
+}
+
 TEST(profile_commands_edit_the_bank) {
     EXPECT_TRUE(run("profile"));
     EXPECT_TRUE(has("profiles=4"));

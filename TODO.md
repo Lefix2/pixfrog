@@ -49,11 +49,7 @@ Feedback from a lighting operator (GrandMA): drive the box like a conventional
 fixture, not only as a pixel-mapped node. In landing order — each item builds
 on the one before.
 
-- [ ] ★ **DMX control mode per output** — pixel mapping off: the output reserves
-      no pixel universes, its fixtures follow each other on the wire with the
-      footprint of their profile (a fixture never straddles two universes),
-      auto-patch chains such outputs, and the web shows the patch sheet.
-- [ ] **GDTF export of a profile** — a native fixture file for GrandMA3, next
+- [ ] ★ **GDTF export of a profile** — a native fixture file for GrandMA3, next
       to the OFL one.
 - [ ] **Fixture groups as a scene target** — a scene part aimed at a fixture
       group (across outputs, in the group's order) rather than an output mask;

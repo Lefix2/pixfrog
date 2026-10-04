@@ -104,18 +104,14 @@ void draw_chan_badge(int x, int y, int side, int number, Color family, bool fill
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-// Number of DMX universes a channel occupies, derived from its pixel
-// byte-footprint (pixels × bytes/px, offset by dmx_start); a disabled channel
-// none. Lets HOME show the real
-// addressing span (U1-2, U8-10) instead of only the start universe.
+// Number of DMX universes a channel occupies — its real layout (packing,
+// dmx_start, the fixtures' profiles in DMX control mode); a disabled channel
+// none. Lets HOME show the real addressing span (U1-2, U8-10) instead of only
+// the start universe.
 int channel_universe_span(const config::ChannelConfig& cc) {
     if (led::is_off(cc.protocol)) return 0;
-    const uint32_t offset = (cc.dmx_start > 0) ? (cc.dmx_start - 1u) : 0u;
-    const uint32_t bytes  = static_cast<uint32_t>(cc.pixel_count) *
-                           led::bytes_per_pixel(cc.protocol);
-    const uint32_t total = offset + bytes;
-    if (total == 0) return 1;
-    return static_cast<int>((total + dmx::kUniverseSize - 1) / dmx::kUniverseSize);
+    const auto span = static_cast<int>(dmx::channel_universe_span(cc));
+    return span ? span : 1;
 }
 #endif
 #endif

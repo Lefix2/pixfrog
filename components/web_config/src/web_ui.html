@@ -381,7 +381,7 @@
                 </div>
                 <div id="cd-row-pack">
                   <label class="f-label-caps" data-i18n="DMX layout">DMX layout</label>
-                  <select class="field field-text" id="cd-pack"><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option></select>
+                  <select class="field field-text" id="cd-pack"><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="control" data-i18n="DMX control: no pixel data, each fixture on its profile">DMX control: no pixel data, each fixture on its profile</option></select>
                 </div>
                 <div id="cd-row-order">
                   <label class="f-label-caps" data-i18n="Color order">Color order</label>
@@ -996,6 +996,8 @@ var FR={
   'Dimmer':'Dimmer','White':'Blanc','Shutter (strobe)':'Shutter (stroboscope)',
   'Effect, speed, parameter, phaser and Block / Groups / Wings channels at 0 keep the effect\'s own value. With the effect channel at 0 the fixture shows its colour, steady. Without a dimmer channel the fixture is at full.':'Les canaux effet, vitesse, paramètre, phaser et Block / Groups / Wings à 0 gardent la valeur de l’effet. Avec le canal effet à 0, la fixture affiche sa couleur, fixe. Sans canal dimmer, la fixture est à pleine intensité.',
   'Fixture profile (OFL)':'Profil de fixture (OFL)','Save first: the file is made from the saved profile':'Enregistrez d’abord : le fichier est fait à partir du profil enregistré',
+  'DMX control: no pixel data, each fixture on its profile':'Contrôle DMX : pas de données pixel, chaque fixture sur son profil','DMX profile':'Profil DMX',
+  '{n} fixtures':'{n} fixtures','No fixture listed: the whole strip is one fixture, on profile 1':'Aucune fixture listée : tout le ruban est une fixture, sur le profil 1',
   'PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
   'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
   'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
@@ -1498,7 +1500,7 @@ function patchRow(n,proto,range,dmx){
     +'<span style="font:500 13px \'DM Mono\';color:var(--accent)">'+range+'</span>'
     +'<span style="font:500 13px \'DM Mono\';color:var(--fg-3)">'+dmx+'</span></div>';
 }
-var PACK_SHORT={whole:'whole px',fixture:'per fixture'};
+var PACK_SHORT={whole:'whole px',fixture:'per fixture',control:'DMX control'};
 function buildPatch(){
   var rows='', maxEnd=-1, used=0;
   CHANS.forEach(function(c){
@@ -1646,14 +1648,26 @@ function renderLayViz(){
   w.style.display=iss.length?'block':'none';
   w.innerHTML=iss.map(function(i){ return '<div style="color:'+col[i[0]]+'">'+esc(i[1])+'</div>'; }).join('');
 }
+// DMX control mode: where each fixture of the channel sits on the wire.
+// Mirrors the box (for_each_fixture_patch): the fixtures follow each other
+// from the channel's address, one that would straddle the end of a universe
+// starts the next; a channel without fixtures is one, on the first profile.
+function pfOf(i){ return PROFILES[i]||PROFILES[0]||{name:'',slots:[]}; }
+function ctlPatch(c){
+  var fx=(c.lay||[]).filter(function(it){ return it.t==='f'; }); if(!fx.length) fx=[{p:0}];
+  var slot=Math.max(0,(c.dmx||1)-1), uni=c.universe+Math.floor(slot/512); slot%=512;
+  return fx.map(function(it){ var f=pfFootprint(pfOf(it.p||0)); if(slot+f>512){ uni++; slot=0; } var r={uni:uni,addr:slot+1,foot:f}; slot+=f; if(slot>=512){ uni++; slot=0; } return r; });
+}
 function renderGaps(){
   var m=el('cd-gaps'), c=CHANS[curChan]; if(!m||!c) return;
   c.lay=c.lay||[];
+  var ctl=c.pack==='control', patch=ctl?ctlPatch(c):[], fi=0;
   var inp='background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 10px;font:500 13px \'DM Mono\'';
   var nf=0, phys=1;
   var rows=c.lay.map(function(it,k){
     var tag=it.t==='f'?('F'+(++nf)):it.t==='d'?'✕':'·', from=phys; phys+=it.n;
-    return '<div data-lay-row="'+k+'" style="display:flex;align-items:center;gap:8px">'
+    var pa=(ctl&&it.t==='f')?patch[fi++]:null;
+    return '<div data-lay-row="'+k+'" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +'<span data-lay-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
       +'<span style="font:600 11px \'DM Mono\';color:'+(it.t==='f'?'var(--accent)':it.t==='d'?'var(--danger)':'var(--fg-4)')+';width:28px">'+tag+'</span>'
       +'<select id="cd-lay-t-'+k+'" style="'+inp+';width:190px">'+LAY_TYPES.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===it.t?' selected':'')+'>'+esc(t(o[1]))+'</option>'; }).join('')+'</select>'
@@ -1661,7 +1675,11 @@ function renderGaps(){
       +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4)">LED</span>'
       +(it.t==='f'?'<button class="btn-sec" data-lay-rev="'+k+'" title="'+esc(t('Mounted the other way round: the effects run through it backwards'))+'" style="width:30px;height:30px;border-radius:0;background:'+(it.rev?'rgba(63,212,99,.15)':'rgba(237,238,234,.04)')+';border:1px solid '+(it.rev?'var(--accent)':'var(--line-3)')+';color:'+(it.rev?'var(--accent)':'var(--fg-3)')+';cursor:pointer;font:600 13px \'DM Mono\'">⇄</button>':'<span style="width:30px"></span>')
       +'<span style="font:500 11px \'DM Mono\';color:var(--fg-5);min-width:90px">'+(it.n>1?from+'–'+(phys-1):from)+'</span>'
-      +sqBtn('data-lay-del="'+k+'"','x','Remove')+'</div>';
+      +sqBtn('data-lay-del="'+k+'"','x','Remove')
+      +(pa?'<div style="flex-basis:100%;display:flex;align-items:center;gap:8px;padding-left:50px"><span style="font:500 11px \'DM Mono\';color:var(--fg-4)">DMX</span>'
+        +'<select data-lay-prof="'+k+'" title="'+esc(t('DMX profile'))+'" style="'+inp+';width:190px">'+PROFILES.map(function(pr,i){ return '<option value="'+i+'"'+(i===(it.p||0)?' selected':'')+'>'+(i+1)+' · '+esc(pr.name||'—')+' ('+pfFootprint(pr)+' ch)</option>'; }).join('')+'</select>'
+        +'<span data-lay-addr="'+k+'" style="font:500 12px \'DM Mono\';color:var(--accent)">U'+pa.uni+' · '+pa.addr+'</span></div>':'')
+      +'</div>';
   }).join('');
   var btn='display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer';
   var bar='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px">'
@@ -1673,7 +1691,13 @@ function renderGaps(){
     +'<span class="fg-4">+</span><input id="lay-rep-k" type="number" min="0" max="16" value="'+(fx.length>1&&dd.length?dd[0].n:0)+'" title="'+esc(t('dead LEDs between'))+'" style="width:52px;'+inp+'"/>'
     +'<span style="font:500 11.5px \'DM Mono\';color:var(--fg-3)">'+esc(t('dead'))+'</span>'
     +sqBtn('data-lay-fill','wand-2','Replace the list with this pattern')+'</div>';
-  m.innerHTML=rows+bar; createIcons(m); renderLayViz();
+  var note='';
+  if(ctl){
+    var last=patch[patch.length-1], chs=patch.reduce(function(a,r){ return a+r.foot; },0);
+    note='<div data-ctl-note class="hint" style="margin-top:8px">'+esc((nf?t('{n} fixtures').replace('{n}',nf):t('No fixture listed: the whole strip is one fixture, on profile 1'))
+      +' · '+chs+' ch · U'+patch[0].uni+' · '+patch[0].addr+' → U'+last.uni+' · '+(last.addr+last.foot-1))+'</div>';
+  }
+  m.innerHTML=rows+bar+note; createIcons(m); renderLayViz();
   var pe=el('cd-pix'); if(pe){ pe.disabled=c.lay.length>0; pe.title=c.lay.length?t('Set by the list below'):''; if(c.lay.length) pe.value=layLive(c.lay); }
 }
 // "N fixtures of L LEDs, K dead LEDs between": replaces the list.
@@ -2681,7 +2705,8 @@ function onInput(e){
   if(t.hasAttribute&&t.hasAttribute('data-pf-fine')){ PROFILES[curProfile].slots[+t.getAttribute('data-pf-fine')].fine=t.checked; pfTouch(); return; }
   if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }
   if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }
-  if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-lay-prof')){ var pc=CHANS[curChan], pk2=+t.getAttribute('data-lay-prof'); if(pc&&pc.lay&&pc.lay[pk2]){ pc.lay[pk2].p=parseInt(t.value,10)||0; markDirty('ch'+curChan); renderGaps(); } return; }
+  if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); if(t.id==='cd-pack'||(CHANS[curChan].pack==='control'&&t.id.indexOf('cd-lay-')!==0)) renderGaps(); return; }
   if(['n-ip','n-mask','n-gw','n-host','n-long','n-fallback','n-hub'].indexOf(t.id)>=0){ markDirty('network'); return; }
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }

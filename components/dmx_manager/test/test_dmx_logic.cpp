@@ -1475,6 +1475,363 @@ static void test_matricks_on_an_effect() {
     EXPECT_EQ(b[3], 0x55);
 }
 
+// ── DMX control mode ────────────────────────────────────────────────────────
+
+// A 60-pixel WS2815 output in control mode with three 20-pixel fixtures on
+// the profiles RGB (3 ch), RGB FX (6 ch) and Dim RGB (4 ch).
+static pixfrog::config::ChannelConfig control_chan() {
+    using namespace pixfrog::config;
+    ChannelConfig cc  = fixture_chan(60);
+    cc.packing        = kPackControl;
+    cc.universe_start = 10;
+    cc.dmx_start      = 1;
+    cc.fixtures[0]    = make_fixture(0, 20, false, 0);
+    cc.fixtures[1]    = make_fixture(20, 20, false, 2);
+    cc.fixtures[2]    = make_fixture(40, 20, true, 1);
+    return cc;
+}
+
+static void test_control_layout() {
+    using namespace pixfrog::config;
+    const ProfileBank bank = default_profiles();
+    ChannelConfig cc       = control_chan();
+    std::vector<FixturePatch> got;
+    auto collect = [&](const ChannelConfig& c) {
+        got.clear();
+        return for_each_fixture_patch(c, bank, [&](const FixturePatch& f) { got.push_back(f); });
+    };
+    EXPECT_EQ(collect(cc), 3);
+    EXPECT_EQ(got[0].slot, 0);  // the fixtures follow each other on the wire
+    EXPECT_EQ(got[0].footprint, 3);
+    EXPECT_EQ(got[1].slot, 3);
+    EXPECT_EQ(got[1].footprint, 6);
+    EXPECT_EQ(got[1].first, 20);
+    EXPECT_EQ(got[1].count, 20);
+    EXPECT_EQ(got[2].slot, 9);
+    EXPECT_EQ(got[2].footprint, 4);
+    EXPECT_TRUE(got[2].reversed);
+    EXPECT_EQ(got[2].profile, 1);
+    EXPECT_EQ(channel_universes_used(cc, &bank), 1);  // 13 channels, where pixels took 180
+    EXPECT_EQ(channel_universes_used(cc), 0);         // no bank: no layout
+    cc.packing = kPackContinuous;
+    EXPECT_EQ(channel_universes_used(cc, &bank), 1);  // a pixel layout ignores the bank
+    cc.packing = kPackControl;
+
+    // The runs are the fixtures: rank in dst, footprint in bytes.
+    DmxRun runs[8];
+    EXPECT_EQ(channel_layout(cc, runs, 8, &bank), 3);
+    EXPECT_EQ(runs[1].slot, 3);
+    EXPECT_EQ(runs[1].dst, 1);
+    EXPECT_EQ(runs[1].bytes, 6);
+
+    // A fixture never straddles two universes: the one that would starts the next.
+    cc.dmx_start = 505;  // 504: RGB fits (504..506), RGB FX (6 ch) would end at 513
+    collect(cc);
+    EXPECT_EQ(got[0].uni_off, 0);
+    EXPECT_EQ(got[0].slot, 504);
+    EXPECT_EQ(got[1].uni_off, 1);
+    EXPECT_EQ(got[1].slot, 0);
+    EXPECT_EQ(got[2].uni_off, 1);
+    EXPECT_EQ(got[2].slot, 6);
+    EXPECT_EQ(channel_universes_used(cc, &bank), 2);
+    cc.dmx_start = 510;  // exactly to the end: the next fixture opens a universe
+    collect(cc);
+    EXPECT_EQ(got[0].slot, 509);
+    EXPECT_EQ(got[1].uni_off, 1);
+    EXPECT_EQ(got[1].slot, 0);
+    cc.dmx_start = 600;  // past the universe: rolls, like a pixel layout
+    collect(cc);
+    EXPECT_EQ(got[0].uni_off, 1);
+    EXPECT_EQ(got[0].slot, 87);
+    cc.dmx_start = 1;
+
+    // The wiring order holds whatever the strip's direction.
+    cc.invert_direction = true;
+    collect(cc);
+    EXPECT_EQ(got[0].footprint, 3);  // still the first fixture listed
+    EXPECT_EQ(got[0].first, 40);     // which the inverted strip puts at its far end
+    EXPECT_EQ(got[2].footprint, 4);
+    EXPECT_EQ(got[2].first, 0);
+    cc.invert_direction = false;
+
+    // A profile that left the bank reads as the first.
+    cc.fixtures[1] = make_fixture(20, 20, false, 7);
+    collect(cc);
+    EXPECT_EQ(got[1].profile, 0);
+    EXPECT_EQ(got[1].footprint, 3);
+
+    // No fixtures: one fixture, the whole strip, on the first profile.
+    std::memset(cc.fixtures, 0, sizeof(cc.fixtures));
+    EXPECT_EQ(collect(cc), 1);
+    EXPECT_EQ(got[0].first, 0);
+    EXPECT_EQ(got[0].count, 60);
+    EXPECT_EQ(got[0].footprint, 3);
+    cc.grouping = 4;  // the buffer the encoder reads is that much shorter
+    collect(cc);
+    EXPECT_EQ(got[0].count, 15);
+    cc.grouping = 1;
+
+    // Off, empty, or an empty bank: nothing.
+    cc.pixel_count = 0;
+    EXPECT_EQ(collect(cc), 0);
+    cc.pixel_count = 60;
+    cc.protocol    = pixfrog::led::Protocol::Off;
+    EXPECT_EQ(collect(cc), 0);
+    cc.protocol = pixfrog::led::Protocol::WS2815;
+    EXPECT_EQ(for_each_fixture_patch(cc, ProfileBank{}, [](const FixturePatch&) {}), 0);
+}
+
+static void test_control_decode_fixture() {
+    using namespace pixfrog::config;
+    Profile p{};
+    const FixFn fns[] = { FixFn::Dimmer,  FixFn::Red,     FixFn::Green,  FixFn::Blue,
+                          FixFn::White,   FixFn::Shutter, FixFn::Bank,   FixFn::Speed,
+                          FixFn::Param,   FixFn::PhWave,  FixFn::PhRate, FixFn::PhSpread,
+                          FixFn::PhWidth, FixFn::Block,   FixFn::Groups, FixFn::Wings,
+                          FixFn::None,    FixFn::Red };
+    for (FixFn fn : fns)
+        p.slots[p.count++] = profile_slot(fn);
+    p.slots[0].arg  = kProfileArgFine;  // the dimmer takes two channels
+    p.slots[17].arg = 2;                // the last red is colour 3's
+    EXPECT_EQ(profile_footprint(p), 19);
+    const uint8_t dmx[19] = { 0x80, 0x40, 10, 20,  30, 77, 1, 24, 90, 5,
+                              16,   40,   32, 128, 3,  4,  2, 99, 200 };
+    FixtureFrame f;
+    decode_fixture(p, dmx, f);
+    EXPECT_EQ(f.dimmer, 0x8040);
+    EXPECT_EQ(f.color[0][0], 10);
+    EXPECT_EQ(f.color[0][1], 20);
+    EXPECT_EQ(f.color[0][2], 30);
+    EXPECT_EQ(f.white, 77);
+    EXPECT_EQ(f.shutter_hz10, 10);  // 1 = 1 Hz
+    EXPECT_EQ(f.bank, 2);           // band 3
+    EXPECT_EQ(f.fx.speed, 90);
+    EXPECT_EQ(f.fx.param, 5);
+    EXPECT_EQ(f.fx.ph_wave, kPhaserSin);
+    EXPECT_EQ(f.fx.ph_rate, 40);
+    EXPECT_EQ(f.fx.ph_spread, 32);
+    EXPECT_EQ(f.fx.ph_width, 128);
+    EXPECT_EQ(f.fx.block, 3);
+    EXPECT_EQ(f.fx.groups, 4);
+    EXPECT_EQ(f.fx.wings, 2);
+    EXPECT_EQ(f.color[2][0], 200);
+    EXPECT_EQ(f.color[2][1], -1);  // not in the profile
+    EXPECT_EQ(f.color[1][0], -1);
+
+    // Everything at 0: dark dimmer, open shutter, no effect, nothing overridden.
+    const uint8_t zero[19] = {};
+    decode_fixture(p, zero, f);
+    EXPECT_EQ(f.dimmer, 0);
+    EXPECT_EQ(f.shutter_hz10, 0);
+    EXPECT_EQ(f.bank, -1);
+    EXPECT_EQ(f.fx.speed + f.fx.param + f.fx.ph_wave + f.fx.ph_rate + f.fx.block, -5);
+    EXPECT_EQ(f.color[0][0], 0);  // in the profile, at 0
+
+    // No dimmer in the profile: full. An 8-bit dimmer spans the 16-bit range.
+    Profile rgb{};
+    profile_apply_preset(rgb, ProfilePreset::Rgb);
+    decode_fixture(rgb, dmx, f);
+    EXPECT_EQ(f.dimmer, kMasterFull);
+    Profile dim{};
+    profile_apply_preset(dim, ProfilePreset::DimRgb);
+    const uint8_t full[4] = { 255, 1, 2, 3 };
+    decode_fixture(dim, full, f);
+    EXPECT_EQ(f.dimmer, kMasterFull);
+    EXPECT_EQ(f.color[0][2], 3);
+}
+
+static void test_control_render_fixture() {
+    using namespace pixfrog::config;
+    uint8_t b[8 * 4];
+    // The bank: effect 0 a steady green, effect 1 a white chase.
+    auto bank = [](size_t i, Effect& e) {
+        if (i > 1) return false;
+        e            = Effect{};
+        e.num_colors = 1;
+        if (i == 0) {
+            e.colors[0][1] = 180;
+        } else {
+            e.generator = kSceneFxChase;
+            std::memset(e.colors[0], 255, 3);
+        }
+        return true;
+    };
+    FixtureFrame f;
+    f.color[0][0] = 100;
+    f.color[0][1] = 50;
+    f.color[0][2] = 25;
+
+    // No effect: the fixture's colour, steady, on every pixel.
+    std::memset(b, 0xEE, sizeof(b));
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 100);
+    EXPECT_EQ(b[10], 50);
+    EXPECT_EQ(b[11], 25);
+    EXPECT_EQ(b[12], 0xEE);  // nothing past the fixture
+    // The dimmer scales it; at 0 the fixture is dark.
+    f.dimmer = 0x8000;
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 50);
+    f.dimmer = 0;
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);
+    f.dimmer = kMasterFull;
+    // The shutter strobes: lit at the start of a period, dark after the flash.
+    f.shutter_hz10 = 10;  // 1 Hz
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 100);
+    render_fixture(b, sizeof(b), 4, 3, f, false, 500, bank);
+    EXPECT_EQ(b[0], 0);
+    f.shutter_hz10 = 0;
+    // RGBW: the white channel lights the white LED, the generators leave it at 0.
+    f.white = 66;
+    render_fixture(b, sizeof(b), 4, 4, f, false, 0, bank);
+    EXPECT_EQ(b[0], 100);
+    EXPECT_EQ(b[3], 66);
+    EXPECT_EQ(b[15], 66);
+    f.white = 0;
+
+    // An effect of the bank, in its own colour while the desk's are at 0.
+    FixtureFrame g;
+    g.bank = 0;
+    std::memset(g.color[0], 0, sizeof(g.color[0]));
+    render_fixture(b, sizeof(b), 4, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0], 0);
+    EXPECT_EQ(b[1], 180);
+    g.color[0][0] = 200;  // a desk colour replaces the effect's
+    render_fixture(b, sizeof(b), 4, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0], 200);
+    EXPECT_EQ(b[1], 0);
+    g.color[1][2] = 9;  // a second colour raises the palette
+    g.bank        = 1;
+    g.color[0][0] = 0;
+    render_fixture(b, sizeof(b), 8, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0], 255);        // the chase's own first head
+    EXPECT_EQ(b[4 * 3 + 2], 9);  // the second colour's head, half the run on
+    // A band past the bank is no effect: plain colour 1, the desk's.
+    g.bank = 5;
+    render_fixture(b, sizeof(b), 4, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);
+
+    // A fixture mounted the other way round runs backwards; the override
+    // channels act on the effect.
+    FixtureFrame h;
+    h.bank = 1;
+    render_fixture(b, sizeof(b), 8, 3, h, false, 0, bank);
+    EXPECT_EQ(b[0], 255);
+    EXPECT_EQ(b[7 * 3], 0);
+    render_fixture(b, sizeof(b), 8, 3, h, true, 0, bank);
+    EXPECT_EQ(b[0], 0);
+    EXPECT_EQ(b[7 * 3], 255);
+    h.fx.wings = 2;  // both ends lit
+    render_fixture(b, sizeof(b), 8, 3, h, false, 0, bank);
+    EXPECT_EQ(b[0], 255);
+    EXPECT_EQ(b[7 * 3], 255);
+    EXPECT_EQ(b[3 * 3], 0);
+
+    // The phaser channels work on a plain colour too: a still PWM, reversed
+    // by the spread, leaves pixel 0 lit and the far half dark.
+    FixtureFrame k;
+    std::memset(k.color[0], 0, sizeof(k.color[0]));
+    k.color[0][0]  = 240;
+    k.fx.ph_wave   = kPhaserRampDown;
+    k.fx.ph_spread = 16;
+    render_fixture(b, sizeof(b), 8, 3, k, false, 0, bank);
+    EXPECT_EQ(b[0], 240);
+    EXPECT_TRUE(b[4 * 3] > 110 && b[4 * 3] < 130);
+
+    // A buffer too small for the fixture is left alone.
+    b[0] = 0x5A;
+    render_fixture(b, 5, 8, 3, k, false, 0, bank);
+    EXPECT_EQ(b[0], 0x5A);
+}
+
+static void test_control_render_channel() {
+    using namespace pixfrog::config;
+    const ProfileBank bank = default_profiles();
+    ChannelConfig cc       = control_chan();  // RGB @1, RGB FX @4, Dim RGB @10 (reversed)
+    static uint8_t uni[512];
+    std::memset(uni, 0, sizeof(uni));
+    const uint8_t frame[13] = { 10, 20, 30, /* RGB FX */ 0, 0, 200, 0, 0, 0, /* Dim RGB */ 128,
+                                60, 0,  0 };
+    std::memcpy(uni, frame, sizeof(frame));
+    auto get_uni = [&](uint16_t u) -> const uint8_t* { return u == 10 ? uni : nullptr; };
+    auto no_fx   = [](size_t, Effect&) { return false; };
+    static uint8_t buf[64 * 3];
+    std::memset(buf, 0xEE, sizeof(buf));
+    render_fixtures(buf, sizeof(buf), cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[0], 10);
+    EXPECT_EQ(buf[19 * 3 + 2], 30);
+    EXPECT_EQ(buf[20 * 3 + 2], 200);
+    EXPECT_EQ(buf[39 * 3 + 2], 200);
+    EXPECT_EQ(buf[40 * 3], 30);  // 60 at half
+    EXPECT_EQ(buf[59 * 3], 30);
+    EXPECT_EQ(buf[60 * 3], 0xEE);  // nothing past the strip
+
+    // LEDs in no fixture stay dark; a fixture whose universe is missing too.
+    cc.fixtures[1] = make_fixture(25, 10, false, 2);
+    render_fixtures(buf, sizeof(buf), cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[22 * 3 + 2], 0);
+    EXPECT_EQ(buf[25 * 3 + 2], 200);
+    EXPECT_EQ(buf[36 * 3 + 2], 0);
+    cc.universe_start = 11;
+    render_fixtures(buf, sizeof(buf), cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[0] + buf[25 * 3 + 2] + buf[40 * 3], 0);
+    // A buffer too small is left alone.
+    buf[0] = 0x5A;
+    render_fixtures(buf, 10, cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[0], 0x5A);
+}
+
+static void test_control_auto_patch() {
+    using namespace pixfrog::config;
+    const ProfileBank bank = default_profiles();
+    ChannelConfig chans[4];
+    for (auto& c : chans) {
+        c             = fixture_chan(60);
+        c.fixtures[0] = Fixture{};
+    }
+    chans[0]             = control_chan();  // 13 channels
+    chans[1].packing     = kPackControl;    // no fixtures: one RGB fixture, 3 channels
+    chans[3].packing     = kPackControl;
+    chans[3].fixtures[0] = make_fixture(0, 60, false, 3);  // Full: 16 channels
+    uint16_t uni[4], dmx[4], after = 0;
+
+    // Aligned: each output opens a universe, control or not.
+    AutoPatchOptions o;
+    o.base = 20;
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank), 24);
+    EXPECT_EQ(uni[0], 20);
+    EXPECT_EQ(uni[1], 21);
+    EXPECT_EQ(uni[2], 22);
+    EXPECT_EQ(uni[3], 23);
+    EXPECT_EQ(after, 16);
+
+    // Compact: the control outputs follow each other inside a universe, and a
+    // layout asked for every output leaves them in control mode.
+    o.compact = true;
+    o.packing = kPackWholePixels;
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank), 21);
+    EXPECT_EQ(chans[0].packing, kPackControl);
+    EXPECT_EQ(chans[2].packing, kPackWholePixels);
+    EXPECT_EQ(uni[0], 20);
+    EXPECT_EQ(dmx[0], 1);
+    EXPECT_EQ(dmx[1], 14);  // after the 13 channels of output 1
+    EXPECT_EQ(dmx[2], 17);  // the pixel output: 180 channels from there
+    EXPECT_EQ(dmx[3], 197);
+    EXPECT_EQ(after, 212);
+
+    // A first fixture that would not fit in what is left opens the next
+    // universe: the output's address says where that fixture is.
+    chans[2].pixel_count   = 100;  // 300 channels: 17..316
+    chans[3].dmx_start     = 1;
+    ChannelConfig tight[2] = { chans[2], chans[3] };
+    tight[0].pixel_count   = 167;  // 501 channels: 11 left, the Full profile needs 16
+    EXPECT_EQ(compute_auto_patch(o, tight, 2, uni, dmx, &after, &bank), 22);
+    EXPECT_EQ(uni[1], 21);
+    EXPECT_EQ(dmx[1], 1);
+}
+
 static void test_scene_all_effects_bounded() {
     using namespace pixfrog::config;
     constexpr int kN = 1024;
@@ -2005,6 +2362,11 @@ int main() {
     test_phaser_dimmer_rate_spread_and_floor();
     test_effect_dimmer_layers();
     test_effect_dimmer_invert();
+    test_control_layout();
+    test_control_decode_fixture();
+    test_control_render_fixture();
+    test_control_render_channel();
+    test_control_auto_patch();
     test_matricks_layout();
     test_matricks_expand_matches_reference();
     test_matricks_on_an_effect();

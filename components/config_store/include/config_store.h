@@ -668,9 +668,13 @@ inline size_t fixture_count(const Fixture* f, size_t n) {
 constexpr uint8_t kPackContinuous  = 0;  // byte after byte: a pixel may straddle two universes
 constexpr uint8_t kPackWholePixels = 1;  // whole pixels only (170 RGB / 128 RGBW per universe)
 constexpr uint8_t kPackPerFixture  = 2;  // each fixture from slot 1 of a new universe, whole pixels
-constexpr uint8_t kPackCount       = 3;
+// DMX control mode: no pixel data at all. Each fixture takes the channels of
+// its DMX profile, one after the other from dmx_start; a fixture never
+// straddles two universes. An output without fixtures is one fixture.
+constexpr uint8_t kPackControl = 3;
+constexpr uint8_t kPackCount   = 4;
 inline const char* packing_id(uint8_t p) {
-    static const char* const kIds[] = { "continuous", "whole", "fixture" };
+    static const char* const kIds[] = { "continuous", "whole", "fixture", "control" };
     return p < kPackCount ? kIds[p] : "continuous";
 }
 inline int packing_from_id(const char* s) {

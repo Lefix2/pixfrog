@@ -440,6 +440,25 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
     printf("%s\n", ng ? "" : "-");
     printf("packing=%s\n", config::packing_id(c.packing));
     printf("universes=%u\n", static_cast<unsigned>(dmx::channel_universe_span(c)));
+    // first LED (1-based):count[:r][:pN], comma-separated; "-" = none
+    const size_t nf = config::fixture_count(c.fixtures, config::kMaxFixtures);
+    printf("fixtures=");
+    for (size_t k = 0; k < nf; ++k) {
+        printf("%s%u:%u", k ? "," : "", c.fixtures[k].pos + 1u, config::fixture_len(c.fixtures[k]));
+        if (config::fixture_reversed(c.fixtures[k])) printf(":r");
+        if (config::fixture_profile(c.fixtures[k]))
+            printf(":p%u", config::fixture_profile(c.fixtures[k]));
+    }
+    printf("%s\n", nf ? "" : "-");
+    // DMX control mode — the patch sheet: universe.address+channels per fixture
+    if (c.packing == config::kPackControl) {
+        static dmx::FixtureAddress at[config::kMaxFixtures];  // off the console task's stack
+        const size_t n = dmx::fixture_patch(c, at, config::kMaxFixtures);
+        printf("patch=");
+        for (size_t k = 0; k < n; ++k)
+            printf("%s%u.%u+%u", k ? "," : "", at[k].universe, at[k].address, at[k].footprint);
+        printf("\n");
+    }
 }
 
 // "pos:len[,pos:len…]" (pos 1-based) or "-" → gaps; false on a malformed list.
@@ -464,6 +483,51 @@ bool parse_gaps(const char* arg, led::PixelGap out[led::kMaxPixelGaps]) {
         out[n++] = led::PixelGap{ static_cast<uint16_t>(pos - 1), static_cast<uint16_t>(len) };
     }
     return n > 0;
+}
+
+// "first:count[:r][:pN],…" (first 1-based) or "-" for none → the fixture
+// list. False on a malformed entry, a fixture past the strip's limits or two
+// fixtures sharing an LED.
+bool parse_fixtures(const char* arg, config::Fixture out[config::kMaxFixtures]) {
+    config::Fixture parsed[config::kMaxFixtures] = {};
+    size_t n                                     = 0;
+    if (strcmp(arg, "-") != 0) {
+        static char buf[config::kMaxFixtures * 16];  // off the console task's stack
+        if (strlen(arg) >= sizeof(buf)) return false;
+        copy_str(buf, sizeof(buf), arg);
+        char* save = nullptr;
+        for (char* tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(nullptr, ",", &save)) {
+            if (n == config::kMaxFixtures) return false;
+            uint32_t first = 0, count = 0, profile = 0;
+            bool reversed = false;
+            char* save2   = nullptr;
+            int field     = 0;
+            for (char* f = strtok_r(tok, ":", &save2); f;
+                 f       = strtok_r(nullptr, ":", &save2), ++field) {
+                if (field == 0) {
+                    if (!parse_u32_in(f, 1, led::kMaxPixelsPerChannel, first)) return false;
+                } else if (field == 1) {
+                    if (!parse_u32_in(f, 1, led::kMaxPixelsPerChannel, count)) return false;
+                } else if (strcmp(f, "r") == 0) {
+                    reversed = true;
+                } else if (f[0] != 'p' ||
+                           !parse_u32_in(f + 1, 0, config::kMaxProfiles - 1, profile)) {
+                    return false;
+                }
+            }
+            if (field < 2 || first + count - 1 > led::kMaxPixelsPerChannel) return false;
+            parsed[n++] = config::make_fixture(static_cast<uint16_t>(first - 1),
+                                               static_cast<uint16_t>(count), reversed,
+                                               static_cast<uint8_t>(profile));
+        }
+        for (size_t a = 0; a < n; ++a)
+            for (size_t b = a + 1; b < n; ++b)
+                if (parsed[a].pos < parsed[b].pos + config::fixture_len(parsed[b]) &&
+                    parsed[b].pos < parsed[a].pos + config::fixture_len(parsed[a]))
+                    return false;
+    }
+    memcpy(out, parsed, sizeof(parsed));
+    return true;
 }
 
 int cmd_ch(int argc, char** argv) {
@@ -526,11 +590,15 @@ int cmd_ch(int argc, char** argv) {
             return err("gaps: pos:len[,pos:len...] (pos 1-based, max 8) or -");
     } else if (strcmp(key, "packing") == 0) {
         const int p = config::packing_from_id(val);
-        if (p < 0) return err("packing: continuous|whole|fixture");
+        if (p < 0) return err("packing: continuous|whole|fixture|control");
         c.packing = static_cast<uint8_t>(p);
+    } else if (strcmp(key, "fixtures") == 0) {
+        if (!parse_fixtures(val, c.fixtures))
+            return err("fixtures: first:count[:r][:pN],... (first 1-based, r = reversed, "
+                       "pN = DMX profile N; max 32, no overlap) or -");
     } else {
         return err("unknown key (protocol order universe dmx_start pixels brightness grouping "
-                   "invert clock_hz gamma_x10 wb gaps packing)");
+                   "invert clock_hz gamma_x10 wb gaps packing fixtures)");
     }
 
     const bool persisted = config::set_channel(ch, c);
@@ -551,7 +619,7 @@ int cmd_autopatch(int argc, char** argv) {
         const int p = config::packing_from_id(argv[i]);
         if (strcmp(argv[i], "compact") == 0)
             o.compact = true;
-        else if (p >= 0)
+        else if (p >= 0 && p != config::kPackControl)  // a mode of an output, not a layout for all
             o.packing = static_cast<int8_t>(p);
         else
             return err(usage);

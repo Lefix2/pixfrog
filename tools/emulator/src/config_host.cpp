@@ -115,6 +115,11 @@ bool is_persistence_ok() {
     return true;  // emulator: pretend NVS is healthy
 }
 
+const ProfileBank& get_profiles() {
+    static const ProfileBank kBank = default_profiles();
+    return kBank;
+}
+
 size_t num_scenes() {
     ensure_init();
     return g_bank.count;

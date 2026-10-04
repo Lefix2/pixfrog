@@ -330,6 +330,33 @@ console), from `(universe_start, dmx_start)`:
 | `continuous` (default) | byte after byte; a pixel may straddle two universes | 6 universes |
 | `whole` | whole pixels only: 170 RGB / 128 RGBW per universe (xLights / Falcon / FPP "510 channels") | 7 universes |
 | `fixture` | each fixture (§5.5) from slot 1 of a universe of its own, whole pixels inside; pixels in no fixture get no data; no fixtures = `whole` | 1 + per fixture |
+| `control` | **DMX control mode**: no pixel data. Each fixture takes the channels of its DMX profile, one after the other | 3 channels with one RGB fixture |
+
+**DMX control mode** turns pixel mapping off for an output and drives its
+fixtures like conventional luminaires (the profiles, their functions and
+presets: SHOW_CONTROL "Fixture DMX profiles"):
+
+- The fixtures follow each other on the wire from `(universe_start,
+  dmx_start)`, in the order they are listed, each taking the footprint of its
+  profile. A fixture never straddles two universes: one that would starts the
+  next at slot 1.
+- An output without fixtures is one fixture covering the strip, on the first
+  profile. LEDs in no fixture stay dark. A fixture whose profile left the bank
+  uses the first.
+- Each frame, every fixture reads its channels and plays what they ask for:
+  its colour, steady (effect channel at 0), or an effect of the bank with the
+  desk's colours, speed, phaser and Block / Groups / Wings — at its dimmer,
+  through its shutter. All fixtures share the box's clock.
+- Everything above the network path is unchanged: a scene started on the
+  output overrides the desk, the failsafe takes over on signal loss, the
+  grand master, blackout and strobe apply after.
+- The patch sheet — universe, address and channel count per fixture — is
+  `"patch"` on the channel in `GET /api/config`, `patch=` in `ch N` on the
+  console, and shown next to each fixture in the web channel editor.
+
+The point is the universe count: eight outputs of 300 RGBW pixels take 24
+universes pixel-mapped, and one in control mode with a 16-channel fixture
+each.
 
 `logic::channel_layout` turns a channel into runs (universe offset, slot,
 buffer offset, bytes); decoding, the universe span (`channel_universe_span`,
@@ -345,7 +372,10 @@ screen; the TFT/OLED menu keeps the aligned default):
   fits; a `fixture` output always opens one). A shared universe takes one pool
   slot feeding both outputs (`g_slot_chans` is a bit per channel), so activity
   and failsafe follow every output on it.
-- `packing` other than `keep` is set on every output first.
+- `packing` other than `keep` is set on every output first — a pixel layout:
+  an output in DMX control mode keeps its mode. Such outputs chain like the
+  others; compact, one starts in the next universe when its first fixture
+  would not fit in what is left.
 - An enabled DMX control universe follows the outputs: in the room left in the
   last universe when compact, else from slot 1 of the next.
 

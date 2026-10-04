@@ -612,6 +612,46 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
     post("/api/restore", initial);
 }
 
+TEST(control_mode_output_and_its_patch_sheet) {
+    const std::string initial = get("/api/backup").body;
+    EXPECT_EQ(post("/api/channel/6",
+                   "{\"protocol\":\"WS2815\",\"pixel_count\":60,"
+                   "\"universe_start\":40,\"dmx_start\":501,\"packing\":\"control\","
+                   "\"fixtures\":[[1,20],[21,20,0,2],[41,20,1,1]]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::get_channel(6).packing, config::kPackControl);
+    Json cfg(get("/api/config").body);
+    const cJSON* ch = cJSON_GetArrayItem(cfg["channels"], 6);
+    EXPECT_STREQ(cJSON_GetObjectItem(ch, "packing")->valuestring, "control");
+    EXPECT_EQ(cJSON_GetObjectItem(ch, "universes")->valueint, 2);
+    // [universe, address, channels, profile] per fixture, in their order.
+    const cJSON* patch = cJSON_GetObjectItem(ch, "patch");
+    EXPECT_EQ(cJSON_GetArraySize(patch), 3);
+    auto cell = [&](int row, int col) {
+        return cJSON_GetArrayItem(cJSON_GetArrayItem(patch, row), col)->valueint;
+    };
+    EXPECT_EQ(cell(0, 0), 40);
+    EXPECT_EQ(cell(0, 1), 501);
+    EXPECT_EQ(cell(0, 2), 3);
+    EXPECT_EQ(cell(1, 0), 40);  // 504..509
+    EXPECT_EQ(cell(1, 1), 504);
+    EXPECT_EQ(cell(1, 2), 6);
+    EXPECT_EQ(cell(1, 3), 2);
+    EXPECT_EQ(cell(2, 0), 41);  // 4 channels would pass 512: the next universe
+    EXPECT_EQ(cell(2, 1), 1);
+    // A pixel output has no patch sheet.
+    EXPECT_TRUE(cJSON_GetObjectItem(cJSON_GetArrayItem(cfg["channels"], 0), "patch") == nullptr);
+
+    // Auto-patch chains it; "control" is not a layout to give every output.
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"packing\":\"control\"}").status, 400);
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"compact\":true,\"packing\":\"whole\"}").status,
+              200);
+    EXPECT_EQ(config::get_channel(6).packing, config::kPackControl);
+    EXPECT_EQ(post("/api/channel/6", "{\"packing\":\"sideways\"}").status, 400);
+    post("/api/restore", initial);
+}
+
 // Several boxes' backups must not collide: the file is named after the box
 // and the browser's date (the box has no clock).
 TEST(backup_file_is_named_after_the_box_and_the_date) {

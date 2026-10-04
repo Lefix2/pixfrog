@@ -7,6 +7,8 @@
 #include "dmx_emu.h"
 #include "dmx_manager.h"
 
+#include "../../../components/dmx_manager/src/dmx_logic.h"  // the real layout maths
+
 namespace pixfrog::dmx {
 
 namespace {
@@ -18,6 +20,10 @@ bool g_capacity_ok[config::kNumChannels] = { true, true, true, true, true, true,
 
 Stats get_stats() {
     return g_stats;
+}
+
+size_t channel_universe_span(const config::ChannelConfig& cc) {
+    return logic::channel_universes_used(cc, &config::get_profiles());
 }
 
 void set_current_fps(uint32_t fps) {

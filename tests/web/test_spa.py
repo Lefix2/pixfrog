@@ -410,6 +410,34 @@ def test_dmx_profiles_editor(page, device):
     assert len(device.get("/api/config")["profiles"]) == 4
 
 
+def test_dmx_control_layout_gives_each_fixture_a_profile_and_an_address(page, device):
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 60, "universe_start": 1,
+                                   "dmx_start": 1, "fixtures": [[1, 20], [21, 20], [41, 20]]})
+    page.reload()
+    nav(page, "channels")
+    expect(page.locator("[data-lay-prof]")).to_have_count(0)  # a pixel layout: no profile to pick
+    page.locator("#cd-pack").select_option("control")
+    profs = page.locator("[data-lay-prof]")
+    expect(profs).to_have_count(3)
+    addr = page.locator("[data-lay-addr]")
+    expect(addr.nth(0)).to_have_text("U1 · 1")
+    expect(addr.nth(1)).to_have_text("U1 · 4")  # RGB: 3 channels each
+    profs.nth(0).select_option("2")  # RGB FX: 6 channels — the next fixtures move on
+    expect(page.locator("[data-lay-addr]").nth(1)).to_have_text("U1 · 7")
+    page.locator("[data-lay-prof]").nth(2).select_option("3")  # Full: 16 channels
+    expect(page.locator("[data-ctl-note]")).to_contain_text("3 fixtures · 25 ch · U1 · 1 → U1 · 25")
+    page.locator("#cd-dmx").fill("500")  # the Full fixture would straddle: it opens universe 2
+    expect(page.locator("[data-lay-addr]").nth(2)).to_have_text("U2 · 1")
+    save(page)
+    c = device.get("/api/config")["channels"][0]
+    assert c["packing"] == "control" and c["universes"] == 2
+    assert c["fixtures"] == [[1, 20, 0, 2], [21, 20], [41, 20, 0, 3]]
+    # The box computes the same addresses as the page.
+    assert c["patch"] == [[1, 500, 6, 2], [1, 506, 3, 0], [2, 1, 16, 3]]
+    nav(page, "patch")
+    expect(page.locator("#patch-mount")).to_contain_text("DMX control")
+
+
 def test_a_fixture_keeps_its_profile_through_the_layout_editor(page, device):
     device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 30,
                                    "fixtures": [[1, 10, 0, 2], [11, 10, 1, 3], [21, 10]]})

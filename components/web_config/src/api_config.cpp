@@ -135,6 +135,21 @@ static cJSON* build_channels_json() {
         cJSON_AddStringToObject(jc, "packing", config::packing_id(c.packing));
         cJSON_AddNumberToObject(jc, "universes",
                                 static_cast<double>(dmx::channel_universe_span(c)));
+        // DMX control mode — the patch sheet: where each fixture sits on the
+        // wire, [universe, address, channels, profile], in fixture order.
+        if (c.packing == config::kPackControl) {
+            dmx::FixtureAddress at[config::kMaxFixtures];
+            const size_t n = dmx::fixture_patch(c, at, config::kMaxFixtures);
+            cJSON* jpatch  = cJSON_AddArrayToObject(jc, "patch");
+            for (size_t k = 0; k < n; ++k) {
+                cJSON* row = cJSON_CreateArray();
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].universe));
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].address));
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].footprint));
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].profile));
+                cJSON_AddItemToArray(jpatch, row);
+            }
+        }
         // [[first LED, 1-based physical], count], ... — same shape as the gaps.
         cJSON* jf = cJSON_AddArrayToObject(jc, "fixtures");
         for (size_t k = 0; k < config::fixture_count(c.fixtures, config::kMaxFixtures); ++k) {
@@ -475,7 +490,7 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         if (p >= 0)
             c.packing = static_cast<uint8_t>(p);
         else
-            refuse(why, "packing: continuous|whole|fixture");
+            refuse(why, "packing: continuous|whole|fixture|control");
     }
     apply_gaps_json(j, c);
     apply_fixtures_json(j, c, why);
@@ -904,7 +919,9 @@ esp_err_t handle_autopatch(httpd_req_t* req) {
     o.packing         = static_cast<int8_t>(packing);
     cJSON_Delete(j);
     if (!ok) return send_err(req, 400, "base 0..32767");
-    if (bad_p) return send_err(req, 400, "packing: keep|continuous|whole|fixture");
+    // "control" is an output's mode, not a pixel layout to give every output.
+    if (bad_p || packing == config::kPackControl)
+        return send_err(req, 400, "packing: keep|continuous|whole|fixture");
 
     uint16_t next    = 0;
     size_t universes = 0;

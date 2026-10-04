@@ -39,7 +39,8 @@ inline size_t channel_total_bytes(const config::ChannelConfig& cc) {
 
 // Universes the channel's DMX layout spans from its universe_start (see
 // channel_layout below: packing and dmx_start included).
-inline size_t channel_universes_used(const config::ChannelConfig& cc);
+inline size_t channel_universes_used(const config::ChannelConfig& cc,
+                                     const config::ProfileBank* profiles = nullptr);
 
 // ── Universe → slot map ─────────────────────────────────────────────────────
 //
@@ -58,14 +59,15 @@ inline size_t channel_universes_used(const config::ChannelConfig& cc);
 // Returns the number of slots used.
 inline uint16_t build_universe_map(const config::ChannelConfig* chans, size_t n,
                                    uint16_t* uni_to_slot, uint8_t* slot_chans, size_t num_slots,
-                                   size_t* out_unmapped) {
+                                   size_t* out_unmapped,
+                                   const config::ProfileBank* profiles = nullptr) {
     for (size_t i = 0; i <= kMaxUniverseNumber; ++i)
         uni_to_slot[i] = kNoSlot;
 
     uint16_t slot   = 0;
     size_t unmapped = 0;
     for (size_t ch = 0; ch < n; ++ch) {
-        const size_t universes_used = channel_universes_used(chans[ch]);
+        const size_t universes_used = channel_universes_used(chans[ch], profiles);
         for (size_t u = 0; u < universes_used; ++u) {
             const uint32_t uni = static_cast<uint32_t>(chans[ch].universe_start) + u;
             if (universe_routable(uni) && uni_to_slot[uni] != kNoSlot) {
@@ -878,7 +880,8 @@ inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_co
 // A run of the channel's source buffer (the pixels a scene writes).
 struct Span {
     uint16_t first, count;
-    bool reversed = false;  // the fixture is mounted the other way round
+    bool reversed   = false;  // the fixture is mounted the other way round
+    uint8_t profile = 0;      // its DMX profile (control mode)
 };
 
 // Each fixture of `cc` as a source-buffer span, ascending: dead LEDs inside a
@@ -905,7 +908,8 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
         }
         const uint32_t ga = a / group, gb = (b + group - 1) / group;
         out[k++] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga),
-                         config::fixture_reversed(cc.fixtures[i]) };
+                         config::fixture_reversed(cc.fixtures[i]),
+                         config::fixture_profile(cc.fixtures[i]) };
     }
     if (cc.invert_direction)
         for (size_t i = 0; i < k / 2; ++i) {
@@ -1025,10 +1029,78 @@ constexpr size_t kMaxDmxRuns = 96;
 // and returns how many there were. Nothing is stored: the render task, the
 // boot task and the UI call this on small stacks (an on-stack run array
 // overflowed app_main's 4 kB stack at boot).
+// A fixture of a control-mode channel and where its DMX channels sit.
+struct FixturePatch {
+    uint16_t uni_off;  // universe, relative to cc.universe_start
+    uint16_t slot;     // first channel there, 0-based
+    uint16_t first;    // its span of the source buffer
+    uint16_t count;
+    uint16_t footprint;  // channels it takes: its profile's
+    uint8_t profile;     // index in the bank (clamped: a profile that is gone reads as the first)
+    bool reversed;
+};
+
+// The profile a fixture uses: an index past the bank falls back on the first.
+inline uint8_t patched_profile(const config::ProfileBank& bank, uint8_t index) {
+    return index < bank.count ? index : uint8_t{ 0 };
+}
+
+// Calls visit(patch) for each fixture of a control-mode channel, in the order
+// they are listed (the wiring order, whatever the strip's direction), and
+// returns how many there were. The fixtures follow each other from dmx_start;
+// one that would straddle the end of a universe starts the next instead. A
+// channel without fixtures is one fixture covering the strip, on the first
+// profile. Nothing is stored (see for_each_dmx_run).
 template <typename Visit>
-inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit) {
+inline size_t for_each_fixture_patch(const config::ChannelConfig& cc,
+                                     const config::ProfileBank& bank, Visit visit) {
+    if (led::bytes_per_pixel(cc.protocol) == 0 || cc.pixel_count == 0 || bank.count == 0) return 0;
+    Span sp[config::kMaxFixtures];
+    size_t n = fixture_spans(cc, sp, config::kMaxFixtures);
+    if (n == 0) {
+        const uint32_t group = cc.grouping ? cc.grouping : 1;
+        sp[0] = Span{ 0, static_cast<uint16_t>((cc.pixel_count + group - 1) / group), false, 0 };
+        n     = 1;
+    }
+    uint32_t uni = 0, slot = cc.dmx_start > 0 ? cc.dmx_start - 1u : 0u;
+    uni  += slot / kUniverseSize;
+    slot %= kUniverseSize;
+    for (size_t k = 0; k < n; ++k) {
+        // fixture_spans lists them in buffer order, which invert flips.
+        const Span& f         = sp[cc.invert_direction ? n - 1 - k : k];
+        const uint8_t profile = patched_profile(bank, f.profile);
+        const uint32_t foot   = static_cast<uint32_t>(
+            config::profile_footprint(bank.profiles[profile]));
+        if (slot + foot > kUniverseSize) {
+            ++uni;
+            slot = 0;
+        }
+        visit(FixturePatch{ static_cast<uint16_t>(uni), static_cast<uint16_t>(slot), f.first,
+                            f.count, static_cast<uint16_t>(foot), profile, f.reversed });
+        slot += foot;
+        if (slot >= kUniverseSize) {
+            ++uni;
+            slot = 0;
+        }
+    }
+    return n;
+}
+
+// `profiles` is the bank a control-mode channel is laid out with; without it
+// such a channel has no layout (and takes no universe).
+template <typename Visit>
+inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit,
+                               const config::ProfileBank* profiles = nullptr) {
     const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(cc.protocol));
     if (bpp == 0 || cc.pixel_count == 0) return 0;
+    if (cc.packing == config::kPackControl) {
+        // One run per fixture: its channels, `dst` its rank on the channel.
+        if (!profiles) return 0;
+        uint16_t rank = 0;
+        return for_each_fixture_patch(cc, *profiles, [&](const FixturePatch& f) {
+            visit(DmxRun{ f.uni_off, f.slot, rank++, f.footprint });
+        });
+    }
     uint32_t uni = 0, slot = cc.dmx_start > 0 ? cc.dmx_start - 1u : 0u;
     uni        += slot / kUniverseSize;  // a start past slot 512 rolls into the next universe
     slot       %= kUniverseSize;
@@ -1082,22 +1154,28 @@ inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit) {
 }
 
 // The runs into `out` (up to `cap`); returns how many the layout needs.
-inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_t cap) {
+inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_t cap,
+                             const config::ProfileBank* profiles = nullptr) {
     size_t k = 0;
-    return for_each_dmx_run(cc, [&](const DmxRun& r) {
-        if (k < cap) out[k] = r;
-        ++k;
-    });
+    return for_each_dmx_run(
+        cc,
+        [&](const DmxRun& r) {
+            if (k < cap) out[k] = r;
+            ++k;
+        },
+        profiles);
 }
 
 // The last run (the highest universe), or false when there is none.
-inline bool last_dmx_run(const config::ChannelConfig& cc, DmxRun* last) {
-    return for_each_dmx_run(cc, [&](const DmxRun& r) { *last = r; }) > 0;
+inline bool last_dmx_run(const config::ChannelConfig& cc, DmxRun* last,
+                         const config::ProfileBank* profiles = nullptr) {
+    return for_each_dmx_run(cc, [&](const DmxRun& r) { *last = r; }, profiles) > 0;
 }
 
-inline size_t channel_universes_used(const config::ChannelConfig& cc) {
+inline size_t channel_universes_used(const config::ChannelConfig& cc,
+                                     const config::ProfileBank* profiles) {
     DmxRun last{};
-    return last_dmx_run(cc, &last) ? last.uni_off + 1u : 0u;
+    return last_dmx_run(cc, &last, profiles) ? last.uni_off + 1u : 0u;
 }
 
 // ── Auto-patch ──────────────────────────────────────────────────────────────
@@ -1121,11 +1199,15 @@ struct AutoPatchOptions {
 
 inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelConfig* chans,
                                    size_t n, uint16_t* out_uni, uint16_t* out_dmx,
-                                   uint16_t* slot_after = nullptr) {
+                                   uint16_t* slot_after                = nullptr,
+                                   const config::ProfileBank* profiles = nullptr) {
     uint32_t cur_uni = o.base, cur_slot = 0;
     for (size_t i = 0; i < n; ++i) {
         auto& c = chans[i];
-        if (o.packing >= 0) c.packing = static_cast<uint8_t>(o.packing);
+        // The layout asked for is a pixel layout: an output in DMX control
+        // mode has no pixel channels to lay out, and stays as it is.
+        const bool control = c.packing == config::kPackControl;
+        if (o.packing >= 0 && !control) c.packing = static_cast<uint8_t>(o.packing);
         const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(c.protocol));
         if (bpp == 0 || c.pixel_count == 0) {  // takes no room: parked at the next free one
             out_uni[i]       = static_cast<uint16_t>((cur_slot ? cur_uni + 1 : cur_uni) & 0x7FFF);
@@ -1134,9 +1216,18 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
             c.dmx_start      = 1;
             continue;
         }
+        // A control output's first fixture would itself move to the next
+        // universe if it did not fit: start the output there, so its
+        // address says where its first fixture is.
+        uint32_t first_foot = 0;
+        if (control && profiles)
+            for_each_fixture_patch(c, *profiles, [&](const FixturePatch& f) {
+                if (!first_foot) first_foot = f.footprint;
+            });
         const bool opens = !o.compact || c.packing == config::kPackPerFixture ||
                            (c.packing == config::kPackWholePixels &&
-                            kUniverseSize - cur_slot < bpp);
+                            kUniverseSize - cur_slot < bpp) ||
+                           (control && kUniverseSize - cur_slot < first_foot);
         if (opens && cur_slot > 0) {
             ++cur_uni;
             cur_slot = 0;
@@ -1146,7 +1237,7 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
         c.universe_start = out_uni[i];
         c.dmx_start      = out_dmx[i];
         DmxRun last{};
-        last_dmx_run(c, &last);
+        last_dmx_run(c, &last, profiles);
         cur_uni  = cur_uni + last.uni_off;
         cur_slot = static_cast<uint32_t>(last.slot) + last.bytes;
         if (cur_slot >= kUniverseSize) {
@@ -1506,6 +1597,148 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             for (int j = 0; j < 3; ++j)
                 out.ovr[o].color[k][j] = c3[j] < 0 ? 0 : c3[j];
         }
+}
+
+// ── DMX control mode ────────────────────────────────────────────────────────
+// An output in control mode is driven like conventional luminaires: each of
+// its fixtures reads the channels of its DMX profile and plays what they ask
+// for — a colour, or an effect of the bank with the desk's overrides.
+
+// What one fixture's channels ask for.
+struct FixtureFrame {
+    uint16_t dimmer      = kMasterFull;  // full unless the profile has a dimmer
+    uint8_t white        = 0;
+    uint8_t shutter_hz10 = 0;                   // 0 = open
+    int16_t bank         = -1;                  // -1 = no effect: colour 1, steady
+    int16_t color[config::kSceneColorsMax][3];  // -1 = not in the profile
+    EffectOverride fx;                          // speed, param, phaser, MAtricks
+    FixtureFrame() { std::memset(color, 0xFF, sizeof(color)); }
+};
+
+// Reads `dmx` — the fixture's channels, profile_footprint(p) of them — as the
+// profile says.
+inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, FixtureFrame& out) {
+    out       = FixtureFrame{};
+    size_t at = 0;
+    for (size_t i = 0; i < p.count && i < config::kMaxProfileSlots; ++i) {
+        const config::ProfileSlot& s = p.slots[i];
+        const uint8_t v              = dmx[at];
+        const auto fn                = static_cast<config::FixFn>(s.fn);
+        switch (fn) {
+        case config::FixFn::Dimmer:
+            out.dimmer = (s.arg & config::kProfileArgFine)
+                           ? static_cast<uint16_t>((v << 8) | dmx[at + 1])
+                           : static_cast<uint16_t>(v * 257u);
+            break;
+        case config::FixFn::Red:
+        case config::FixFn::Green:
+        case config::FixFn::Blue:
+            out.color[s.arg & config::kProfileArgColor]
+                     [static_cast<size_t>(fn) - static_cast<size_t>(config::FixFn::Red)] = v;
+            break;
+        case config::FixFn::White: out.white = v; break;
+        case config::FixFn::Shutter: out.shutter_hz10 = strobe_hz10_from_dmx(v); break;
+        case config::FixFn::Bank:
+            if (dmx_band(v)) out.bank = static_cast<int16_t>(dmx_band(v) - 1);
+            break;
+        case config::FixFn::Speed:
+            if (v) out.fx.speed = v;
+            break;
+        case config::FixFn::Param:
+            if (v) out.fx.param = v;
+            break;
+        case config::FixFn::PhWave:
+            out.fx.ph_wave = static_cast<int16_t>(phaser_wave_from_dmx(v));
+            break;
+        case config::FixFn::PhRate:
+            if (v) out.fx.ph_rate = v;
+            break;
+        case config::FixFn::PhSpread:
+            if (v) out.fx.ph_spread = v;
+            break;
+        case config::FixFn::PhWidth:
+            if (v) out.fx.ph_width = v;
+            break;
+        case config::FixFn::Block:
+            if (v) out.fx.block = v;
+            break;
+        case config::FixFn::Groups:
+            if (v) out.fx.groups = v;
+            break;
+        case config::FixFn::Wings:
+            if (v) out.fx.wings = v;
+            break;
+        default: break;
+        }
+        at += config::profile_slot_width(s);
+    }
+}
+
+// Draws one fixture — `n` pixels at `d` — as its frame asks. `get_effect(index,
+// effect&)` copies an effect of the bank, false when there is none there.
+// With no effect (bank channel at 0, absent, or pointing nowhere) the fixture
+// shows colour 1, steady, plus its white LED; with one, a colour of the desk
+// replaces the effect's unless its three channels are at 0. The phaser and
+// Block / Groups / Wings channels act either way.
+template <typename GetEffect>
+inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, const FixtureFrame& f,
+                           bool reversed, uint64_t phase_ms, GetEffect get_effect) {
+    const size_t total = static_cast<size_t>(n) * bpp;
+    if (total > cap || bpp == 0 || n == 0) return;
+    if (f.dimmer == 0 || !strobe_lit(phase_ms, f.shutter_hz10)) {
+        std::memset(d, 0, total);
+        return;
+    }
+    config::Effect e{};
+    const bool plain = f.bank < 0 || !get_effect(static_cast<size_t>(f.bank), e);
+    if (plain) {
+        e            = config::Effect{};
+        e.num_colors = 1;
+    }
+    for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
+        const int16_t* c = f.color[k];
+        if (c[0] < 0 && c[1] < 0 && c[2] < 0) continue;  // not in the profile
+        // On an effect, a colour at 0,0,0 is the effect's own; plain, colour
+        // 1 is the fixture's colour whatever it is.
+        if (c[0] <= 0 && c[1] <= 0 && c[2] <= 0 && !(plain && k == 0)) continue;
+        if (plain && k > 0) continue;
+        for (size_t j = 0; j < 3; ++j)
+            e.colors[k][j] = static_cast<uint8_t>(c[j] < 0 ? 0 : c[j]);
+        if (k + 1 > config::effect_num_colors(e)) e.num_colors = static_cast<uint8_t>(k + 1);
+    }
+    apply_effect_override(e, f.fx);
+    fill_effect_run(d, cap, n, bpp, e, phase_ms);
+    if (plain && bpp == 4 && f.white)
+        for (uint16_t i = 0; i < n; ++i)
+            d[static_cast<size_t>(i) * 4 + 3] = f.white;
+    if (reversed) {
+        const Span whole{ 0, n, true, 0 };
+        reverse_fixtures(d, bpp, &whole, 1);
+    }
+    apply_master(d, total, f.dimmer);
+}
+
+// Renders a control-mode channel: every fixture from its channels on the
+// wire. `get_universe(number)` returns a 512-byte buffer or nullptr (the
+// fixtures of a missing universe stay dark); pixels in no fixture stay dark.
+template <typename GetUniverse, typename GetEffect>
+inline void render_fixtures(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
+                            const config::ProfileBank& bank, uint64_t phase_ms,
+                            GetUniverse get_universe, GetEffect get_effect) {
+    const uint8_t bpp  = led::bytes_per_pixel(cc.protocol);
+    const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
+    if (total > dst_capacity || total == 0) return;
+    std::memset(dst, 0, total);
+    for_each_fixture_patch(cc, bank, [&](const FixturePatch& p) {
+        const uint8_t* src = get_universe(static_cast<uint16_t>(cc.universe_start + p.uni_off));
+        const size_t at    = static_cast<size_t>(p.first) * bpp;
+        if (!src || at >= total) return;
+        const size_t room = (total - at) / bpp;
+        FixtureFrame frame;
+        decode_fixture(bank.profiles[p.profile], src + p.slot, frame);
+        render_fixture(dst + at, total - at, static_cast<uint16_t>(p.count < room ? p.count : room),
+                       bpp, frame, p.reversed, phase_ms, get_effect);
+    });
 }
 
 }  // namespace pixfrog::dmx::logic

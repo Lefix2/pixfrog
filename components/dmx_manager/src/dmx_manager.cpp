@@ -207,7 +207,8 @@ void rebuild_universe_lut() {
 
     size_t unmapped = 0;
     g_slots_used    = logic::build_universe_map(chans, config::kNumChannels, g_universe_to_slot,
-                                                g_slot_chans, kNumUniverses, &unmapped);
+                                                g_slot_chans, kNumUniverses, &unmapped,
+                                                &config::get_profiles());
     // Silent truncation used to look exactly like a patching mistake on the
     // console side, so say it out loud.
     if (unmapped) {
@@ -377,7 +378,7 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
     o.packing = opt.packing;
     uint16_t starts[config::kNumChannels], dmx[config::kNumChannels], slot_after = 0;
     uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx,
-                                              &slot_after);
+                                              &slot_after, &config::get_profiles());
     // Sequential layout: the universes used are next - base (the cursor wraps
     // past 0x7FFF, so the end is computed unmasked to see an overflow).
     size_t used        = static_cast<size_t>((next - opt.base) & 0x7FFF);
@@ -412,7 +413,19 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
 }
 
 size_t channel_universe_span(const config::ChannelConfig& cc) {
-    return logic::channel_universes_used(cc);
+    return logic::channel_universes_used(cc, &config::get_profiles());
+}
+
+size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_t cap) {
+    if (cc.packing != config::kPackControl) return 0;
+    size_t n = 0;
+    logic::for_each_fixture_patch(cc, config::get_profiles(), [&](const logic::FixturePatch& f) {
+        if (n < cap)
+            out[n] = FixtureAddress{ static_cast<uint16_t>(cc.universe_start + f.uni_off),
+                                     static_cast<uint16_t>(f.slot + 1), f.footprint, f.profile };
+        ++n;
+    });
+    return n < cap ? n : cap;
 }
 
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
@@ -754,6 +767,19 @@ void update_show_control() {
 
 namespace {
 
+// The network's view of the output into `buf`: its pixels decoded from the
+// universes, or — in DMX control mode — its fixtures drawn from their channels.
+void decode_live(const config::ChannelConfig& cc, uint8_t* buf, uint64_t t) {
+    auto universe = [](uint16_t u) { return universe_front_buffer_for(u); };
+    if (cc.packing == config::kPackControl) {
+        logic::render_fixtures(
+            buf, kMaxBytesPerChan, cc, config::get_profiles(), t, universe,
+            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); });
+        return;
+    }
+    logic::decode_pixels(buf, kMaxBytesPerChan, cc, universe);
+}
+
 // One source into `buf`: scene `src` (with the desk's overrides) when it is a
 // valid scene whose mask still holds the output, else the live path — FSEQ,
 // failsafe or the decoded universes.
@@ -781,8 +807,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
     // Suppress the failsafe check while FSEQ is active so a seek/block-load
     // pause doesn't momentarily blackout channels that are being played back.
     if (g_fseq_active.load(std::memory_order_relaxed)) {
-        logic::decode_pixels(buf, kMaxBytesPerChan, cc,
-                             [](uint16_t u) { return universe_front_buffer_for(u); });
+        decode_live(cc, buf, t);
         return;
     }
 
@@ -809,8 +834,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         return;
     }
 
-    logic::decode_pixels(buf, kMaxBytesPerChan, cc,
-                         [](uint16_t u) { return universe_front_buffer_for(u); });
+    decode_live(cc, buf, t);
 }
 
 }  // namespace
