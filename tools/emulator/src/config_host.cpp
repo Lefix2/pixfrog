@@ -56,9 +56,9 @@ void ensure_init() {
         g_channels[i] = make_default_channel(i);
     g_bank.count = kLegacyNumScenes;
     for (size_t i = 0; i < kLegacyNumScenes; ++i) {
-        std::snprintf(g_bank.scenes[i].name, kSceneNameMax, "Scene %u",
-                      static_cast<unsigned>(i + 1));
-        g_bank.scenes[i].channel_mask = 0xFF;
+        char name[kSceneNameMax];
+        std::snprintf(name, sizeof(name), "Scene %u", static_cast<unsigned>(i + 1));
+        g_bank.scenes[i] = make_scene(name, 0xFF, static_cast<uint8_t>(i));
     }
     g_inited = true;
 }

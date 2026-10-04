@@ -3,7 +3,8 @@
 // Blobs, each its own NVS key (a grown struct loads zero-filled):
 //   GlobalConfig   : network, Art-Net identity, refresh, services, display…
 //   ChannelConfig  : per-LED-channel settings (×8)
-//   SceneBank      : the standalone scenes
+//   EffectBank     : the looks (generator, palette, phaser, MAtricks)
+//   SceneBank      : the standalone scenes — which effect plays where
 //   ControlConfig  : the DMX control universe
 //   FseqPlaylist   : the FSEQ playlist
 //
@@ -270,14 +271,17 @@ inline const char* scene_fx_label(uint8_t fx) {
     return fx < kSceneFxCount ? kLabels[fx] : "Solid";
 }
 
+// ── Layouts v1..v3 (legacy) ─────────────────────────────────────────────────
+// Up to v3 a scene was a look and its target outputs in one record. Kept to
+// read the NVS blob and the backups of those firmwares (migrate_scenes_v3).
 // The first 25 bytes are the pre-palette layout, unchanged (see
 // migrate_scenes_v1): colour 1 stays in r/g/b, colours 2.. are appended.
-struct Scene {
+struct SceneV3 {
     char name[kSceneNameMax];               // null-padded
     uint8_t channel_mask;                   // bit n = channel n participates
     uint8_t effect;                         // kSceneFx*
     uint8_t r, g, b;                        // colour 1
-    uint8_t speed;                          // per effect — see fill_scene_pattern
+    uint8_t speed;                          // per effect, in the generator's own units
     uint8_t param;                          // per effect; 0 = the effect's default
     uint8_t num_colors;                     // 1..kSceneColorsMax; 0 (pre-palette blob) reads as 1
     uint8_t fixture_mode;                   // kFixtureMode*: how the effect spreads over fixtures
@@ -285,16 +289,16 @@ struct Scene {
 };
 
 constexpr size_t kSceneV1Size = 25;
-static_assert(offsetof(Scene, num_colors) == 23, "pre-palette Scene layout moved");
-static_assert(sizeof(Scene) == kSceneV1Size + 9, "Scene layout changed");
+static_assert(offsetof(SceneV3, num_colors) == 23, "pre-palette SceneV3 layout moved");
+static_assert(sizeof(SceneV3) == kSceneV1Size + 9, "SceneV3 layout changed");
 
-inline uint8_t scene_num_colors(const Scene& s) {
+inline uint8_t scene_num_colors(const SceneV3& s) {
     if (s.num_colors == 0) return 1;
     return s.num_colors > kSceneColorsMax ? static_cast<uint8_t>(kSceneColorsMax) : s.num_colors;
 }
 
 // Colour k (0-based) as RGB; k past the configured count reads as black.
-inline void scene_color(const Scene& s, size_t k, uint8_t rgb[3]) {
+inline void scene_color(const SceneV3& s, size_t k, uint8_t rgb[3]) {
     if (k == 0) {
         rgb[0] = s.r;
         rgb[1] = s.g;
@@ -308,7 +312,7 @@ inline void scene_color(const Scene& s, size_t k, uint8_t rgb[3]) {
     }
 }
 
-inline void set_scene_color(Scene& s, size_t k, uint8_t r, uint8_t g, uint8_t b) {
+inline void set_scene_color(SceneV3& s, size_t k, uint8_t r, uint8_t g, uint8_t b) {
     if (k == 0) {
         s.r = r;
         s.g = g;
@@ -376,13 +380,20 @@ inline void sanitize_effect(Effect& e) {
     std::memset(e.reserved, 0, sizeof(e.reserved));
 }
 
-// The look of a v3 scene, without its target.
-inline Effect effect_from_scene(const Scene& s) {
+// One unit of Effect::speed is worth two of the v3 scale: twice the top speed,
+// half the resolution. Solid is the exception — its speed is a strobe
+// frequency whose top value means "steady colour 2".
+inline uint8_t effect_speed_from_v3(uint8_t generator, uint8_t speed) {
+    return generator == kSceneFxSolid ? speed : static_cast<uint8_t>((speed + 1) / 2);
+}
+
+// The look of a v3 scene, without its target, at the same apparent speed.
+inline Effect effect_from_scene_v3(const SceneV3& s) {
     Effect e{};
     std::memcpy(e.name, s.name, kEffectNameMax);
     e.name[kEffectNameMax - 1] = '\0';
     e.generator                = s.effect < kSceneFxCount ? s.effect : kSceneFxSolid;
-    e.speed                    = s.speed;
+    e.speed                    = effect_speed_from_v3(e.generator, s.speed);
     e.param                    = s.param;
     e.num_colors               = scene_num_colors(s);
     for (size_t k = 0; k < kSceneColorsMax; ++k)
@@ -394,10 +405,10 @@ inline Effect effect_from_scene(const Scene& s) {
 // record no longer lines up with it, so it is re-packed record by record.
 // Solid used to ignore speed, which now drives its strobe: an upgraded solid
 // scene must stay static. Returns false unless old_size is that exact layout.
-inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* dst) {
+inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, SceneV3* dst) {
     if (old_size != kLegacyNumScenes * kSceneV1Size) return false;
     for (size_t i = 0; i < kLegacyNumScenes; ++i) {
-        std::memset(&dst[i], 0, sizeof(Scene));
+        std::memset(&dst[i], 0, sizeof(SceneV3));
         std::memcpy(&dst[i], old_data + i * kSceneV1Size, kSceneV1Size);
         dst[i].name[kSceneNameMax - 1] = '\0';
         dst[i].num_colors              = 1;
@@ -408,41 +419,147 @@ inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* d
     return true;
 }
 
-// NVS image of the scene list (v3): a count byte, then that many records.
-// Scene is byte-aligned, so the struct has no padding and the blob is the
-// first 1 + count × sizeof(Scene) bytes of it. v1 (200 B) and v2 (8 fixed
+// NVS image of the v3 scene list: a count byte, then that many records.
+// SceneV3 is byte-aligned, so the struct has no padding and the blob is the
+// first 1 + count × sizeof(SceneV3) bytes of it. v1 (200 B) and v2 (8 fixed
 // records, 272 B) sizes can never be 1 + k × 34, so the three never collide.
-struct SceneBank {
+struct SceneBankV3 {
     uint8_t count;
-    Scene scenes[kMaxScenes];
+    SceneV3 scenes[kMaxScenes];
 };
-static_assert(sizeof(SceneBank) == 1 + kMaxScenes * sizeof(Scene), "SceneBank must be packed");
+static_assert(sizeof(SceneBankV3) == 1 + kMaxScenes * sizeof(SceneV3), "SceneBankV3 is packed");
 
-inline size_t scene_bank_bytes(size_t count) {
-    return 1 + count * sizeof(Scene);
+inline size_t scene_bank_v3_bytes(size_t count) {
+    return 1 + count * sizeof(SceneV3);
 }
 
 // Parses a stored scene blob of any known layout into `bank`. Returns false
 // for an unknown size or an inconsistent count (caller falls back to defaults).
-inline bool load_scene_bank(const uint8_t* blob, size_t size, SceneBank& bank) {
+inline bool load_scene_bank_v3(const uint8_t* blob, size_t size, SceneBankV3& bank) {
     std::memset(&bank, 0, sizeof(bank));
     if (migrate_scenes_v1(blob, size, bank.scenes)) {
         bank.count = kLegacyNumScenes;
-    } else if (size == kLegacyNumScenes * sizeof(Scene)) {
+    } else if (size == kLegacyNumScenes * sizeof(SceneV3)) {
         std::memcpy(bank.scenes, blob, size);
         bank.count = kLegacyNumScenes;
-    } else if (size >= 1 && blob[0] <= kMaxScenes && size == scene_bank_bytes(blob[0])) {
+    } else if (size >= 1 && blob[0] <= kMaxScenes && size == scene_bank_v3_bytes(blob[0])) {
         std::memcpy(&bank, blob, size);
     } else {
         return false;
     }
     for (size_t i = 0; i < bank.count; ++i) {
-        Scene& sc                  = bank.scenes[i];
+        SceneV3& sc                = bank.scenes[i];
         sc.name[kSceneNameMax - 1] = '\0';
         sc.num_colors              = scene_num_colors(sc);
         if (sc.effect >= kSceneFxCount) sc.effect = kSceneFxSolid;
     }
     return true;
+}
+
+// ── Effect bank and scenes (v4) ─────────────────────────────────────────────
+// The effect bank: 0..kMaxEffects looks, addressed by list position. 31 so the
+// bank fits one DMX channel in bands of 8 (band 0 = none). NVS image: the
+// header then `count` records.
+constexpr size_t kMaxEffects = 31;
+struct EffectBank {
+    uint8_t count;
+    uint8_t reserved[3];
+    Effect effects[kMaxEffects];
+};
+static_assert(sizeof(EffectBank) == 4 + kMaxEffects * sizeof(Effect), "EffectBank is packed");
+inline size_t effect_bank_bytes(size_t count) {
+    return 4 + count * sizeof(Effect);
+}
+
+// A scene: a memory of which effect plays where. Each part sends one effect
+// of the bank to a set of outputs; an output belongs to one part at most.
+constexpr size_t kMaxSceneParts = 8;
+struct ScenePart {
+    uint8_t mask;          // bit n = output n
+    uint8_t effect;        // index in the effect bank; a missing effect renders black
+    uint8_t fixture_mode;  // kFixtureMode*: how the effect spreads over the fixtures
+    uint8_t reserved;
+};
+struct Scene {
+    char name[kSceneNameMax];  // NUL-terminated
+    uint8_t num_parts;
+    uint8_t reserved[3];
+    ScenePart parts[kMaxSceneParts];
+};
+static_assert(sizeof(Scene) == 52, "Scene is an NVS record: bytes only, no padding");
+
+struct SceneBank {
+    uint8_t count;
+    uint8_t reserved[3];
+    Scene scenes[kMaxScenes];
+};
+static_assert(sizeof(SceneBank) == 4 + kMaxScenes * sizeof(Scene), "SceneBank is packed");
+inline size_t scene_bank_bytes(size_t count) {
+    return 4 + count * sizeof(Scene);
+}
+
+// Every output the scene plays on.
+inline uint8_t scene_mask(const Scene& s) {
+    uint8_t m = 0;
+    for (size_t i = 0; i < s.num_parts && i < kMaxSceneParts; ++i)
+        m |= s.parts[i].mask;
+    return m;
+}
+
+// The part that holds `output`, nullptr when the scene leaves it alone.
+inline const ScenePart* scene_part_for(const Scene& s, size_t output) {
+    for (size_t i = 0; i < s.num_parts && i < kMaxSceneParts; ++i)
+        if ((s.parts[i].mask >> output) & 1) return &s.parts[i];
+    return nullptr;
+}
+
+// Empty parts go, an output claimed twice stays with the first part.
+inline void sanitize_scene(Scene& s) {
+    s.name[kSceneNameMax - 1] = '\0';
+    const size_t n            = s.num_parts > kMaxSceneParts ? kMaxSceneParts : s.num_parts;
+    uint8_t seen              = 0;
+    size_t out                = 0;
+    for (size_t i = 0; i < n; ++i) {
+        ScenePart p = s.parts[i];
+        p.mask      = static_cast<uint8_t>(p.mask & ~seen);
+        if (!p.mask) continue;
+        if (p.fixture_mode >= kFixtureModeCount) p.fixture_mode = kFixtureModeEach;
+        p.reserved      = 0;
+        seen           |= p.mask;
+        s.parts[out++]  = p;
+    }
+    for (size_t i = out; i < kMaxSceneParts; ++i)
+        s.parts[i] = ScenePart{};
+    s.num_parts = static_cast<uint8_t>(out);
+    std::memset(s.reserved, 0, sizeof(s.reserved));
+}
+
+// A one-part scene: `effect` on the outputs of `mask`.
+inline Scene make_scene(const char* name, uint8_t mask, uint8_t effect,
+                        uint8_t fixture_mode = kFixtureModeEach) {
+    Scene s{};
+    for (size_t i = 0; i + 1 < kSceneNameMax && name[i]; ++i)
+        s.name[i] = name[i];
+    s.num_parts = 1;
+    s.parts[0]  = ScenePart{ mask, effect, fixture_mode, 0 };
+    sanitize_scene(s);
+    return s;
+}
+
+// A v3 list becomes one effect and one single-part scene per entry, at the
+// same index — references to a scene (boot, failsafe) keep pointing at it.
+inline void migrate_scenes_v3(const SceneBankV3& old, EffectBank& effects, SceneBank& scenes) {
+    std::memset(&effects, 0, sizeof(effects));
+    std::memset(&scenes, 0, sizeof(scenes));
+    const size_t n = old.count > kMaxScenes ? kMaxScenes : old.count;
+    for (size_t i = 0; i < n; ++i) {
+        const SceneV3& o   = old.scenes[i];
+        effects.effects[i] = effect_from_scene_v3(o);
+        scenes.scenes[i]   = make_scene(effects.effects[i].name, o.channel_mask,
+                                        static_cast<uint8_t>(i), o.fixture_mode);
+    }
+    effects.count = static_cast<uint8_t>(n);
+    scenes.count  = static_cast<uint8_t>(n);
 }
 
 // Where scene `idx` lands after the list is edited; -1 when it was deleted.
@@ -623,13 +740,35 @@ const ChannelConfig& get_channel(size_t channel_index);
 bool set_global(const GlobalConfig& cfg);
 bool set_channel(size_t channel_index, const ChannelConfig& cfg);
 
-// Scene list (RAM-cached, NVS-persisted like channels). Out-of-range reads
-// return a blank (black, no channels) scene rather than aliasing another one.
+// Effect bank (RAM-cached, NVS-persisted like channels). Out-of-range reads
+// return a blank (black, still) effect rather than aliasing another one.
+size_t num_effects();
+const Effect& get_effect(size_t effect_index);
+// A consistent copy without the config lock (render path). False, with `out`
+// blanked, past the last effect.
+bool copy_effect(size_t effect_index, Effect& out);
+bool set_effect(size_t effect_index, const Effect& effect);
+// add_effect returns the new index, -1 when the bank is full.
+int add_effect(const Effect& effect);
+// True while a scene part plays the effect.
+bool effect_in_use(size_t effect_index);
+// Refused (false) while the effect is in use: the scenes would lose their look.
+// The parts that pointed past it follow their effect.
+bool delete_effect(size_t effect_index);
+bool move_effect(size_t from, size_t to);
+// Replaces the whole bank (backup restore). count is clamped to kMaxEffects.
+bool replace_effects(const Effect* effects, size_t count);
+
+// Scene list. Out-of-range reads return a blank scene (no part).
 size_t num_scenes();
 const Scene& get_scene(size_t scene_index);
-// A consistent copy of a scene, taken under the config lock (render path).
+// A consistent copy of a scene without the config lock (render path).
 // False, with `out` blanked, past the last scene.
 bool copy_scene(size_t scene_index, Scene& out);
+// What scene `scene_index` plays on `output`, read in one go so a list edit on
+// another task cannot pair a part with the wrong effect. False when the scene
+// leaves that output alone; a part whose effect is gone gives a blank effect.
+bool copy_scene_part(size_t scene_index, size_t output, Effect& effect, uint8_t& fixture_mode);
 bool set_scene(size_t scene_index, const Scene& scene);
 // Structural edits also remap boot_scene / failsafe_scene; a deleted
 // reference is cleared (boot → none, failsafe scene mode → blackout).

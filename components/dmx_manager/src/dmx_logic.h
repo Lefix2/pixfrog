@@ -666,25 +666,22 @@ inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint3
 
 }  // namespace fx
 
-// How many speed units of a generator one unit of Effect::speed is worth.
-constexpr uint32_t kEffectSpeedScale = 1;
-
-// Renders one frame of `effect` on a run of `pixel_count` pixels at wall-clock
-// time `phase_ms` (animation speed is refresh-rate independent). 64-bit: a
-// 32-bit ms clock wraps after 49.7 days, and every effect would jump at that
-// instant on a permanent install. Canonical RGB(W) order; colour order and
-// brightness apply at encode time.
-inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
-                            uint8_t bytes_per_pixel, const config::Effect& effect,
-                            uint64_t phase_ms) {
+// Renders one frame of `generator` (kSceneFx*) on a run of `pixel_count`
+// pixels at wall-clock time `phase_ms` (animation speed is refresh-rate
+// independent), `rate` being the speed in the generator's own units. 64-bit
+// time: a 32-bit ms clock wraps after 49.7 days, and every effect would jump at
+// that instant on a permanent install. Canonical RGB(W) order; colour order
+// and brightness apply at encode time.
+inline void fill_generator(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                           uint8_t bytes_per_pixel, uint8_t generator, const Palette& p,
+                           uint32_t rate, uint8_t param, uint64_t phase_ms) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
-    const Palette p   = effect_palette(effect);
-    const uint32_t s  = effect.speed * kEffectSpeedScale;
-    const uint8_t k   = effect.param;
+    const uint32_t s  = rate;
+    const uint8_t k   = param;
     const uint16_t n  = pixel_count;
     const uint8_t bpp = bytes_per_pixel;
-    switch (effect.generator) {
+    switch (generator) {
     case config::kSceneFxChase: fx::chase(dst, n, bpp, p, s, k, phase_ms); break;
     case config::kSceneFxRainbow: fx::rainbow(dst, n, bpp, s, k, phase_ms); break;
     case config::kSceneFxBlobs: fx::blobs(dst, n, bpp, p, s, k, phase_ms); break;
@@ -699,11 +696,19 @@ inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_co
     }
 }
 
-inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
-                               uint8_t bytes_per_pixel, const config::Scene& scene,
-                               uint64_t phase_ms) {
-    fill_effect_run(dst, dst_capacity, pixel_count, bytes_per_pixel,
-                    config::effect_from_scene(scene), phase_ms);
+// The generator rate of an effect: Effect::speed counts double (twice the top
+// speed of the generators' 0..255 units, half the resolution). Solid keeps its
+// own scale — its speed is a strobe frequency, 255 meaning steady colour 2.
+inline uint32_t effect_rate(const config::Effect& e) {
+    return e.generator == config::kSceneFxSolid ? e.speed : 2u * e.speed;
+}
+
+// Renders one frame of `effect` on a run of `pixel_count` pixels.
+inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                            uint8_t bytes_per_pixel, const config::Effect& effect,
+                            uint64_t phase_ms) {
+    fill_generator(dst, dst_capacity, pixel_count, bytes_per_pixel, effect.generator,
+                   effect_palette(effect), effect_rate(effect), effect.param, phase_ms);
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -749,8 +754,9 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
     return k;
 }
 
-// Renders `effect` on channel `cc`, spread over its fixtures as `mode`
-// (kFixtureMode*) says; pixels outside every fixture stay dark. A channel
+// Draws on channel `cc` with `fill_run(dst, capacity, pixels)`, spread over
+// its fixtures as `mode` (kFixtureMode*) says; pixels outside every fixture
+// stay dark. A channel
 // without fixtures (or the Strip mode) gets the plain whole-strip pattern.
 // A fixture mounted the other way round runs the effect backwards: its
 // pixels are flipped in place once the pattern is drawn.
@@ -768,24 +774,23 @@ inline void reverse_fixtures(uint8_t* dst, uint8_t bpp, const Span* sp, size_t n
     }
 }
 
-inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
-                                   const config::ChannelConfig& cc, uint8_t bpp,
-                                   const config::Effect& effect, uint8_t mode, uint64_t phase_ms) {
+template <typename FillRun>
+inline void fill_on_channel(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
+                            uint8_t bpp, uint8_t mode, FillRun fill_run) {
     Span sp[config::kMaxFixtures];
     const size_t n     = mode == config::kFixtureModeStrip || mode >= config::kFixtureModeCount
                            ? 0
                            : fixture_spans(cc, sp, config::kMaxFixtures);
     const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
     if (n == 0 || total > dst_capacity || bpp == 0) {
-        fill_effect_run(dst, dst_capacity, cc.pixel_count, bpp, effect, phase_ms);
+        fill_run(dst, dst_capacity, cc.pixel_count);
         return;
     }
     if (mode == config::kFixtureModeEach) {
         std::memset(dst, 0, total);
         for (size_t i = 0; i < n; ++i)
-            fill_effect_run(dst + static_cast<size_t>(sp[i].first) * bpp,
-                            dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count, bpp,
-                            effect, phase_ms);
+            fill_run(dst + static_cast<size_t>(sp[i].first) * bpp,
+                     dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count);
         reverse_fixtures(dst, bpp, sp, n);
         return;
     }
@@ -797,7 +802,7 @@ inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
     uint32_t len         = 0;
     for (size_t i = 0; i < chained; ++i)
         len += sp[i].count;
-    fill_effect_run(dst, dst_capacity, static_cast<uint16_t>(len), bpp, effect, phase_ms);
+    fill_run(dst, dst_capacity, static_cast<uint16_t>(len));
     uint32_t at = len;
     for (size_t i = chained; i-- > 0;) {
         at -= sp[i].count;
@@ -827,11 +832,13 @@ inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
     reverse_fixtures(dst, bpp, sp, n);
 }
 
-inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
-                                  const config::ChannelConfig& cc, uint8_t bpp,
-                                  const config::Scene& scene, uint64_t phase_ms) {
-    fill_effect_on_channel(dst, dst_capacity, cc, bpp, config::effect_from_scene(scene),
-                           scene.fixture_mode, phase_ms);
+// Renders `effect` on channel `cc`, spread over its fixtures as `mode` says.
+inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
+                                   const config::ChannelConfig& cc, uint8_t bpp,
+                                   const config::Effect& effect, uint8_t mode, uint64_t phase_ms) {
+    fill_on_channel(dst, dst_capacity, cc, bpp, mode, [&](uint8_t* d, size_t cap, uint16_t n) {
+        fill_effect_run(d, cap, n, bpp, effect, phase_ms);
+    });
 }
 
 // ── DMX layout ──────────────────────────────────────────────────────────────
@@ -1161,28 +1168,27 @@ inline int effect_from_dmx(uint8_t v) {
 }
 
 // Per-output scene overrides from the control universe (-1 = not overridden).
-struct SceneOverride {
-    int16_t speed  = -1;
-    int16_t param  = -1;
-    int16_t effect = -1;
+struct EffectOverride {
+    int16_t speed     = -1;
+    int16_t param     = -1;
+    int16_t generator = -1;
     int16_t color[config::kSceneColorsMax][3];
-    SceneOverride() {
+    EffectOverride() {
         for (auto& c : color)
             c[0] = c[1] = c[2] = -1;
     }
 };
 
-inline void apply_scene_override(config::Scene& sc, const SceneOverride& o) {
-    if (o.speed >= 0) sc.speed = static_cast<uint8_t>(o.speed);
-    if (o.param >= 0) sc.param = static_cast<uint8_t>(o.param);
-    if (o.effect >= 0) sc.effect = static_cast<uint8_t>(o.effect);
+inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
+    if (o.speed >= 0) e.speed = static_cast<uint8_t>(o.speed);
+    if (o.param >= 0) e.param = static_cast<uint8_t>(o.param);
+    if (o.generator >= 0) e.generator = static_cast<uint8_t>(o.generator);
     for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
         const int16_t* c = o.color[k];
         if (c[0] < 0 && c[1] < 0 && c[2] < 0) continue;
-        config::set_scene_color(sc, k, static_cast<uint8_t>(c[0] < 0 ? 0 : c[0]),
-                                static_cast<uint8_t>(c[1] < 0 ? 0 : c[1]),
-                                static_cast<uint8_t>(c[2] < 0 ? 0 : c[2]));
-        if (k + 1 > config::scene_num_colors(sc)) sc.num_colors = static_cast<uint8_t>(k + 1);
+        for (size_t j = 0; j < 3; ++j)
+            e.colors[k][j] = static_cast<uint8_t>(c[j] < 0 ? 0 : c[j]);
+        if (k + 1 > config::effect_num_colors(e)) e.num_colors = static_cast<uint8_t>(k + 1);
     }
 }
 
@@ -1192,7 +1198,7 @@ struct ControlEval {
     uint16_t master[config::kNumChannels];
     uint8_t blackout;  // outputs forced dark
     uint8_t strobe_hz10[config::kNumChannels];
-    SceneOverride ovr[config::kNumChannels];
+    EffectOverride ovr[config::kNumChannels];
     int32_t fade_ms;    // -1 = no Fade slot
     int16_t fseq_band;  // -1 = no Fseq slot
     // Scene selectors in slot order: band (0 = none) + outputs.
@@ -1207,7 +1213,7 @@ struct ControlEval {
         blackout = 0;
         std::memset(strobe_hz10, 0, sizeof(strobe_hz10));
         for (auto& o : ovr)
-            o = SceneOverride{};
+            o = EffectOverride{};
         fade_ms   = -1;
         fseq_band = -1;
         n_scene   = 0;
@@ -1255,7 +1261,7 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
                 if (v) out.ovr[o].param = v;
                 break;
             case config::CtlFn::Effect:
-                if (v) out.ovr[o].effect = static_cast<int16_t>(effect_from_dmx(v));
+                if (v) out.ovr[o].generator = static_cast<int16_t>(effect_from_dmx(v));
                 break;
             case config::CtlFn::Red:
             case config::CtlFn::Green:

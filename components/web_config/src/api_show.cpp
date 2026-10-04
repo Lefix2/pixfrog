@@ -437,6 +437,98 @@ esp_err_t handle_post_show(httpd_req_t* req) {
     return send_json(req, build_show_json());
 }
 
+// {"from":a,"to":b}, both below `count`. False (400 sent) on a bad body.
+static bool read_move(httpd_req_t* req, size_t count, size_t& from, size_t& to) {
+    char buf[64];
+    if (!read_body(req, buf, sizeof(buf) - 1)) {
+        send_err(req, 400, "body too large or empty");
+        return false;
+    }
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) {
+        send_err(req, 400, "invalid JSON");
+        return false;
+    }
+    const cJSON* jf = cJSON_GetObjectItemCaseSensitive(j, "from");
+    const cJSON* jt = cJSON_GetObjectItemCaseSensitive(j, "to");
+    const int n     = static_cast<int>(count);
+    const bool ok   = cJSON_IsNumber(jf) && cJSON_IsNumber(jt) && jf->valueint >= 0 &&
+                    jf->valueint < n && jt->valueint >= 0 && jt->valueint < n;
+    from = ok ? static_cast<size_t>(jf->valueint) : 0;
+    to   = ok ? static_cast<size_t>(jt->valueint) : 0;
+    cJSON_Delete(j);
+    if (!ok) send_err(req, 400, "from/to: existing indices");
+    return ok;
+}
+
+static esp_err_t send_index(httpd_req_t* req, int idx) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddNumberToObject(root, "index", idx);
+    return send_json(req, root);
+}
+
+// ── Effect bank ──────────────────────────────────────────────────────────────
+// POST /api/effect/{n}          partial update (apply_effect_json)
+// POST /api/effect/{n}/delete   remove it (409 while a scene plays it); later
+//                               effects shift down by one, the scenes follow
+// POST /api/effects/add         append (optional effect JSON body) → {"index":n}
+// POST /api/effects/move        {"from":a,"to":b}
+
+esp_err_t handle_post_effect(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+
+    const char* tail = req->uri + strlen("/api/effect/");
+    const int idx    = atoi(tail);
+    if (idx < 0 || static_cast<size_t>(idx) >= config::num_effects())
+        return send_err(req, 404, "no such effect");
+
+    if (strstr(tail, "/delete")) {
+        if (!config::delete_effect(static_cast<size_t>(idx)))
+            return send_err(req, 409, "effect in use by a scene");
+        return send_ok(req);
+    }
+
+    char buf[384];  // name + 4 colours + numbers
+    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+
+    config::ScopedLock lock;  // read-modify-write
+    auto e = config::get_effect(static_cast<size_t>(idx));
+    apply_effect_json(j, e);
+    cJSON_Delete(j);
+    config::set_effect(static_cast<size_t>(idx), e);
+    return send_ok(req);
+}
+
+esp_err_t handle_effects_add(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    config::Effect e{};
+    std::strncpy(e.name, "New effect", sizeof(e.name) - 1);
+    e.num_colors = 1;
+    std::memset(e.colors[0], 255, 3);
+    if (req->content_len > 0) {
+        char buf[384];
+        if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large");
+        cJSON* j = cJSON_Parse(buf);
+        if (!j) return send_err(req, 400, "invalid JSON");
+        apply_effect_json(j, e);
+        cJSON_Delete(j);
+    }
+    const int idx = config::add_effect(e);
+    if (idx < 0) return send_err(req, 409, "effect bank full");
+    return send_index(req, idx);
+}
+
+esp_err_t handle_effects_move(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    size_t from, to;
+    if (!read_move(req, config::num_effects(), from, to)) return ESP_OK;
+    config::move_effect(from, to);
+    return send_ok(req);
+}
+
 // ── Scenes ───────────────────────────────────────────────────────────────────
 // POST /api/scene/{n}          partial update (apply_scene_json)
 // POST /api/scene/{n}/play     play it
@@ -444,6 +536,10 @@ esp_err_t handle_post_show(httpd_req_t* req) {
 // POST /api/scenes/add         append (optional scene JSON body) → {"index":n}
 // POST /api/scenes/move        {"from":a,"to":b}
 // POST /api/scenes/stop
+
+// A scene body: the name and up to 8 parts. Static, off the httpd stack — the
+// server runs one handler at a time.
+static char g_scene_body[640];
 
 esp_err_t handle_post_scene(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
@@ -480,56 +576,44 @@ esp_err_t handle_post_scene(httpd_req_t* req) {
         return send_ok(req);
     }
 
-    char buf[384];  // name + 4 colours + numbers
-    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
-    cJSON* j = cJSON_Parse(buf);
+    if (!read_body(req, g_scene_body, sizeof(g_scene_body) - 1))
+        return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(g_scene_body);
     if (!j) return send_err(req, 400, "invalid JSON");
 
-    auto sc = config::get_scene(static_cast<size_t>(idx));
-    apply_scene_json(j, sc);
+    config::ScopedLock lock;  // read-modify-write
+    auto sc         = config::get_scene(static_cast<size_t>(idx));
+    const char* why = nullptr;
+    const bool ok   = apply_scene_json(j, sc, &why);
     cJSON_Delete(j);
+    if (!ok) return send_err(req, 400, why);
     config::set_scene(static_cast<size_t>(idx), sc);
     return send_ok(req);
 }
 
 esp_err_t handle_scenes_add(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    config::Scene sc{};
-    std::strncpy(sc.name, "New scene", sizeof(sc.name) - 1);
-    sc.channel_mask = 0xFF;
-    sc.num_colors   = 1;
-    sc.r = sc.g = sc.b = 255;
+    // A new scene plays the first effect everywhere until its parts are set.
+    config::Scene sc = config::make_scene("New scene", 0xFF, 0);
     if (req->content_len > 0) {
-        char buf[384];
-        if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large");
-        cJSON* j = cJSON_Parse(buf);
+        if (!read_body(req, g_scene_body, sizeof(g_scene_body) - 1))
+            return send_err(req, 400, "body too large");
+        cJSON* j = cJSON_Parse(g_scene_body);
         if (!j) return send_err(req, 400, "invalid JSON");
-        apply_scene_json(j, sc);
+        const char* why = nullptr;
+        const bool ok   = apply_scene_json(j, sc, &why);
         cJSON_Delete(j);
+        if (!ok) return send_err(req, 400, why);
     }
     const int idx = config::add_scene(sc);
     if (idx < 0) return send_err(req, 409, "scene list full");
-    cJSON* root = cJSON_CreateObject();
-    cJSON_AddBoolToObject(root, "ok", true);
-    cJSON_AddNumberToObject(root, "index", idx);
-    return send_json(req, root);
+    return send_index(req, idx);
 }
 
 esp_err_t handle_scenes_move(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    char buf[64];
-    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
-    cJSON* j = cJSON_Parse(buf);
-    if (!j) return send_err(req, 400, "invalid JSON");
-    const cJSON* jf = cJSON_GetObjectItemCaseSensitive(j, "from");
-    const cJSON* jt = cJSON_GetObjectItemCaseSensitive(j, "to");
-    const int n     = static_cast<int>(config::num_scenes());
-    const bool ok   = cJSON_IsNumber(jf) && cJSON_IsNumber(jt) && jf->valueint >= 0 &&
-                    jf->valueint < n && jt->valueint >= 0 && jt->valueint < n;
-    const auto from = ok ? static_cast<size_t>(jf->valueint) : 0;
-    const auto to   = ok ? static_cast<size_t>(jt->valueint) : 0;
-    cJSON_Delete(j);
-    if (!ok) return send_err(req, 400, "from/to: existing scene indices");
+    size_t from, to;
+    if (!read_move(req, config::num_scenes(), from, to)) return ESP_OK;
     config::move_scene(from, to);
     dmx::scene_list_edited(config::SceneEdit::Move, from, to);
     return send_ok(req);

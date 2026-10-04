@@ -35,6 +35,21 @@ static int g_fail = 0;
         }                                                                                          \
     } while (0)
 
+// The generators are exercised in their own speed units, through the v3 scene
+// record that carried a look before the effect bank.
+static void fill_scene_pattern(uint8_t* dst, size_t cap, uint16_t n, uint8_t bpp,
+                               const config::SceneV3& s, uint64_t t) {
+    config::Effect e = config::effect_from_scene_v3(s);
+    fill_generator(dst, cap, n, bpp, e.generator, effect_palette(e), s.speed, s.param, t);
+}
+
+static void fill_scene_on_channel(uint8_t* dst, size_t cap, const config::ChannelConfig& cc,
+                                  uint8_t bpp, const config::SceneV3& s, uint64_t t) {
+    fill_on_channel(dst, cap, cc, bpp, s.fixture_mode, [&](uint8_t* d, size_t c, uint16_t n) {
+        fill_scene_pattern(d, c, n, bpp, s, t);
+    });
+}
+
 // ── Sizing helpers ──────────────────────────────────────────────────────────
 
 static void test_total_bytes_rgb() {
@@ -669,11 +684,11 @@ static void test_failsafe_fill_overflow_is_noop() {
     EXPECT_EQ(buf[0], 0);
 }
 
-// ── Scene generators ────────────────────────────────────────────────────────
+// ── SceneV3 generators ────────────────────────────────────────────────────────
 
-static pixfrog::config::Scene mk_scene(uint8_t effect, uint8_t r, uint8_t g, uint8_t b,
-                                       uint8_t speed, uint8_t param) {
-    pixfrog::config::Scene s{};
+static pixfrog::config::SceneV3 mk_scene(uint8_t effect, uint8_t r, uint8_t g, uint8_t b,
+                                         uint8_t speed, uint8_t param) {
+    pixfrog::config::SceneV3 s{};
     s.effect     = effect;
     s.r          = r;
     s.g          = g;
@@ -684,8 +699,8 @@ static pixfrog::config::Scene mk_scene(uint8_t effect, uint8_t r, uint8_t g, uin
     return s;
 }
 
-static pixfrog::config::Scene with_color(pixfrog::config::Scene s, uint8_t r, uint8_t g,
-                                         uint8_t b) {
+static pixfrog::config::SceneV3 with_color(pixfrog::config::SceneV3 s, uint8_t r, uint8_t g,
+                                           uint8_t b) {
     pixfrog::config::set_scene_color(s, s.num_colors, r, g, b);
     ++s.num_colors;
     return s;
@@ -941,23 +956,23 @@ static void test_scene_overflow_is_noop() {
 // flashes of colour 2 at speed×60/255 Hz.
 static void test_scene_solid_strobe() {
     using namespace pixfrog::config;
-    const Scene base = with_color(mk_scene(kSceneFxSolid, 10, 0, 0, 0, 0), 0, 0, 200);
+    const SceneV3 base = with_color(mk_scene(kSceneFxSolid, 10, 0, 0, 0, 0), 0, 0, 200);
     uint8_t buf[2 * 3];
     for (uint32_t t : { 0u, 7u, 999u, 123456u }) {
         fill_scene_pattern(buf, sizeof(buf), 2, 3, base, t);
         EXPECT_EQ(buf[0], 10);  // speed 0: never flashes
         EXPECT_EQ(buf[2], 0);
     }
-    Scene full = base;
-    full.speed = 255;
+    SceneV3 full = base;
+    full.speed   = 255;
     for (uint32_t t : { 0u, 7u, 999u, 123456u }) {
         fill_scene_pattern(buf, sizeof(buf), 2, 3, full, t);
         EXPECT_EQ(buf[0], 0);  // 60 Hz of 1/60 s flashes: always colour 2
         EXPECT_EQ(buf[2], 200);
     }
     // 51 → 12 Hz: period 83.3 ms, flash for the first 16.7 ms of each.
-    Scene mid = base;
-    mid.speed = 51;
+    SceneV3 mid = base;
+    mid.speed   = 51;
     fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 5);
     EXPECT_EQ(buf[2], 200);
     fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 40);
@@ -965,14 +980,14 @@ static void test_scene_solid_strobe() {
     fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 90);  // next period's flash
     EXPECT_EQ(buf[2], 200);
     // One colour: the flash is black (classic strobe on a lit strip).
-    Scene single = mk_scene(kSceneFxSolid, 50, 50, 50, 255, 0);
+    SceneV3 single = mk_scene(kSceneFxSolid, 50, 50, 50, 255, 0);
     fill_scene_pattern(buf, sizeof(buf), 2, 3, single, 3);
     EXPECT_EQ(buf[0], 0);
 }
 
 static void test_scene_chase_one_head_per_colour() {
     using namespace pixfrog::config;
-    const Scene s       = with_color(mk_scene(kSceneFxChase, 255, 0, 0, 0, 1), 0, 0, 255);
+    const SceneV3 s     = with_color(mk_scene(kSceneFxChase, 255, 0, 0, 0, 1), 0, 0, 255);
     uint8_t buf[10 * 3] = {};
     fill_scene_pattern(buf, sizeof(buf), 10, 3, s, 0);
     EXPECT_EQ(buf[0 * 3 + 0], 255);  // head 1 at 0
@@ -989,7 +1004,7 @@ static int lit_pixels(const uint8_t* buf, int n) {
 
 static void test_scene_blobs_move_and_stay_in_bounds() {
     using namespace pixfrog::config;
-    const Scene s    = with_color(mk_scene(kSceneFxBlobs, 0, 0, 255, 60, 3), 255, 0, 0);
+    const SceneV3 s  = with_color(mk_scene(kSceneFxBlobs, 0, 0, 255, 60, 3), 255, 0, 0);
     constexpr int kN = 120;
     uint8_t a[kN * 3 + 3], b[kN * 3 + 3];
     std::memset(a, 0xAB, sizeof(a));
@@ -1007,7 +1022,7 @@ static void test_scene_blobs_move_and_stay_in_bounds() {
 
 static void test_scene_fire_hot_base_dark_tip() {
     using namespace pixfrog::config;
-    Scene s          = with_color(mk_scene(kSceneFxFire, 255, 0, 0, 60, 0), 255, 255, 0);
+    SceneV3 s        = with_color(mk_scene(kSceneFxFire, 255, 0, 0, 60, 0), 255, 255, 0);
     constexpr int kN = 60;
     uint8_t buf[kN * 3];
     fill_scene_pattern(buf, sizeof(buf), kN, 3, s, 4321);
@@ -1017,7 +1032,7 @@ static void test_scene_fire_hot_base_dark_tip() {
 
 static void test_scene_scanner_bounces() {
     using namespace pixfrog::config;
-    const Scene s = mk_scene(kSceneFxScanner, 0, 255, 0, 100, 1);
+    const SceneV3 s = mk_scene(kSceneFxScanner, 0, 255, 0, 100, 1);
     uint8_t buf[11 * 3];
     fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 50);  // 5 px along the first leg
     EXPECT_EQ(buf[5 * 3 + 1], 255);
@@ -1030,7 +1045,7 @@ static void test_scene_scanner_bounces() {
 
 static void test_scene_stripes_alternate_palette() {
     using namespace pixfrog::config;
-    const Scene s = with_color(mk_scene(kSceneFxStripes, 255, 0, 0, 0, 2), 0, 255, 0);
+    const SceneV3 s = with_color(mk_scene(kSceneFxStripes, 255, 0, 0, 0, 2), 0, 255, 0);
     uint8_t buf[8 * 3];
     fill_scene_pattern(buf, sizeof(buf), 8, 3, s, 0);
     EXPECT_EQ(buf[0 * 3 + 0], 255);
@@ -1041,7 +1056,7 @@ static void test_scene_stripes_alternate_palette() {
 
 static void test_scene_fade_crosses_palette() {
     using namespace pixfrog::config;
-    const Scene s = with_color(mk_scene(kSceneFxFade, 255, 0, 0, 255, 0), 0, 0, 255);
+    const SceneV3 s = with_color(mk_scene(kSceneFxFade, 255, 0, 0, 255, 0), 0, 0, 255);
     uint8_t buf[3];
     fill_scene_pattern(buf, sizeof(buf), 1, 3, s, 0);
     EXPECT_EQ(buf[0], 255);
@@ -1054,9 +1069,10 @@ static void test_scene_fade_crosses_palette() {
 
 // Every effect must stay within pixel_count × bpp, zero the W die, and cope
 // with 1-pixel strips, max-size strips and extreme parameters.
-// A scene and the effect made from it draw the same frame, on a plain run and
-// through every fixture mode.
-static void test_effect_run_matches_scene() {
+// A v3 scene and the effect it migrates to draw the same frame, on a plain
+// run and through every fixture mode: an even v3 speed halves exactly, and
+// Solid's strobe speed is carried over as is.
+static void test_migrated_effect_matches_v3_scene() {
     using namespace pixfrog::config;
     constexpr int kN = 60;
     uint8_t a[kN * 4], b[kN * 4];
@@ -1069,19 +1085,22 @@ static void test_effect_run_matches_scene() {
     cc.fixtures[2] = { 40, 20 };
     bool same      = true;
     for (uint8_t fx = 0; fx < kSceneFxCount; ++fx)
-        for (uint64_t t : { 0ull, 1234ull, 987654321ull }) {
-            Scene s        = with_color(mk_scene(fx, 200, 30, 10, 37, 3), 0, 90, 255);
-            const Effect e = effect_from_scene(s);
-            std::memset(a, 0xAA, sizeof(a));
-            std::memset(b, 0xAA, sizeof(b));
-            fill_scene_pattern(a, sizeof(a), kN, 4, s, t);
-            fill_effect_run(b, sizeof(b), kN, 4, e, t);
-            same = same && std::memcmp(a, b, sizeof(a)) == 0;
-            for (uint8_t mode = 0; mode < kFixtureModeCount; ++mode) {
-                s.fixture_mode = mode;
-                fill_scene_on_channel(a, sizeof(a), cc, 4, s, t);
-                fill_effect_on_channel(b, sizeof(b), cc, 4, e, mode, t);
+        for (uint8_t speed : { 0, 36, 254, 255 }) {
+            if (fx != kSceneFxSolid && (speed & 1)) continue;  // odd speeds round up
+            for (uint64_t t : { 0ull, 1234ull, 987654321ull }) {
+                SceneV3 s      = with_color(mk_scene(fx, 200, 30, 10, speed, 3), 0, 90, 255);
+                const Effect e = effect_from_scene_v3(s);
+                std::memset(a, 0xAA, sizeof(a));
+                std::memset(b, 0xAA, sizeof(b));
+                fill_scene_pattern(a, sizeof(a), kN, 4, s, t);
+                fill_effect_run(b, sizeof(b), kN, 4, e, t);
                 same = same && std::memcmp(a, b, sizeof(a)) == 0;
+                for (uint8_t mode = 0; mode < kFixtureModeCount; ++mode) {
+                    s.fixture_mode = mode;
+                    fill_scene_on_channel(a, sizeof(a), cc, 4, s, t);
+                    fill_effect_on_channel(b, sizeof(b), cc, 4, e, mode, t);
+                    same = same && std::memcmp(a, b, sizeof(a)) == 0;
+                }
             }
         }
     EXPECT_TRUE(same);
@@ -1099,6 +1118,27 @@ static void test_effect_run_matches_scene() {
     EXPECT_EQ(a[0], 0x55);
 }
 
+// One unit of Effect::speed is two of a generator's: the top speed doubles.
+static void test_effect_speed_counts_double() {
+    using namespace pixfrog::config;
+    Effect e{};
+    e.generator    = kSceneFxChase;
+    e.speed        = 255;
+    e.num_colors   = 1;
+    e.colors[0][0] = 255;
+    EXPECT_EQ(effect_rate(e), 510);
+    uint8_t buf[100 * 3];
+    fill_effect_run(buf, sizeof(buf), 100, 3, e, 100);  // 510 px/s for 0.1 s
+    EXPECT_EQ(buf[51 * 3], 255);
+    EXPECT_EQ(buf[50 * 3], 0);
+    e.generator = kSceneFxSolid;  // a strobe frequency: its own scale
+    EXPECT_EQ(effect_rate(e), 255);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxChase, 255), 128);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxChase, 1), 1);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxChase, 0), 0);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxSolid, 255), 255);
+}
+
 static void test_scene_all_effects_bounded() {
     using namespace pixfrog::config;
     constexpr int kN = 1024;
@@ -1107,9 +1147,9 @@ static void test_scene_all_effects_bounded() {
         for (int n : { 1, 2, 7, kN })
             for (uint8_t speed : { 0, 1, 255 })
                 for (uint8_t param : { 0, 1, 255 }) {
-                    Scene s = with_color(with_color(mk_scene(fx, 255, 1, 2, speed, param), 3, 4, 5),
-                                         6, 7, 8);
-                    s       = with_color(s, 9, 10, 11);
+                    SceneV3 s = with_color(
+                        with_color(mk_scene(fx, 255, 1, 2, speed, param), 3, 4, 5), 6, 7, 8);
+                    s = with_color(s, 9, 10, 11);
                     std::memset(buf, 0xCD, sizeof(buf));
                     fill_scene_pattern(buf, sizeof(buf), static_cast<uint16_t>(n), 4, s,
                                        0xFFFFFFF0u);
@@ -1436,29 +1476,27 @@ static void test_control_evaluate() {
     EXPECT_EQ(ev.fade_ms, 0);
 }
 
-static void test_scene_override_applies() {
-    config::Scene sc{};
-    sc.effect     = config::kSceneFxSolid;
-    sc.speed      = 10;
-    sc.num_colors = 1;
-    SceneOverride o;
+static void test_effect_override_applies() {
+    config::Effect e{};
+    e.generator  = config::kSceneFxSolid;
+    e.speed      = 10;
+    e.num_colors = 1;
+    EffectOverride o;
     o.speed       = 200;
-    o.effect      = config::kSceneFxChase;
+    o.generator   = config::kSceneFxChase;
     o.color[2][0] = 9;
     o.color[2][1] = 8;
     o.color[2][2] = 7;
-    apply_scene_override(sc, o);
-    EXPECT_EQ(sc.speed, 200);
-    EXPECT_EQ(sc.effect, config::kSceneFxChase);
-    EXPECT_EQ(config::scene_num_colors(sc), 3);  // colour 3 exists now
-    uint8_t rgb[3];
-    config::scene_color(sc, 2, rgb);
-    EXPECT_EQ(rgb[0], 9);
-    EXPECT_EQ(rgb[2], 7);
-    SceneOverride none;
-    config::Scene before = sc;
-    apply_scene_override(sc, none);
-    EXPECT_EQ(std::memcmp(&before, &sc, sizeof(sc)), 0);
+    apply_effect_override(e, o);
+    EXPECT_EQ(e.speed, 200);
+    EXPECT_EQ(e.generator, config::kSceneFxChase);
+    EXPECT_EQ(config::effect_num_colors(e), 3);  // colour 3 exists now
+    EXPECT_EQ(e.colors[2][0], 9);
+    EXPECT_EQ(e.colors[2][2], 7);
+    EffectOverride none;
+    config::Effect before = e;
+    apply_effect_override(e, none);
+    EXPECT_EQ(std::memcmp(&before, &e, sizeof(e)), 0);
 }
 
 // Largest per-byte change between two frames.
@@ -1481,7 +1519,7 @@ static void test_scene_clock_has_no_wrap_jump() {
     constexpr uint16_t kN = 60;
     const uint64_t wrap   = 1ull << 32;
     for (uint8_t fx : fxs) {
-        Scene s = with_color(mk_scene(fx, 255, 0, 0, 200, 0), 0, 0, 255);
+        SceneV3 s = with_color(mk_scene(fx, 255, 0, 0, 200, 0), 0, 0, 255);
         uint8_t a[kN * 3], b[kN * 3], c[kN * 3], d[kN * 3];
         // Steady state: one ms apart, far from any wrap.
         fill_scene_pattern(a, sizeof(a), kN, 3, s, 1'000'000);
@@ -1553,7 +1591,8 @@ int main() {
     test_scene_scanner_bounces();
     test_scene_stripes_alternate_palette();
     test_scene_fade_crosses_palette();
-    test_effect_run_matches_scene();
+    test_migrated_effect_matches_v3_scene();
+    test_effect_speed_counts_double();
     test_scene_all_effects_bounded();
     test_hue_wheel_endpoints();
     test_merge_single_source_passthrough();
@@ -1577,7 +1616,7 @@ int main() {
     test_control_presets_and_footprint();
     test_control_sanitize();
     test_control_evaluate();
-    test_scene_override_applies();
+    test_effect_override_applies();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

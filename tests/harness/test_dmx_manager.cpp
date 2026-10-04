@@ -104,16 +104,25 @@ void ctrl_frame(const uint8_t* d, size_t len, uint16_t universe = kCtrlUni) {
     dmx::update_show_control();
 }
 
-// Scene `idx` becomes a static solid colour on every output (tests own their
-// scenes: earlier cases edit the defaults).
-void solid_scene(size_t idx, uint8_t r, uint8_t g, uint8_t b) {
-    config::Scene sc{};
-    std::snprintf(sc.name, sizeof(sc.name), "Solid %u", static_cast<unsigned>(idx));
-    sc.channel_mask = 0xFF;
-    sc.effect       = config::kSceneFxSolid;
-    sc.num_colors   = 1;
-    config::set_scene_color(sc, 0, r, g, b);
-    config::set_scene(idx, sc);
+// Scene `idx` becomes a static solid colour — effect `idx` of the bank — on
+// the outputs of `mask` (tests own their scenes: earlier cases edit the
+// defaults).
+void solid_scene(size_t idx, uint8_t r, uint8_t g, uint8_t b, uint8_t mask = 0xFF) {
+    config::Effect e{};
+    std::snprintf(e.name, sizeof(e.name), "Solid %u", static_cast<unsigned>(idx));
+    e.generator    = config::kSceneFxSolid;
+    e.num_colors   = 1;
+    e.colors[0][0] = r;
+    e.colors[0][1] = g;
+    e.colors[0][2] = b;
+    config::set_effect(idx, e);
+    config::set_scene(idx, config::make_scene(e.name, mask, static_cast<uint8_t>(idx)));
+}
+
+// Scene `idx` keeps its effect but plays on the outputs of `mask` only.
+void scene_outputs_are(size_t idx, uint8_t mask) {
+    auto sc = config::get_scene(idx);
+    config::set_scene(idx, config::make_scene(sc.name, mask, sc.parts[0].effect));
 }
 
 // Fake clock to the start of the next `period_ms` window.
@@ -224,12 +233,7 @@ TEST(failsafe_colour_fill) {
 }
 
 TEST(failsafe_scene_honours_the_scene_mask) {
-    config::Scene s{};
-    s.effect       = config::kSceneFxSolid;
-    s.r            = 33;
-    s.num_colors   = 1;
-    s.channel_mask = 0x02;  // not channel 0
-    config::set_scene(0, s);
+    solid_scene(0, 33, 0, 0, 0x02);  // not channel 0
     auto g           = config::get_global();
     g.failsafe_scene = 0;
     config::set_global(g);
@@ -238,18 +242,12 @@ TEST(failsafe_scene_honours_the_scene_mask) {
     frame(1, d, 3);
     shim::advance_ms(1500);
     EXPECT_EQ(decode0()[0], 0);  // outside the mask: blackout
-    s.channel_mask = 0x01;
-    config::set_scene(0, s);
+    scene_outputs_are(0, 0x01);
     EXPECT_EQ(decode0()[0], 33);
 }
 
 TEST(scene_overrides_the_network_until_stopped) {
-    config::Scene s{};
-    s.effect       = config::kSceneFxSolid;
-    s.g            = 77;
-    s.num_colors   = 1;
-    s.channel_mask = 0xFF;
-    config::set_scene(1, s);
+    solid_scene(1, 0, 77, 0);
     const uint8_t d[3] = { 5, 5, 5 };
     frame(1, d, 3);
     dmx::scene_start(1);
@@ -500,11 +498,8 @@ int main(int argc, char** argv) {
 
 TEST(scenes_play_on_their_own_outputs_at_once) {
     const config::Scene s0 = config::get_scene(0), s1 = config::get_scene(1);
-    auto a = s0, b = s1;
-    a.channel_mask = 0x0F;
-    b.channel_mask = 0xF0;
-    config::set_scene(0, a);
-    config::set_scene(1, b);
+    scene_outputs_are(0, 0x0F);
+    scene_outputs_are(1, 0xF0);
     dmx::scene_start(0);
     dmx::scene_start(1);  // a disjoint group: scene 0 keeps outputs 1-4
     EXPECT_EQ(dmx::scene_on_output(0), 0);
@@ -523,6 +518,52 @@ TEST(scenes_play_on_their_own_outputs_at_once) {
     EXPECT_EQ(dmx::active_scene(), -1);
     config::set_scene(0, s0);
     config::set_scene(1, s1);
+}
+
+// One scene, several looks: each part sends its own effect to its outputs,
+// and an output the scene leaves out keeps the live input.
+TEST(a_scene_of_parts_plays_an_effect_per_output_group) {
+    for (size_t ch = 0; ch < 3; ++ch) {
+        auto c     = config::get_channel(ch);
+        c.protocol = led::Protocol::WS2815;
+        config::set_channel(ch, c);
+    }
+    apply_channels();
+    const config::Scene s5 = config::get_scene(5);
+    solid_scene(3, 200, 0, 0);
+    solid_scene(4, 0, 150, 0);
+    config::Scene sc = config::make_scene("Two looks", 0x01, 3);
+    sc.num_parts     = 2;
+    sc.parts[1]      = { 0x02, 4, config::kFixtureModeEach, 0 };
+    config::set_scene(5, sc);
+
+    const uint8_t live[3] = { 5, 5, 5 };
+    dmx::write_universe_from_source(17, live, 3, kSrcA, dmx::kArtnetMergeTimeoutUs);  // output 3
+    dmx::scene_start(5);
+    EXPECT_EQ(dmx::scene_outputs(5), 0x03);  // the outputs of its parts, no more
+    auto px = [](size_t ch) {
+        dmx::swap_universes();
+        dmx::decode_pixels_for_channel(ch);
+        return dmx::pixel_back_buffer(ch);
+    };
+    EXPECT_EQ(px(0)[0], 200);
+    EXPECT_EQ(px(0)[1], 0);
+    EXPECT_EQ(px(1)[0], 0);
+    EXPECT_EQ(px(1)[1], 150);
+    EXPECT_EQ(px(2)[0], 5);  // not in the scene: live
+
+    // A part whose effect left the bank plays black rather than another look.
+    sc.parts[1].effect = 30;
+    config::set_scene(5, sc);
+    EXPECT_EQ(px(1)[1], 0);
+    // An output dropped from the scene while it plays goes back to live.
+    sc.num_parts = 1;
+    config::set_scene(5, sc);
+    dmx::write_universe_from_source(9, live, 3, kSrcA, dmx::kArtnetMergeTimeoutUs);  // output 2
+    EXPECT_EQ(px(1)[2], 5);
+
+    dmx::scene_stop();
+    config::set_scene(5, s5);
 }
 
 TEST(zones_follow_their_scene_through_list_edits) {

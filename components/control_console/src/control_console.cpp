@@ -739,12 +739,12 @@ int cmd_identify(int argc, char** argv) {
     return ok();
 }
 
-// ── standalone scenes ───────────────────────────────────────────────────────
+// ── effect bank ─────────────────────────────────────────────────────────────
 
 const char* const kSceneFxNames[] = { "solid",   "chase", "rainbow", "blobs", "gradient", "fade",
                                       "twinkle", "fire",  "scanner", "wave",  "stripes" };
 static_assert(sizeof(kSceneFxNames) / sizeof(kSceneFxNames[0]) == config::kSceneFxCount,
-              "one console name per scene effect");
+              "one console name per generator");
 
 // "rrggbb[,rrggbb…]" → up to kSceneColorsMax colours; returns the count, 0 on error.
 size_t parse_scene_colors(const char* arg, uint8_t out[][3]) {
@@ -760,6 +760,89 @@ size_t parse_scene_colors(const char* arg, uint8_t out[][3]) {
     return n;
 }
 
+bool parse_effect_index(const char* s, uint32_t& out) {
+    return config::num_effects() > 0 && parse_u32_in(s, 0, config::num_effects() - 1, out);
+}
+
+int cmd_fx(int argc, char** argv) {
+    if (argc == 1) {
+        for (size_t i = 0; i < config::num_effects(); ++i) {
+            const auto& e = config::get_effect(i);
+            printf("fx%u name=%s generator=%s color=", static_cast<unsigned>(i), e.name,
+                   kSceneFxNames[e.generator < config::kSceneFxCount ? e.generator : 0]);
+            for (size_t k = 0; k < config::effect_num_colors(e); ++k)
+                printf("%s%02x%02x%02x", k ? "," : "", e.colors[k][0], e.colors[k][1],
+                       e.colors[k][2]);
+            printf(" speed=%u param=%u used=%d\n", e.speed, e.param, config::effect_in_use(i));
+        }
+        return ok();
+    }
+
+    uint32_t n = 0;
+    if (strcmp(argv[1], "name") == 0) {
+        if (argc != 4 || !parse_effect_index(argv[2], n))
+            return err("usage: fx name <index> <text>");
+        config::ScopedLock lock;
+        auto e = config::get_effect(n);
+        copy_str(e.name, sizeof(e.name), argv[3]);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "set") == 0) {
+        // fx set <n> <generator> <rrggbb[,rrggbb…]> <speed> <param>
+        if (argc != 7)
+            return err("usage: fx set <n> <generator> <rrggbb[,rrggbb...]> "
+                       "<speed 0..255> <param 0..255>");
+        if (!parse_effect_index(argv[2], n)) return err("fx: an existing index");
+        const int gen = lookup_name(kSceneFxNames, config::kSceneFxCount, argv[3]);
+        if (gen < 0)
+            return err("generator: solid|chase|rainbow|blobs|gradient|fade|twinkle|fire|scanner|"
+                       "wave|stripes or 0..10");
+        uint8_t cols[config::kSceneColorsMax][3] = {};
+        const size_t ncols                       = parse_scene_colors(argv[4], cols);
+        if (ncols == 0) return err("colors: rrggbb[,rrggbb...] (1..4)");
+        uint32_t speed = 0, param = 0;
+        if (!parse_u32_in(argv[5], 0, 255, speed)) return err("speed: 0..255");
+        if (!parse_u32_in(argv[6], 0, 255, param)) return err("param: 0..255");
+        config::ScopedLock lock;
+        auto e      = config::get_effect(n);
+        e.generator = static_cast<uint8_t>(gen);
+        memcpy(e.colors, cols, sizeof(e.colors));
+        e.num_colors = static_cast<uint8_t>(ncols);
+        e.speed      = static_cast<uint8_t>(speed);
+        e.param      = static_cast<uint8_t>(param);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "add") == 0) {
+        // fx add [name] — a solid white effect, appended.
+        config::Effect e{};
+        copy_str(e.name, sizeof(e.name), argc >= 3 ? argv[2] : "New effect");
+        e.num_colors = 1;
+        memset(e.colors[0], 255, 3);
+        const int idx = config::add_effect(e);
+        if (idx < 0) return err("effect bank full (31)");
+        printf("index=%d\n", idx);
+        return ok();
+    }
+    if (strcmp(argv[1], "del") == 0) {
+        if (argc != 3 || !parse_effect_index(argv[2], n)) return err("usage: fx del <index>");
+        if (!config::delete_effect(n)) return err("effect in use by a scene");
+        return ok();
+    }
+    if (strcmp(argv[1], "move") == 0) {
+        uint32_t to = 0;
+        if (argc != 4 || !parse_effect_index(argv[2], n) || !parse_effect_index(argv[3], to))
+            return err("usage: fx move <from> <to>");
+        config::move_effect(n, to);
+        return ok();
+    }
+    return err("usage: fx [name <n> <text> | set <n> ... | add [name] | del <n> | "
+               "move <from> <to>]");
+}
+
+// ── standalone scenes ───────────────────────────────────────────────────────
+
 bool parse_scene_index(const char* s, uint32_t& out) {
     return config::num_scenes() > 0 && parse_u32_in(s, 0, config::num_scenes() - 1, out);
 }
@@ -773,14 +856,13 @@ int cmd_scene(int argc, char** argv) {
         printf("\n");
         for (size_t i = 0; i < config::num_scenes(); ++i) {
             const auto& sc = config::get_scene(i);
-            printf("scene%u name=%s effect=%s color=", static_cast<unsigned>(i), sc.name,
-                   kSceneFxNames[sc.effect < config::kSceneFxCount ? sc.effect : 0]);
-            for (size_t k = 0; k < config::scene_num_colors(sc); ++k) {
-                uint8_t rgb[3];
-                config::scene_color(sc, k, rgb);
-                printf("%s%02x%02x%02x", k ? "," : "", rgb[0], rgb[1], rgb[2]);
-            }
-            printf(" speed=%u param=%u mask=%02x\n", sc.speed, sc.param, sc.channel_mask);
+            // parts: <outputs-hex>:<effect>:<fixture mode>, comma-separated
+            printf("scene%u name=%s mask=%02x parts=", static_cast<unsigned>(i), sc.name,
+                   config::scene_mask(sc));
+            for (size_t k = 0; k < sc.num_parts; ++k)
+                printf("%s%02x:%u:%s", k ? "," : "", sc.parts[k].mask, sc.parts[k].effect,
+                       config::fixture_mode_id(sc.parts[k].fixture_mode));
+            printf("\n");
         }
         return ok();
     }
@@ -810,48 +892,53 @@ int cmd_scene(int argc, char** argv) {
     if (strcmp(argv[1], "name") == 0) {
         if (argc != 4 || !parse_scene_index(argv[2], n))
             return err("usage: scene name <index> <text>");
+        config::ScopedLock lock;
         auto sc = config::get_scene(n);
         copy_str(sc.name, sizeof(sc.name), argv[3]);
         if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
         return ok();
     }
-    if (strcmp(argv[1], "set") == 0) {
-        // scene set <n> <effect> <rrggbb[,rrggbb…]> <speed> <param> <mask-hex>
-        if (argc != 8)
-            return err("usage: scene set <n> <effect> <rrggbb[,rrggbb...]> "
-                       "<speed 0..255> <param 0..255> <mask hex>");
-        if (!parse_scene_index(argv[2], n)) return err("scene: an existing index");
-        const int fx = lookup_name(kSceneFxNames, config::kSceneFxCount, argv[3]);
-        if (fx < 0)
-            return err("effect: solid|chase|rainbow|blobs|gradient|fade|twinkle|fire|scanner|"
-                       "wave|stripes or 0..10");
-        uint8_t cols[config::kSceneColorsMax][3];
-        const size_t ncols = parse_scene_colors(argv[4], cols);
-        if (ncols == 0) return err("colors: rrggbb[,rrggbb...] (1..4)");
-        uint32_t speed = 0, param = 0;
-        if (!parse_u32_in(argv[5], 0, 255, speed)) return err("speed: 0..255");
-        if (!parse_u32_in(argv[6], 0, 255, param)) return err("param: 0..255");
+    if (strcmp(argv[1], "part") == 0) {
+        // scene part <n> <outputs-hex> <effect> [mode] — those outputs play that
+        // effect; they leave the part they were in.
         uint8_t mask[1];
-        if (parse_hex(argv[7], mask, 1) != 1) return err("mask: 2-digit hex (ff = all)");
-        auto sc   = config::get_scene(n);
-        sc.effect = static_cast<uint8_t>(fx);
-        for (size_t k = 0; k < ncols; ++k)
-            config::set_scene_color(sc, k, cols[k][0], cols[k][1], cols[k][2]);
-        sc.num_colors   = static_cast<uint8_t>(ncols);
-        sc.speed        = static_cast<uint8_t>(speed);
-        sc.param        = static_cast<uint8_t>(param);
-        sc.channel_mask = mask[0];
+        uint32_t fx = 0;
+        if ((argc != 5 && argc != 6) || !parse_scene_index(argv[2], n))
+            return err("usage: scene part <n> <outputs-hex> <effect> [each|strip|chain|mirror]");
+        if (parse_hex(argv[3], mask, 1) != 1 || mask[0] == 0)
+            return err("outputs: 2-digit hex, 01..ff");
+        if (!parse_effect_index(argv[4], fx)) return err("effect: an existing index (see `fx`)");
+        int mode = config::kFixtureModeEach;
+        if (argc == 6) {
+            mode = -1;
+            for (uint8_t m = 0; m < config::kFixtureModeCount; ++m)
+                if (strcmp(argv[5], config::fixture_mode_id(m)) == 0) mode = m;
+            if (mode < 0) return err("mode: each|strip|chain|mirror");
+        }
+        config::ScopedLock lock;
+        auto sc = config::get_scene(n);
+        for (size_t k = 0; k < sc.num_parts; ++k)
+            sc.parts[k].mask = static_cast<uint8_t>(sc.parts[k].mask & ~mask[0]);
+        config::sanitize_scene(sc);  // drops the parts left without an output
+        if (sc.num_parts == config::kMaxSceneParts) return err("scene parts full (8)");
+        sc.parts[sc.num_parts++] = config::ScenePart{ mask[0], static_cast<uint8_t>(fx),
+                                                      static_cast<uint8_t>(mode), 0 };
+        if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "clear") == 0) {
+        // scene clear <n> — no part left: the scene plays nowhere
+        if (argc != 3 || !parse_scene_index(argv[2], n)) return err("usage: scene clear <index>");
+        config::ScopedLock lock;
+        auto sc      = config::get_scene(n);
+        sc.num_parts = 0;
         if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
         return ok();
     }
     if (strcmp(argv[1], "add") == 0) {
-        // scene add [name] — a solid white scene on every channel, appended.
-        config::Scene sc{};
-        copy_str(sc.name, sizeof(sc.name), argc >= 3 ? argv[2] : "New scene");
-        sc.channel_mask = 0xFF;
-        sc.num_colors   = 1;
-        sc.r = sc.g = sc.b = 255;
-        const int idx      = config::add_scene(sc);
+        // scene add [name] — the first effect on every output, appended.
+        const int idx = config::add_scene(
+            config::make_scene(argc >= 3 ? argv[2] : "New scene", 0xFF, 0));
         if (idx < 0) return err("scene list full (30)");
         printf("index=%d\n", idx);
         return ok();
@@ -870,8 +957,8 @@ int cmd_scene(int argc, char** argv) {
         dmx::scene_list_edited(config::SceneEdit::Move, n, to);
         return ok();
     }
-    return err("usage: scene [play <n> | stop | name <n> <text> | set <n> ... | add [name] | "
-               "del <n> | move <from> <to>]");
+    return err("usage: scene [play <n> | stop | name <n> <text> | part <n> ... | clear <n> | "
+               "add [name] | del <n> | move <from> <to>]");
 }
 
 // ── FSEQ player ─────────────────────────────────────────────────────────────
@@ -1188,7 +1275,8 @@ void start() {
     register_cmd("identify", "identify <ch>|all [blinks] — blink strips white to locate them",
                  cmd_identify);
     register_cmd("audio", "audio test | audio tone <Hz> [ms] — the speaker", cmd_audio);
-    register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|set] — standalone scenes",
+    register_cmd("fx", "fx [name|set|add|del|move] — the effect bank", cmd_fx);
+    register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|part|clear] — standalone scenes",
                  cmd_scene);
     register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",
                  cmd_show);

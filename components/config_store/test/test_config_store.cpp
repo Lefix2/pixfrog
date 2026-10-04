@@ -318,7 +318,7 @@ struct SceneV1 {
     uint8_t reserved[2];
 };
 static_assert(sizeof(SceneV1) == kSceneV1Size, "v1 scene record is 25 bytes");
-static_assert(offsetof(Scene, param) == offsetof(SceneV1, param), "v1 prefix must not move");
+static_assert(offsetof(SceneV3, param) == offsetof(SceneV1, param), "v1 prefix must not move");
 
 static void test_scene_v1_migration() {
     SceneV1 old[kLegacyNumScenes]{};
@@ -332,7 +332,7 @@ static void test_scene_v1_migration() {
     old[1].effect = kSceneFxChase;
     old[2].effect = kSceneFxRainbow;
 
-    Scene loaded[kLegacyNumScenes];
+    SceneV3 loaded[kLegacyNumScenes];
     EXPECT_TRUE(migrate_scenes_v1(reinterpret_cast<const uint8_t*>(old), sizeof(old), loaded));
     for (size_t i = 0; i < kLegacyNumScenes; ++i) {
         EXPECT_TRUE(std::strcmp(loaded[i].name, old[i].name) == 0);
@@ -355,7 +355,7 @@ static void test_scene_v1_migration() {
 }
 
 static void test_scene_colour_accessors() {
-    Scene s{};
+    SceneV3 s{};
     EXPECT_EQ(scene_num_colors(s), 1);  // zero reads as one colour
     set_scene_color(s, 0, 1, 2, 3);
     set_scene_color(s, 3, 7, 8, 9);
@@ -373,49 +373,50 @@ static void test_scene_colour_accessors() {
 }
 
 static void test_scene_bank_load_all_layouts() {
-    static SceneBank bank;
+    static SceneBankV3 bank;
 
     // v1: 8 × 25-byte records.
     SceneV1 v1[kLegacyNumScenes]{};
     std::strcpy(v1[3].name, "v1");
-    EXPECT_TRUE(load_scene_bank(reinterpret_cast<const uint8_t*>(v1), sizeof(v1), bank));
+    EXPECT_TRUE(load_scene_bank_v3(reinterpret_cast<const uint8_t*>(v1), sizeof(v1), bank));
     EXPECT_EQ(bank.count, kLegacyNumScenes);
     EXPECT_TRUE(std::strcmp(bank.scenes[3].name, "v1") == 0);
 
     // v2: 8 fixed 34-byte records, no count byte.
-    Scene v2[kLegacyNumScenes]{};
+    SceneV3 v2[kLegacyNumScenes]{};
     std::strcpy(v2[7].name, "v2");
     v2[7].num_colors = 3;
     v2[7].effect     = 200;  // out of range → sanitized
-    EXPECT_TRUE(load_scene_bank(reinterpret_cast<const uint8_t*>(v2), sizeof(v2), bank));
+    EXPECT_TRUE(load_scene_bank_v3(reinterpret_cast<const uint8_t*>(v2), sizeof(v2), bank));
     EXPECT_EQ(bank.count, kLegacyNumScenes);
     EXPECT_TRUE(std::strcmp(bank.scenes[7].name, "v2") == 0);
     EXPECT_EQ(bank.scenes[7].num_colors, 3);
     EXPECT_EQ(bank.scenes[7].effect, kSceneFxSolid);
 
     // v3: count byte + that many records, any count 0..kMaxScenes.
-    static SceneBank src;
+    static SceneBankV3 src;
     std::memset(&src, 0, sizeof(src));
     src.count = 12;
     std::strcpy(src.scenes[11].name, "twelfth");
     EXPECT_TRUE(
-        load_scene_bank(reinterpret_cast<const uint8_t*>(&src), scene_bank_bytes(12), bank));
+        load_scene_bank_v3(reinterpret_cast<const uint8_t*>(&src), scene_bank_v3_bytes(12), bank));
     EXPECT_EQ(bank.count, 12);
     EXPECT_TRUE(std::strcmp(bank.scenes[11].name, "twelfth") == 0);
     src.count = 0;
-    EXPECT_TRUE(load_scene_bank(reinterpret_cast<const uint8_t*>(&src), scene_bank_bytes(0), bank));
+    EXPECT_TRUE(
+        load_scene_bank_v3(reinterpret_cast<const uint8_t*>(&src), scene_bank_v3_bytes(0), bank));
     EXPECT_EQ(bank.count, 0);
 
     // Count byte disagreeing with the size, or past the capacity → rejected.
     src.count = 5;
     EXPECT_TRUE(
-        !load_scene_bank(reinterpret_cast<const uint8_t*>(&src), scene_bank_bytes(4), bank));
+        !load_scene_bank_v3(reinterpret_cast<const uint8_t*>(&src), scene_bank_v3_bytes(4), bank));
     src.count = kMaxScenes + 1;
-    EXPECT_TRUE(!load_scene_bank(reinterpret_cast<const uint8_t*>(&src), sizeof(src), bank));
+    EXPECT_TRUE(!load_scene_bank_v3(reinterpret_cast<const uint8_t*>(&src), sizeof(src), bank));
     // The three layouts can never be mistaken for one another.
     for (size_t k = 0; k <= kMaxScenes; ++k) {
-        EXPECT_TRUE(scene_bank_bytes(k) != kLegacyNumScenes * kSceneV1Size);
-        EXPECT_TRUE(scene_bank_bytes(k) != kLegacyNumScenes * sizeof(Scene));
+        EXPECT_TRUE(scene_bank_v3_bytes(k) != kLegacyNumScenes * kSceneV1Size);
+        EXPECT_TRUE(scene_bank_v3_bytes(k) != kLegacyNumScenes * sizeof(SceneV3));
     }
 }
 
@@ -441,9 +442,8 @@ static void test_groups_sanitize() {
     EXPECT_EQ(g.groups[1].count, 0);
 }
 
-static void test_effect_from_scene_and_sanitize() {
-    static_assert(sizeof(Effect) == 48, "Effect record size");
-    Scene s{};
+static void test_effect_from_scene_v3_and_sanitize() {
+    SceneV3 s{};
     std::memset(s.name, 'x', sizeof(s.name));  // not terminated
     s.channel_mask = 0x0F;
     s.effect       = kSceneFxScanner;
@@ -455,22 +455,24 @@ static void test_effect_from_scene_and_sanitize() {
     set_scene_color(s, 1, 4, 5, 6);
     set_scene_color(s, 2, 7, 8, 9);  // stored past the count: reads as black
 
-    const Effect e = effect_from_scene(s);
+    const Effect e = effect_from_scene_v3(s);
     EXPECT_EQ(e.name[kEffectNameMax - 1], '\0');
     EXPECT_EQ(e.generator, kSceneFxScanner);
-    EXPECT_EQ(e.speed, 77);
+    EXPECT_EQ(e.speed, 39);  // half the v3 speed, rounded up
     EXPECT_EQ(e.param, 5);
     EXPECT_EQ(e.num_colors, 2);
     EXPECT_EQ(e.colors[0][2], 3);
     EXPECT_EQ(e.colors[1][0], 4);
     EXPECT_EQ(e.colors[2][0], 0);
-    // A scene carries no phaser and no MAtricks: the neutral zero.
+    // A scene carried no phaser and no MAtricks: the neutral zero.
     EXPECT_EQ(e.ph_wave, kPhaserNone);
     EXPECT_EQ(e.flags, 0);
     EXPECT_EQ(e.block + e.groups + e.wings, 0);
 
+    s.effect = kSceneFxSolid;  // a strobe frequency: not rescaled
+    EXPECT_EQ(effect_from_scene_v3(s).speed, 77);
     s.effect = 200;  // unknown generator
-    EXPECT_EQ(effect_from_scene(s).generator, kSceneFxSolid);
+    EXPECT_EQ(effect_from_scene_v3(s).generator, kSceneFxSolid);
 
     Effect bad{};
     std::memset(&bad, 0xFF, sizeof(bad));
@@ -487,6 +489,103 @@ static void test_effect_from_scene_and_sanitize() {
     sanitize_effect(zero);
     EXPECT_EQ(zero.num_colors, 1);
     EXPECT_EQ(effect_num_colors(Effect{}), 1);
+}
+
+// Scene parts: disjoint masks (the first part keeps a contested output),
+// empty parts dropped, modes in range, the slots past the count cleared.
+static void test_scene_parts_sanitize() {
+    Scene s{};
+    std::memset(s.name, 'y', sizeof(s.name));
+    s.num_parts   = 200;  // past the capacity
+    s.parts[0]    = { 0x0F, 3, kFixtureModeChain, 9 };
+    s.parts[1]    = { 0x00, 4, 0, 0 };   // empty: dropped
+    s.parts[2]    = { 0x3C, 5, 77, 0 };  // overlaps part 0 on outputs 2-3; bad mode
+    s.parts[3]    = { 0x03, 6, 0, 0 };   // wholly inside part 0: dropped
+    s.parts[7]    = { 0x80, 30, kFixtureModeMirror, 0 };
+    s.reserved[1] = 5;
+    sanitize_scene(s);
+    EXPECT_EQ(s.name[kSceneNameMax - 1], '\0');
+    EXPECT_EQ(s.num_parts, 3);
+    EXPECT_EQ(s.parts[0].mask, 0x0F);
+    EXPECT_EQ(s.parts[0].fixture_mode, kFixtureModeChain);
+    EXPECT_EQ(s.parts[0].reserved, 0);
+    EXPECT_EQ(s.parts[1].mask, 0x30);
+    EXPECT_EQ(s.parts[1].effect, 5);
+    EXPECT_EQ(s.parts[1].fixture_mode, kFixtureModeEach);
+    EXPECT_EQ(s.parts[2].mask, 0x80);
+    EXPECT_EQ(s.parts[2].effect, 30);
+    EXPECT_EQ(s.parts[3].mask + s.parts[7].mask, 0);
+    EXPECT_EQ(s.reserved[1], 0);
+
+    EXPECT_EQ(scene_mask(s), 0xBF);
+    EXPECT_TRUE(scene_part_for(s, 0) == &s.parts[0]);
+    EXPECT_TRUE(scene_part_for(s, 5) == &s.parts[1]);
+    EXPECT_TRUE(scene_part_for(s, 7) == &s.parts[2]);
+    EXPECT_TRUE(scene_part_for(s, 6) == nullptr);
+
+    const Scene one = make_scene("A very long scene name", 0xF0, 2, kFixtureModeStrip);
+    EXPECT_EQ(std::strlen(one.name), kSceneNameMax - 1);
+    EXPECT_EQ(one.num_parts, 1);
+    EXPECT_EQ(one.parts[0].mask, 0xF0);
+    EXPECT_EQ(one.parts[0].effect, 2);
+    EXPECT_EQ(one.parts[0].fixture_mode, kFixtureModeStrip);
+    EXPECT_EQ(make_scene("nowhere", 0, 0).num_parts, 0);  // no output: no part
+    EXPECT_EQ(scene_mask(Scene{}), 0);
+}
+
+// A v3 list becomes one effect and one single-part scene per entry, same index.
+static void test_scenes_v3_migration() {
+    static SceneBankV3 old;
+    static EffectBank effects;
+    static SceneBank scenes;
+    std::memset(&old, 0, sizeof(old));
+    old.count = 3;
+    std::strcpy(old.scenes[0].name, "Wash");
+    old.scenes[0].channel_mask = 0xFF;
+    old.scenes[0].effect       = kSceneFxSolid;
+    old.scenes[0].speed        = 200;
+    old.scenes[0].num_colors   = 1;
+    old.scenes[0].r            = 9;
+    std::strcpy(old.scenes[1].name, "Run");
+    old.scenes[1].channel_mask = 0x0F;
+    old.scenes[1].effect       = kSceneFxChase;
+    old.scenes[1].speed        = 60;
+    old.scenes[1].param        = 3;
+    old.scenes[1].fixture_mode = kFixtureModeMirror;
+    old.scenes[1].num_colors   = 2;
+    old.scenes[1].extra[0][2]  = 44;
+    std::strcpy(old.scenes[2].name, "Nowhere");  // no output: a scene without a part
+    old.scenes[2].effect = kSceneFxFire;
+
+    std::memset(&effects, 0xEE, sizeof(effects));  // stale content must go
+    std::memset(&scenes, 0xEE, sizeof(scenes));
+    migrate_scenes_v3(old, effects, scenes);
+    EXPECT_EQ(effects.count, 3);
+    EXPECT_EQ(scenes.count, 3);
+    EXPECT_EQ(effects.reserved[0] + scenes.reserved[0], 0);
+    EXPECT_TRUE(std::strcmp(effects.effects[0].name, "Wash") == 0);
+    EXPECT_EQ(effects.effects[0].speed, 200);  // Solid: as is
+    EXPECT_EQ(effects.effects[0].colors[0][0], 9);
+    EXPECT_EQ(effects.effects[1].generator, kSceneFxChase);
+    EXPECT_EQ(effects.effects[1].speed, 30);
+    EXPECT_EQ(effects.effects[1].param, 3);
+    EXPECT_EQ(effects.effects[1].num_colors, 2);
+    EXPECT_EQ(effects.effects[1].colors[1][2], 44);
+    EXPECT_TRUE(std::strcmp(scenes.scenes[1].name, "Run") == 0);
+    EXPECT_EQ(scenes.scenes[1].num_parts, 1);
+    EXPECT_EQ(scenes.scenes[1].parts[0].mask, 0x0F);
+    EXPECT_EQ(scenes.scenes[1].parts[0].effect, 1);
+    EXPECT_EQ(scenes.scenes[1].parts[0].fixture_mode, kFixtureModeMirror);
+    EXPECT_EQ(scenes.scenes[2].num_parts, 0);
+    EXPECT_EQ(effects.effects[2].generator, kSceneFxFire);
+    EXPECT_EQ(effects.effects[3].name[0], 0);  // past the count: blank
+    EXPECT_EQ(scenes.scenes[3].num_parts, 0);
+
+    // The bank images: a 4-byte header then the records, nothing in between.
+    EXPECT_EQ(effect_bank_bytes(0), 4);
+    EXPECT_EQ(effect_bank_bytes(kMaxEffects), sizeof(EffectBank));
+    EXPECT_EQ(scene_bank_bytes(kMaxScenes), sizeof(SceneBank));
+    EXPECT_TRUE(kMaxEffects >= kMaxScenes);  // every migrated scene gets its effect
 }
 
 static void test_scene_index_remap() {
@@ -521,7 +620,9 @@ int main() {
     test_scene_v1_migration();
     test_scene_colour_accessors();
     test_scene_bank_load_all_layouts();
-    test_effect_from_scene_and_sanitize();
+    test_effect_from_scene_v3_and_sanitize();
+    test_scene_parts_sanitize();
+    test_scenes_v3_migration();
     test_scene_index_remap();
     test_groups_sanitize();
 

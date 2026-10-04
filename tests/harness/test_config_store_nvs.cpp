@@ -54,10 +54,18 @@ TEST(fresh_flash_gets_defaults_persisted) {
     EXPECT_TRUE(shim::nvs_has(kNs, "global"));
     for (char k : { '0', '7' })
         EXPECT_TRUE(shim::nvs_has(kNs, std::string("ch") + k));
-    EXPECT_TRUE(shim::nvs_has(kNs, "scenes"));
+    EXPECT_FALSE(shim::nvs_has(kNs, "scenes"));  // the pre-bank key is not written any more
     EXPECT_EQ(get_global().refresh_rate_hz, kDefaultRefreshHz);
-    EXPECT_EQ(num_scenes(), kLegacyNumScenes);
-    EXPECT_EQ(shim::nvs_raw(kNs, "scenes").size(), scene_bank_bytes(kLegacyNumScenes));
+    EXPECT_EQ(num_scenes(), 8);
+    EXPECT_EQ(num_effects(), 8);
+    EXPECT_EQ(shim::nvs_raw(kNs, "scenes4").size(), scene_bank_bytes(8));
+    EXPECT_EQ(shim::nvs_raw(kNs, "effects").size(), effect_bank_bytes(8));
+    // Each default scene plays its own effect on every output.
+    EXPECT_STREQ(get_scene(1).name, "Chase");
+    EXPECT_EQ(scene_mask(get_scene(1)), 0xFF);
+    EXPECT_EQ(get_scene(1).parts[0].effect, 1);
+    EXPECT_EQ(get_effect(1).generator, kSceneFxChase);
+    EXPECT_EQ(get_effect(1).num_colors, 2);
 }
 
 TEST(channel_survives_reboot_and_gaps_are_normalized) {
@@ -146,40 +154,166 @@ TEST(out_of_range_refresh_falls_back_to_default) {
 }
 
 TEST(scene_blob_v1_migrates_through_the_real_load_path) {
-    fresh_boot();
+    shim::nvs_wipe();
     uint8_t v1[kLegacyNumScenes * kSceneV1Size] = {};
     for (size_t i = 0; i < kLegacyNumScenes; ++i) {
         uint8_t* rec = v1 + i * kSceneV1Size;
         std::snprintf(reinterpret_cast<char*>(rec), kSceneNameMax, "v1-%u", unsigned(i));
-        rec[16] = 0xFF;                                    // mask
+        rec[16] = static_cast<uint8_t>(1u << i);           // mask
         rec[17] = i == 1 ? kSceneFxChase : kSceneFxSolid;  // effect
         rec[21] = 90;                                      // speed
     }
     shim::nvs_put_raw(kNs, "scenes", v1, sizeof(v1));
     init();
     EXPECT_EQ(num_scenes(), kLegacyNumScenes);
+    EXPECT_EQ(num_effects(), kLegacyNumScenes);
     EXPECT_STREQ(get_scene(5).name, "v1-5");
-    EXPECT_EQ(get_scene(0).speed, 0);   // solid: strobe must not start
-    EXPECT_EQ(get_scene(1).speed, 90);  // chase keeps its speed
-    EXPECT_EQ(shim::nvs_raw(kNs, "scenes").size(), scene_bank_bytes(kLegacyNumScenes));
+    EXPECT_STREQ(get_effect(5).name, "v1-5");
+    EXPECT_EQ(get_scene(5).num_parts, 1);
+    EXPECT_EQ(get_scene(5).parts[0].mask, 0x20);
+    EXPECT_EQ(get_scene(5).parts[0].effect, 5);
+    EXPECT_EQ(get_effect(0).speed, 0);   // solid: strobe must not start
+    EXPECT_EQ(get_effect(1).speed, 45);  // chase: same pace on the doubled scale
+    // The old list stays as it was for a rolled-back firmware.
+    const auto left = shim::nvs_raw(kNs, "scenes");
+    EXPECT_EQ(left.size(), sizeof(v1));
+    EXPECT_EQ(std::memcmp(left.data(), v1, sizeof(v1)), 0);
+    EXPECT_EQ(shim::nvs_raw(kNs, "scenes4").size(), scene_bank_bytes(kLegacyNumScenes));
+    EXPECT_EQ(shim::nvs_raw(kNs, "effects").size(), effect_bank_bytes(kLegacyNumScenes));
 }
 
 TEST(scene_blob_v2_and_garbage) {
-    fresh_boot();
-    Scene v2[kLegacyNumScenes] = {};
+    shim::nvs_wipe();
+    SceneV3 v2[kLegacyNumScenes] = {};
     std::strcpy(v2[6].name, "v2-six");
-    v2[6].num_colors = 2;
+    v2[6].num_colors   = 2;
+    v2[6].channel_mask = 0xFF;
     shim::nvs_put_raw(kNs, "scenes", v2, sizeof(v2));
     init();
     EXPECT_EQ(num_scenes(), kLegacyNumScenes);
     EXPECT_STREQ(get_scene(6).name, "v2-six");
-    EXPECT_EQ(scene_num_colors(get_scene(6)), 2);
+    EXPECT_EQ(effect_num_colors(get_effect(6)), 2);
 
+    shim::nvs_wipe();
     const uint8_t junk[37] = { 5 };
     shim::nvs_put_raw(kNs, "scenes", junk, sizeof(junk));
     init();
-    EXPECT_EQ(num_scenes(), kLegacyNumScenes);  // defaults
+    EXPECT_EQ(num_scenes(), 8);  // defaults
     EXPECT_STREQ(get_scene(0).name, "Warm white");
+    EXPECT_STREQ(get_effect(0).name, "Warm white");
+}
+
+namespace {
+
+// A v3 scene list as the previous firmware stored it: `count` scenes named
+// "old-<i>", scene i a chase at speed 100 + i on output i.
+std::vector<uint8_t> v3_blob(uint8_t count) {
+    static SceneBankV3 bank;
+    std::memset(&bank, 0, sizeof(bank));
+    bank.count = count;
+    for (size_t i = 0; i < count; ++i) {
+        SceneV3& sc = bank.scenes[i];
+        std::snprintf(sc.name, sizeof(sc.name), "old-%u", unsigned(i));
+        sc.channel_mask = static_cast<uint8_t>(1u << (i % 8));
+        sc.effect       = kSceneFxChase;
+        sc.speed        = static_cast<uint8_t>(100 + i);
+        sc.fixture_mode = kFixtureModeChain;
+        sc.num_colors   = 1;
+        sc.r            = static_cast<uint8_t>(i + 1);
+    }
+    const auto* p = reinterpret_cast<const uint8_t*>(&bank);
+    return std::vector<uint8_t>(p, p + scene_bank_v3_bytes(count));
+}
+
+void put_v3(uint8_t count) {
+    const auto blob = v3_blob(count);
+    const uint8_t v = 3;
+    shim::nvs_put_raw(kNs, "scenes", blob.data(), blob.size());
+    shim::nvs_put_raw(kNs, "v_scenes", &v, 1);
+}
+
+}  // namespace
+
+TEST(scene_blob_v3_becomes_effects_and_scenes_once) {
+    shim::nvs_wipe();
+    put_v3(12);
+    init();
+    EXPECT_EQ(num_scenes(), 12);
+    EXPECT_EQ(num_effects(), 12);
+    EXPECT_STREQ(get_scene(11).name, "old-11");
+    EXPECT_EQ(get_scene(11).parts[0].mask, 0x08);
+    EXPECT_EQ(get_scene(11).parts[0].effect, 11);
+    EXPECT_EQ(get_scene(11).parts[0].fixture_mode, kFixtureModeChain);
+    EXPECT_EQ(get_effect(11).generator, kSceneFxChase);
+    EXPECT_EQ(get_effect(11).speed, 56);  // (111 + 1) / 2
+    EXPECT_EQ(get_effect(11).colors[0][0], 12);
+    // Rollback-safe: the v3 list and its version entry are left alone.
+    EXPECT_TRUE(shim::nvs_raw(kNs, "scenes") == v3_blob(12));
+    EXPECT_EQ(shim::nvs_raw(kNs, "v_scenes")[0], 3);
+
+    // Converted once: an edit survives a reboot although the old list is
+    // still there, and a list a rolled-back firmware rewrote is not re-read.
+    auto e  = get_effect(11);
+    e.speed = 7;
+    EXPECT_TRUE(set_effect(11, e));
+    EXPECT_TRUE(delete_scene(0));
+    put_v3(3);
+    init();
+    EXPECT_EQ(num_scenes(), 11);
+    EXPECT_EQ(num_effects(), 12);
+    EXPECT_EQ(get_effect(11).speed, 7);
+    EXPECT_STREQ(get_scene(0).name, "old-1");
+}
+
+// The scene list is written after the effect bank: flash holding only the
+// bank is a conversion cut short, and it starts over from the old list.
+TEST(a_conversion_cut_between_the_two_writes_starts_over) {
+    shim::nvs_wipe();
+    put_v3(4);
+    init();
+    Effect e = get_effect(2);
+    std::strcpy(e.name, "half-written");
+    set_effect(2, e);
+    shim::nvs_erase_key(kNs, "scenes4");
+    init();
+    EXPECT_EQ(num_scenes(), 4);
+    EXPECT_EQ(num_effects(), 4);
+    EXPECT_STREQ(get_effect(2).name, "old-2");
+    EXPECT_TRUE(shim::nvs_has(kNs, "scenes4"));
+}
+
+TEST(unreadable_banks_fall_back_without_touching_the_rest) {
+    // A scene list whose size disagrees with its count: defaults (no old list).
+    fresh_boot();
+    auto raw = shim::nvs_raw(kNs, "scenes4");
+    raw.push_back(0);
+    shim::nvs_put_raw(kNs, "scenes4", raw.data(), raw.size());
+    Effect e = get_effect(0);
+    std::strcpy(e.name, "edited");
+    set_effect(0, e);
+    init();
+    EXPECT_EQ(num_scenes(), 8);
+    EXPECT_STREQ(get_effect(0).name, "Warm white");
+    EXPECT_EQ(shim::nvs_raw(kNs, "scenes4").size(), scene_bank_bytes(8));
+
+    // The effect bank alone is gone: the scenes stay, and play black.
+    shim::nvs_erase_key(kNs, "effects");
+    init();
+    EXPECT_EQ(num_scenes(), 8);
+    EXPECT_EQ(num_effects(), 0);
+    Effect out{};
+    uint8_t mode = 99;
+    EXPECT_TRUE(copy_scene_part(1, 0, out, mode));                         // the part is there
+    EXPECT_EQ(out.colors[0][0] + out.colors[0][1] + out.colors[0][2], 0);  // its effect is not
+    EXPECT_EQ(mode, kFixtureModeEach);
+
+    // A count past the capacity is not trusted either.
+    fresh_boot();
+    raw    = shim::nvs_raw(kNs, "effects");
+    raw[0] = kMaxEffects + 1;
+    shim::nvs_put_raw(kNs, "effects", raw.data(), raw.size());
+    init();
+    EXPECT_EQ(num_effects(), 0);
 }
 
 TEST(scene_list_edits_persist_and_remap_references) {
@@ -190,9 +324,7 @@ TEST(scene_list_edits_persist_and_remap_references) {
     g.failsafe_mode  = kFailsafeScene;
     set_global(g);
 
-    Scene s{};
-    std::strcpy(s.name, "extra");
-    EXPECT_EQ(add_scene(s), 8);
+    EXPECT_EQ(add_scene(make_scene("extra", 0x03, 4)), 8);
     EXPECT_TRUE(move_scene(8, 0));  // everything shifts down by one
     EXPECT_EQ(get_global().boot_scene, 4);
     EXPECT_EQ(get_global().failsafe_scene, 6);
@@ -204,6 +336,8 @@ TEST(scene_list_edits_persist_and_remap_references) {
     init();  // reboot: all of it came from NVS
     EXPECT_EQ(num_scenes(), 7);
     EXPECT_STREQ(get_scene(0).name, "extra");
+    EXPECT_EQ(get_scene(0).parts[0].mask, 0x03);
+    EXPECT_EQ(get_scene(0).parts[0].effect, 4);
     EXPECT_EQ(get_global().boot_scene, 0);
     EXPECT_EQ(get_global().failsafe_mode, kFailsafeBlackout);
 }
@@ -217,14 +351,85 @@ TEST(scene_list_capacity_and_bounds) {
     EXPECT_FALSE(delete_scene(kMaxScenes));
     EXPECT_FALSE(move_scene(0, kMaxScenes));
     EXPECT_FALSE(set_scene(kMaxScenes, s));
-    EXPECT_EQ(get_scene(99).channel_mask, 0);  // blank, not an alias of scene 0
+    EXPECT_EQ(get_scene(99).num_parts, 0);  // blank, not an alias of scene 0
 
     static Scene many[kMaxScenes + 5];
     EXPECT_TRUE(replace_scenes(many, kMaxScenes + 5));
     EXPECT_EQ(num_scenes(), kMaxScenes);
-    s.effect = 200;  // out of range → sanitized on write
+    s           = make_scene("twice", 0x0F, 1);
+    s.num_parts = 2;
+    s.parts[1]  = { 0x1F, 2, 200, 0 };  // overlapping, bad mode → sanitized on write
     EXPECT_TRUE(set_scene(0, s));
-    EXPECT_EQ(get_scene(0).effect, kSceneFxSolid);
+    EXPECT_EQ(get_scene(0).parts[1].mask, 0x10);
+    EXPECT_EQ(get_scene(0).parts[1].fixture_mode, kFixtureModeEach);
+}
+
+TEST(effect_bank_edits_persist_and_the_scenes_follow) {
+    fresh_boot();
+    Effect e{};
+    std::strcpy(e.name, "ninth");
+    e.generator = 200;  // out of range → sanitized on write
+    EXPECT_EQ(add_effect(e), 8);
+    EXPECT_EQ(get_effect(8).generator, kSceneFxSolid);
+    EXPECT_EQ(get_effect(8).num_colors, 1);
+    EXPECT_FALSE(effect_in_use(8));
+    EXPECT_TRUE(effect_in_use(3));
+
+    // A scene of two parts on effects 2 and 8.
+    Scene s     = make_scene("two", 0x0F, 2);
+    s.num_parts = 2;
+    s.parts[1]  = { 0xF0, 8, kFixtureModeStrip, 0 };
+    EXPECT_TRUE(set_scene(0, s));
+
+    EXPECT_FALSE(delete_effect(8));  // in use: the scene would lose its look
+    EXPECT_FALSE(delete_effect(40));
+    EXPECT_TRUE(move_effect(8, 0));  // every other effect shifts down by one
+    EXPECT_STREQ(get_effect(0).name, "ninth");
+    EXPECT_EQ(get_scene(0).parts[0].effect, 3);
+    EXPECT_EQ(get_scene(0).parts[1].effect, 0);
+    EXPECT_EQ(get_scene(5).parts[0].effect, 6);
+    EXPECT_TRUE(move_effect(0, 0));
+    EXPECT_FALSE(move_effect(0, 99));
+    EXPECT_FALSE(set_effect(99, e));
+
+    // Effect 1 ("Warm white", once effect 0) is free now that scene 0 moved on.
+    EXPECT_FALSE(effect_in_use(1));
+    EXPECT_TRUE(delete_effect(1));
+    EXPECT_EQ(num_effects(), 8);
+    EXPECT_EQ(get_scene(0).parts[0].effect, 2);  // followed its effect down
+    EXPECT_EQ(get_scene(0).parts[1].effect, 0);  // before the hole: unchanged
+    EXPECT_STREQ(get_effect(get_scene(5).parts[0].effect).name, "Twinkle");
+
+    // What an output plays, read as one.
+    Effect out{};
+    uint8_t mode = 0;
+    EXPECT_TRUE(copy_scene_part(0, 6, out, mode));
+    EXPECT_STREQ(out.name, "ninth");
+    EXPECT_EQ(mode, kFixtureModeStrip);
+    EXPECT_TRUE(copy_scene_part(0, 1, out, mode));
+    EXPECT_STREQ(out.name, "Rainbow");
+    EXPECT_EQ(mode, kFixtureModeEach);
+    EXPECT_FALSE(copy_scene_part(99, 0, out, mode));  // no such scene: blanked
+    EXPECT_EQ(out.name[0], 0);
+    EXPECT_TRUE(copy_effect(0, out));
+    EXPECT_STREQ(out.name, "ninth");
+    EXPECT_FALSE(copy_effect(99, out));
+    EXPECT_EQ(out.name[0], 0);
+    EXPECT_EQ(get_effect(99).name[0], 0);  // blank, not an alias of effect 0
+
+    init();  // reboot: all of it came from NVS
+    EXPECT_EQ(num_effects(), 8);
+    EXPECT_STREQ(get_effect(0).name, "ninth");
+    EXPECT_EQ(get_scene(0).parts[0].effect, 2);
+
+    while (num_effects() < kMaxEffects)
+        EXPECT_TRUE(add_effect(e) >= 0);
+    EXPECT_EQ(add_effect(e), -1);
+    static Effect many[kMaxEffects + 3];
+    EXPECT_TRUE(replace_effects(many, kMaxEffects + 3));
+    EXPECT_EQ(num_effects(), kMaxEffects);
+    EXPECT_TRUE(replace_effects(many, 2));
+    EXPECT_EQ(shim::nvs_raw(kNs, "effects").size(), effect_bank_bytes(2));
 }
 
 TEST(web_password_hash_and_check) {
@@ -289,12 +494,16 @@ TEST(factory_reset_restores_defaults_in_nvs) {
     auto c        = get_channel(1);
     c.pixel_count = 999;
     set_channel(1, c);
-    Scene s{};
-    add_scene(s);
+    add_scene(Scene{});
+    add_effect(Effect{});
+    const uint8_t old[1] = { 0 };  // an empty pre-bank scene list left behind
+    shim::nvs_put_raw(kNs, "scenes", old, sizeof(old));
     reset_to_defaults();
+    EXPECT_FALSE(shim::nvs_has(kNs, "scenes"));
     init();
     EXPECT_TRUE(get_channel(1).pixel_count != 999);
-    EXPECT_EQ(num_scenes(), kLegacyNumScenes);
+    EXPECT_EQ(num_scenes(), 8);
+    EXPECT_EQ(num_effects(), 8);
 }
 
 TEST(ip_fallback_ids_and_the_artnet_address) {
@@ -343,9 +552,10 @@ TEST(copy_scene_and_the_config_lock) {
 // Every blob records its layout version; one written by a newer firmware
 // (a downgrade) is not misread — defaults instead.
 TEST(blobs_record_their_layout_version) {
-    for (const char* k : { "v_global", "v_ch0", "v_ch7", "v_scenes", "v_control", "v_playlist" })
+    for (const char* k :
+         { "v_global", "v_ch0", "v_ch7", "v_effects", "v_scenes4", "v_control", "v_playlist" })
         EXPECT_TRUE(shim::nvs_has("pixfrog", k));
-    EXPECT_EQ(shim::nvs_raw("pixfrog", "v_scenes")[0], 3);
+    EXPECT_EQ(shim::nvs_raw("pixfrog", "v_scenes4")[0], 1);
     EXPECT_EQ(shim::nvs_raw("pixfrog", "v_global")[0], 1);
     auto c        = get_channel(2);
     c.pixel_count = 77;

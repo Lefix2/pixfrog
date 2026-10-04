@@ -94,7 +94,8 @@ int lookup(const char* const* names, size_t count, const char* s);
 cJSON* build_control_json();  // api_show.cpp
 bool apply_control_json(const cJSON* jc, config::ControlConfig& c, const char** why);
 cJSON* build_show_json();
-void apply_scene_json(const cJSON* js, config::Scene& sc);  // api_config.cpp
+void apply_effect_json(const cJSON* je, config::Effect& e);  // api_config.cpp
+bool apply_scene_json(const cJSON* js, config::Scene& sc, const char** why);
 // What a global update changed that the caller must act on (POST only).
 struct GlobalApplied {
     bool network = false;  // reboot to apply
@@ -124,6 +125,9 @@ esp_err_t handle_identify(httpd_req_t* req);
 esp_err_t handle_control_fixture(httpd_req_t* req);
 esp_err_t handle_post_control(httpd_req_t* req);
 esp_err_t handle_post_show(httpd_req_t* req);
+esp_err_t handle_post_effect(httpd_req_t* req);
+esp_err_t handle_effects_add(httpd_req_t* req);
+esp_err_t handle_effects_move(httpd_req_t* req);
 esp_err_t handle_post_scene(httpd_req_t* req);
 esp_err_t handle_scenes_add(httpd_req_t* req);
 esp_err_t handle_scenes_move(httpd_req_t* req);

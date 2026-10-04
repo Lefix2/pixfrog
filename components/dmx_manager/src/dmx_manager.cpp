@@ -130,7 +130,7 @@ std::atomic<uint8_t> g_dmx_blackout{ 0 };
 std::atomic<uint8_t> g_dmx_strobe[config::kNumChannels];
 std::atomic<int32_t> g_dmx_fade_ms{ -1 };
 // Render-task-only control state.
-logic::SceneOverride g_ovr[config::kNumChannels];
+logic::EffectOverride g_ovr[config::kNumChannels];
 uint8_t g_ctrl_prev_band[config::kMaxControlSlots];
 int16_t g_ctrl_prev_fseq = -1;
 bool g_ctrl_was_live     = false;
@@ -556,7 +556,9 @@ void scene_start(uint8_t scene_index) {
 
 void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t fade_ms) {
     if (scene_index >= config::num_scenes()) return;
-    const uint8_t mask = outputs & config::get_scene(scene_index).channel_mask;
+    config::Scene scene;
+    config::copy_scene(scene_index, scene);
+    const uint8_t mask = outputs & config::scene_mask(scene);
     for (size_t o = 0; o < config::kNumChannels; ++o)
         if ((mask >> o) & 1) assign_output(o, static_cast<int8_t>(scene_index), fade_ms);
 }
@@ -712,7 +714,7 @@ void update_show_control() {
         // control universe being switched off.
         if (!config::get_control().enabled)
             for (auto& o : g_ovr)
-                o = logic::SceneOverride{};
+                o = logic::EffectOverride{};
         return;
     }
     const auto& c        = config::get_control();
@@ -758,13 +760,13 @@ namespace {
 void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t* buf, uint64_t t) {
     const uint8_t bpp = led::bytes_per_pixel(cc.protocol);
     if (src >= 0 && static_cast<size_t>(src) < config::num_scenes()) {
-        // A copy under the config lock: a scene-list edit (memmove) on another
-        // task cannot tear the scene being drawn.
-        config::Scene scene;
-        config::copy_scene(static_cast<size_t>(src), scene);
-        if ((scene.channel_mask >> ch) & 1) {
-            logic::apply_scene_override(scene, g_ovr[ch]);
-            logic::fill_scene_on_channel(buf, kMaxBytesPerChan, cc, bpp, scene, t);
+        // A copy: a list edit (memmove) on another task cannot tear the part
+        // or the effect being drawn.
+        config::Effect effect;
+        uint8_t mode;
+        if (config::copy_scene_part(static_cast<size_t>(src), ch, effect, mode)) {
+            logic::apply_effect_override(effect, g_ovr[ch]);
+            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, mode, t);
             return;
         }
     }
@@ -787,11 +789,11 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
                             esp_timer_get_time(), g.failsafe_timeout_s)) {
         // Mode "scene": play the configured scene's effect on the lost channel —
         // only on the channels the scene targets; the others black out.
-        config::Scene scene;
-        config::copy_scene(g.failsafe_scene, scene);
-        const bool in_mask = (scene.channel_mask >> ch) & 1;
-        if (g.failsafe_mode == config::kFailsafeScene && in_mask) {
-            logic::fill_scene_on_channel(buf, kMaxBytesPerChan, cc, bpp, scene, t);
+        config::Effect effect;
+        uint8_t fx_mode;
+        if (g.failsafe_mode == config::kFailsafeScene &&
+            config::copy_scene_part(g.failsafe_scene, ch, effect, fx_mode)) {
+            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, fx_mode, t);
             return;
         }
         const uint8_t mode = g.failsafe_mode == config::kFailsafeScene ? config::kFailsafeBlackout

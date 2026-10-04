@@ -1,5 +1,5 @@
-// Effects gallery: renders every scene effect with the firmware's own
-// fill_scene_pattern() as a space-time strip — x = time going right, y = pixel
+// Effects gallery: renders every generator with the firmware's own
+// fill_effect_run() as a space-time strip — x = time going right, y = pixel
 // along the line (pixel 0 at the top) — one binary PPM per effect, for the
 // documentation.
 // Driven by gallery.py (compile, run, convert to PNG, compose the sheet).
@@ -26,23 +26,24 @@ struct Look {
     uint8_t rgb[config::kSceneColorsMax][3];
 };
 
-// Speeds and palettes picked to show each effect's motion within 6 s.
+// Speeds (Effect::speed units) and palettes picked to show each effect's
+// motion within 6 s.
 const Look kLooks[config::kSceneFxCount] = {
     { config::kSceneFxSolid, 4, 0, 2, { { 255, 150, 60 }, { 255, 255, 255 } } },
-    { config::kSceneFxChase, 40, 6, 3, { { 255, 40, 40 }, { 40, 255, 80 }, { 60, 90, 255 } } },
-    { config::kSceneFxRainbow, 8, 1, 1, { { 255, 255, 255 } } },
-    { config::kSceneFxBlobs, 60, 4, 3, { { 0, 90, 255 }, { 255, 0, 140 }, { 0, 255, 160 } } },
-    { config::kSceneFxGradient, 30, 2, 3, { { 255, 60, 0 }, { 255, 0, 120 }, { 40, 60, 255 } } },
-    { config::kSceneFxFade, 40, 0, 3, { { 255, 30, 30 }, { 30, 255, 90 }, { 40, 80, 255 } } },
-    { config::kSceneFxTwinkle, 120, 90, 2, { { 255, 200, 120 }, { 160, 200, 255 } } },
+    { config::kSceneFxChase, 20, 6, 3, { { 255, 40, 40 }, { 40, 255, 80 }, { 60, 90, 255 } } },
+    { config::kSceneFxRainbow, 4, 1, 1, { { 255, 255, 255 } } },
+    { config::kSceneFxBlobs, 30, 4, 3, { { 0, 90, 255 }, { 255, 0, 140 }, { 0, 255, 160 } } },
+    { config::kSceneFxGradient, 15, 2, 3, { { 255, 60, 0 }, { 255, 0, 120 }, { 40, 60, 255 } } },
+    { config::kSceneFxFade, 20, 0, 3, { { 255, 30, 30 }, { 30, 255, 90 }, { 40, 80, 255 } } },
+    { config::kSceneFxTwinkle, 60, 90, 2, { { 255, 200, 120 }, { 160, 200, 255 } } },
     { config::kSceneFxFire,
-      120,
+      60,
       0,
       4,
       { { 180, 16, 0 }, { 255, 80, 0 }, { 255, 170, 20 }, { 255, 240, 150 } } },
-    { config::kSceneFxScanner, 90, 6, 2, { { 255, 0, 0 }, { 0, 160, 255 } } },
-    { config::kSceneFxWave, 50, 3, 2, { { 0, 200, 255 }, { 120, 0, 255 } } },
-    { config::kSceneFxStripes, 20, 6, 3, { { 255, 255, 255 }, { 255, 0, 60 }, { 0, 80, 255 } } },
+    { config::kSceneFxScanner, 45, 6, 2, { { 255, 0, 0 }, { 0, 160, 255 } } },
+    { config::kSceneFxWave, 25, 3, 2, { { 0, 200, 255 }, { 120, 0, 255 } } },
+    { config::kSceneFxStripes, 10, 6, 3, { { 255, 255, 255 }, { 255, 0, 60 }, { 0, 80, 255 } } },
 };
 
 bool write_ppm(const std::string& path, const std::vector<uint8_t>& rgb) {
@@ -61,20 +62,19 @@ int main(int argc, char** argv) {
         return 2;
     }
     for (const Look& l : kLooks) {
-        config::Scene s{};
-        s.effect = l.fx;
-        s.speed  = l.speed;
-        s.param  = l.param;
-        for (uint8_t k = 0; k < l.n; ++k)
-            config::set_scene_color(s, k, l.rgb[k][0], l.rgb[k][1], l.rgb[k][2]);
-        s.num_colors = l.n;
+        config::Effect e{};
+        e.generator  = l.fx;
+        e.speed      = l.speed;
+        e.param      = l.param;
+        e.num_colors = l.n;
+        std::memcpy(e.colors, l.rgb, sizeof(e.colors));
 
         // One frame per column: frame f's pixel p lands at row p, column f.
         std::vector<uint8_t> img(static_cast<size_t>(kPixels) * kFrames * 3);
         uint8_t frame[kPixels * 3];
         for (int f = 0; f < kFrames; ++f) {
-            dmx::logic::fill_scene_pattern(frame, sizeof(frame), kPixels, 3, s,
-                                           static_cast<uint64_t>(f) * kFrameMs + 10'000);
+            dmx::logic::fill_effect_run(frame, sizeof(frame), kPixels, 3, e,
+                                        static_cast<uint64_t>(f) * kFrameMs + 10'000);
             for (uint16_t p = 0; p < kPixels; ++p)
                 std::memcpy(&img[(static_cast<size_t>(p) * kFrames + f) * 3], &frame[p * 3], 3);
         }
