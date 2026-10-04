@@ -354,6 +354,8 @@ presets: SHOW_CONTROL "Fixture DMX profiles"):
   `"patch"` on the channel in `GET /api/config`, `patch=` in `ch N` on the
   console, and shown next to each fixture in the web channel editor.
 
+![A channel in DMX control mode in the web UI: each fixture with its profile and its address](img/web-channel-control.png)
+
 The point is the universe count: eight outputs of 300 RGBW pixels take 24
 universes pixel-mapped, and one in control mode with a 16-channel fixture
 each.

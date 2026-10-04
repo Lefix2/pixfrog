@@ -28,8 +28,10 @@ volatile bool g_stop = false;
 
 using pixfrog::led::Protocol;
 
-// A front-of-house rig: eight lines of mixed fixtures, the factory scenes,
-// the full control preset on universe 100, a three-item playlist.
+// A front-of-house rig: seven lines of mixed fixtures — the seventh in DMX
+// control mode, four bars on their profiles — the factory effects plus one
+// with a phaser and wings, a two-part scene, the full control preset on
+// universe 100, a three-item playlist.
 void seed_demo() {
     namespace cfg = pixfrog::config;
     struct Line {
@@ -39,12 +41,19 @@ void seed_demo() {
     const Line lines[cfg::kNumChannels] = {
         { Protocol::WS2815, 300 }, { Protocol::WS2815, 300 }, { Protocol::WS2812B, 144 },
         { Protocol::SK6812, 120 }, { Protocol::APA102, 240 }, { Protocol::WS2811, 50 },
-        { Protocol::WS2815, 512 }, { Protocol::Off, 0 },
+        { Protocol::WS2815, 120 }, { Protocol::Off, 0 },
     };
     for (size_t ch = 0; ch < cfg::kNumChannels; ++ch) {
         auto c        = cfg::get_channel(ch);
         c.protocol    = lines[ch].p;
         c.pixel_count = lines[ch].px ? lines[ch].px : c.pixel_count;
+        if (ch == 6) {  // four 30-LED bars: RGB FX ×2, Full, RGB
+            const uint8_t profiles[] = { 2, 2, 3, 0 };
+            for (uint16_t k = 0; k < 4; ++k)
+                c.fixtures[k] = cfg::make_fixture(static_cast<uint16_t>(30 * k), 30, k == 2,
+                                                  profiles[k]);
+            c.packing = cfg::kPackControl;
+        }
         cfg::set_channel(ch, c);
         pixfrog::dmx::mark_channel_dirty(ch);
     }
@@ -54,6 +63,20 @@ void seed_demo() {
     g.sacn_enabled  = true;
     g.scene_fade_ms = 1500;
     cfg::set_global(g);
+    cfg::Effect breathe{};
+    std::strcpy(breathe.name, "Breathe");
+    breathe.num_colors   = 1;
+    breathe.colors[0][1] = 90;
+    breathe.colors[0][2] = 255;
+    breathe.ph_wave      = cfg::kPhaserSin;
+    breathe.ph_rate      = 10;  // 0.5 Hz
+    breathe.ph_spread    = 16;
+    breathe.wings        = 2;
+    const int fx         = cfg::add_effect(breathe);
+    cfg::Scene wash      = cfg::make_scene("Wash", 0x0F, 0);  // warm white on 1-4…
+    wash.num_parts       = 2;
+    wash.parts[1] = { 0x70, static_cast<uint8_t>(fx), cfg::kFixtureModeEach, 0 };  // …breathing 5-7
+    cfg::set_scene(0, wash);
     auto ctl     = cfg::default_control();
     ctl.enabled  = 1;
     ctl.universe = 100;

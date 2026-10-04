@@ -882,10 +882,11 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
             expect(pg.locator("[data-screen-title]")).not_to_have_text("")
         # The effect bank and the scenes' parts are editable on the simulated box.
         nav(pg, "effects")
+        bank = pg.locator("[data-fx-row]").count()
         pg.locator('[data-action="fx-add"]').click()
-        expect(pg.locator("[data-fx-row]")).to_have_count(9)
+        expect(pg.locator("[data-fx-row]")).to_have_count(bank + 1)
         nav(pg, "scenes")
-        pg.locator('[data-pt-fx="0"]').select_option("8")
+        pg.locator('[data-pt-fx="0"]').select_option(str(bank))
         expect(pg.locator('[data-scene-row="0"]')).to_contain_text("New effect")
         pg.locator('[data-action="save"]').first.click()
         expect(pg.locator('[data-live="save-state"]').first).to_contain_text("saved")

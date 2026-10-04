@@ -128,7 +128,7 @@ on the one before.
 
 ## Documentation & website
 
-UI captures and the effects sheet are generated (`tools/screenshots`,
+UI captures and the effect sheets are generated (`tools/screenshots`,
 `tools/effects_gallery`): re-run them after a UI or effect change. *(owner)*
 items need the hardware or CAD.
 

@@ -38,6 +38,8 @@ up to eight **parts**, each sending one effect of the bank to a set of outputs
 (PROTOCOLS §5.5). An output belongs to one part at most; a scene leaves the
 outputs of no part alone. Editing an effect changes every scene that plays it.
 
+![The effect editor in the web UI: generator, colours, dimmer phaser, Block / Groups / Wings](img/web-effects.png)
+
 The eleven generators, each over six seconds on a 144-pixel line (time going
 right, pixel 0 at the top), rendered by the firmware's own `fill_effect_run`
 (`tools/effects_gallery/gallery.py`):
@@ -87,7 +89,14 @@ is then spread over the pixels:
 | Wings *N* | the run splits in *N* parts, every other one mirrored — wings 2: the effect runs in from both ends |
 
 0 or 1 turns a setting off; the three combine (wings first, then blocks, then
-the repeat). UART: `fx matricks <n> <block> <groups> <wings>`. REST:
+the repeat). The generator's widths and its pixel-per-second speeds count on
+the virtual run: with block 8, a chase head of width 1 is 8 pixels wide and
+moves 8 pixels a step.
+
+The layers over a generator — the phaser's waveforms, the invert, Block /
+Groups / Wings — as the same space-time strips:
+
+![Phaser waveforms, invert and Block / Groups / Wings as space-time strips](img/effects/layers-gallery.png) UART: `fx matricks <n> <block> <groups> <wings>`. REST:
 `"matricks": {"block", "groups", "wings"}` in the effect.
 
 | Edit | Effects | Scenes |
@@ -206,6 +215,8 @@ output in DMX control mode (PROTOCOLS §5.6).
 | Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |
 | Block / Groups / Wings | 0 = the effect's own, 1 = off, 2–255 = N |
 | Spare | nothing; it keeps a channel free |
+
+![The DMX profiles editor in the web UI: the channels of a profile, in order](img/web-profiles.png)
 
 Presets, as starting points:
 
