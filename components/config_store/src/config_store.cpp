@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "esp_log.h"
@@ -401,19 +402,26 @@ void init() {
         }
     } else {
         // v1/v2 images are smaller than the v3 bank; anything larger is unknown.
-        static uint8_t raw[sizeof(SceneBankV3)];
-        static SceneBankV3 old;
+        // 2 kB of work area, on the heap for the time of the conversion: boot
+        // runs on a 4 kB stack, and the old list is read once in a lifetime.
+        struct Work {
+            uint8_t raw[sizeof(SceneBankV3)];
+            SceneBankV3 old;
+        };
+        auto* w          = static_cast<Work*>(std::malloc(sizeof(Work)));
         size_t size      = 0;
-        size_t n         = sizeof(raw);
-        const bool exist = nvs_get_blob(h, kKeyScenesV3, nullptr, &size) == ESP_OK;
-        if (exist && size <= sizeof(raw) && nvs_get_blob(h, kKeyScenesV3, raw, &n) == ESP_OK &&
-            load_scene_bank_v3(raw, n, old)) {
+        size_t n         = sizeof(w->raw);
+        const bool exist = w && nvs_get_blob(h, kKeyScenesV3, nullptr, &size) == ESP_OK;
+        if (exist && size <= sizeof(w->raw) &&
+            nvs_get_blob(h, kKeyScenesV3, w->raw, &n) == ESP_OK &&
+            load_scene_bank_v3(w->raw, n, w->old)) {
             BankEdit edit;
-            migrate_scenes_v3(old, g_fx, g_bank);
+            migrate_scenes_v3(w->old, g_fx, g_bank);
             ESP_LOGI(TAG, "%u scenes converted to effects + scenes", g_bank.count);
         } else {
             fill_default_scenes();
         }
+        std::free(w);
         save_effects(h);
         save_scenes(h);
     }
