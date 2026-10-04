@@ -786,6 +786,16 @@ int cmd_scene(int argc, char** argv) {
     }
 
     uint32_t n = 0;
+    if (strcmp(argv[1], "play") == 0 && argc == 5 && strcmp(argv[3], "group") == 0) {
+        // scene play <n> group <g> — on that fixture group (0-based)
+        uint32_t g = 0;
+        if (!parse_scene_index(argv[2], n) || !parse_u32_in(argv[4], 0, 15, g) ||
+            g >= config::get_groups().count)
+            return err("usage: scene play <index> group <group 0..count-1>");
+        dmx::group_play(static_cast<uint8_t>(n), static_cast<uint8_t>(g));
+        printf("active=%u\ngroup=%u\n", static_cast<unsigned>(n), static_cast<unsigned>(g));
+        return ok();
+    }
     if (strcmp(argv[1], "play") == 0) {
         // scene play <n> [outputs-hex] — on the scene's mask (∩ outputs)
         uint8_t outs = dmx::kAllOutputs;

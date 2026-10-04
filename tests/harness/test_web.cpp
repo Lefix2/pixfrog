@@ -289,6 +289,23 @@ TEST(fixture_groups_round_trip_and_bad_lists_are_refused) {
     EXPECT_EQ(config::get_groups().count, 0);
 }
 
+// A scene on a group: {"group": g} plays it there, the status lists it.
+TEST(scene_play_on_a_group_and_the_status_lists_it) {
+    post("/api/groups", "{\"groups\":[{\"name\":\"A\",\"members\":[[0,0]]}]}");
+    post("/api/channel/0", "{\"protocol\":\"WS2815\",\"pixel_count\":10,\"fixtures\":[[1,5]]}");
+    EXPECT_EQ(post("/api/scene/0/play", "{\"group\":0}").status, 200);
+    Json st(get("/api/status").body);
+    const cJSON* plays = cJSON_GetObjectItem(st["show"], "plays");
+    EXPECT_EQ(cJSON_GetArraySize(plays), 1);
+    EXPECT_EQ(post("/api/scene/0/play", "{\"group\":5}").status, 400);  // no such group
+    EXPECT_EQ(post("/api/scene/0", "{\"group\":0,\"reverse\":true}").status, 200);
+    EXPECT_EQ(config::scene_group_of(config::get_scene(0).fixture_mode), 0);
+    EXPECT_TRUE(config::scene_reverse_of(config::get_scene(0).fixture_mode));
+    post("/api/scene/0", "{\"group\":-1,\"reverse\":false}");
+    EXPECT_EQ(post("/api/scene/0/stop").status, 200);
+    post("/api/groups", "{\"groups\":[]}");
+}
+
 // The dashboard button: every configured output, or the outputs asked for.
 TEST(speaker_test_endpoint_and_status) {
     Json s(get("/api/status").body);

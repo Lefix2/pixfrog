@@ -249,6 +249,39 @@ def test_fixture_groups_pick_order_and_save(page, device):
     assert device.get("/api/config")["groups"][0]["members"][0] == [0, 2]
 
 
+def test_scenes_play_on_groups_and_take_over_only_their_bars(page, device):
+    bars = {"protocol": "WS2815", "pixel_count": 20, "fixtures": [[1, 4], [5, 4], [9, 4], [13, 4], [17, 4]], "gaps": []}
+    device.post("/api/channel/0", bars)
+    device.post("/api/channel/1", bars)
+    device.post("/api/groups", {"groups": [
+        {"name": "Top", "members": [[0, 4], [0, 3], [0, 2], [0, 1], [0, 0], [1, 0], [1, 1], [1, 2], [1, 3], [1, 4]]},
+        {"name": "Centre", "members": [[0, 0], [1, 0]]}]})
+    page.reload()
+    nav(page, "scenes")
+    page.locator('[data-scene-row="0"]').click()
+    page.locator('[data-sc-group="1"]').select_option("0")  # scene 1 plays on Top
+    page.locator('[data-sc-rev="1"]').check()
+    page.locator('[data-sc-playon="1"]').click()  # saved first, then played
+    page.locator('[data-scene-row="1"]').click()
+    page.locator('[data-sc-group="2"]').select_option("1")  # scene 2 on Centre
+    page.locator('[data-sc-playon="2"]').click()
+    for _ in range(40):
+        plays = device.get("/api/status")["show"]["plays"]
+        if sorted(plays) == [[0, 0], [1, 1]]:
+            break
+        time.sleep(0.05)
+    assert sorted(device.get("/api/status")["show"]["plays"]) == [[0, 0], [1, 1]]
+    sc = device.get("/api/config")["scenes"]
+    assert sc[0]["group"] == 0 and sc[0]["reverse"] is True and sc[1]["group"] == 1
+    expect(page.locator('[data-sc-playing="2"]')).to_contain_text("Centre")
+    page.locator('[data-sc-stop="2"]').click()  # Centre back to Top's scene? no: to its outputs
+    for _ in range(40):
+        if device.get("/api/status")["show"]["plays"] == [[0, 0]]:
+            break
+        time.sleep(0.05)
+    assert device.get("/api/status")["show"]["plays"] == [[0, 0]]
+
+
 def test_scene_fixture_mode(page, device):
     nav(page, "scenes")
     page.locator("[data-sc-fixmode]").first.select_option("mirror")

@@ -228,6 +228,23 @@ void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t fade_ms = kDef
 void scene_stop();  // every output back to live
 void scene_stop_on(uint8_t outputs, int32_t fade_ms = kDefaultFade);
 void scene_stop_scene(uint8_t scene_index);  // only the outputs playing it
+
+// Scenes on fixture groups (config::GroupsConfig): the scene is drawn once
+// along the group, in its order, and each member fixture shows its slice.
+// Playing on a group takes its fixtures over from any other play (the others
+// keep theirs: scene 1 on "Top", then scene 2 on "Centre" — Centre's bars play
+// 2, the rest of Top keeps 1); a fixture no play owns shows its output's own
+// source. Fixtures crossfade from what they showed (fade_ms as above).
+// Starting a scene on outputs, or stopping them, takes their fixtures back.
+// Up to 16 plays at once; any task.
+void group_play(uint8_t scene_index, uint8_t group, int32_t fade_ms = kDefaultFade);
+void group_stop(uint8_t group, int32_t fade_ms = kDefaultFade);
+int fixture_scene(size_t ch, size_t fixture);  // the scene a fixture plays, -1 = none
+struct PlayInfo {
+    int8_t scene;
+    int8_t group;
+};
+size_t active_plays(PlayInfo* out, size_t cap);  // count (may exceed cap)
 // Call after config::delete_scene / move_scene: playing outputs follow their
 // scene to its new position, or go back to live when it was deleted.
 void scene_list_edited(config::SceneEdit op, size_t a, size_t b = 0);

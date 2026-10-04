@@ -148,6 +148,19 @@ TEST(scene_commands_manage_the_list) {
     EXPECT_EQ(config::scene_num_colors(config::get_scene(0)), 2);
     EXPECT_TRUE(run("scene play 0"));
     EXPECT_EQ(dmx::active_scene(), 0);
+    {  // on a fixture group
+        static config::GroupsConfig g{};
+        g       = config::GroupsConfig{};
+        g.count = 1;
+        std::strcpy(g.groups[0].name, "A");
+        g.groups[0].count      = 1;
+        g.groups[0].members[0] = { 0, 0 };
+        config::set_groups(g);
+        EXPECT_TRUE(run("scene play 0 group 0"));
+        EXPECT_TRUE(has("group=0"));
+        EXPECT_FALSE(run("scene play 0 group 3"));  // no such group
+        config::set_groups(config::GroupsConfig{});
+    }
     EXPECT_TRUE(run("scene move 0 1"));
     EXPECT_EQ(dmx::active_scene(), 1);  // the playing scene followed
     EXPECT_TRUE(run("scene del 1"));
