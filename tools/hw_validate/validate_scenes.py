@@ -2,7 +2,9 @@
 """Standalone scenes: the effect bank's generators, scene parts (which effect on
 which outputs), network priority, ArtTrigger, boot scene."""
 import sys, time
-from pixfrog_uart import Board, Checks, artnet_trigger, udp_send, main_guard
+from pixfrog_uart import Board, Checks, artnet_trigger, http, udp_send, main_guard
+
+JSON_POST = ["-X", "POST", "-H", "Content-Type: application/json", "-d"]
 
 
 def run(board: Board):
@@ -10,10 +12,19 @@ def run(board: Board):
     board.cmd("ch 0 protocol WS2815"); board.cmd("ch 0 universe 1")
     board.cmd("ch 1 protocol WS2815"); board.cmd("ch 1 universe 10")
     c.check("link up", board.wait_link())
+    # The board's own layout and looks must not show through: an even strip
+    # without fixtures (put back at the end), effects without their layers.
+    pixels0 = board.get("ch 0", "pixels") or "48"
+    fixtures0 = board.get("ch 0", "fixtures") or "-"
+    board.cmd("ch 0 pixels 48")
+    board.cmd("ch 0 fixtures -")
 
     # Scene n plays effect n on every output; the looks are set on the effects.
     for n in (0, 1, 2):
         board.cmd(f"scene part {n} ff {n}")
+        board.cmd(f"fx phaser {n} none 0 0 0 0 forward")
+        board.cmd(f"fx invert {n} 0")
+        board.cmd(f"fx matricks {n} 0 0 0")
     board.cmd("fx set 0 solid 102030 0 0")
     board.cmd("scene play 0")
     board.cmd("status")
@@ -116,6 +127,38 @@ def run(board: Board):
     board.cmd("fx phaser 0 none 0 0 0 0 forward")
     board.cmd("scene stop")
 
+    # A scene on a fixture group: output 1 as two 4-LED bars, a group of the
+    # second one. That bar plays the scene, the first keeps the output's live
+    # data; the part's direction runs the effect from the far end.
+    board.cmd("ch 0 fixtures 1:4,5:4")
+    code, _ = http("/api/groups", *JSON_POST, '{"groups":[{"name":"HwBar","members":[[0,1]]}]}')
+    c.check("a group is created over REST", code == 200)
+    board.cmd("fx set 0 solid 102030 0 0")
+    board.cmd("dmxw 1 1 " + "00" * 24)
+    board.cmd("scene play 0 group 0")
+    board.cmd("status")
+    c.check("the group's bar plays the scene, the other stays live",
+            board.get("pixr 0 0 24", "data") == "000000" * 4 + "102030" * 4)
+    board.cmd("fx set 0 gradient ff0000,0000ff 0 1")
+    board.cmd("scene part 0 ff 0 chain")
+    board.cmd("status")
+    fwd = board.get("pixr 0 12 12", "data") or ""
+    board.cmd("scene part 0 ff 0 chain rev")
+    board.cmd("status")
+    rev = board.get("pixr 0 12 12", "data") or ""
+    bar = lambda d: [d[i:i + 6] for i in range(0, len(d), 6)]
+    c.check("the part's direction runs the group from the far end",
+            len(fwd) == 24 and fwd != rev and bar(rev) == bar(fwd)[::-1])
+    c.check("the scene lists its direction", ":chain:rev" in board.cmd("scene"))
+    board.cmd("scene stop")
+    board.cmd("status")
+    c.check("stop gives the bar back to the output",
+            board.get("pixr 0 12 12", "data") == "000000" * 4)
+    board.cmd("scene part 0 ff 0")
+    board.cmd("fx set 0 solid 102030 0 0")
+    http("/api/groups", *JSON_POST, '{"groups":[]}')
+    board.cmd("ch 0 fixtures -")
+
     # Scene list: add / rename / move / delete, persisted across a reboot.
     count = lambda: sum(1 for l in board.cmd("scene").splitlines()
                         if l.strip().startswith("scene") and "name=" in l)
@@ -147,6 +190,8 @@ def run(board: Board):
     board.cmd("scene stop")
     board.cmd("global boot_scene 0")
     board.cmd("ch 1 protocol Off")
+    board.cmd(f"ch 0 pixels {pixels0}")
+    board.cmd(f"ch 0 fixtures {fixtures0}")
     return c.finish()
 
 
