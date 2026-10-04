@@ -940,24 +940,42 @@ inline void reverse_fixtures(uint8_t* dst, uint8_t bpp, const Span* sp, size_t n
     }
 }
 
+// Pixels a..a+n of a buffer, back to front.
+inline void reverse_px(uint8_t* d, uint8_t bpp, uint32_t n) {
+    uint8_t tmp[8];
+    if (n < 2) return;
+    for (uint8_t *a = d, *b = d + static_cast<size_t>(n - 1) * bpp; a < b; a += bpp, b -= bpp) {
+        std::memcpy(tmp, a, bpp);
+        std::memcpy(a, b, bpp);
+        std::memcpy(b, tmp, bpp);
+    }
+}
+
+// `mode` is a part's fixture-mode byte: the mode, and the direction bit — the
+// pattern then runs from the far end (each: of every fixture; chain, mirror:
+// of the chained run).
 template <typename FillRun>
 inline void fill_on_channel(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
                             uint8_t bpp, uint8_t mode, FillRun fill_run) {
     Span sp[config::kMaxFixtures];
-    mode               = config::scene_mode_of(mode);  // it may carry the direction bit too
+    const bool rev     = config::scene_reverse_of(mode);
+    mode               = config::scene_mode_of(mode);
     const size_t n     = mode == config::kFixtureModeStrip || mode >= config::kFixtureModeCount
                            ? 0
                            : fixture_spans(cc, sp, config::kMaxFixtures);
     const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
     if (n == 0 || total > dst_capacity || bpp == 0) {
         fill_run(dst, dst_capacity, cc.pixel_count);
+        if (rev && bpp && total <= dst_capacity) reverse_px(dst, bpp, cc.pixel_count);
         return;
     }
     if (mode == config::kFixtureModeEach) {
         std::memset(dst, 0, total);
-        for (size_t i = 0; i < n; ++i)
-            fill_run(dst + static_cast<size_t>(sp[i].first) * bpp,
-                     dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count);
+        for (size_t i = 0; i < n; ++i) {
+            uint8_t* at = dst + static_cast<size_t>(sp[i].first) * bpp;
+            fill_run(at, dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count);
+            if (rev) reverse_px(at, bpp, sp[i].count);
+        }
         reverse_fixtures(dst, bpp, sp, n);
         return;
     }
@@ -970,6 +988,7 @@ inline void fill_on_channel(uint8_t* dst, size_t dst_capacity, const config::Cha
     for (size_t i = 0; i < chained; ++i)
         len += sp[i].count;
     fill_run(dst, dst_capacity, static_cast<uint16_t>(len));
+    if (rev) reverse_px(dst, bpp, len);
     uint32_t at = len;
     for (size_t i = chained; i-- > 0;) {
         at -= sp[i].count;
@@ -1014,17 +1033,6 @@ inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
 // A scene playing on it is drawn once along the group's "virtual strip" — the
 // members end to end, in group order — then each member's slice is copied
 // into its fixture on its output.
-
-// Pixels a..a+n of a buffer, back to front.
-inline void reverse_px(uint8_t* d, uint8_t bpp, uint32_t n) {
-    uint8_t tmp[8];
-    if (n < 2) return;
-    for (uint8_t *a = d, *b = d + static_cast<size_t>(n - 1) * bpp; a < b; a += bpp, b -= bpp) {
-        std::memcpy(tmp, a, bpp);
-        std::memcpy(a, b, bpp);
-        std::memcpy(b, tmp, bpp);
-    }
-}
 
 // Each fixture of `cc` by its index (strip order), as a source-buffer span;
 // count 0 for a fixture cut off by the strip's end. `flip` is set when the

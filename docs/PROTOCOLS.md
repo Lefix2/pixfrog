@@ -293,7 +293,10 @@ fixtures, the dead LEDs and any overlap.
   effect spreads: `each` (every fixture plays it on its own — the default, so
   defining fixtures is enough), `strip` (the whole strip, fixtures ignored), `chain` (the fixtures end to end as one strip, without the
   LEDs between them), `mirror` (chained over the first half, mirrored on the
-  second). Live pixels in no fixture stay dark outside `strip`.
+  second). Live pixels in no fixture stay dark outside `strip`. The part's
+  direction (`"reverse"` in the API, the desk's Direction channel) runs the
+  effect from the far end: of each fixture in `each`, of the chained run in
+  `chain` and `mirror` (centre out), of the strip in `strip`.
 - Rendering: `logic::fixture_spans` maps each fixture to its run of the source
   buffer (dead LEDs skipped, then invert and grouping, as the encoder does);
   `logic::fill_effect_on_channel` draws the effect per span.

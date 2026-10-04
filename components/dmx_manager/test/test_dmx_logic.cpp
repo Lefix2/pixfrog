@@ -819,6 +819,25 @@ static void test_fixture_modes_each_chain_mirror() {
     EXPECT_TRUE(std::memcmp(buf, ref, 4 * 3) == 0);
     EXPECT_TRUE(std::memcmp(buf + 8 * 3, ref + 4 * 3, 4 * 3) == 0);
     EXPECT_EQ(buf[5 * 3], 0);
+    // From the far end: the chained run back to front, each fixture's own
+    // run back to front, the whole strip back to front.
+    const uint8_t kRev = pixfrog::config::kSceneReverseBit;
+    sc.fixture_mode    = pixfrog::config::kFixtureModeChain | kRev;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    for (int j = 0; j < 4; ++j) {
+        EXPECT_TRUE(std::memcmp(buf + j * 3, ref + (7 - j) * 3, 3) == 0);
+        EXPECT_TRUE(std::memcmp(buf + (8 + j) * 3, ref + (3 - j) * 3, 3) == 0);
+    }
+    sc.fixture_mode = pixfrog::config::kFixtureModeEach | kRev;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 4, 3, sc, 0);
+    for (int j = 0; j < 4; ++j)
+        EXPECT_TRUE(std::memcmp(buf + (8 + j) * 3, ref + (3 - j) * 3, 3) == 0);
+    sc.fixture_mode = pixfrog::config::kFixtureModeStrip | kRev;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 12, 3, sc, 0);
+    for (int j = 0; j < 12; ++j)
+        EXPECT_TRUE(std::memcmp(buf + j * 3, ref + (11 - j) * 3, 3) == 0);
     // Mirror over three fixtures: the third is the first reversed.
     cc.fixtures[1]  = { 4, 4 };
     cc.fixtures[2]  = { 8, 4 };
