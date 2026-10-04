@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Standalone scenes: generators, channel mask, network priority, ArtTrigger,
-boot scene."""
+"""Standalone scenes: the effect bank's generators, scene parts (which effect on
+which outputs), network priority, ArtTrigger, boot scene."""
 import sys, time
 from pixfrog_uart import Board, Checks, artnet_trigger, udp_send, main_guard
 
@@ -11,19 +11,32 @@ def run(board: Board):
     board.cmd("ch 1 protocol WS2815"); board.cmd("ch 1 universe 10")
     c.check("link up", board.wait_link())
 
-    board.cmd("scene set 0 solid 102030 0 0 ff")
+    # Scene n plays effect n on every output; the looks are set on the effects.
+    for n in (0, 1, 2):
+        board.cmd(f"scene part {n} ff {n}")
+    board.cmd("fx set 0 solid 102030 0 0")
     board.cmd("scene play 0")
     board.cmd("status")
     c.check("solid fill on ch0", board.get("pixr 0 0 6", "data") == "102030102030")
     c.check("solid fill on ch1", board.get("pixr 1 0 3", "data") == "102030")
 
     board.cmd("dmxw 1 1 000000")  # deterministic universe content for the mask test
-    board.cmd("scene set 0 solid 102030 0 0 02")  # mask = ch1 only
+    board.cmd("scene clear 0")
+    board.cmd("scene part 0 02 0")  # one part: ch1 only
     board.cmd("status")
-    c.check("masked-out ch0 decodes (black)", board.get("pixr 0 0 3", "data") == "000000")
-    c.check("masked-in ch1 keeps scene", board.get("pixr 1 0 3", "data") == "102030")
+    c.check("ch0 outside the scene decodes (black)", board.get("pixr 0 0 3", "data") == "000000")
+    c.check("ch1 in the scene keeps it", board.get("pixr 1 0 3", "data") == "102030")
 
-    board.cmd("scene set 0 solid 102030 0 0 ff")
+    # Two parts: one scene, an effect per output group.
+    board.cmd("fx set 1 solid 405060 0 0")
+    board.cmd("scene part 0 01 1")
+    board.cmd("scene play 0")
+    board.cmd("status")
+    c.check("part 2 plays its own effect on ch0", board.get("pixr 0 0 3", "data") == "405060")
+    c.check("part 1 keeps its effect on ch1", board.get("pixr 1 0 3", "data") == "102030")
+    c.check("the scene lists both parts", "parts=02:0:each,01:1:each" in board.cmd("scene"))
+
+    board.cmd("scene part 0 ff 0")
     board.cmd("dmxw 1 1 aabbcc")
     board.cmd("status")
     c.check("scene overrides traffic", board.get("pixr 0 0 3", "data") == "102030")
@@ -31,7 +44,7 @@ def run(board: Board):
     board.cmd("status")
     c.check("stop resumes decode", board.get("pixr 0 0 3", "data") == "aabbcc")
 
-    board.cmd("scene set 1 chase ff0000 60 3 ff")
+    board.cmd("fx set 1 chase ff0000 30 3")
     board.cmd("scene play 1")
     board.cmd("status")
     d = board.get("pixr 0", "data", deadline=8) or ""  # full strip: head anywhere
@@ -43,7 +56,7 @@ def run(board: Board):
     c.check("rainbow varies", len({d[i:i + 6] for i in range(0, len(d), 6)}) >= 5)
 
     # Multi-colour effects: every colour of the list reaches the strip.
-    board.cmd("scene set 1 blobs ff0000,0000ff 0 2 ff")  # speed 0: frozen blobs
+    board.cmd("fx set 1 blobs ff0000,0000ff 0 2")  # speed 0: frozen blobs
     board.cmd("scene play 1")
     board.cmd("status")
     d = board.get("pixr 0", "data", deadline=8) or ""
@@ -52,11 +65,11 @@ def run(board: Board):
             any(p[2] > 0x80 and p[0] < 0x40 for p in px))
 
     # Solid strobe: speed 0 = colour 1 static, 255 = colour 2 static.
-    board.cmd("scene set 0 solid 110000,002200 0 0 ff")
+    board.cmd("fx set 0 solid 110000,002200 0 0")
     board.cmd("scene play 0")
     board.cmd("status")
     c.check("solid speed 0 = colour 1", board.get("pixr 0 0 3", "data") == "110000")
-    board.cmd("scene set 0 solid 110000,002200 255 0 ff")
+    board.cmd("fx set 0 solid 110000,002200 255 0")
     board.cmd("status")
     c.check("solid speed 255 = colour 2", board.get("pixr 0 0 3", "data") == "002200")
     board.cmd("scene stop")

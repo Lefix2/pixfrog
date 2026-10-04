@@ -29,8 +29,8 @@ a password protects once set; none of them may make it mandatory.
       DMX arrives on its outputs, resumes on failsafe). Surface it in the
       ArtPollReply NodeReport and on HOME.
 - [ ] **Per-scene fade time** — the fade is global (`scene_fade_ms`, desk
-      overridable); a per-scene value takes the bytes reserved for it in the
-      scene memories of "Pro lighting control" below.
+      overridable); a per-scene value takes the bytes reserved for it in
+      `config::Scene`.
 - [ ] **Shared scene clock across boxes** — each box animates from its own
       `esp_timer` phase, so neighbours drift. Share a phase origin (FPP
       MultiSync, ArtTrigger timestamp, or a small broadcast).
@@ -49,16 +49,7 @@ Feedback from a lighting operator (GrandMA): drive the box like a conventional
 fixture, not only as a pixel-mapped node. In landing order — each item builds
 on the one before.
 
-- [ ] ★ **Effect bank, scenes as memories** — today a scene is an effect, its
-      settings and its target outputs in one. Split them: an *effect* is a
-      reusable look in a bank (generator, palette, speed, param — no target), a
-      *scene* is a memory of parts, "this effect on these outputs". Existing
-      scenes migrate to one effect + one scene each (new NVS keys, the old blob
-      untouched for an OTA rollback).
-- [ ] **Effect speed range doubled** — the 0-255 speed reaches twice the rate
-      (coarser steps); stored speeds are halved in the migration so existing
-      looks keep their pace. Solid's speed is a strobe frequency: unchanged.
-- [ ] **Dimmer phaser on an effect** — a dimmer layer over any generator:
+- [ ] ★ **Dimmer phaser on an effect** — a dimmer layer over any generator:
       Sin, Cos, Ramp+, Ramp−, Triangle, PWM, Bump, with rate, phase spread
       along the pixels, width and floor.
 - [ ] **Dimmer invert on an effect** — intensity negative of the whole effect

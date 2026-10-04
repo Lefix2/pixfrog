@@ -24,7 +24,8 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 - **Config writes take the config lock** (every `config::set_*` does); a read-modify-write
   wraps `get → change → set` in `config::ScopedLock`. Never hold it around a service
   start/stop (`web::stop` waits for httpd handlers that may want the lock). `render_task`
-  never takes it: scenes are read with `config::copy_scene()` (seqlock). See ARCHITECTURE §6.
+  never takes it: what an output plays is read with `config::copy_scene_part()` (seqlock
+  over the effect and scene banks). See ARCHITECTURE §6.
 
 ## Module map
 
@@ -84,8 +85,11 @@ behind the optional password):
   (3 blinks), `POST /api/identify` (`{outputs:mask}`, default every configured
   output, blinked one after the other),
   `POST /api/autopatch`, `GET /api/backup`, `POST /api/restore`
-- scenes: `POST /api/scene/{n}[/play|/stop|/delete]` (play takes `{"outputs":mask}`),
-  `POST /api/scenes/add|move|stop`
+- effect bank: `POST /api/effect/{n}[/delete]` (`{name, generator, colors, speed, param}`;
+  delete answers 409 while a scene plays the effect), `POST /api/effects/add|move`
+- scenes: `POST /api/scene/{n}[/play|/stop|/delete]` (`{name, parts:[{mask, effect,
+  fixture_mode}]}`; play takes `{"outputs":mask}`), `POST /api/scenes/add|move|stop`
+- groups: `POST /api/groups`
 - show control: `POST /api/show`, `POST /api/control`, `GET /api/control/fixture` (OFL profile)
 - FSEQ: `GET /api/fseq/files`, `POST /api/fseq/play` (`{filename, loop?}` or
   `{playlist:true}`), `POST /api/fseq/stop|upload`, `GET|POST /api/fseq/playlist`

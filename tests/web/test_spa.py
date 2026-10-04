@@ -147,29 +147,103 @@ def test_drag_a_scene_to_reorder_the_list(page, device):
     assert device.get("/api/config")["scenes"][3]["name"] == first
 
 
-def test_scene_colours_add_reorder_remove_middle(page, device):
+def test_scene_parts_send_an_effect_to_each_output_group(page, device):
     nav(page, "scenes")
-    page.locator('[data-scene-row="3"]').click()  # Blobs: 3 colours
-    chip = lambda k: page.locator(f'[data-scene-color="4"][data-k="{k}"]')
-    before = device.get("/api/config")["scenes"][3]["colors"]
-    assert len(before) == 3
-    drag(page, chip(0).locator("[data-sc-grip]"), chip(2))
-    page.locator('[data-sc-delcol="4"][data-k="1"]').click()  # the middle one
-    page.locator('[data-sc-addcol="4"]').click()
+    expect(page.locator("[data-pt-row]")).to_have_count(1)  # the default: one effect everywhere
+    expect(page.locator("[data-pt-add]")).to_have_count(0)  # no output left for another part
+    for o in (4, 5, 6, 7):
+        page.locator(f'[data-pt-out="0"][data-o="{o}"]').click()
+    page.locator("[data-pt-add]").click()  # takes the outputs left free
+    expect(page.locator("[data-pt-row]")).to_have_count(2)
+    page.locator('[data-pt-fx="1"]').select_option("2")
+    page.locator('[data-pt-mode="1"]').select_option("chain")
+    page.locator('[data-pt-out="1"][data-o="0"]').click()  # output 1 moves to the second part
     save(page)
-    after = device.get("/api/config")["scenes"][3]["colors"]
+    parts = device.get("/api/config")["scenes"][0]["parts"]
+    assert parts == [{"mask": 0x0E, "effect": 0, "fixture_mode": "each"},
+                     {"mask": 0xF1, "effect": 2, "fixture_mode": "chain"}]
+    expect(page.locator('[data-scene-row="0"]')).to_contain_text("Warm white + 1")
+
+    page.locator('[data-pt-del="0"]').click()
+    save(page)
+    assert device.get("/api/config")["scenes"][0]["parts"] == [
+        {"mask": 0xF1, "effect": 2, "fixture_mode": "chain"}]
+
+
+def test_scene_fixture_mode(page, device):
+    nav(page, "scenes")
+    page.locator("[data-pt-mode]").first.select_option("mirror")
+    save(page)
+    assert device.get("/api/config")["scenes"][0]["parts"][0]["fixture_mode"] == "mirror"
+
+
+# ── effects ──────────────────────────────────────────────────────────────────
+
+def test_add_rename_duplicate_and_delete_an_effect(page, device):
+    nav(page, "effects")
+    rows = page.locator("[data-fx-row]")
+    expect(rows).to_have_count(8)
+    page.locator('[data-action="fx-add"]').click()
+    expect(rows).to_have_count(9)
+    page.locator("[data-fx-name]").fill("From test")
+    save(page)
+    assert device.get("/api/config")["effects"][8]["name"] == "From test"
+    expect(page.locator("[data-fx-users]")).to_contain_text("No scene plays this effect")
+
+    page.locator('[data-action="fx-dup"]').click()
+    expect(rows).to_have_count(10)
+    fx = device.get("/api/config")["effects"]
+    assert fx[9]["name"] == "From test copy" and fx[9]["colors"] == fx[8]["colors"]
+
+    page.locator('[data-action="fx-del"]').click()
+    page.locator("[data-modal-confirm]").click()
+    expect(rows).to_have_count(9)
+
+    # An effect a scene plays stays: the scenes would lose their look.
+    page.locator('[data-fx-row="1"]').click()
+    expect(page.locator("[data-fx-users]")).to_contain_text("Played by scene 2")
+    page.locator('[data-action="fx-del"]').click()
+    expect(page.locator("[data-modal-confirm]")).not_to_be_visible()
+    assert len(device.get("/api/config")["effects"]) == 9
+
+
+def test_drag_an_effect_and_the_scenes_follow(page, device):
+    nav(page, "effects")
+    first = device.get("/api/config")["effects"][0]["name"]
+    drag(page, page.locator('[data-fx-row="0"] [data-frow-grip]'),
+         page.locator('[data-fx-row="3"]'))
+    expect(page.locator('[data-fx-row="3"]')).to_contain_text(first)
+    time.sleep(0.3)
+    cfg = device.get("/api/config")
+    assert cfg["effects"][3]["name"] == first
+    assert cfg["scenes"][0]["parts"][0]["effect"] == 3  # scene 1 kept its look
+    assert cfg["scenes"][1]["parts"][0]["effect"] == 0
+
+
+def test_effect_colours_add_reorder_remove_middle(page, device):
+    nav(page, "effects")
+    page.locator('[data-fx-row="3"]').click()  # Blobs: 3 colours
+    chip = lambda k: page.locator(f'[data-fx-color="4"][data-k="{k}"]')
+    before = device.get("/api/config")["effects"][3]["colors"]
+    assert len(before) == 3
+    drag(page, chip(0).locator("[data-fx-grip]"), chip(2))
+    page.locator('[data-fx-delcol="4"][data-k="1"]').click()  # the middle one
+    page.locator('[data-fx-addcol="4"]').click()
+    save(page)
+    after = device.get("/api/config")["effects"][3]["colors"]
     assert after[0] == before[1] and after[1] == before[0] and len(after) == 3
 
 
-def test_effect_dropdown_and_param_slider(page, device):
-    nav(page, "scenes")
-    page.locator("[data-sc-fxsel]").select_option(label="Fire")
-    expect(page.locator("[data-sc-param]")).to_have_count(0)  # fire has no param
-    page.locator("[data-sc-fxsel]").select_option(label="Twinkle")
-    page.locator("[data-sc-param]").fill("120")
+def test_generator_dropdown_and_param_slider(page, device):
+    nav(page, "effects")
+    page.locator("[data-fx-gen]").select_option(label="Fire")
+    expect(page.locator("[data-fx-param]")).to_have_count(0)  # fire has no param
+    page.locator("[data-fx-gen]").select_option(label="Twinkle")
+    page.locator("[data-fx-param]").fill("120")
+    page.locator("[data-fx-speed]").fill("200")
     save(page)
-    s = device.get("/api/config")["scenes"][0]
-    assert s["effect"] == 6 and s["param"] == 120
+    e = device.get("/api/config")["effects"][0]
+    assert e["generator"] == 6 and e["param"] == 120 and e["speed"] == 200
 
 
 # ── channels ─────────────────────────────────────────────────────────────────
@@ -247,13 +321,6 @@ def test_fixture_groups_pick_order_and_save(page, device):
     drag(page, page.locator("[data-gm-row='3'] [data-gm-grip]"), page.locator("[data-gm-row='0']"))
     save(page)
     assert device.get("/api/config")["groups"][0]["members"][0] == [0, 2]
-
-
-def test_scene_fixture_mode(page, device):
-    nav(page, "scenes")
-    page.locator("[data-sc-fixmode]").first.select_option("mirror")
-    save(page)
-    assert device.get("/api/config")["scenes"][0]["fixture_mode"] == "mirror"
 
 
 # ── system / global ──────────────────────────────────────────────────────────
@@ -424,11 +491,11 @@ def test_scene_fade_setting(page, device):
 
 
 def _play_on(page, row, outputs):
-    """Select scene `row`, set its target channels to `outputs` (0-based), press Play."""
+    """Select scene `row`, set its part's outputs to `outputs` (0-based), press Play."""
     page.locator(f'[data-scene-row="{row}"]').click()
     n = row + 1
     for o in range(8):
-        chip = page.locator(f'[data-sc-ch="{o}"][data-scn="{n}"]')
+        chip = page.locator(f'[data-pt-out="0"][data-o="{o}"]')
         on = "rgba(63,212,99" in (chip.get_attribute("style") or "")  # the lit chip style
         if (o in outputs) != on:
             chip.click()
@@ -678,10 +745,19 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
         expect(pg.locator("#pf-demo-banner")).to_contain_text("simulated box")
         expect(pg.locator("[data-screen-title]")).to_have_text("Dashboard")
         expect(pg.locator('canvas[data-preview="0"]')).to_have_attribute("width", re.compile(r"[1-9]\d*"))
-        for screen in ["scenes", "fseq", "channels", "control", "network", "artnet", "system",
-                       "diag", "dashboard"]:
+        for screen in ["scenes", "effects", "fseq", "channels", "groups", "control", "network",
+                       "artnet", "system", "diag", "dashboard"]:
             nav(pg, screen)
             expect(pg.locator("[data-screen-title]")).not_to_have_text("")
+        # The effect bank and the scenes' parts are editable on the simulated box.
+        nav(pg, "effects")
+        pg.locator('[data-action="fx-add"]').click()
+        expect(pg.locator("[data-fx-row]")).to_have_count(9)
+        nav(pg, "scenes")
+        pg.locator('[data-pt-fx="0"]').select_option("8")
+        expect(pg.locator('[data-scene-row="0"]')).to_contain_text("New effect")
+        pg.locator('[data-action="save"]').first.click()
+        expect(pg.locator('[data-live="save-state"]').first).to_contain_text("saved")
         # A setting sticks in the page (the simulated box keeps it).
         nav(pg, "network")
         pg.fill("#n-host", "demo-rack")

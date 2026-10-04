@@ -53,9 +53,9 @@
   .pf-row{transition:border-color .15s}
   /* Live output preview strip (pushed over /api/ws, drawn by drawPreview). */
   .pf-preview{display:block;width:100%;height:6px;background:#050605;image-rendering:pixelated}
-  [data-sc-delcol]:hover{color:var(--danger)!important}
-  [data-sc-grip]:hover{color:var(--fg)!important}
-  [data-sc-grip]:active{cursor:grabbing!important}
+  [data-fx-delcol]:hover{color:var(--danger)!important}
+  [data-fx-grip]:hover{color:var(--fg)!important}
+  [data-fx-grip]:active{cursor:grabbing!important}
   .pf-row:hover{border-color:var(--line-hover)!important}
   /* Hub (pixfrog.local with several boxes): one card per box. */
   body{height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -125,6 +125,7 @@
     <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:6px 8px" data-i18n="CONTROL">CONTROL</div>
     <div data-nav="dashboard" data-on style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--accent);background:rgba(63,212,99,.12);font-family:'DM Mono';font-size:13px;font-weight:600;border-left:2px solid var(--accent);margin-top:2px"><i data-lucide="layout-dashboard"></i><span data-i18n="Dashboard">Dashboard</span></div>
     <div data-nav="scenes" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="palette"></i><span data-i18n="Scenes">Scenes</span></div>
+    <div data-nav="effects" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="wand-2"></i><span data-i18n="Effects">Effects</span></div>
     <div data-nav="fseq" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="film"></i><span data-i18n="FSEQ sequences">FSEQ sequences</span></div>
 
     <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:18px 8px 6px" data-i18n="CONFIGURATION">CONFIGURATION</div>
@@ -260,6 +261,20 @@
             <div id="scene-list-mount" style="display:flex;flex-direction:column;gap:6px"></div>
           </div>
           <div id="scenes-mount"></div>
+        </div>
+      </div>
+
+      <!-- ===== EFFECTS ===== -->
+      <div data-screen="effects" style="display:none">
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
+          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 2px 8px">
+              <span class="eyebrow"><span data-i18n="EFFECTS">EFFECTS</span> <span class="fg-2" id="fx-count">0 / 31</span></span>
+              <button class="btn-pri" data-action="fx-add" style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New effect">New effect</span></button>
+            </div>
+            <div id="fx-list-mount" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+          <div id="fx-mount"></div>
         </div>
       </div>
 
@@ -662,7 +677,7 @@
 <div data-cp-backdrop style="position:fixed;inset:0;z-index:70;display:none;font-family:'Figtree',system-ui,sans-serif;color:var(--fg)">
   <div data-cp-panel style="position:absolute;width:244px;background:var(--raised);border:1px solid var(--line-3);border-radius:0;padding:14px;box-shadow:0 24px 60px -16px rgba(0,0,0,.78)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px">
-      <span style="font:500 10px 'DM Mono';letter-spacing:.14em;color:var(--fg-4)"><span data-i18n="SCENE">SCENE</span> <span data-cp-n>1</span> · <span data-i18n="COLOR">COLOR</span> <span data-cp-k>1</span></span>
+      <span style="font:500 10px 'DM Mono';letter-spacing:.14em;color:var(--fg-4)"><span data-i18n="EFFECT">EFFECT</span> <span data-cp-n>1</span> · <span data-i18n="COLOR">COLOR</span> <span data-cp-k>1</span></span>
       <button data-cp-close style="width:24px;height:24px;border-radius:0;background:var(--well);border:1px solid var(--line-3);color:var(--fg-2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0"><i data-lucide="x" class="ic14"></i></button>
     </div>
     <div data-cp-sv style="position:relative;width:100%;height:132px;border-radius:0;cursor:crosshair;border:1px solid var(--line-3);touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,transparent),#f00">
@@ -791,7 +806,7 @@ var ST={
   failsafe:{dot:'var(--danger-2)',txt:'var(--danger)',label:'Failsafe', chip:'rgba(217,83,79,.14)',  bd:'rgba(217,83,79,.4)'},
   off:     {dot:'#3b3c3a',txt:'var(--fg-4)',label:'Off',      chip:'rgba(255,255,255,.03)',bd:'var(--line-2)'}
 };
-var REFRESH=60, CHANS=[], SCENES=[], curScene=0, curChan=0, chanLive=[], netDhcp=true, prevStatus=null, heapMax=0;
+var REFRESH=60, CHANS=[], SCENES=[], EFFECTS=[], curScene=0, curEffect=0, curChan=0, chanLive=[], netDhcp=true, prevStatus=null, heapMax=0;
 var DEVICES=[], EMBED=/[?&]embed=/.test(location.search);
 var dirty=new Set(), langDirty=false;
 function el(id){ return document.getElementById(id); }
@@ -856,7 +871,8 @@ var FR={
   'Channels':'Canaux','Network':'Réseau','Auto-patch':'Auto-patch','System':'Système',
   'CONTROL':'PILOTAGE','CONFIGURATION':'CONFIGURATION','Network link':'Lien réseau',
   'Live update · every 1 s':'Mise à jour live · toutes les 1 s',
-  'Up to 30 scenes · 11 effects · up to 4 colors':'Jusqu’à 30 scènes · 11 effets · jusqu’à 4 couleurs',
+  'Up to 30 scenes · each part plays an effect on its outputs':'Jusqu’à 30 scènes · chaque partie joue un effet sur ses sorties',
+  'Up to 31 effects · 11 generators · up to 4 colors':'Jusqu’à 31 effets · 11 générateurs · jusqu’à 4 couleurs',
   'Play .fseq sequences from the microSD card':'Lecture de séquences .fseq depuis la carte microSD',
   'Loop the file played':'Lire le fichier en boucle','PLAYLIST':'PLAYLIST',
   'Start over after the last file':'Reprendre au début après le dernier fichier',
@@ -948,10 +964,19 @@ var FR={
   'SCENES':'SCÈNES','New scene':'Nouvelle scène','Duplicate':'Dupliquer','Delete':'Supprimer','copy':'copie',
   'Delete scene':'Supprimer la scène','Scenes after it move up one slot.':'Les scènes suivantes remontent d’un rang.',
   'Scene list full (30)':'Liste de scènes pleine (30)','No scene yet':'Aucune scène pour l’instant','Failsafe scene':'Scène de secours',
+  'Effects':'Effets','EFFECTS':'EFFETS','New effect':'Nouvel effet','GENERATOR':'GÉNÉRATEUR',
+  'Unnamed effect — click to name':'Effet sans nom — cliquer pour nommer','No effect yet':'Aucun effet pour l’instant',
+  'Played by scene ':'Joué par la scène ','No scene plays this effect yet':'Aucune scène ne joue encore cet effet',
+  'Effect bank full (31)':'Banque d’effets pleine (31)','Effect added':'Effet ajouté','Effect deleted':'Effet supprimé','Effect moved':'Effet déplacé','Effect duplicated':'Effet dupliqué',
+  'Still played by scene ':'Encore joué par la scène ',' — give them another effect first':' — donnez-leur d’abord un autre effet',
+  'Delete effect':'Supprimer l’effet','Effects after it move up one slot; the scenes follow theirs.':'Les effets suivants remontent d’un rang ; les scènes suivent le leur.',
+  'PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
+  'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
+  'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
   'Scene added':'Scène ajoutée','Scene deleted':'Scène supprimée','Scene moved':'Scène déplacée','Scene duplicated':'Scène dupliquée',
   'Add a color':'Ajouter une couleur','Remove this color':'Retirer cette couleur','Drag to reorder':'Glisser pour réordonner',
   'Color 2 flashes at the strobe rate':'La couleur 2 flashe au rythme du stroboscope',
-  'Empty scene — click to name':'Scène vide — cliquer pour nommer','COLOR':'COULEUR','SPEED':'VITESSE','TARGET CHANNELS':'CANAUX CIBLÉS',
+  'Empty scene — click to name':'Scène vide — cliquer pour nommer','COLOR':'COULEUR','SPEED':'VITESSE',
   'Factory reset':'Réinitialisation usine',
   'All channels, scenes, network settings and credentials will be erased, then the box reboots with its factory configuration — web UI off: turn it back on from the box menu or the UART console. FSEQ sequences stored on the microSD card are kept.':'Tous les canaux, scènes, réglages réseau et identifiants seront effacés, puis le boîtier redémarrera avec sa configuration d’usine — interface web désactivée : réactivez-la depuis le menu du boîtier ou la console UART. Les séquences FSEQ stockées sur la carte microSD sont conservées.',
   'I understand this action is irreversible.':'Je comprends que cette action est irréversible.',
@@ -1065,26 +1090,29 @@ var FX=[
   {n:'Wave',sp:'SPEED',pr:'WAVES',pm:16},
   {n:'Stripes',sp:'SPEED',pr:'WIDTH',pm:64}
 ];
-var MAX_COLORS=4, MAX_SCENES=30;
-function fxOf(sc){ return FX[sc.effectIdx]||FX[0]; }
-function speedText(sc){ if(sc.effectIdx===0) return sc.speed?(sc.speed*60/255).toFixed(1)+' Hz':t('off'); return String(sc.speed); }
-function paramText(sc){ return sc.param?String(sc.param):t('auto'); }
+var MAX_COLORS=4, MAX_SCENES=30, MAX_EFFECTS=31, MAX_PARTS=8;
+var RAINBOW_BG='linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f)';
+function fxOf(e){ return FX[e.gen]||FX[0]; }
+function speedText(e){ if(e.gen===0) return e.speed?(e.speed*60/255).toFixed(1)+' Hz':t('off'); return String(e.speed); }
+function paramText(e){ return e.param?String(e.param):t('auto'); }
 function swatchBg(cols){ return cols.length>1?'linear-gradient(135deg,'+cols.join(',')+')':cols[0]; }
-function sceneColorChip(sc,k){
-  var c=sc.colors[k], many=sc.colors.length>1;
-  return '<div data-scene-color="'+sc.n+'" data-k="'+k+'" class="sc-color" style="display:flex;align-items:center;gap:6px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:6px 7px;cursor:pointer;transition:border-color .12s,background .12s">'
-    +(many?'<span data-sc-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;margin:-6px 0 -6px -3px;padding:6px 0 6px 3px"><i data-lucide="grip-vertical" class="ic14"></i></span>':'')
+// The look of effect `e` as a swatch background; a missing effect is black.
+function fxSwatch(e){ return !e?'#000':(fxOf(e).nocol?RAINBOW_BG:swatchBg(e.colors)); }
+function fxColorChip(e,k){
+  var c=e.colors[k], many=e.colors.length>1;
+  return '<div data-fx-color="'+e.n+'" data-k="'+k+'" class="sc-color" style="display:flex;align-items:center;gap:6px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:6px 7px;cursor:pointer;transition:border-color .12s,background .12s">'
+    +(many?'<span data-fx-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;margin:-6px 0 -6px -3px;padding:6px 0 6px 3px"><i data-lucide="grip-vertical" class="ic14"></i></span>':'')
     +'<span data-role="sw" style="width:16px;height:16px;border-radius:0;background:'+c+';flex:none;border:1px solid rgba(255,255,255,.1)"></span><span data-role="hex" style="font:500 12px \'DM Mono\';color:var(--fg-2)">'+c+'</span>'
-    +(many?'<span data-sc-delcol="'+sc.n+'" data-k="'+k+'" title="'+esc(t('Remove this color'))+'" style="display:flex;color:var(--fg-5);cursor:pointer;margin:-6px -4px -6px 0;padding:6px 4px"><i data-lucide="x" class="ic14"></i></span>':'')
+    +(many?'<span data-fx-delcol="'+e.n+'" data-k="'+k+'" title="'+esc(t('Remove this color'))+'" style="display:flex;color:var(--fg-5);cursor:pointer;margin:-6px -4px -6px 0;padding:6px 4px"><i data-lucide="x" class="ic14"></i></span>':'')
     +'</div>';
 }
 // Pointer-driven so it also works on touch screens (HTML5 drag-and-drop does not).
 var scDrag=null;
 function scDragStart(e){
-  var g=e.target.closest('[data-sc-grip]'); if(!g) return;
+  var g=e.target.closest('[data-fx-grip]'); if(!g) return;
   e.preventDefault();
-  var chipEl=g.closest('[data-scene-color]');
-  scDrag={n:+chipEl.getAttribute('data-scene-color'),from:+chipEl.getAttribute('data-k'),to:-1,moved:false};
+  var chipEl=g.closest('[data-fx-color]');
+  scDrag={n:+chipEl.getAttribute('data-fx-color'),from:+chipEl.getAttribute('data-k'),to:-1,moved:false};
   chipEl.style.opacity='.45';
   document.addEventListener('pointermove',scDragMove);
   document.addEventListener('pointerup',scDragEnd);
@@ -1092,14 +1120,14 @@ function scDragStart(e){
 }
 function scDragMove(e){
   if(!scDrag) return;
-  var card=document.querySelector('[data-scene-card="'+scDrag.n+'"]'); if(!card) return;
+  var card=document.querySelector('[data-fx-card="'+scDrag.n+'"]'); if(!card) return;
   var best=-1, bestD=Infinity;
-  card.querySelectorAll('[data-scene-color]').forEach(function(ch){
+  card.querySelectorAll('[data-fx-color]').forEach(function(ch){
     var r=ch.getBoundingClientRect(), dx=e.clientX-(r.left+r.width/2), dy=e.clientY-(r.top+r.height/2), d=dx*dx+dy*dy;
     if(d<bestD){ bestD=d; best=+ch.getAttribute('data-k'); }
   });
   scDrag.to=best; scDrag.moved=true;
-  card.querySelectorAll('[data-scene-color]').forEach(function(ch){
+  card.querySelectorAll('[data-fx-color]').forEach(function(ch){
     var k=+ch.getAttribute('data-k');
     ch.style.borderColor=(k===best&&k!==scDrag.from)?'var(--accent)':'';
   });
@@ -1109,50 +1137,124 @@ function scDragEnd(){
   document.removeEventListener('pointerup',scDragEnd);
   document.removeEventListener('pointercancel',scDragEnd);
   var d=scDrag; scDrag=null; if(!d) return;
-  var sc=SCENES[d.n-1];
-  if(sc && d.to>=0 && d.to!==d.from){ sc.colors.splice(d.to,0,sc.colors.splice(d.from,1)[0]); markDirty('scene'+(d.n-1)); }
-  renderScene(d.n);
+  var e=EFFECTS[d.n-1];
+  if(e && d.to>=0 && d.to!==d.from){ e.colors.splice(d.to,0,e.colors.splice(d.from,1)[0]); markDirty('fx'+(d.n-1)); }
+  renderEffect(d.n);
 }
 function sqBtn(attr,icon,title){ return '<button class="btn-sec" '+attr+' title="'+esc(t(title))+'" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0"><i data-lucide="'+icon+'" class="ic14"></i></button>'; }
-function slider(kind,sc,label,max,val,txt){
+function slider(kind,e,label,max,val,txt){
   return '<div><div class="eyebrow-sm">'+t(label)+'</div>'
-    +'<div style="display:flex;align-items:center;gap:9px"><input type="range" min="0" max="'+max+'" value="'+val+'" data-sc-'+kind+'="'+sc.n+'" style="flex:1;accent-color:var(--accent);cursor:pointer"/><span data-sc-'+kind+'val="'+sc.n+'" style="font:500 12px \'DM Mono\';color:var(--fg-2);min-width:52px;text-align:right">'+txt+'</span></div></div>';
+    +'<div style="display:flex;align-items:center;gap:9px"><input type="range" min="0" max="'+max+'" value="'+val+'" data-fx-'+kind+'="'+e.n+'" style="flex:1;accent-color:var(--accent);cursor:pointer"/><span data-fx-'+kind+'val="'+e.n+'" style="font:500 12px \'DM Mono\';color:var(--fg-2);min-width:52px;text-align:right">'+txt+'</span></div></div>';
 }
-function sceneCardHTML(sc){
-  var fx=fxOf(sc);
-  var opts=FX.map(function(f,i){ return '<option value="'+i+'"'+(i===sc.effectIdx?' selected':'')+'>'+esc(t(f.n))+'</option>'; }).join('');
-  var chansHtml=''; for(var c=0;c<8;c++){ chansHtml+='<span data-sc-ch="'+c+'" data-scn="'+sc.n+'" style="'+chip(!!(sc.mask&(1<<c)))+'">'+(c+1)+'</span>'; }
+var SEL_STYLE='width:100%;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 13px \'Figtree\'';
+var NAME_STYLE='width:100%;background:transparent;border:none;color:var(--fg);font:700 16px \'Figtree\';padding:2px 0;outline:none';
+function cardFooter(dup,del){
+  return '<div style="display:flex;gap:9px;padding-top:14px;border-top:1px solid var(--line)">'
+    +'<button class="btn-sec" data-action="'+dup+'" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer"><i data-lucide="copy" class="ic14"></i>'+t('Duplicate')+'</button>'
+    +'<button class="btn-dng" data-action="'+del+'" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer;margin-left:auto"><i data-lucide="trash-2" class="ic14"></i>'+t('Delete')+'</button>'
+    +'</div>';
+}
+// Scenes whose parts play effect index i (0-based), as "1, 4".
+function fxUsers(i){ var a=[]; SCENES.forEach(function(sc,k){ if(sc.parts.some(function(p){ return p.effect===i; })) a.push(k+1); }); return a; }
+function effectCardHTML(e){
+  var fx=fxOf(e);
+  var opts=FX.map(function(f,i){ return '<option value="'+i+'"'+(i===e.gen?' selected':'')+'>'+esc(t(f.n))+'</option>'; }).join('');
   var colsHtml='';
   if(!fx.nocol){
-    var chips=''; for(var k=0;k<sc.colors.length;k++) chips+=sceneColorChip(sc,k);
-    if(sc.colors.length<MAX_COLORS) chips+=sqBtn('data-sc-addcol="'+sc.n+'"','plus','Add a color');
+    var chips=''; for(var k=0;k<e.colors.length;k++) chips+=fxColorChip(e,k);
+    if(e.colors.length<MAX_COLORS) chips+=sqBtn('data-fx-addcol="'+e.n+'"','plus','Add a color');
     colsHtml='<div><div class="eyebrow-sm">'+t('COLORS')+'</div><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'+chips+'</div>'
-      +(sc.effectIdx===0?'<div style="font:500 11px \'DM Mono\';color:var(--fg-5);margin-top:6px">'+t('Color 2 flashes at the strobe rate')+'</div>':'')+'</div>';
+      +(e.gen===0?'<div style="font:500 11px \'DM Mono\';color:var(--fg-5);margin-top:6px">'+t('Color 2 flashes at the strobe rate')+'</div>':'')+'</div>';
   }
-  var sliders=slider('speed',sc,fx.sp,255,sc.speed,speedText(sc))
-    +(fx.pr?slider('param',sc,fx.pr,Math.max(fx.pm,sc.param),sc.param,paramText(sc)):'<div></div>');
-  return '<div data-scene-card="'+sc.n+'" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:17px 18px;display:flex;flex-direction:column;gap:14px">'
+  var sliders=slider('speed',e,fx.sp,255,e.speed,speedText(e))
+    +(fx.pr?slider('param',e,fx.pr,Math.max(fx.pm,e.param),e.param,paramText(e)):'<div></div>');
+  var users=fxUsers(e.n-1);
+  return '<div data-fx-card="'+e.n+'" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:17px 18px;display:flex;flex-direction:column;gap:14px">'
     +'<div style="display:flex;align-items:center;gap:12px">'
-    +'<span data-role="bigsw" style="width:38px;height:38px;border-radius:0;background:'+(fx.nocol?'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f)':swatchBg(sc.colors))+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div class="eyebrow">'+t('SCENE')+' '+sc.n+'</div>'
-    +'<input data-sc-name="'+sc.n+'" value="'+esc(sc.name)+'" placeholder="'+esc(t('Empty scene — click to name'))+'" maxlength="15" style="width:100%;background:transparent;border:none;color:var(--fg);font:700 16px \'Figtree\';padding:2px 0;outline:none"/></div>'
-    +'<button class="btn-sec" data-sc-play="'+sc.n+'" style="width:32px;height:32px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none"><i data-lucide="play" class="ic16"></i></button></div>'
-    +'<div><div class="eyebrow-sm">'+t('EFFECT')+'</div><select data-sc-fxsel="'+sc.n+'" style="width:100%;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 13px \'Figtree\'">'+opts+'</select></div>'
+    +'<span data-role="bigsw" style="width:38px;height:38px;border-radius:0;background:'+fxSwatch(e)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
+    +'<div style="flex:1;min-width:0"><div class="eyebrow">'+t('EFFECT')+' '+e.n+'</div>'
+    +'<input data-fx-name="'+e.n+'" value="'+esc(e.name)+'" placeholder="'+esc(t('Unnamed effect — click to name'))+'" maxlength="15" style="'+NAME_STYLE+'"/></div></div>'
+    +'<div><div class="eyebrow-sm">'+t('GENERATOR')+'</div><select data-fx-gen="'+e.n+'" style="'+SEL_STYLE+'">'+opts+'</select></div>'
     +colsHtml
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'+sliders+'</div>'
-    +'<div><div class="eyebrow-sm">'+t('TARGET CHANNELS')+'</div><div style="display:flex;gap:5px">'+chansHtml+'</div></div>'
-    +'<div><div class="eyebrow-sm">'+t('FIXTURES')+'</div><select data-sc-fixmode="'+sc.n+'" style="width:100%;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 13px \'Figtree\'">'
-      +FIX_MODES.map(function(m){ return '<option value="'+m[0]+'"'+((sc.fixmode||'each')===m[0]?' selected':'')+'>'+esc(t(m[1]))+'</option>'; }).join('')+'</select>'
-      +'<div class="hint" style="margin-top:5px">'+esc(t(FIX_HINTS[sc.fixmode||'each']))+'</div></div>'
-    +playOnHTML(sc)
-    +'<div style="display:flex;gap:9px;padding-top:14px;border-top:1px solid var(--line)">'
-    +'<button class="btn-sec" data-action="scene-dup" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer"><i data-lucide="copy" class="ic14"></i>'+t('Duplicate')+'</button>'
-    +'<button class="btn-dng" data-action="scene-del" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer;margin-left:auto"><i data-lucide="trash-2" class="ic14"></i>'+t('Delete')+'</button>'
+    +'<div class="hint" data-fx-users>'+esc(users.length?(t('Played by scene ')+users.join(', ')):t('No scene plays this effect yet'))+'</div>'
+    +cardFooter('fx-dup','fx-del')
+    +'</div>';
+}
+function effectRowHTML(e,i){
+  var on=i===curEffect;
+  return '<div data-fx-row="'+i+'" class="pf-row" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:0;cursor:pointer;background:'+(on?'rgba(63,212,99,.07)':'var(--well)')+';border:1px solid '+(on?'rgba(63,212,99,.45)':'var(--line)')+'">'
+    +'<span data-frow-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
+    +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4);width:18px;text-align:right;flex:none">'+(i+1)+'</span>'
+    +'<span style="width:22px;height:22px;background:'+fxSwatch(e)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
+    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.name||'—')+'</div><div class="mono-11">'+esc(t(fxOf(e).n))+'</div></div></div>';
+}
+function renderEffectList(){
+  var m=el('fx-list-mount'); if(!m) return;
+  m.innerHTML=EFFECTS.length?EFFECTS.map(effectRowHTML).join('')
+    :'<div style="padding:14px 6px;font:500 12px \'DM Mono\';color:var(--fg-4)">'+esc(t('No effect yet'))+'</div>';
+  createIcons(m);
+  var c=el('fx-count'); if(c) c.textContent=EFFECTS.length+' / '+MAX_EFFECTS;
+  var add=document.querySelector('[data-action="fx-add"]'); if(add){ add.disabled=EFFECTS.length>=MAX_EFFECTS; add.style.opacity=add.disabled?'.4':'1'; }
+}
+function renderEffects(){
+  renderEffectList();
+  var m=el('fx-mount'); if(!m) return;
+  m.innerHTML=EFFECTS[curEffect]?effectCardHTML(EFFECTS[curEffect]):'';
+  createIcons(m);
+}
+function renderEffect(n){
+  if(n-1===curEffect){ var m=el('fx-mount'); if(m){ m.innerHTML=effectCardHTML(EFFECTS[n-1]); createIcons(m); } }
+  renderEffectList(); renderSceneList();
+}
+function selectEffect(i){ curEffect=i; renderEffects(); }
+
+// ── scenes: which effect plays where ──
+// The outputs a part may take: its own, plus those no other part holds.
+function partRowHTML(sc,k){
+  var p=sc.parts[k], chips='';
+  for(var c=0;c<8;c++) chips+='<span data-pt-out="'+k+'" data-o="'+c+'" style="'+chip(!!(p.mask&(1<<c)))+'">'+(c+1)+'</span>';
+  var fxOpts=EFFECTS.map(function(e,i){ return '<option value="'+i+'"'+(i===p.effect?' selected':'')+'>'+(i+1)+' · '+esc(e.name||'—')+'</option>'; }).join('');
+  if(p.effect>=EFFECTS.length) fxOpts+='<option value="'+p.effect+'" selected>'+(p.effect+1)+' · '+esc(t('missing effect'))+'</option>';
+  var modeOpts=FIX_MODES.map(function(m){ return '<option value="'+m[0]+'"'+((p.mode||'each')===m[0]?' selected':'')+'>'+esc(t(m[1]))+'</option>'; }).join('');
+  return '<div data-pt-row="'+k+'" style="background:var(--well);border:1px solid var(--line);padding:10px 11px;display:flex;flex-direction:column;gap:9px">'
+    +'<div style="display:flex;align-items:center;gap:9px">'
+    +'<span style="width:22px;height:22px;background:'+fxSwatch(EFFECTS[p.effect])+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
+    +'<div style="display:flex;gap:5px;flex:1;flex-wrap:wrap">'+chips+'</div>'
+    +sqBtn('data-pt-del="'+k+'"','x','Remove this part')+'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">'
+    +'<div><div class="eyebrow-sm">'+t('EFFECT')+'</div><select data-pt-fx="'+k+'" style="'+SEL_STYLE+'">'+fxOpts+'</select></div>'
+    +'<div><div class="eyebrow-sm">'+t('FIXTURES')+'</div><select data-pt-mode="'+k+'" title="'+esc(t(FIX_HINTS[p.mode||'each']))+'" style="'+SEL_STYLE+'">'+modeOpts+'</select></div>'
     +'</div></div>';
 }
-// ▶ plays the scene on its target channels: they are the zone it claims, and
-// a later scene on some of them takes those over (scene 1 on 1-3, then scene 2
-// on 2: output 2 plays scene 2, 1 and 3 keep scene 1).
+function sceneMask(sc){ var m=0; sc.parts.forEach(function(p){ m|=p.mask; }); return m; }
+function sceneCardHTML(sc){
+  var rows=''; for(var k=0;k<sc.parts.length;k++) rows+=partRowHTML(sc,k);
+  var canAdd=sc.parts.length<MAX_PARTS && sceneMask(sc)!==255 && EFFECTS.length>0;
+  return '<div data-scene-card="'+sc.n+'" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:17px 18px;display:flex;flex-direction:column;gap:14px">'
+    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<span data-role="bigsw" style="width:38px;height:38px;border-radius:0;background:'+sceneSwatch(sc)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
+    +'<div style="flex:1;min-width:0"><div class="eyebrow">'+t('SCENE')+' '+sc.n+'</div>'
+    +'<input data-sc-name="'+sc.n+'" value="'+esc(sc.name)+'" placeholder="'+esc(t('Empty scene — click to name'))+'" maxlength="15" style="'+NAME_STYLE+'"/></div>'
+    +'<button class="btn-sec" data-sc-play="'+sc.n+'" style="width:32px;height:32px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none"><i data-lucide="play" class="ic16"></i></button></div>'
+    +'<div><div class="eyebrow-sm">'+t('PARTS')+'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:7px">'+(rows||'<div class="hint">'+esc(t('No part: this scene plays nowhere'))+'</div>')+'</div>'
+    +(canAdd?'<button class="btn-sec" data-pt-add style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer"><i data-lucide="plus" class="ic14"></i>'+t('Add a part')+'</button>':'')
+    +'<div class="hint" style="margin-top:7px">'+esc(t('Each part plays one effect on its outputs; an output belongs to one part.'))+'</div></div>'
+    +playOnHTML(sc)
+    +cardFooter('scene-dup','scene-del')
+    +'</div>';
+}
+function sceneSwatch(sc){ return sc.parts.length?fxSwatch(EFFECTS[sc.parts[0].effect]):'var(--well)'; }
+// "Chase" for one part, "Chase + 2" for more, "—" for none.
+function sceneSummary(sc){
+  if(!sc.parts.length) return '—';
+  var e=EFFECTS[sc.parts[0].effect];
+  return (e?(e.name||t(fxOf(e).n)):t('missing effect'))+(sc.parts.length>1?' + '+(sc.parts.length-1):'');
+}
+// ▶ plays the scene on the outputs of its parts: they are the zone it claims,
+// and a later scene on some of them takes those over (scene 1 on 1-3, then
+// scene 2 on 2: output 2 plays scene 2, 1 and 3 keep scene 1).
 function playOnHTML(sc){
   var i=sc.n-1;
   var btn='display:inline-flex;align-items:center;gap:6px;border-radius:0;padding:6px 11px;font:500 12px \'DM Mono\';cursor:pointer;';
@@ -1163,13 +1265,12 @@ function playOnHTML(sc){
 }
 function playingText(i){ return PLAYING[i]?(t('Playing')+' · '+outsText(PLAYING[i])):''; }
 function sceneRowHTML(sc,i,active){
-  var on=i===curScene, fx=fxOf(sc);
-  var sw=fx.nocol?'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f)':swatchBg(sc.colors);
+  var on=i===curScene;
   return '<div data-scene-row="'+i+'" class="pf-row" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:0;cursor:pointer;background:'+(on?'rgba(63,212,99,.07)':'var(--well)')+';border:1px solid '+(on?'rgba(63,212,99,.45)':'var(--line)')+'">'
     +'<span data-srow-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
     +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4);width:18px;text-align:right;flex:none">'+(i+1)+'</span>'
-    +'<span style="width:22px;height:22px;background:'+sw+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div class="mono-11">'+esc(t(fx.n))+(PLAYING[i]?'<span class="fg-accent" data-sc-outs="'+i+'"> · '+esc(outsText(PLAYING[i]))+'</span>':'')+'</div></div>'
+    +'<span style="width:22px;height:22px;background:'+sceneSwatch(sc)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
+    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div class="mono-11">'+esc(sceneSummary(sc))+(PLAYING[i]?'<span class="fg-accent" data-sc-outs="'+i+'"> · '+esc(outsText(PLAYING[i]))+'</span>':'')+'</div></div>'
     +'<button class="'+(i===active?'btn-pri':'btn-sec')+'" data-sc-play="'+sc.n+'" style="width:28px;height:28px;border-radius:0;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;'+(i===active?'background:var(--accent);border:1px solid var(--accent);color:var(--on-accent)':'background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2)')+'"><i data-lucide="play" class="ic14"></i></button></div>';
 }
 var lastActiveScene=-1;
@@ -1197,66 +1298,107 @@ function renderSceneSelects(g){
 }
 function setFsSceneVis(){ var m=el('a-fsmode'), r=el('a-fsscene-row'); if(m&&r) r.style.display=m.value==='3'?'block':'none'; }
 // Structural edits apply at once (the list order is the API address), so any
-// pending field edits are saved first, then the list is reloaded.
-function flushScenes(){
+// pending field edits — effects first, the scenes point at them — are saved
+// before, then both lists are reloaded.
+function flushLists(){
   var ops=[];
+  EFFECTS.forEach(function(e,i){ if(dirty.has('fx'+i)){ ops.push(api('POST','/api/effect/'+i,effectBody(e))); dirty.delete('fx'+i); } });
   SCENES.forEach(function(s,i){ if(dirty.has('scene'+i)){ ops.push(api('POST','/api/scene/'+i,sceneBody(s))); dirty.delete('scene'+i); } });
   return Promise.all(ops).then(updateSaveBar);
 }
-function sceneEdit(op,msg,after){
-  return flushScenes().then(op).then(function(r){ toast(t(msg)); return reloadConfig().then(function(){ if(after) after(r); renderScenes(); pollStatus(); }); })
+function listEdit(op,msg,after){
+  return flushLists().then(op).then(function(r){ toast(t(msg)); return reloadConfig().then(function(){ if(after) after(r); renderScenes(); renderEffects(); pollStatus(); }); })
     .catch(function(e){ toast(t('Error: ')+e.message,true); reloadConfig(); });
 }
 function sceneAdd(){
   if(SCENES.length>=MAX_SCENES){ toast(t('Scene list full (30)'),true); return; }
-  sceneEdit(function(){ return api('POST','/api/scenes/add',{name:t('New scene')}); },'Scene added',function(r){ if(r&&r.index!=null) curScene=r.index; });
+  listEdit(function(){ return api('POST','/api/scenes/add',{name:t('New scene')}); },'Scene added',function(r){ if(r&&r.index!=null) curScene=r.index; });
 }
 function sceneDuplicate(){
   var src=SCENES[curScene]; if(!src) return;
   if(SCENES.length>=MAX_SCENES){ toast(t('Scene list full (30)'),true); return; }
   var from=curScene, body=sceneBody(src);
   body.name=(src.name+' '+t('copy')).slice(0,15);
-  sceneEdit(function(){ return api('POST','/api/scenes/add',body).then(function(r){ return api('POST','/api/scenes/move',{from:r.index,to:from+1}); }); },'Scene duplicated',function(){ curScene=from+1; });
+  listEdit(function(){ return api('POST','/api/scenes/add',body).then(function(r){ return api('POST','/api/scenes/move',{from:r.index,to:from+1}); }); },'Scene duplicated',function(){ curScene=from+1; });
 }
 function sceneDelete(){
   var idx=curScene, sc=SCENES[idx]; if(!sc) return;
   openModal('delscene',{name:sc.name,onConfirm:function(){
-    sceneEdit(function(){ return api('POST','/api/scene/'+idx+'/delete',{}); },'Scene deleted',function(){ curScene=Math.min(idx,Math.max(0,SCENES.length-1)); });
+    listEdit(function(){ return api('POST','/api/scene/'+idx+'/delete',{}); },'Scene deleted',function(){ curScene=Math.min(idx,Math.max(0,SCENES.length-1)); });
   }});
+}
+// Where the selected row lands when row `from` moves to `to`.
+function movedSel(sel,from,to){
+  if(sel===from) return to;
+  if(from<to&&sel>from&&sel<=to) return sel-1;
+  if(to<from&&sel>=to&&sel<from) return sel+1;
+  return sel;
 }
 function sceneMove(from,to){
   if(from===to){ renderSceneList(); return; }
-  var sel=curScene;
-  if(sel===from) sel=to; else if(from<to&&sel>from&&sel<=to) sel--; else if(to<from&&sel>=to&&sel<from) sel++;
+  var sel=movedSel(curScene,from,to);
   var moved=SCENES.splice(from,1)[0]; SCENES.splice(to,0,moved);  // optimistic
   curScene=sel; renderSceneList();
-  sceneEdit(function(){ return api('POST','/api/scenes/move',{from:from,to:to}); },'Scene moved');
+  listEdit(function(){ return api('POST','/api/scenes/move',{from:from,to:to}); },'Scene moved');
 }
-var srDrag=null;
+function effectAdd(){
+  if(EFFECTS.length>=MAX_EFFECTS){ toast(t('Effect bank full (31)'),true); return; }
+  listEdit(function(){ return api('POST','/api/effects/add',{name:t('New effect')}); },'Effect added',function(r){ if(r&&r.index!=null) curEffect=r.index; });
+}
+function effectDuplicate(){
+  var src=EFFECTS[curEffect]; if(!src) return;
+  if(EFFECTS.length>=MAX_EFFECTS){ toast(t('Effect bank full (31)'),true); return; }
+  var from=curEffect, body=effectBody(src);
+  body.name=(src.name+' '+t('copy')).slice(0,15);
+  listEdit(function(){ return api('POST','/api/effects/add',body).then(function(r){ return api('POST','/api/effects/move',{from:r.index,to:from+1}); }); },'Effect duplicated',function(){ curEffect=from+1; });
+}
+function effectDelete(){
+  var idx=curEffect, e=EFFECTS[idx]; if(!e) return;
+  var users=fxUsers(idx);
+  if(users.length){ toast(t('Still played by scene ')+users.join(', ')+t(' — give them another effect first'),true); return; }
+  openModal('delfx',{name:e.name,onConfirm:function(){
+    listEdit(function(){ return api('POST','/api/effect/'+idx+'/delete',{}); },'Effect deleted',function(){ curEffect=Math.min(idx,Math.max(0,EFFECTS.length-1)); });
+  }});
+}
+function effectMove(from,to){
+  if(from===to){ renderEffectList(); return; }
+  var sel=movedSel(curEffect,from,to);
+  var moved=EFFECTS.splice(from,1)[0]; EFFECTS.splice(to,0,moved);  // optimistic
+  curEffect=sel; renderEffectList();
+  listEdit(function(){ return api('POST','/api/effects/move',{from:from,to:to}); },'Effect moved');
+}
+// Row drag in a list (scenes or effects): `attr` holds the row index, `grip`
+// starts the drag, `done(from,to)` applies it.
+var rowDrag=null;
+var ROW_LISTS=[{attr:'data-scene-row',grip:'[data-srow-grip]',done:function(a,b){ sceneMove(a,b); },redraw:function(){ renderSceneList(); }},
+               {attr:'data-fx-row',grip:'[data-frow-grip]',done:function(a,b){ effectMove(a,b); },redraw:function(){ renderEffectList(); }}];
 function srDragStart(e){
-  var g=e.target.closest('[data-srow-grip]'); if(!g) return;
-  e.preventDefault();
-  var row=g.closest('[data-scene-row]');
-  srDrag={from:+row.getAttribute('data-scene-row'),to:-1};
-  row.style.opacity='.45';
-  document.addEventListener('pointermove',srDragMove);
-  document.addEventListener('pointerup',srDragEnd);
-  document.addEventListener('pointercancel',srDragEnd);
+  for(var i=0;i<ROW_LISTS.length;i++){
+    var L=ROW_LISTS[i], g=e.target.closest(L.grip); if(!g) continue;
+    e.preventDefault();
+    var row=g.closest('['+L.attr+']');
+    rowDrag={list:L,from:+row.getAttribute(L.attr),to:-1};
+    row.style.opacity='.45';
+    document.addEventListener('pointermove',srDragMove);
+    document.addEventListener('pointerup',srDragEnd);
+    document.addEventListener('pointercancel',srDragEnd);
+    return;
+  }
 }
 function srDragMove(e){
-  if(!srDrag) return;
-  var best=-1,bestD=Infinity;
-  document.querySelectorAll('[data-scene-row]').forEach(function(r){ var b=r.getBoundingClientRect(), d=Math.abs(e.clientY-(b.top+b.height/2)); if(d<bestD){ bestD=d; best=+r.getAttribute('data-scene-row'); } });
-  srDrag.to=best;
-  document.querySelectorAll('[data-scene-row]').forEach(function(r){ var k=+r.getAttribute('data-scene-row'); r.style.boxShadow=(k===best&&k!==srDrag.from)?(k<srDrag.from?'inset 0 2px 0 var(--accent)':'inset 0 -2px 0 var(--accent)'):''; });
+  if(!rowDrag) return;
+  var a=rowDrag.list.attr, best=-1, bestD=Infinity;
+  document.querySelectorAll('['+a+']').forEach(function(r){ var b=r.getBoundingClientRect(), d=Math.abs(e.clientY-(b.top+b.height/2)); if(d<bestD){ bestD=d; best=+r.getAttribute(a); } });
+  rowDrag.to=best;
+  document.querySelectorAll('['+a+']').forEach(function(r){ var k=+r.getAttribute(a); r.style.boxShadow=(k===best&&k!==rowDrag.from)?(k<rowDrag.from?'inset 0 2px 0 var(--accent)':'inset 0 -2px 0 var(--accent)'):''; });
 }
 function srDragEnd(){
   document.removeEventListener('pointermove',srDragMove);
   document.removeEventListener('pointerup',srDragEnd);
   document.removeEventListener('pointercancel',srDragEnd);
-  var d=srDrag; srDrag=null; if(!d) return;
-  if(d.to<0){ renderSceneList(); return; }
-  sceneMove(d.from,d.to);
+  var d=rowDrag; rowDrag=null; if(!d) return;
+  if(d.to<0){ d.list.redraw(); return; }
+  d.list.done(d.from,d.to);
 }
 // Highlight the scene card whose slot is playing (scn = 0-based, -1 = none):
 // glowing border + a lit play button so the active scene is obvious.
@@ -1315,8 +1457,8 @@ function buildPatch(){
 }
 
 /* ─────────── navigation ─────────── */
-var TITLES={dashboard:'Dashboard',scenes:'Scenes',fseq:'FSEQ sequences',channels:'Channels',groups:'Groups',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
-var SUBS={control:'Drive the box from any desk: compose its DMX channels',dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · 11 effects · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
+var TITLES={dashboard:'Dashboard',scenes:'Scenes',effects:'Effects',fseq:'FSEQ sequences',channels:'Channels',groups:'Groups',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
+var SUBS={control:'Drive the box from any desk: compose its DMX channels',dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · each part plays an effect on its outputs',effects:'Up to 31 effects · 11 generators · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
 var curScreen='dashboard';
 function go(name){
   curScreen=name;
@@ -1922,9 +2064,11 @@ function reloadConfig(){
     setLive('side-ver',(d.version||'?')+' · esp32-p4 · '+(d.ota_partition||'?'));
     setLive('part-line',(d.version||'')+' · '+(d.ota_partition||''));
     CHANS=(d.channels||[]).map(buildChan);
-    SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',effectIdx:sc.effect||0,colors:(sc.colors&&sc.colors.length)?sc.colors.slice(0,MAX_COLORS):[sc.color||'#000000'],speed:sc.speed||0,param:sc.param||0,mask:sc.mask||0,fixmode:sc.fixture_mode||'each'}; });
+    EFFECTS=(d.effects||[]).map(function(e,i){ return {n:i+1,name:e.name||'',gen:e.generator||0,colors:(e.colors&&e.colors.length)?e.colors.slice(0,MAX_COLORS):['#000000'],speed:e.speed||0,param:e.param||0}; });
+    SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',parts:(sc.parts||[]).map(function(p){ return {mask:p.mask||0,effect:p.effect||0,mode:p.fixture_mode||'each'}; })}; });
+    if(curEffect>=EFFECTS.length) curEffect=Math.max(0,EFFECTS.length-1);
     if(curScene>=SCENES.length) curScene=Math.max(0,SCENES.length-1);
-    renderScenes(); renderSceneSelects(g);
+    renderEffects(); renderScenes(); renderSceneSelects(g);
     var pm=el('patch-mount'); if(pm){ pm.innerHTML=buildPatch(); createIcons(pm); }
     applyChanStates(); renderLists(); renderGroups();
     if(curChan>=CHANS.length) curChan=0;
@@ -1979,7 +2123,8 @@ function buildGlobalBody(){
   return b;
 }
 function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:layToWire(c).pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:layToWire(c).gaps,fixtures:layToWire(c).fixtures,packing:c.pack||'continuous'}; }
-function sceneBody(s){ return {name:s.name,effect:s.effectIdx,colors:s.colors,speed:s.speed,param:s.param,mask:s.mask,fixture_mode:s.fixmode||'each'}; }
+function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param}; }
+function sceneBody(s){ return {name:s.name,parts:s.parts.map(function(p){ return {mask:p.mask,effect:p.effect,fixture_mode:p.mode||'each'}; })}; }
 // How the effect spreads over a channel's fixtures (a channel without any is one strip).
 var FIX_MODES=[['each','Each fixture'],['strip','Whole strip'],['chain','Fixtures in a row'],['mirror','Mirrored']];
 var FIX_HINTS={strip:'The effect runs over the whole strip, fixtures ignored.',each:'Every fixture plays the effect on its own.',chain:'The fixtures end to end, as one strip without what lies between.',mirror:'In a row over the first half, mirrored on the second.'};
@@ -2129,6 +2274,7 @@ function saveAll(){
   var ops=[];
   if(['network','artnet','sysgen','sysauth','syslang'].some(function(g){ return dirty.has(g); })) ops.push(api('POST','/api/global',buildGlobalBody()));
   CHANS.forEach(function(c,i){ if(dirty.has('ch'+i)) ops.push(api('POST','/api/channel/'+i,chanBody(c))); });
+  EFFECTS.forEach(function(e,i){ if(dirty.has('fx'+i)) ops.push(api('POST','/api/effect/'+i,effectBody(e))); });
   SCENES.forEach(function(s,i){ if(dirty.has('scene'+i)) ops.push(api('POST','/api/scene/'+i,sceneBody(s))); });
   if(dirty.has('control')) ops.push(api('POST','/api/control',ctlBody()));
   if(dirty.has('groups')) ops.push(api('POST','/api/groups',{groups:GROUPS}));
@@ -2166,7 +2312,7 @@ function drag(el,fn){
   });
 }
 function openPicker(n,k,anchor){
-  cpN=n; cpK=k; var sc=SCENES[n-1], hex=(sc&&sc.colors[k])||'#2fae5e', rgb=h2r(hex), hsv=r2hsv(rgb[0],rgb[1],rgb[2]);
+  cpN=n; cpK=k; var sc=EFFECTS[n-1], hex=(sc&&sc.colors[k])||'#2fae5e', rgb=h2r(hex), hsv=r2hsv(rgb[0],rgb[1],rgb[2]);
   cpH=hsv.h; cpS=hsv.s; cpV=Math.max(hsv.v,0.001);
   document.querySelector('[data-cp-n]').textContent=n; document.querySelector('[data-cp-k]').textContent=k+1;
   cp.bd.style.display='block';
@@ -2190,10 +2336,10 @@ function cpRender(){
   applyScene(cpN,cpK,hex);
 }
 function applyScene(n,k,hex){
-  var sc=SCENES[n-1]; if(!sc) return;
-  sc.colors[k]=hex; markDirty('scene'+(n-1));
-  var card=document.querySelector('[data-scene-card="'+n+'"]'); if(!card) return;
-  var chipEl=card.querySelector('[data-scene-color][data-k="'+k+'"]');
+  var sc=EFFECTS[n-1]; if(!sc) return;
+  sc.colors[k]=hex; markDirty('fx'+(n-1));
+  var card=document.querySelector('[data-fx-card="'+n+'"]'); if(!card) return;
+  var chipEl=card.querySelector('[data-fx-color][data-k="'+k+'"]');
   if(chipEl){ chipEl.querySelector('[data-role="sw"]').style.background=hex; chipEl.querySelector('[data-role="hex"]').textContent=hex; }
   var big=card.querySelector('[data-role="bigsw"]'); if(big) big.style.background=swatchBg(sc.colors);
 }
@@ -2209,10 +2355,10 @@ function initModal(){
 }
 function openModal(kind,opt){
   var reset=kind==='reset';
-  var cfg=kind==='delscene'?{
+  var cfg=(kind==='delscene'||kind==='delfx')?{
     kind:kind,icon:'trash-2',accent:'var(--danger)',bg:'rgba(217,83,79,.14)',bd:'rgba(217,83,79,.4)',
-    title:t('Delete scene')+' « '+(opt.name||'—')+' »',
-    desc:t('Scenes after it move up one slot.'),
+    title:t(kind==='delfx'?'Delete effect':'Delete scene')+' « '+(opt.name||'—')+' »',
+    desc:t(kind==='delfx'?'Effects after it move up one slot; the scenes follow theirs.':'Scenes after it move up one slot.'),
     confirm:t('Delete'),confirmIcon:'trash-2',confBg:'var(--danger-2)',confText:'#fff',ack:null,onConfirm:opt.onConfirm
   }:reset?{
     kind:kind,icon:'triangle-alert',accent:'var(--danger)',bg:'rgba(217,83,79,.14)',bd:'rgba(217,83,79,.4)',
@@ -2261,6 +2407,9 @@ function doAction(a){
   else if(a==='scene-add'){ sceneAdd(); }
   else if(a==='scene-dup'){ sceneDuplicate(); }
   else if(a==='scene-del'){ sceneDelete(); }
+  else if(a==='fx-add'){ effectAdd(); }
+  else if(a==='fx-dup'){ effectDuplicate(); }
+  else if(a==='fx-del'){ effectDelete(); }
   else if(a==='cancel'){ dirty.clear(); langDirty=false; updateSaveBar(); reloadConfig(); toast(t('✓ saved')); }
   else if(a==='identify'){ api('POST','/api/identify',{}).then(function(r){ var n=[]; for(var i=0;i<8;i++) if((r.outputs>>i)&1) n.push(i+1); toast(n.length?t('Identifying outputs ')+n.join(', '):t('No output configured')); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast(t('Identifying channel ')+(curChan+1)); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
@@ -2320,16 +2469,22 @@ function onClick(e){
   var ctd=e.target.closest('[data-ct-del]'); if(ctd){ CTL.slots.splice(+ctd.getAttribute('data-ct-del'),1); markDirty('control'); renderControl(); return; }
   var ctu=e.target.closest('[data-ct-up]'); if(ctu){ var ui=+ctu.getAttribute('data-ct-up'); if(ui>0){ var tmp=CTL.slots[ui-1]; CTL.slots[ui-1]=CTL.slots[ui]; CTL.slots[ui]=tmp; markDirty('control'); renderControl(); } return; }
   var ctn=e.target.closest('[data-ct-down]'); if(ctn){ var di=+ctn.getAttribute('data-ct-down'); if(di<CTL.slots.length-1){ var tmp2=CTL.slots[di+1]; CTL.slots[di+1]=CTL.slots[di]; CTL.slots[di]=tmp2; markDirty('control'); renderControl(); } return; }
-  if(e.target.closest('[data-sc-grip]')) return;
-  var sdel=e.target.closest('[data-sc-delcol]'); if(sdel){ var nd=+sdel.getAttribute('data-sc-delcol'), sd=SCENES[nd-1]; if(sd.colors.length>1){ sd.colors.splice(+sdel.getAttribute('data-k'),1); markDirty('scene'+(nd-1)); renderScene(nd); } return; }
-  var scol=e.target.closest('[data-scene-color]'); if(scol){ openPicker(+scol.getAttribute('data-scene-color'), +scol.getAttribute('data-k'), scol); return; }
-  var sadd=e.target.closest('[data-sc-addcol]'); if(sadd){ var na=+sadd.getAttribute('data-sc-addcol'), sa=SCENES[na-1]; if(sa.colors.length<MAX_COLORS){ sa.colors.push(sa.colors[sa.colors.length-1]); markDirty('scene'+(na-1)); renderScene(na); } return; }
+  if(e.target.closest('[data-fx-grip]')) return;
+  var sdel=e.target.closest('[data-fx-delcol]'); if(sdel){ var nd=+sdel.getAttribute('data-fx-delcol'), sd=EFFECTS[nd-1]; if(sd.colors.length>1){ sd.colors.splice(+sdel.getAttribute('data-k'),1); markDirty('fx'+(nd-1)); renderEffect(nd); } return; }
+  var scol=e.target.closest('[data-fx-color]'); if(scol){ openPicker(+scol.getAttribute('data-fx-color'), +scol.getAttribute('data-k'), scol); return; }
+  var sadd=e.target.closest('[data-fx-addcol]'); if(sadd){ var na=+sadd.getAttribute('data-fx-addcol'), sa=EFFECTS[na-1]; if(sa.colors.length<MAX_COLORS){ sa.colors.push(sa.colors[sa.colors.length-1]); markDirty('fx'+(na-1)); renderEffect(na); } return; }
+  // Scene parts: an output switched on in a part leaves the part it was in.
+  var pto=e.target.closest('[data-pt-out]'); if(pto){ var ps=SCENES[curScene], pk=+pto.getAttribute('data-pt-out'), bit=1<<+pto.getAttribute('data-o');
+    if(ps.parts[pk].mask&bit) ps.parts[pk].mask&=~bit; else { ps.parts.forEach(function(p){ p.mask&=~bit; }); ps.parts[pk].mask|=bit; }
+    markDirty('scene'+curScene); renderScene(curScene+1); return; }
+  var ptd=e.target.closest('[data-pt-del]'); if(ptd){ SCENES[curScene].parts.splice(+ptd.getAttribute('data-pt-del'),1); markDirty('scene'+curScene); renderScene(curScene+1); return; }
+  if(e.target.closest('[data-pt-add]')){ var pa=SCENES[curScene], free=255&~sceneMask(pa);
+    if(pa.parts.length<MAX_PARTS && free){ pa.parts.push({mask:free,effect:0,mode:'each'}); markDirty('scene'+curScene); renderScene(curScene+1); } return; }
 
   var dh=e.target.closest('[data-dhcp]'); if(dh){ netDhcp=(+dh.getAttribute('data-dhcp'))===1; setDhcpUI(); markDirty('network'); return; }
-  var sch=e.target.closest('[data-sc-ch]'); if(sch){ var n2=+sch.getAttribute('data-scn'),b=+sch.getAttribute('data-sc-ch'); SCENES[n2-1].mask^=(1<<b); markDirty('scene'+(n2-1)); renderScene(n2); return; }
-  var spo=e.target.closest('[data-sc-playon]'); if(spo){ var on=+spo.getAttribute('data-sc-playon')-1, om=SCENES[on].mask;
+  var spo=e.target.closest('[data-sc-playon]'); if(spo){ var on=+spo.getAttribute('data-sc-playon')-1, om=sceneMask(SCENES[on]);
     if(!om){ toast(t('Select at least one output'),true); return; }
-    // Unsaved target channels go first: the box plays the scene's saved mask.
+    // Unsaved parts go first: the box plays the scene as it is saved.
     var pre=dirty.has('scene'+on)?api('POST','/api/scene/'+on,sceneBody(SCENES[on])).then(function(){ dirty.delete('scene'+on); updateSaveBar(); }):Promise.resolve();
     pre.then(function(){ return api('POST','/api/scene/'+on+'/play',{outputs:om}); }).then(function(){ toast(t('Playing scene ')+(on+1)+' · '+outsText(om)); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var sst=e.target.closest('[data-sc-stop]'); if(sst){ var sn2=+sst.getAttribute('data-sc-stop')-1;
@@ -2365,6 +2520,7 @@ function onClick(e){
   var lrev=e.target.closest('[data-lay-rev]'); if(lrev){ var cr=CHANS[curChan], kr=+lrev.getAttribute('data-lay-rev'); if(cr&&cr.lay&&cr.lay[kr]){ cr.lay[kr].rev=!cr.lay[kr].rev; markDirty('ch'+curChan); renderGaps(); } return; }
   var ldel=e.target.closest('[data-lay-del]'); if(ldel){ var cd=CHANS[curChan]; if(cd&&cd.lay){ cd.lay.splice(+ldel.getAttribute('data-lay-del'),1); if(cd.lay.length) cd.pixels=layLive(cd.lay); markDirty('ch'+curChan); renderGaps(); } return; }
   var lfill=e.target.closest('[data-lay-fill]'); if(lfill){ var cf=CHANS[curChan]; if(cf){ var iv=function(id){ return parseInt((el(id)||{}).value,10)||0; }; if(layFill(cf,iv('lay-rep-n'),Math.max(1,iv('lay-rep-l')),iv('lay-rep-k'))){ markDirty('ch'+curChan); renderGaps(); readChanEditor(); } } return; }
+  var frow=e.target.closest('[data-fx-row]'); if(frow && !e.target.closest('[data-frow-grip]')){ selectEffect(+frow.getAttribute('data-fx-row')); return; }
   var srow=e.target.closest('[data-scene-row]'); if(srow && !e.target.closest('[data-srow-grip]') && !e.target.closest('[data-sc-play]')){ selectScene(+srow.getAttribute('data-scene-row')); return; }
   var tile=e.target.closest('[data-nav-chan]'); if(tile){ go('channels'); selectChan(+tile.getAttribute('data-nav-chan')); return; }
   var row=e.target.closest('[data-chan]'); if(row){ selectChan(+row.getAttribute('data-chan')); return; }
@@ -2372,10 +2528,12 @@ function onClick(e){
 function onInput(e){
   var t=e.target;
   if(t.hasAttribute&&t.hasAttribute('data-sc-name')){ var n=+t.getAttribute('data-sc-name'); SCENES[n-1].name=t.value; markDirty('scene'+(n-1)); renderSceneList(); return; }
-  if(t.hasAttribute&&t.hasAttribute('data-sc-speed')){ var sn=+t.getAttribute('data-sc-speed'); SCENES[sn-1].speed=parseInt(t.value,10)||0; var sv=document.querySelector('[data-sc-speedval="'+sn+'"]'); if(sv) sv.textContent=speedText(SCENES[sn-1]); markDirty('scene'+(sn-1)); return; }
-  if(t.hasAttribute&&t.hasAttribute('data-sc-param')){ var pn=+t.getAttribute('data-sc-param'); SCENES[pn-1].param=parseInt(t.value,10)||0; var pv=document.querySelector('[data-sc-paramval="'+pn+'"]'); if(pv) pv.textContent=paramText(SCENES[pn-1]); markDirty('scene'+(pn-1)); return; }
-  if(t.hasAttribute&&t.hasAttribute('data-sc-fixmode')){ var xm=+t.getAttribute('data-sc-fixmode'); SCENES[xm-1].fixmode=t.value; markDirty('scene'+(xm-1)); renderScene(xm); return; }
-  if(t.hasAttribute&&t.hasAttribute('data-sc-fxsel')){ var fn=+t.getAttribute('data-sc-fxsel'); SCENES[fn-1].effectIdx=parseInt(t.value,10)||0; markDirty('scene'+(fn-1)); renderScene(fn); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-pt-fx')){ SCENES[curScene].parts[+t.getAttribute('data-pt-fx')].effect=parseInt(t.value,10)||0; markDirty('scene'+curScene); renderScene(curScene+1); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-pt-mode')){ SCENES[curScene].parts[+t.getAttribute('data-pt-mode')].mode=t.value; markDirty('scene'+curScene); renderScene(curScene+1); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-name')){ var en=+t.getAttribute('data-fx-name'); EFFECTS[en-1].name=t.value; markDirty('fx'+(en-1)); renderEffectList(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-speed')){ var sn=+t.getAttribute('data-fx-speed'); EFFECTS[sn-1].speed=parseInt(t.value,10)||0; var sv=document.querySelector('[data-fx-speedval="'+sn+'"]'); if(sv) sv.textContent=speedText(EFFECTS[sn-1]); markDirty('fx'+(sn-1)); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-param')){ var pn=+t.getAttribute('data-fx-param'); EFFECTS[pn-1].param=parseInt(t.value,10)||0; var pv=document.querySelector('[data-fx-paramval="'+pn+'"]'); if(pv) pv.textContent=paramText(EFFECTS[pn-1]); markDirty('fx'+(pn-1)); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-gen')){ var fn=+t.getAttribute('data-fx-gen'); EFFECTS[fn-1].gen=parseInt(t.value,10)||0; markDirty('fx'+(fn-1)); renderEffect(fn); return; }
   if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }
   if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }
   if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); return; }

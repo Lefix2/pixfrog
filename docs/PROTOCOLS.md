@@ -289,14 +289,14 @@ fixtures, the dead LEDs and any overlap.
   A dead LED inside a fixture is allowed, it only shortens the fixture.
 - They change scenes (and the failsafe scene); the DMX data follows them only
   with the per-fixture layout (§5.6).
-- `Scene::fixture_mode` (`"fixture_mode"` in the API) picks how the effect
-  spreads: `each` (every fixture plays it on its own — the default, so
+- A scene part's `fixture_mode` (`"fixture_mode"` in the API) picks how its
+  effect spreads: `each` (every fixture plays it on its own — the default, so
   defining fixtures is enough), `strip` (the whole strip, fixtures ignored), `chain` (the fixtures end to end as one strip, without the
   LEDs between them), `mirror` (chained over the first half, mirrored on the
   second). Live pixels in no fixture stay dark outside `strip`.
 - Rendering: `logic::fixture_spans` maps each fixture to its run of the source
   buffer (dead LEDs skipped, then invert and grouping, as the encoder does);
-  `logic::fill_scene_on_channel` draws the effect per span.
+  `logic::fill_effect_on_channel` draws the effect per span.
 - Edit: web channel editor ("Fixtures & dead LEDs"): the strip as an ordered
   list of sizes — fixture, dead LEDs, LEDs without fixture — positions follow
   from the order (drag to reorder), the pixel count from the list; a "N × L +

@@ -256,6 +256,88 @@
    ],
    "universe": 100
   },
+  "effects": [
+   {
+    "colors": [
+     "#ffb46e"
+    ],
+    "generator": 0,
+    "name": "Warm white",
+    "param": 0,
+    "speed": 0
+   },
+   {
+    "colors": [
+     "#ffffff",
+     "#ff7800"
+    ],
+    "generator": 1,
+    "name": "Chase",
+    "param": 3,
+    "speed": 30
+   },
+   {
+    "colors": [
+     "#ffffff"
+    ],
+    "generator": 2,
+    "name": "Rainbow",
+    "param": 1,
+    "speed": 25
+   },
+   {
+    "colors": [
+     "#005aff",
+     "#ff008c",
+     "#00ffa0"
+    ],
+    "generator": 3,
+    "name": "Blobs",
+    "param": 4,
+    "speed": 20
+   },
+   {
+    "colors": [
+     "#b41000",
+     "#ff5000",
+     "#ffaa14",
+     "#fff096"
+    ],
+    "generator": 7,
+    "name": "Fire",
+    "param": 0,
+    "speed": 30
+   },
+   {
+    "colors": [
+     "#ffc878",
+     "#a0c8ff"
+    ],
+    "generator": 6,
+    "name": "Twinkle",
+    "param": 60,
+    "speed": 30
+   },
+   {
+    "colors": [
+     "#ff0000"
+    ],
+    "generator": 8,
+    "name": "Scanner",
+    "param": 0,
+    "speed": 40
+   },
+   {
+    "colors": [
+     "#000000",
+     "#ffffff"
+    ],
+    "generator": 0,
+    "name": "Strobe",
+    "param": 0,
+    "speed": 0
+   }
+  ],
   "fps": 60,
   "global": {
    "auth_enabled": false,
@@ -313,108 +395,92 @@
   },
   "scenes": [
    {
-    "color": "#ffb46e",
-    "colors": [
-     "#ffb46e"
-    ],
-    "effect": 0,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Warm white",
-    "param": 0,
-    "speed": 0
+    "parts": [
+     {
+      "effect": 0,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    },
    {
-    "color": "#ffffff",
-    "colors": [
-     "#ffffff",
-     "#ff7800"
-    ],
-    "effect": 1,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Chase",
-    "param": 3,
-    "speed": 60
+    "parts": [
+     {
+      "effect": 1,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    },
    {
-    "color": "#ffffff",
-    "colors": [
-     "#ffffff"
-    ],
-    "effect": 2,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Rainbow",
-    "param": 1,
-    "speed": 50
+    "parts": [
+     {
+      "effect": 2,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    },
    {
-    "color": "#005aff",
-    "colors": [
-     "#005aff",
-     "#ff008c",
-     "#00ffa0"
-    ],
-    "effect": 3,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Blobs",
-    "param": 4,
-    "speed": 40
+    "parts": [
+     {
+      "effect": 3,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    },
    {
-    "color": "#b41000",
-    "colors": [
-     "#b41000",
-     "#ff5000",
-     "#ffaa14",
-     "#fff096"
-    ],
-    "effect": 7,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Fire",
-    "param": 0,
-    "speed": 60
+    "parts": [
+     {
+      "effect": 4,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    },
    {
-    "color": "#ffc878",
-    "colors": [
-     "#ffc878",
-     "#a0c8ff"
-    ],
-    "effect": 6,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Twinkle",
-    "param": 60,
-    "speed": 60
+    "parts": [
+     {
+      "effect": 5,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    },
    {
-    "color": "#ff0000",
-    "colors": [
-     "#ff0000"
-    ],
-    "effect": 8,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Scanner",
-    "param": 0,
-    "speed": 80
+    "parts": [
+     {
+      "effect": 6,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    },
    {
-    "color": "#000000",
-    "colors": [
-     "#000000",
-     "#ffffff"
-    ],
-    "effect": 0,
-    "fixture_mode": "each",
     "mask": 255,
     "name": "Strobe",
-    "param": 0,
-    "speed": 0
+    "parts": [
+     {
+      "effect": 7,
+      "fixture_mode": "each",
+      "mask": 255
+     }
+    ]
    }
   ],
   "version": "v0.0.0-host"

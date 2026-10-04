@@ -29,27 +29,50 @@ so a strip can still be found during a blackout.
 
 `outputs` is a bitmask: bit 0 = output 1, so `0f` = outputs 1–4.
 
-## Scene zones and crossfades
+## Effects and scenes
 
-The eleven effects, each over six seconds on a 144-pixel line (time going
-right, pixel 0 at the top), rendered by the firmware's own `fill_scene_pattern`
+An **effect** is a look, kept in a bank of up to 31: a generator, one to four
+colours, a speed and a parameter. It has no target. A **scene** is a memory of
+up to eight **parts**, each sending one effect of the bank to a set of outputs
+("effect 5 on outputs 1–4, effect 1 on outputs 5–8") with a fixture mode
+(PROTOCOLS §5.5). An output belongs to one part at most; a scene leaves the
+outputs of no part alone. Editing an effect changes every scene that plays it.
+
+The eleven generators, each over six seconds on a 144-pixel line (time going
+right, pixel 0 at the top), rendered by the firmware's own `fill_effect_run`
 (`tools/effects_gallery/gallery.py`):
 
-![The eleven scene effects as space-time strips](img/effects/effects-gallery.png)
+![The eleven generators as space-time strips](img/effects/effects-gallery.png)
+
+Speed runs 0–255, in steps of two generator units: 2 px/s per step for chase,
+scanner and stripes (up to 510 px/s), 20 °/s for rainbow. Solid is apart: its
+speed is a strobe frequency, 0–60 Hz, where 255 means "steady colour 2".
+
+| Edit | Effects | Scenes |
+|---|---|---|
+| Web UI | **Effects** screen | **Scenes** screen: the parts, their outputs, effect and fixture mode |
+| UART | `fx`, `fx add [name]`, `fx set <n> <generator> <rrggbb[,…]> <speed> <param>`, `fx name`, `fx move`, `fx del` (refused while a scene plays it) | `scene`, `scene add [name]`, `scene part <n> <outputs-hex> <effect> [each\|strip\|chain\|mirror]`, `scene clear <n>`, `scene name`, `scene move`, `scene del` |
+| REST | `POST /api/effect/<n>`, `/api/effects/add\|move` | `POST /api/scene/<n>`, `/api/scenes/add\|move` |
+
+Scenes stored by an older firmware are converted at the first boot: each
+becomes one effect and one single-part scene, at the same position and the
+same pace. A backup taken before the effect bank restores the same way.
+
+## Scene zones and crossfades
 
 Each output plays its own scene or the live input. Starting a scene claims the
-outputs of its channel mask (limited to a requested group, if one is given) and
-leaves the others alone. Two scenes with masks 1–4 and 5–8 therefore run side by
+outputs of its parts (limited to a requested group, if one is given) and
+leaves the others alone. Two scenes on outputs 1–4 and 5–8 therefore run side by
 side, and a scene started on an overlapping group takes those outputs over.
 `scene stop <n>` stops one scene; `scene stop` stops them all.
 
 | From | Play scene *n* on a group |
 |---|---|
-| Web UI | scene editor → **PLAY ON**: pick the outputs (only the scene's target channels can be picked), then ▶ Play; ■ Stop stops that scene only. The ▶ of the scene list plays on the whole mask. |
+| Web UI | scene editor → ▶ Play: the scene on the outputs of its parts; ■ Stop stops that scene only. The ▶ of the scene list does the same. |
 | UART | `scene play <n> <outputs-hex>` (e.g. `scene play 0 01`, `scene play 1 02`), `scene stop <n>` |
 | REST | `POST /api/scene/<n>/play {"outputs":1}`, `POST /api/scene/<n>/stop` |
 | Desk | two Scene slots with different output groups in the control universe |
-| TFT, ArtTrigger | play on the scene's own mask — set the masks first |
+| TFT, ArtTrigger | play on the outputs of the scene's parts — set the parts first |
 
 Every change of source crossfades over the scene fade time (`scene_fade_ms`,
 0–25.5 s, eased). This covers live → scene, scene → scene and scene → live.
@@ -70,9 +93,9 @@ an output group.
 | Blackout | ≥ 128 = dark |
 | Strobe | 0 = off, 1–255 = 1–25 Hz |
 | Scene | bands of 8: 0–7 = none, 8–15 = scene 1, 16–23 = scene 2 … |
-| Speed / Param | 0 = the scene's own, 1–255 = override |
-| Effect | 0 = the scene's own, 1–255 spread over the 11 effects |
-| Red / Green / Blue (colour n) | overrides colour n of the playing scene; all three at 0 = the scene's own |
+| Speed / Param | 0 = the effect's own, 1–255 = override |
+| Effect | 0 = the effect's own generator, 1–255 spread over the 11 generators |
+| Red / Green / Blue (colour n) | overrides colour n of the effect an output plays; all three at 0 = the effect's own |
 | Fade | scene fade time, value × 0.1 s |
 | FSEQ | bands of 8: 0–7 = stop, 8–15 = file 1 … (the order of the file list) |
 | Spare | nothing; it keeps a channel free |

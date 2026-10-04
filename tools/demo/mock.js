@@ -25,14 +25,33 @@
   }
   function backupJson() {
     var c = S.config;
-    return { backup_version: 1, firmware: c.version + ' (demo)', global: clone(c.global),
-             channels: clone(c.channels), scenes: clone(c.scenes), control: clone(c.control),
-             playlist: clone(S.playlist) };
+    return { backup_version: 2, firmware: c.version + ' (demo)', global: clone(c.global),
+             channels: clone(c.channels), effects: clone(c.effects), scenes: clone(c.scenes),
+             control: clone(c.control), playlist: clone(S.playlist), groups: clone(c.groups || []) };
   }
   function activeScene() {
     var sc = S.status.show.scenes;
     for (var i = 0; i < sc.length; ++i) if (sc[i] >= 0) return sc[i];
     return -1;
+  }
+  // A scene's parts as the firmware keeps them: an output in one part only,
+  // empty parts dropped; `mask` is every output it plays on.
+  function tidyScene(sc) {
+    var seen = 0;
+    sc.parts = (sc.parts || []).map(function (p) {
+      var m = p.mask & ~seen;
+      seen |= m;
+      return { mask: m, effect: p.effect, fixture_mode: p.fixture_mode || 'each' };
+    }).filter(function (p) { return p.mask; });
+    sc.mask = seen;
+    return sc;
+  }
+  function inUse(fx) {
+    return S.config.scenes.some(function (sc) { return sc.parts.some(function (p) { return p.effect === fx; }); });
+  }
+  // The scenes' parts follow their effect through an edit of the bank.
+  function remapEffects(fn) {
+    S.config.scenes.forEach(function (sc) { sc.parts.forEach(function (p) { p.effect = fn(p.effect); }); });
   }
   function playScene(n, mask) {
     var sc = S.config.scenes[n];
@@ -112,6 +131,36 @@
       });
       return ok({ next_free: uni, universes: used, pool: 72 });
     }
+    if ((m = p.match(/^\/api\/effect\/(\d+)(\/delete)?$/))) {
+      var fi = +m[1];
+      if (!S.config.effects[fi]) return bad(404, 'no such effect');
+      if (m[2]) {
+        if (inUse(fi)) return bad(409, 'effect in use by a scene');
+        S.config.effects.splice(fi, 1);
+        remapEffects(function (e) { return e > fi ? e - 1 : e; });
+        return ok();
+      }
+      Object.keys(body).forEach(function (k) { S.config.effects[fi][k] = body[k]; });
+      return ok();
+    }
+    if (p === '/api/effects/add') {
+      if (S.config.effects.length >= 31) return bad(409, 'effect bank full');
+      S.config.effects.push(Object.assign({ name: 'New effect', generator: FX_SOLID, colors: ['#ffffff'],
+                                            speed: 0, param: 0 }, body));
+      return ok({ index: S.config.effects.length - 1 });
+    }
+    if (p === '/api/effects/move') {
+      var fa = body.from, fb = body.to, bank = S.config.effects;
+      if (!(fa in bank) || !(fb in bank)) return bad(400, 'effect index');
+      bank.splice(fb, 0, bank.splice(fa, 1)[0]);
+      remapEffects(function (e) {
+        if (e === fa) return fb;
+        if (fa < fb && e > fa && e <= fb) return e - 1;
+        if (fb < fa && e >= fb && e < fa) return e + 1;
+        return e;
+      });
+      return ok();
+    }
     if ((m = p.match(/^\/api\/scene\/(\d+)(\/(play|stop|delete))?$/))) {
       var n = +m[1];
       if (!S.config.scenes[n]) return bad(400, 'scene index');
@@ -124,13 +173,14 @@
         return ok();
       }
       Object.keys(body).forEach(function (k) { S.config.scenes[n][k] = body[k]; });
+      tidyScene(S.config.scenes[n]);
       return ok();
     }
     if (p === '/api/scenes/add') {
-      if (S.config.scenes.length >= 32) return bad(400, 'scene list full');
+      if (S.config.scenes.length >= 30) return bad(409, 'scene list full');
       // Optional body: the new scene's fields (a duplicate sends a whole scene).
-      S.config.scenes.push(Object.assign({ name: 'Scene', effect: FX_SOLID, color: '#ffffff',
-                                           colors: ['#ffffff'], speed: 0, param: 0, mask: 255 }, body));
+      S.config.scenes.push(tidyScene(Object.assign(
+        { name: 'New scene', parts: [{ mask: 255, effect: 0, fixture_mode: 'each' }] }, body)));
       return ok({ index: S.config.scenes.length - 1 });
     }
     if (p === '/api/scenes/move') {
@@ -140,6 +190,7 @@
       return ok();
     }
     if (p === '/api/scenes/stop') { stopScenes(function () { return true; }); return ok(); }
+    if (p === '/api/groups') { S.config.groups = clone(body.groups || []); return ok(); }
     if (p === '/api/show') {
       var sh = S.status.show;
       if (body.master !== undefined) sh.master = sh.master_local = sh.master.map(function () { return +body.master; });
@@ -166,7 +217,7 @@
       return ok();
     }
     if (p === '/api/restore') {
-      ['global', 'channels', 'scenes', 'control'].forEach(function (k) {
+      ['global', 'channels', 'effects', 'scenes', 'control', 'groups'].forEach(function (k) {
         if (body[k]) S.config[k] = clone(body[k]);
       });
       if (body.playlist) S.playlist = clone(body.playlist);
@@ -226,13 +277,16 @@
       for (k = 0; k < n; ++k) px.push(lit ? [255, 255, 255] : [0, 0, 0]);
       return px;
     }
+    // The scene's part for this output, then the effect that part plays.
     var si = sh.scenes[o], sc = si >= 0 ? S.config.scenes[si] : null;
+    var part = sc ? sc.parts.filter(function (pt) { return pt.mask & (1 << o); })[0] : null;
+    var fx = part ? S.config.effects[part.effect] : null;
     for (k = 0; k < n; ++k) {
       var rgb;
       if (sc) {
-        var cols = (sc.colors && sc.colors.length ? sc.colors : [sc.color]).map(hex);
-        if (sc.effect === FX_SOLID) rgb = cols[0];
-        else if (sc.effect === 2) rgb = hsv(((k / n) + now / 4000) % 1);
+        var cols = (fx && fx.colors && fx.colors.length ? fx.colors : ['#000000']).map(hex);
+        if (!fx || fx.generator === FX_SOLID) rgb = cols[0];
+        else if (fx.generator === 2) rgb = hsv(((k / n) + now / 4000) % 1);
         else rgb = cols[Math.floor(k / 6 + now / 300) % cols.length];
       } else {
         rgb = hsv(((k / n) * 0.6 + o / 8 + now / 9000) % 1);

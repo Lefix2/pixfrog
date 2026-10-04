@@ -77,11 +77,12 @@ When `render_task` wakes (t = 0), it runs, in order:
    1. **Identify** — 2 Hz white blink (commissioning, auto-expires)
    2. **Pixel-count preview** — live ruler while the count is edited
    3. **The output's source** — each output plays its own scene or the live
-      path ("zones": a scene claims the outputs of its mask, several run at
+      path ("zones": a scene claims the outputs of its parts, several run at
       once):
-      - **Scene** — stateless parametric generator (11 effects, 1–4 colour
-        palette, `dmx_logic.h` `fill_scene_pattern`) with the desk's
-        overrides; overrides network until stopped
+      - **Scene** — the effect its part sends to this output: a stateless
+        parametric generator (11 generators, 1–4 colour palette,
+        `dmx_logic.h` `fill_effect_run`) with the desk's overrides;
+        overrides network until stopped
       - **Live path** — FSEQ, else **failsafe** (channel silent past the
         timeout: blackout / solid colour / scene; hold = decode the stale
         data), else **network decode** (DMX offset, multi-universe spanning)
@@ -135,13 +136,20 @@ LCD_CAM has no such split — the frame length lives in the panel's timing regis
 
 ### NVS
 
-| Item                               | Size      |
-|------------------------------------|----------:|
-| Global config (IP, ArtNet, names)  | ~260 B    |
-| Per-channel × 8                    | 8 × 64 B  |
-| Total                              | < 1 kB    |
+One blob per key, each with a one-byte layout version next to it:
 
-The standard 24 kB NVS partition is plenty.
+| Key                                         | Size (max) |
+|---------------------------------------------|-----------:|
+| `global` (IP, ArtNet, names, show settings) | 172 B      |
+| `ch0`..`ch7` (gaps and fixtures included)   | 8 × 184 B  |
+| `effects` (31 effects)                      | 1.5 kB     |
+| `scenes4` (30 scenes of 8 parts)            | 1.6 kB     |
+| `control`, `playlist`, `groups`, `rollback` | 3.7 kB     |
+| `scenes` (pre-bank list, kept for a rollback) | 1.0 kB   |
+| Total                                       | ~9 kB      |
+
+The 24 kB NVS partition (about 20 kB usable, one page being kept for garbage
+collection) holds it with room for a blob to be rewritten.
 
 ---
 
@@ -204,10 +212,11 @@ read-modify-write (`get_*` → change a field → `set_*`) holds a
 between. Writes go through to NVS under the lock and can take a few ms.
 
 `render_task` never takes that lock: it reads the RAM cache by reference, and
-copies the scenes it draws with `config::copy_scene()`, a **seqlock** over the
-scene bank — a list edit (memmove) bumps a counter around the RAM change and
-the reader retries if it overlapped, falling back to the lock only if a writer
-keeps getting in the way. NVS blobs carry a layout version (`v_<key>`) next to
+copies what an output plays — a scene's part and the effect it points at — with
+`config::copy_scene_part()`, a **seqlock** over the effect and scene banks: a
+list edit (memmove) bumps a counter around the RAM change and the reader
+retries if it overlapped, falling back to the lock only if a writer keeps
+getting in the way. NVS blobs carry a layout version (`v_<key>`) next to
 them; one written by a newer firmware is ignored rather than misread.
 
 ---

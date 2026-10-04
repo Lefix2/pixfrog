@@ -192,8 +192,16 @@ scene move 0 1
 scene name 0 Renamed
 scene play 0
 scene stop
-scene set 0 blobs 005aff,ff008c 40 4 ff
-scene set 0 solid ff0000,00ff00,0000ff,ffffff,000000 0 0 ff
+scene part 0 f0 2 chain
+scene part 0 ff 99
+scene clear 0
+fx
+fx add Extra
+fx set 0 blobs 005aff,ff008c 40 4
+fx set 0 solid ff0000,00ff00,0000ff,ffffff,000000 0 0
+fx name 0 Renamed
+fx move 0 1
+fx del 8
 fseq list
 fseq play show.fseq
 fseq seek 5000
@@ -224,7 +232,8 @@ ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/sc
           "/api/rollback/ack", "/api/autopatch", "/api/fseq/play", "/api/fseq/stop",
           "/api/loglevel", "/api/ota", "GET /api/config", "GET /api/status", "GET /api/backup",
           "GET /api/fseq/files", "GET /api/logs", "/api/show", "/api/control",
-          "GET /api/control/fixture"]
+          "GET /api/control/fixture", "/api/effect", "/api/effects/add", "/api/effects/move",
+          "/api/groups"]
 R = {r: i for i, r in enumerate(ROUTES)}
 WEB = [
     (R["/api/global"], 0, '{"refresh_hz":45,"short_name":"rig-a"}'),
@@ -233,10 +242,18 @@ WEB = [
     (R["/api/channel"], 2, '{"pixel_count":321,"protocol":"WS2812B"}'),
     (R["/api/channel"], 3, '{"protocol":"APA102","pixel_count":77,"gaps":[[5,1],[40,3]]}'),
     (R["/api/channel"], 0x80, '{"pixel_count":999,"color_order":"GRB","brightness":200}'),
-    (R["/api/scene"], 0, '{"name":"Blobs","effect":3,"speed":40,"param":4,'
-                         '"colors":[[0,90,255],[255,0,140]]}'),
+    (R["/api/scene"], 0, '{"name":"Zones","parts":[{"mask":15,"effect":3,"fixture_mode":"chain"},'
+                         '{"mask":240,"effect":1}]}'),
     (R["DEL /api/scene"], 1, ""),
-    (R["/api/scenes/add"], 0, '{"name":"Web","effect":3}'),
+    (R["/api/scenes/add"], 0, '{"name":"Web","parts":[{"mask":255,"effect":3}]}'),
+    (R["/api/effect"], 3, '{"name":"Blobs","generator":3,"speed":40,"param":4,'
+                          '"colors":["#005aff","#ff008c"]}'),
+    (R["/api/effects/add"], 0, '{"name":"Web","generator":8,"colors":["#ff0000"]}'),
+    (R["/api/effects/move"], 0, '{"from":3,"to":0}'),
+    (R["/api/groups"], 0, '{"groups":[{"name":"Top","members":[[0,0],[1,0]]}]}'),
+    # A backup from before the effect bank: scenes that carry their own look.
+    (R["/api/restore"], 0, '{"backup_version":1,"scenes":[{"name":"Old","effect":1,"speed":60,'
+                           '"colors":["#ff0000","#0000ff"],"mask":15,"fixture_mode":"mirror"}]}'),
     (R["/api/scenes/move"], 0, '{"from":3,"to":0}'),
     (R["/api/scenes/stop"], 0, "{}"),
     (R["/api/rollback/ack"], 0, "{}"),
