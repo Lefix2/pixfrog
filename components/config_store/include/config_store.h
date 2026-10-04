@@ -604,17 +604,34 @@ constexpr uint32_t kDefaultClockHz = 4'000'000;
 constexpr size_t kMaxFixtures = 32;
 struct Fixture {
     uint16_t pos;  // first physical LED, 0-based
-    uint16_t len;  // LEDs (0 = unused slot) | kFixtureReversed
+    uint16_t len;  // LEDs (0 = unused slot) | profile << 12 | kFixtureReversed
 };
 // In Fixture::len: the fixture is mounted the other way round — the scenes run
 // through it backwards (its LEDs on the wire are untouched). A flag bit, not a
 // field, so the NVS layout and the sort keep it for free.
 constexpr uint16_t kFixtureReversed = 0x8000;
+// Likewise in Fixture::len, the fixture's DMX profile (index in the
+// ProfileBank), on the three bits a length never reaches: a fixture is at
+// most led::kMaxPixelsPerChannel LEDs long. Zero — any blob written before
+// the profiles — is the first profile.
+constexpr unsigned kFixtureProfileShift = 12;
+constexpr uint16_t kFixtureProfileMask  = 0x7000;
+constexpr uint16_t kFixtureLenMask      = 0x0FFF;
 inline uint16_t fixture_len(const Fixture& f) {
-    return f.len & 0x7FFF;
+    return f.len & kFixtureLenMask;
 }
 inline bool fixture_reversed(const Fixture& f) {
     return (f.len & kFixtureReversed) != 0;
+}
+inline uint8_t fixture_profile(const Fixture& f) {
+    return static_cast<uint8_t>((f.len & kFixtureProfileMask) >> kFixtureProfileShift);
+}
+inline Fixture make_fixture(uint16_t pos, uint16_t len, bool reversed = false,
+                            uint8_t profile = 0) {
+    return Fixture{ pos, static_cast<uint16_t>(
+                             (len & kFixtureLenMask) |
+                             ((profile << kFixtureProfileShift) & kFixtureProfileMask) |
+                             (reversed ? kFixtureReversed : 0)) };
 }
 
 // Sorts by position, drops empty / out-of-range / overlapping fixtures (the
@@ -1010,6 +1027,189 @@ inline void sanitize_playlist(FseqPlaylist& p) {
 
 const FseqPlaylist& get_playlist();
 bool set_playlist(const FseqPlaylist& p);
+
+// ── Fixture DMX profiles ────────────────────────────────────────────────────
+// A fixture driven like a conventional luminaire.
+// A profile is the ordered list of DMX channels a fixture answers to. Each
+// fixture references one (Fixture::len), up to kMaxProfiles are kept.
+
+// Channel functions. Persisted: append only, never renumber.
+enum class FixFn : uint8_t {
+    None     = 0,  // spare channel
+    Dimmer   = 1,  // intensity (16-bit with kProfileArgFine); full when the profile has none
+    Red      = 2,  // colour `arg & 3` of the effect; all three at 0 = the effect's own
+    Green    = 3,
+    Blue     = 4,
+    White    = 5,  // the white LED of an RGBW strip, when no effect plays
+    Shutter  = 6,  // 0 = open, 1..255 = strobe 1..25 Hz
+    Bank     = 7,  // bands of 8: 0-7 = no effect (plain colour 1), 8-15 = effect 1 of the bank, ...
+    Speed    = 8,  // 0 = the effect's own, 1..255 = override
+    Param    = 9,
+    PhWave   = 10,  // bands of 8: 0-7 = the effect's own, 8-15 = no phaser, 16-23 = sine, ...
+    PhRate   = 11,  // 0 = the effect's own, 1..255 = override
+    PhSpread = 12,
+    PhWidth  = 13,
+    Block    = 14,  // 0 = the effect's own, 1 = off, 2..255 = N
+    Groups   = 15,
+    Wings    = 16,
+    Count,
+};
+constexpr uint8_t kProfileArgColor = 0x03;  // Red/Green/Blue: colour 0..kSceneColorsMax-1
+constexpr uint8_t kProfileArgFine  = 0x80;  // Dimmer: coarse + fine channel
+
+// Lower-case ids (console, REST, backup) — indexed by FixFn.
+inline const char* fix_fn_id(uint8_t fn) {
+    static const char* const kIds[] = { "none",    "dimmer",  "red",       "green",    "blue",
+                                        "white",   "shutter", "bank",      "speed",    "param",
+                                        "ph_wave", "ph_rate", "ph_spread", "ph_width", "block",
+                                        "groups",  "wings" };
+    static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(FixFn::Count),
+                  "one id per profile function");
+    return fn < static_cast<uint8_t>(FixFn::Count) ? kIds[fn] : "none";
+}
+// -1 when unknown.
+inline int fix_fn_from_id(const char* s) {
+    for (uint8_t i = 0; i < static_cast<uint8_t>(FixFn::Count); ++i)
+        if (std::strcmp(s, fix_fn_id(i)) == 0) return i;
+    return -1;
+}
+
+constexpr size_t kMaxProfiles     = 8;  // 3 bits in Fixture::len
+constexpr size_t kMaxProfileSlots = 24;
+constexpr size_t kProfileNameMax  = 16;
+
+struct ProfileSlot {
+    uint8_t fn;   // FixFn
+    uint8_t arg;  // kProfileArg*
+};
+struct Profile {
+    char name[kProfileNameMax];  // NUL-terminated
+    uint8_t count;               // slots in use
+    uint8_t reserved[3];
+    ProfileSlot slots[kMaxProfileSlots];
+};
+struct ProfileBank {
+    uint8_t count;  // profiles in use, 1..kMaxProfiles
+    uint8_t reserved[3];
+    Profile profiles[kMaxProfiles];
+};
+static_assert(sizeof(Profile) == 68, "Profile is an NVS record: bytes only, no padding");
+static_assert(sizeof(ProfileBank) == 4 + kMaxProfiles * sizeof(Profile), "ProfileBank is packed");
+
+inline ProfileSlot profile_slot(FixFn fn, uint8_t arg = 0) {
+    return ProfileSlot{ static_cast<uint8_t>(fn), arg };
+}
+// DMX channels a slot takes: 2 for a 16-bit dimmer, else 1.
+inline size_t profile_slot_width(const ProfileSlot& s) {
+    return s.fn == static_cast<uint8_t>(FixFn::Dimmer) && (s.arg & kProfileArgFine) ? 2 : 1;
+}
+// The profile's footprint in DMX channels.
+inline size_t profile_footprint(const Profile& p) {
+    size_t n = 0;
+    for (size_t i = 0; i < p.count && i < kMaxProfileSlots; ++i)
+        n += profile_slot_width(p.slots[i]);
+    return n;
+}
+
+// Starting points for the editor. They replace the name and the slot list.
+enum class ProfilePreset : uint8_t { Rgb, DimRgb, RgbFx, Full, Count };
+inline const char* profile_preset_id(ProfilePreset p) {
+    static const char* const kIds[] = { "rgb", "dim_rgb", "rgb_fx", "full" };
+    return kIds[static_cast<size_t>(p) < 4 ? static_cast<size_t>(p) : 0];
+}
+inline void profile_apply_preset(Profile& pr, ProfilePreset p) {
+    static const char* const kNames[] = { "RGB", "Dim RGB", "RGB FX", "Full" };
+    pr                                = Profile{};
+    std::strncpy(pr.name, kNames[static_cast<size_t>(p) < 4 ? static_cast<size_t>(p) : 0],
+                 kProfileNameMax - 1);
+    size_t n = 0;
+    auto add = [&](FixFn fn, uint8_t arg = 0) { pr.slots[n++] = profile_slot(fn, arg); };
+    auto rgb = [&](uint8_t colour) {
+        add(FixFn::Red, colour);
+        add(FixFn::Green, colour);
+        add(FixFn::Blue, colour);
+    };
+    switch (p) {
+    case ProfilePreset::DimRgb:
+        add(FixFn::Dimmer);
+        rgb(0);
+        break;
+    case ProfilePreset::RgbFx:  // R, G, B, effect bank, effect speed, shutter
+        rgb(0);
+        add(FixFn::Bank);
+        add(FixFn::Speed);
+        add(FixFn::Shutter);
+        break;
+    case ProfilePreset::Full:  // 16 channels
+        add(FixFn::Dimmer, kProfileArgFine);
+        add(FixFn::Shutter);
+        rgb(0);
+        rgb(1);
+        add(FixFn::Bank);
+        add(FixFn::Speed);
+        add(FixFn::Param);
+        add(FixFn::PhWave);
+        add(FixFn::PhRate);
+        add(FixFn::PhSpread);
+        add(FixFn::PhWidth);
+        break;
+    default: rgb(0); break;
+    }
+    pr.count = static_cast<uint8_t>(n);
+}
+
+inline ProfileBank default_profiles() {
+    ProfileBank b{};
+    b.count = static_cast<uint8_t>(ProfilePreset::Count);
+    for (uint8_t i = 0; i < b.count; ++i)
+        profile_apply_preset(b.profiles[i], static_cast<ProfilePreset>(i));
+    return b;
+}
+
+// Keeps every field meaningful: the bank is never empty (a fixture's profile
+// index must land somewhere), unknown functions become spare channels, flags
+// stay on the functions they belong to, an empty profile becomes plain RGB,
+// and the slots past the counts are cleared. Called on load and on every set.
+inline void sanitize_profiles(ProfileBank& b) {
+    if (b.count == 0 || b.count > kMaxProfiles) {
+        if (b.count == 0) b = default_profiles();
+        if (b.count > kMaxProfiles) b.count = static_cast<uint8_t>(kMaxProfiles);
+    }
+    std::memset(b.reserved, 0, sizeof(b.reserved));
+    for (size_t i = 0; i < kMaxProfiles; ++i) {
+        Profile& p = b.profiles[i];
+        if (i >= b.count) {
+            p = Profile{};
+            continue;
+        }
+        p.name[kProfileNameMax - 1] = '\0';
+        std::memset(p.reserved, 0, sizeof(p.reserved));
+        if (p.count > kMaxProfileSlots) p.count = static_cast<uint8_t>(kMaxProfileSlots);
+        if (p.count == 0) {
+            char name[kProfileNameMax];
+            std::memcpy(name, p.name, sizeof(name));
+            profile_apply_preset(p, ProfilePreset::Rgb);
+            if (name[0]) std::memcpy(p.name, name, sizeof(name));
+        }
+        for (size_t k = 0; k < kMaxProfileSlots; ++k) {
+            ProfileSlot& s = p.slots[k];
+            if (k >= p.count) {
+                s = ProfileSlot{};
+                continue;
+            }
+            if (s.fn >= static_cast<uint8_t>(FixFn::Count)) s.fn = 0;
+            const auto fn       = static_cast<FixFn>(s.fn);
+            const bool colour   = fn == FixFn::Red || fn == FixFn::Green || fn == FixFn::Blue;
+            const uint8_t allow = colour              ? kProfileArgColor
+                                : fn == FixFn::Dimmer ? kProfileArgFine
+                                                      : uint8_t{ 0 };
+            s.arg               = static_cast<uint8_t>(s.arg & allow);
+        }
+    }
+}
+
+const ProfileBank& get_profiles();
+bool set_profiles(const ProfileBank& b);
 
 // ── Fixture groups ──────────────────────────────────────────────────────────
 // Named, ordered sets of fixtures taken on any outputs ("Top", "Bottom",

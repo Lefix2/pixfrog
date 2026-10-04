@@ -233,6 +233,46 @@ TEST(fx_commands_manage_the_bank) {
     config::replace_effects(saved.data(), saved.size());
 }
 
+TEST(profile_commands_edit_the_bank) {
+    EXPECT_TRUE(run("profile"));
+    EXPECT_TRUE(has("profiles=4"));
+    EXPECT_TRUE(has("profile2 name=RGB FX footprint=6 slots=red,green,blue,bank,speed,shutter"));
+    EXPECT_TRUE(has("profile3 name=Full footprint=16 slots=dimmer+fine,shutter,red,green,blue,"
+                    "red:1,green:1,blue:1,bank,speed,param,ph_wave,ph_rate,ph_spread,ph_width"));
+    EXPECT_TRUE(run("profile add Bars"));
+    EXPECT_TRUE(has("index=4"));
+    EXPECT_TRUE(has("profile4 name=Bars footprint=3 slots=red,green,blue"));
+    EXPECT_TRUE(run("profile slots 4 dimmer+fine,red:1,none,bank,wings"));
+    const auto& p = config::get_profiles().profiles[4];
+    EXPECT_EQ(p.count, 5);
+    EXPECT_EQ(p.slots[0].arg, config::kProfileArgFine);
+    EXPECT_EQ(p.slots[1].arg, 1);
+    EXPECT_EQ(p.slots[4].fn, static_cast<uint8_t>(config::FixFn::Wings));
+    EXPECT_EQ(config::profile_footprint(p), 6);
+    EXPECT_TRUE(run("profile name 4 Renamed"));
+    EXPECT_STREQ(p.name, "Renamed");
+    EXPECT_TRUE(run("profile preset 4 dim_rgb"));
+    EXPECT_EQ(config::profile_footprint(p), 4);
+    EXPECT_TRUE(run("profile del 0"));  // the others move up
+    EXPECT_EQ(config::get_profiles().count, 4);
+    EXPECT_STREQ(config::get_profiles().profiles[0].name, "Dim RGB");
+    for (const char* bad :
+         { "profile slots 0", "profile slots 0 wobble", "profile slots 0 red:4",
+           "profile slots 0 dimmer+coarse", "profile slots 9 red", "profile preset 0 huge",
+           "profile preset 0", "profile name 0", "profile del", "profile del 9",
+           "profile frobnicate 0", "profile frobnicate" })
+        EXPECT_FALSE(run(bad));
+    while (config::get_profiles().count < config::kMaxProfiles)
+        EXPECT_TRUE(run("profile add"));
+    EXPECT_FALSE(run("profile add"));             // full
+    config::set_profiles(config::ProfileBank{});  // back to the presets
+    EXPECT_TRUE(run("profile del 3"));
+    EXPECT_TRUE(run("profile del 2"));
+    EXPECT_TRUE(run("profile del 1"));
+    EXPECT_FALSE(run("profile del 0"));  // one profile must stay
+    config::set_profiles(config::ProfileBank{});
+}
+
 TEST(scene_commands_manage_the_list) {
     EXPECT_TRUE(run("scene"));
     EXPECT_TRUE(has("scene1 name=Chase mask=ff parts=ff:1:each"));

@@ -141,7 +141,14 @@ static cJSON* build_channels_json() {
             cJSON* pair = cJSON_CreateArray();
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.fixtures[k].pos + 1));
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(config::fixture_len(c.fixtures[k])));
-            if (config::fixture_reversed(c.fixtures[k]))  // [first, count, 1]: mounted backwards
+            const uint8_t profile = config::fixture_profile(c.fixtures[k]);
+            // [first, count, reversed, profile]: the last two only when they say something
+            if (profile) {
+                cJSON_AddItemToArray(
+                    pair, cJSON_CreateNumber(config::fixture_reversed(c.fixtures[k]) ? 1 : 0));
+                cJSON_AddItemToArray(pair, cJSON_CreateNumber(profile));
+            } else if (config::fixture_reversed(
+                           c.fixtures[k]))  // [first, count, 1]: mounted backwards
                 cJSON_AddItemToArray(pair, cJSON_CreateNumber(1));
             cJSON_AddItemToArray(jf, pair);
         }
@@ -190,6 +197,7 @@ esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "control", build_control_json());
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
     cJSON_AddItemToObject(root, "groups", build_groups_json());
+    cJSON_AddItemToObject(root, "profiles", build_profiles_json());
     return send_json(req, root);
 }
 
@@ -238,6 +246,7 @@ esp_err_t handle_backup(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "control", build_control_json());
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
     cJSON_AddItemToObject(root, "groups", build_groups_json());
+    cJSON_AddItemToObject(root, "profiles", build_profiles_json());
     static char disposition[96];  // httpd keeps the pointer until the send
     backup_filename(req, disposition, sizeof(disposition));
     httpd_resp_set_hdr(req, "Content-Disposition", disposition);
@@ -318,9 +327,13 @@ void apply_fixtures_json(const cJSON* jc, config::ChannelConfig& c, const char**
             return refuse(why, "fixtures: first 1..1024, count 1.., within 1024 LEDs");
         const cJSON* jr = cJSON_GetArrayItem(pair, 2);  // optional third: 1 = reversed
         const bool rev  = cJSON_IsNumber(jr) && jr->valuedouble != 0;
-        parsed[n].pos   = static_cast<uint16_t>(jp->valuedouble - 1);
-        parsed[n++].len = static_cast<uint16_t>(static_cast<uint16_t>(jl->valuedouble) |
-                                                (rev ? config::kFixtureReversed : 0));
+        const cJSON* jq = cJSON_GetArrayItem(pair, 3);  // optional fourth: the DMX profile
+        if (jq && (!cJSON_IsNumber(jq) ||
+                   !(jq->valuedouble >= 0 && jq->valuedouble <= config::kMaxProfiles - 1)))
+            return refuse(why, "fixtures: profile 0..7");
+        parsed[n++] = config::make_fixture(static_cast<uint16_t>(jp->valuedouble - 1),
+                                           static_cast<uint16_t>(jl->valuedouble), rev,
+                                           jq ? static_cast<uint8_t>(jq->valuedouble) : 0);
     }
     for (size_t a = 0; a < n; ++a)
         for (size_t b = a + 1; b < n; ++b)
@@ -697,6 +710,14 @@ esp_err_t handle_restore(httpd_req_t* req) {
         const char* why = nullptr;
         if (apply_groups_json(jgr, gr, &why)) config::set_groups(gr);
     }
+    // Profiles: likewise all or nothing, and before the channels whose
+    // fixtures point at them.
+    cJSON* jpr = cJSON_GetObjectItemCaseSensitive(j, "profiles");
+    if (cJSON_IsArray(jpr)) {
+        static config::ProfileBank pb;
+        const char* why = nullptr;
+        if (apply_profiles_json(jpr, pb, &why)) config::set_profiles(pb);
+    }
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
     if (cJSON_IsArray(jchs)) {
         const int n = cJSON_GetArraySize(jchs);
@@ -957,14 +978,18 @@ bool apply_groups_json(const cJSON* j, config::GroupsConfig& g, const char** why
 
 // ── POST /api/groups ────────────────────────────────────────────────────────
 // {"groups": [...]} replaces the whole list. Up to ~9 kB: in PSRAM, once.
+char* big_body_buffer() {
+    static char* buf = nullptr;
+    if (!buf) buf = static_cast<char*>(heap_caps_malloc(kBigBodyMax, MALLOC_CAP_SPIRAM));
+    if (!buf) buf = static_cast<char*>(malloc(kBigBodyMax));
+    return buf;
+}
+
 esp_err_t handle_post_groups(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    constexpr size_t kMax = 12288;
-    static char* buf      = nullptr;
-    if (!buf) buf = static_cast<char*>(heap_caps_malloc(kMax, MALLOC_CAP_SPIRAM));
-    if (!buf) buf = static_cast<char*>(malloc(kMax));
+    char* buf = big_body_buffer();
     if (!buf) return send_err(req, 500, "out of memory");
-    if (!read_body(req, buf, kMax - 1)) return send_err(req, 400, "body too large or empty");
+    if (!read_body(req, buf, kBigBodyMax - 1)) return send_err(req, 400, "body too large or empty");
     cJSON* j = cJSON_Parse(buf);
     if (!j) return send_err(req, 400, "invalid JSON");
     static config::GroupsConfig g;  // 2.4 kB: off the httpd stack

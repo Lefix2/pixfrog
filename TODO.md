@@ -49,11 +49,7 @@ Feedback from a lighting operator (GrandMA): drive the box like a conventional
 fixture, not only as a pixel-mapped node. In landing order — each item builds
 on the one before.
 
-- [ ] ★ **Fixture DMX profiles** — a small library of composable profiles (ordered
-      channel functions: dimmer, colours, shutter, effect bank, speed, param,
-      phaser, MAtricks), one per fixture, presets from 3 to 16 channels, an
-      Open Fixture Library export per profile.
-- [ ] **DMX control mode per output** — pixel mapping off: the output reserves
+- [ ] ★ **DMX control mode per output** — pixel mapping off: the output reserves
       no pixel universes, its fixtures follow each other on the wire with the
       footprint of their profile (a fixture never straddles two universes),
       auto-patch chains such outputs, and the web shows the patch sheet.

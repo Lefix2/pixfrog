@@ -370,6 +370,58 @@ def test_fixture_groups_pick_order_and_save(page, device):
     assert device.get("/api/config")["groups"][0]["members"][0] == [0, 2]
 
 
+# ── DMX profiles ─────────────────────────────────────────────────────────────
+
+def test_dmx_profiles_editor(page, device):
+    nav(page, "profiles")
+    rows = page.locator("[data-pf-row]")
+    expect(rows).to_have_count(4)  # the presets
+    expect(rows.nth(2)).to_contain_text("RGB FX")
+    expect(rows.nth(2)).to_contain_text("6 ch")
+
+    page.locator("[data-pf-new]").click()
+    expect(rows).to_have_count(5)
+    page.locator("#pf-name").fill("Bars")
+    page.locator('[data-pf-preset="dim_rgb"]').click()  # a preset keeps a name of one's own
+    expect(page.locator("#pf-name")).to_have_value("Bars")
+    expect(page.locator("[data-pf-slot]")).to_have_count(4)
+    page.locator('[data-pf-fine="0"]').check()  # a 16-bit dimmer takes two channels
+    expect(page.locator("#pf-foot")).to_have_text("5 ch")
+    page.locator("[data-pf-add]").click()
+    page.locator('[data-pf-fn="4"]').select_option("bank")
+    page.locator('[data-pf-fn="3"]').select_option("red")
+    page.locator('[data-pf-idx="3"]').select_option("1")  # the second colour's red
+    page.locator('[data-pf-up="4"]').click()  # the effect channel before it
+    page.locator('[data-pf-del="1"]').click()  # the first red goes
+    expect(page.locator("[data-pf-ofl]")).to_have_css("pointer-events", "none")  # unsaved
+    save(page)
+    p = device.get("/api/config")["profiles"][4]
+    assert p["name"] == "Bars" and p["footprint"] == 5
+    assert [(s["fn"], s["index"], s["fine"]) for s in p["slots"]] == [
+        ("dimmer", 0, True), ("green", 0, False), ("bank", 0, False), ("red", 1, False)]
+    # Saved: the fixture profile downloads, named after the profile.
+    with page.expect_download() as dl:
+        page.locator("[data-pf-ofl]").click()
+    ofl = json.loads(open(dl.value.path()).read())
+    assert ofl["name"] == "pixfrog Bars" and ofl["modes"][0]["name"] == "5-channel"
+
+    page.locator("[data-pf-remove]").click()
+    save(page)
+    assert len(device.get("/api/config")["profiles"]) == 4
+
+
+def test_a_fixture_keeps_its_profile_through_the_layout_editor(page, device):
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 30,
+                                   "fixtures": [[1, 10, 0, 2], [11, 10, 1, 3], [21, 10]]})
+    page.reload()
+    nav(page, "channels")
+    page.locator("#cd-bri").fill("77")  # an edit of the channel that is not its layout
+    save(page)
+    c = device.get("/api/config")["channels"][0]
+    assert c["brightness"] == 77
+    assert c["fixtures"] == [[1, 10, 0, 2], [11, 10, 1, 3], [21, 10]]
+
+
 # ── system / global ──────────────────────────────────────────────────────────
 
 def test_speaker_volume_and_test_button(page, device):
@@ -796,7 +848,7 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
         expect(pg.locator("#pf-demo-banner")).to_contain_text("simulated box")
         expect(pg.locator("[data-screen-title]")).to_have_text("Dashboard")
         expect(pg.locator('canvas[data-preview="0"]')).to_have_attribute("width", re.compile(r"[1-9]\d*"))
-        for screen in ["scenes", "effects", "fseq", "channels", "groups", "control", "network",
+        for screen in ["scenes", "effects", "fseq", "channels", "groups", "profiles", "control", "network",
                        "artnet", "system", "diag", "dashboard"]:
             nav(pg, screen)
             expect(pg.locator("[data-screen-title]")).not_to_have_text("")

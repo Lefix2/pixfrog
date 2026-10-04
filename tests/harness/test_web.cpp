@@ -83,7 +83,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 38);
+    EXPECT_EQ(shim::http_routes(), 40);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -488,6 +488,128 @@ TEST(scene_endpoints_manage_the_list) {
     EXPECT_EQ(post("/api/scene/99/play").status, 404);
     EXPECT_EQ(post("/api/scenes/move", "{\"from\":0,\"to\":99}").status, 400);
     EXPECT_EQ(config::num_scenes(), n);
+}
+
+TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
+    const std::string initial = get("/api/backup").body;  // put back at the end
+    Json cfg(get("/api/config").body);
+    EXPECT_EQ(cJSON_GetArraySize(cfg["profiles"]), 4);
+    const cJSON* fxp = cJSON_GetArrayItem(cfg["profiles"], 2);
+    EXPECT_STREQ(cJSON_GetObjectItem(fxp, "name")->valuestring, "RGB FX");
+    EXPECT_EQ(cJSON_GetObjectItem(fxp, "footprint")->valueint, 6);
+    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(fxp, "slots"), 3), "fn")
+                     ->valuestring,
+                 "bank");
+
+    // The whole list is replaced: a preset, and a profile spelt out.
+    const auto r = post("/api/profiles",
+                        "{\"profiles\":[{\"preset\":\"rgb_fx\",\"name\":\"Bars\"},"
+                        "{\"name\":\"Spots\",\"slots\":[{\"fn\":\"dimmer\",\"fine\":true},"
+                        "{\"fn\":\"red\",\"index\":1},{\"fn\":\"none\"},{\"fn\":\"shutter\"}]}]}");
+    EXPECT_EQ(r.status, 200);
+    const auto& bank = config::get_profiles();
+    EXPECT_EQ(bank.count, 2);
+    EXPECT_STREQ(bank.profiles[0].name, "Bars");
+    EXPECT_EQ(config::profile_footprint(bank.profiles[0]), 6);
+    EXPECT_STREQ(bank.profiles[1].name, "Spots");
+    EXPECT_EQ(config::profile_footprint(bank.profiles[1]), 5);
+    EXPECT_EQ(bank.profiles[1].slots[0].arg, config::kProfileArgFine);
+    EXPECT_EQ(bank.profiles[1].slots[1].arg, 1);
+    Json back(r.body);
+    EXPECT_EQ(cJSON_GetArraySize(back["profiles"]), 2);
+
+    // Refused whole: the bank is kept.
+    for (const char* bad :
+         { "{\"profiles\":[]}", "{\"profiles\":7}", "{\"profiles\":[{\"name\":\"x\"}]}",
+           "{\"profiles\":[{\"preset\":\"nope\"}]}", "{\"profiles\":[{\"slots\":[]}]}",
+           "{\"profiles\":[{\"slots\":[{\"fn\":\"wobble\"}]}]}",
+           "{\"profiles\":[{\"slots\":[{\"fn\":\"red\",\"index\":4}]}]}",
+           "{\"profiles\":[{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},"
+           "{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},"
+           "{\"preset\":\"rgb\"},{\"preset\":\"rgb\"}]}",
+           "{nope", "" })
+        EXPECT_EQ(post("/api/profiles", bad).status, 400);
+    EXPECT_EQ(config::get_profiles().count, 2);
+
+    // The Open Fixture Library export of a profile.
+    const auto f = get("/api/profile/1/fixture");
+    EXPECT_EQ(f.status, 200);
+    EXPECT_TRUE(f.headers.at("Content-Disposition").find("pixfrog-profile-2.json") !=
+                std::string::npos);
+    Json ofl(f.body);
+    EXPECT_STREQ(ofl["name"]->valuestring, "pixfrog Spots");
+    const cJSON* mode = cJSON_GetArrayItem(ofl["modes"], 0);
+    EXPECT_STREQ(cJSON_GetObjectItem(mode, "name")->valuestring, "5-channel");
+    const cJSON* chs = cJSON_GetObjectItem(mode, "channels");
+    EXPECT_EQ(cJSON_GetArraySize(chs), 5);
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 0)->valuestring, "Dimmer");
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 1)->valuestring, "Dimmer fine");
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 2)->valuestring, "Red 2");
+    EXPECT_TRUE(cJSON_IsNull(cJSON_GetArrayItem(chs, 3)));  // the spare channel
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 4)->valuestring, "Shutter");
+    // Every function exports, and every list of ranges covers 0..255 without a gap.
+    EXPECT_EQ(
+        post("/api/profiles",
+             "{\"profiles\":[{\"name\":\"All\",\"slots\":[{\"fn\":\"dimmer\"},{\"fn\":\"red\"},"
+             "{\"fn\":\"green\"},{\"fn\":\"blue\"},{\"fn\":\"white\"},{\"fn\":\"shutter\"},"
+             "{\"fn\":\"bank\"},{\"fn\":\"speed\"},{\"fn\":\"param\"},{\"fn\":\"ph_wave\"},"
+             "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"red\"}]}]}")
+            .status,
+        200);
+    Json all(get("/api/profile/0/fixture").body);
+    int channels = 0;
+    for (const cJSON* ch = all["availableChannels"]->child; ch; ch = ch->next) {
+        ++channels;
+        const cJSON* caps = cJSON_GetObjectItemCaseSensitive(ch, "capabilities");
+        if (!caps) continue;
+        int next = 0;
+        for (const cJSON* cap = caps->child; cap; cap = cap->next) {
+            const cJSON* rg = cJSON_GetObjectItemCaseSensitive(cap, "dmxRange");
+            EXPECT_EQ(static_cast<int>(cJSON_GetArrayItem(rg, 0)->valuedouble), next);
+            next = static_cast<int>(cJSON_GetArrayItem(rg, 1)->valuedouble) + 1;
+        }
+        EXPECT_EQ(next, 256);
+    }
+    EXPECT_EQ(channels, 17);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Red 2") != nullptr);
+    const cJSON* bankch = cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Effect");
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(bankch, "capabilities")),
+              static_cast<int>(config::num_effects()) + 2);
+    EXPECT_EQ(get("/api/profile/5/fixture").status, 404);
+    EXPECT_EQ(get("/api/profile/0/nope").status, 404);
+
+    // A fixture's profile: the optional fourth element of its entry.
+    EXPECT_EQ(post("/api/channel/5", "{\"protocol\":\"WS2815\",\"pixel_count\":60,"
+                                     "\"fixtures\":[[1,20],[21,20,1],[41,20,0,0]]}")
+                  .status,
+              200);
+    EXPECT_EQ(post("/api/channel/5", "{\"fixtures\":[[1,20,0,7],[21,20,1,3],[41,20]]}").status,
+              200);
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[0]), 7);
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[1]), 3);
+    EXPECT_TRUE(config::fixture_reversed(config::get_channel(5).fixtures[1]));
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[2]), 0);
+    Json ch(get("/api/config").body);
+    const cJSON* jf = cJSON_GetObjectItem(cJSON_GetArrayItem(ch["channels"], 5), "fixtures");
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetArrayItem(jf, 0)), 4);
+    EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetArrayItem(jf, 0), 3)->valueint, 7);
+    EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetArrayItem(jf, 1), 2)->valueint, 1);
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetArrayItem(jf, 2)), 2);  // nothing to say: [first, count]
+    EXPECT_EQ(post("/api/channel/5", "{\"fixtures\":[[1,20,0,8]]}").status, 400);
+    EXPECT_EQ(post("/api/channel/5", "{\"fixtures\":[[1,20,0,\"x\"]]}").status, 400);
+
+    // Backup and restore carry the bank and the fixtures' profiles.
+    const std::string backup = get("/api/backup").body;
+    config::reset_to_defaults();
+    EXPECT_EQ(config::get_profiles().count, 4);
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    EXPECT_EQ(config::get_profiles().count, 1);
+    EXPECT_STREQ(config::get_profiles().profiles[0].name, "All");
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[0]), 7);
+    post("/api/restore", "{\"profiles\":[{\"preset\":\"nope\"}]}");  // a bad bank is not applied
+    EXPECT_EQ(config::get_profiles().count, 1);
+    post("/api/restore", initial);
 }
 
 // Several boxes' backups must not collide: the file is named after the box

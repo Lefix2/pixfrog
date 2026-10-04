@@ -588,6 +588,92 @@ static void test_scenes_v3_migration() {
     EXPECT_TRUE(kMaxEffects >= kMaxScenes);  // every migrated scene gets its effect
 }
 
+// A fixture's DMX profile rides in the length's top bits: the sort keeps it,
+// the length and the overlap test do not see it.
+static void test_fixture_profile_bits() {
+    const Fixture f = make_fixture(40, 1024, true, 5);
+    EXPECT_EQ(fixture_len(f), 1024);
+    EXPECT_TRUE(fixture_reversed(f));
+    EXPECT_EQ(fixture_profile(f), 5);
+    EXPECT_EQ(fixture_profile(Fixture{ 0, 100 }), 0);  // a blob from before the profiles
+    EXPECT_EQ(fixture_profile(make_fixture(0, 8, false, 7)), 7);
+    EXPECT_EQ(fixture_len(make_fixture(0, 8, false, 7)), 8);
+
+    Fixture list[kMaxFixtures] = {};
+    list[0]                    = make_fixture(50, 10, false, 3);
+    list[1]                    = make_fixture(0, 10, true, 6);
+    list[2]                    = make_fixture(55, 10, false, 1);  // overlaps the first: dropped
+    list[3]                    = make_fixture(20, 0, false, 2);   // no LED: not a fixture
+    EXPECT_EQ(normalize_fixtures(list, kMaxFixtures), 2);
+    EXPECT_EQ(list[0].pos, 0);
+    EXPECT_EQ(fixture_profile(list[0]), 6);
+    EXPECT_TRUE(fixture_reversed(list[0]));
+    EXPECT_EQ(list[1].pos, 50);
+    EXPECT_EQ(fixture_profile(list[1]), 3);
+    EXPECT_EQ(fixture_count(list, kMaxFixtures), 2);
+}
+
+static void test_profile_presets_and_sanitize() {
+    static_assert(sizeof(ProfileBank) == 548, "ProfileBank NVS image");
+    ProfileBank b = default_profiles();
+    EXPECT_EQ(b.count, 4);
+    EXPECT_TRUE(std::strcmp(b.profiles[0].name, "RGB") == 0);
+    EXPECT_EQ(profile_footprint(b.profiles[0]), 3);
+    EXPECT_EQ(profile_footprint(b.profiles[1]), 4);
+    EXPECT_EQ(profile_footprint(b.profiles[2]), 6);
+    EXPECT_EQ(profile_footprint(b.profiles[3]), 16);  // 15 slots, a 16-bit dimmer
+    EXPECT_EQ(b.profiles[3].count, 15);
+    // RGB FX: R, G, B, effect bank, effect speed, shutter.
+    const Profile& fx = b.profiles[2];
+    EXPECT_EQ(fx.slots[0].fn, static_cast<uint8_t>(FixFn::Red));
+    EXPECT_EQ(fx.slots[3].fn, static_cast<uint8_t>(FixFn::Bank));
+    EXPECT_EQ(fx.slots[4].fn, static_cast<uint8_t>(FixFn::Speed));
+    EXPECT_EQ(fx.slots[5].fn, static_cast<uint8_t>(FixFn::Shutter));
+    EXPECT_EQ(b.profiles[3].slots[5].arg, 1);  // Full: the second colour's red
+    for (uint8_t fn = 0; fn < static_cast<uint8_t>(FixFn::Count); ++fn)
+        EXPECT_EQ(fix_fn_from_id(fix_fn_id(fn)), fn);
+    EXPECT_EQ(fix_fn_from_id("nope"), -1);
+    EXPECT_TRUE(std::strcmp(fix_fn_id(200), "none") == 0);
+    EXPECT_TRUE(std::strcmp(profile_preset_id(ProfilePreset::RgbFx), "rgb_fx") == 0);
+
+    // An empty bank (a blob absent or zeroed) reads as the presets.
+    ProfileBank empty{};
+    sanitize_profiles(empty);
+    EXPECT_EQ(empty.count, 4);
+    EXPECT_EQ(profile_footprint(empty.profiles[2]), 6);
+
+    ProfileBank bad{};
+    std::memset(&bad, 0xFF, sizeof(bad));
+    sanitize_profiles(bad);
+    EXPECT_EQ(bad.count, kMaxProfiles);
+    EXPECT_EQ(bad.reserved[0], 0);
+    EXPECT_EQ(bad.profiles[0].name[kProfileNameMax - 1], '\0');
+    EXPECT_EQ(bad.profiles[0].count, kMaxProfileSlots);
+    EXPECT_EQ(bad.profiles[0].slots[0].fn, 0);  // an unknown function is a spare channel
+    EXPECT_EQ(bad.profiles[0].slots[0].arg, 0);
+
+    // Flags stay on the functions they belong to; an empty profile is plain
+    // RGB under its own name; what is past the counts is cleared.
+    ProfileBank m{};
+    m.count                = 2;
+    m.profiles[0].count    = 3;
+    m.profiles[0].slots[0] = profile_slot(FixFn::Dimmer, kProfileArgFine | 3);
+    m.profiles[0].slots[1] = profile_slot(FixFn::Red, kProfileArgFine | 2);
+    m.profiles[0].slots[2] = profile_slot(FixFn::Shutter, 0xFF);
+    m.profiles[0].slots[9] = profile_slot(FixFn::Blue);  // past the count
+    std::strcpy(m.profiles[1].name, "Bare");
+    m.profiles[5].count = 4;  // past the bank's count
+    sanitize_profiles(m);
+    EXPECT_EQ(m.profiles[0].slots[0].arg, kProfileArgFine);
+    EXPECT_EQ(m.profiles[0].slots[1].arg, 2);
+    EXPECT_EQ(m.profiles[0].slots[2].arg, 0);
+    EXPECT_EQ(m.profiles[0].slots[9].fn, 0);
+    EXPECT_EQ(profile_footprint(m.profiles[0]), 4);
+    EXPECT_TRUE(std::strcmp(m.profiles[1].name, "Bare") == 0);
+    EXPECT_EQ(profile_footprint(m.profiles[1]), 3);
+    EXPECT_EQ(m.profiles[5].count, 0);
+}
+
 static void test_scene_index_remap() {
     // Delete scene 2 of [0 1 2 3 4].
     EXPECT_EQ(remap_scene_index(1, SceneEdit::Delete, 2), 1);
@@ -623,6 +709,8 @@ int main() {
     test_effect_from_scene_v3_and_sanitize();
     test_scene_parts_sanitize();
     test_scenes_v3_migration();
+    test_fixture_profile_bits();
+    test_profile_presets_and_sanitize();
     test_scene_index_remap();
     test_groups_sanitize();
 

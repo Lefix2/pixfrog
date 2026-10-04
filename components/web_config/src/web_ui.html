@@ -131,6 +131,7 @@
     <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:18px 8px 6px" data-i18n="CONFIGURATION">CONFIGURATION</div>
     <div data-nav="channels" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Channels">Channels</span></div>
     <div data-nav="groups" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="layers"></i><span data-i18n="Groups">Groups</span></div>
+    <div data-nav="profiles" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="cable"></i><span data-i18n="DMX profiles">DMX profiles</span></div>
     <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
     <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i>ArtNet / sACN</div>
     <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="DMX control">DMX control</span></div>
@@ -332,6 +333,18 @@
             <div class="hint" style="margin-top:6px" data-i18n="A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.">A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.</div>
           </div>
           <div id="grp-editor" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px"></div>
+        </div>
+      </div>
+
+      <!-- ===== DMX PROFILES ===== -->
+      <div data-screen="profiles" style="display:none">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
+          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
+            <div id="pf-list" style="display:flex;flex-direction:column;gap:6px"></div>
+            <button class="btn-sec" data-pf-new style="display:inline-flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New profile">New profile</span></button>
+            <div class="hint" style="margin-top:6px" data-i18n="A profile is the list of DMX channels a fixture answers to, like a conventional luminaire's mode. Each fixture picks one.">A profile is the list of DMX channels a fixture answers to, like a conventional luminaire's mode. Each fixture picks one.</div>
+          </div>
+          <div id="pf-editor" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px"></div>
         </div>
       </div>
 
@@ -977,6 +990,12 @@ var FR={
   'Dimmer invert':'Dimmer inversé','Lit becomes dark, dark takes color 1':'L’allumé devient sombre, le sombre prend la couleur 1',
   'BLOCK / GROUPS / WINGS':'BLOCK / GROUPS / WINGS','BLOCK':'BLOCK','GROUPS':'GROUPS','WINGS':'WINGS','px':'px','parts':'parties',
   'Block: neighbouring pixels share a value. Groups: the pattern repeats every N. Wings: the run splits in N mirrored parts.':'Block : les pixels voisins partagent une valeur. Groups : le motif se répète tous les N. Wings : le ruban est coupé en N parties en miroir.',
+  'DMX profiles':'Profils DMX','New profile':'Nouveau profil','PROFILE':'PROFIL','START FROM':'PARTIR DE','Add a channel':'Ajouter un canal',
+  'Up to 8 profiles · the DMX channels a fixture answers to':'Jusqu’à 8 profils · les canaux DMX auxquels répond une fixture',
+  'A profile is the list of DMX channels a fixture answers to, like a conventional luminaire\'s mode. Each fixture picks one.':'Un profil est la liste des canaux DMX auxquels répond une fixture, comme le mode d’un projecteur classique. Chaque fixture en choisit un.',
+  'Dimmer':'Dimmer','White':'Blanc','Shutter (strobe)':'Shutter (stroboscope)',
+  'Effect, speed, parameter, phaser and Block / Groups / Wings channels at 0 keep the effect\'s own value. With the effect channel at 0 the fixture shows its colour, steady. Without a dimmer channel the fixture is at full.':'Les canaux effet, vitesse, paramètre, phaser et Block / Groups / Wings à 0 gardent la valeur de l’effet. Avec le canal effet à 0, la fixture affiche sa couleur, fixe. Sans canal dimmer, la fixture est à pleine intensité.',
+  'Fixture profile (OFL)':'Profil de fixture (OFL)','Save first: the file is made from the saved profile':'Enregistrez d’abord : le fichier est fait à partir du profil enregistré',
   'PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
   'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
   'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
@@ -1502,8 +1521,8 @@ function buildPatch(){
 }
 
 /* ─────────── navigation ─────────── */
-var TITLES={dashboard:'Dashboard',scenes:'Scenes',effects:'Effects',fseq:'FSEQ sequences',channels:'Channels',groups:'Groups',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
-var SUBS={control:'Drive the box from any desk: compose its DMX channels',dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · each part plays an effect on its outputs',effects:'Up to 31 effects · 11 generators · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
+var TITLES={dashboard:'Dashboard',scenes:'Scenes',effects:'Effects',fseq:'FSEQ sequences',channels:'Channels',groups:'Groups',profiles:'DMX profiles',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
+var SUBS={profiles:'Up to 8 profiles · the DMX channels a fixture answers to',control:'Drive the box from any desk: compose its DMX channels',dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · each part plays an effect on its outputs',effects:'Up to 31 effects · 11 generators · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
 var curScreen='dashboard';
 function go(name){
   curScreen=name;
@@ -1580,13 +1599,13 @@ var MAX_GAPS=8, MAX_FIX=32;
    fixtures, 1-based); layToWire / layFromWire translate. */
 var LAY_TYPES=[['f','Fixture'],['d','Dead LEDs'],['s','LEDs without fixture']];
 function layFromWire(c,gaps,fix){
-  var ev=gaps.map(function(g){ return {t:'d',a:g[0],n:g[1]}; }).concat(fix.map(function(g){ return {t:'f',a:g[0],n:g[1],rev:!!g[2]}; }))
+  var ev=gaps.map(function(g){ return {t:'d',a:g[0],n:g[1]}; }).concat(fix.map(function(g){ return {t:'f',a:g[0],n:g[1],rev:!!g[2],p:g[3]||0}; }))
     .sort(function(x,y){ return x.a-y.a; });
   var out=[], phys=1, live=0;
   ev.forEach(function(e){
     if(e.a<phys){ var cut=phys-e.a; e.n-=cut; e.a=phys; if(e.n<=0) return; }  // an old overlap: clipped
     if(e.a>phys){ out.push({t:'s',n:e.a-phys}); live+=e.a-phys; }
-    out.push(e.rev?{t:e.t,n:e.n,rev:true}:{t:e.t,n:e.n}); if(e.t==='f') live+=e.n; phys=e.a+e.n;
+    var it={t:e.t,n:e.n}; if(e.rev) it.rev=true; if(e.p) it.p=e.p; out.push(it); if(e.t==='f') live+=e.n; phys=e.a+e.n;
   });
   if(out.length && c.pixel_count>live) out.push({t:'s',n:c.pixel_count-live});
   return out;
@@ -1596,7 +1615,7 @@ function layLive(lay){ var n=0; lay.forEach(function(it){ if(it.t!=='d') n+=it.n
 function layToWire(c){
   var gaps=[], fix=[], phys=1;
   (c.lay||[]).forEach(function(it){
-    if(it.t==='f') fix.push(it.rev?[phys,it.n,1]:[phys,it.n]);
+    if(it.t==='f') fix.push(it.p?[phys,it.n,it.rev?1:0,it.p]:(it.rev?[phys,it.n,1]:[phys,it.n]));
     else if(it.t==='d'){ var g=gaps[gaps.length-1]; if(g && g[0]+g[1]===phys) g[1]+=it.n; else gaps.push([phys,it.n]); }
     phys+=it.n;
   });
@@ -2101,6 +2120,7 @@ function reloadConfig(){
     if(el('s-boot')) el('s-boot').value=String(g.boot_scene||0);
     if(el('s-fade')) el('s-fade').value=((g.scene_fade_ms||0)/1000).toFixed(1);
     if(el('spk-vol')){ el('spk-vol').value=g.speaker_volume||0; spkVolLabel(); spkButtons(); }
+    if(d.profiles && !dirty.has('profiles')){ PROFILES=d.profiles.map(function(p){ return {name:p.name||'',slots:(p.slots||[]).map(function(sl){ return {fn:sl.fn,index:sl.index||0,fine:!!sl.fine}; })}; }); }
     if(d.groups && !dirty.has('groups')){ GROUPS=d.groups.map(function(g){ return {name:g.name,members:g.members.map(function(m){ return [m[0],m[1]]; })}; }); if(curGroup>=GROUPS.length) curGroup=GROUPS.length-1; }
     if(d.control && !dirty.has('control')){ CTL={enabled:!!d.control.enabled,mapped:d.control.mapped!==false,pool:d.control.pool||72,universe:d.control.universe,address:d.control.address,slots:(d.control.slots||[]).map(function(sl){ return {fn:sl.fn,mask:sl.mask,index:sl.index||0,fine:!!sl.fine}; })}; }
     renderControl();
@@ -2115,7 +2135,7 @@ function reloadConfig(){
     if(curScene>=SCENES.length) curScene=Math.max(0,SCENES.length-1);
     renderEffects(); renderScenes(); renderSceneSelects(g);
     var pm=el('patch-mount'); if(pm){ pm.innerHTML=buildPatch(); createIcons(pm); }
-    applyChanStates(); renderLists(); renderGroups();
+    applyChanStates(); renderLists(); renderGroups(); renderProfiles();
     if(curChan>=CHANS.length) curChan=0;
     selectChan(curChan);
   });
@@ -2175,6 +2195,66 @@ function sceneBody(s){ return {name:s.name,parts:s.parts.map(function(p){ return
 // How the effect spreads over a channel's fixtures (a channel without any is one strip).
 var FIX_MODES=[['each','Each fixture'],['strip','Whole strip'],['chain','Fixtures in a row'],['mirror','Mirrored']];
 var FIX_HINTS={strip:'The effect runs over the whole strip, fixtures ignored.',each:'Every fixture plays the effect on its own.',chain:'The fixtures end to end, as one strip without what lies between.',mirror:'In a row over the first half, mirrored on the second.'};
+/* ─────────── fixture DMX profiles ─────────── */
+// PROFILES[i] = {name, slots:[{fn, index, fine}]}. Mirrors config::FixFn (ids as the API names them).
+var PROFILES=[], curProfile=0, MAX_PROFILES=8, MAX_PF_SLOTS=24;
+var PF_FNS=['none','dimmer','red','green','blue','white','shutter','bank','speed','param','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings'];
+var PF_LABELS={none:'Spare',dimmer:'Dimmer',red:'Colour red',green:'Colour green',blue:'Colour blue',white:'White',shutter:'Shutter (strobe)',bank:'Effect of the bank',speed:'Effect speed',param:'Effect parameter',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings'};
+// Mirrors config::profile_apply_preset.
+var PF_PRESETS={rgb:['RGB','red green blue'],dim_rgb:['Dim RGB','dimmer red green blue'],rgb_fx:['RGB FX','red green blue bank speed shutter'],
+  full:['Full','dimmer+ shutter red green blue red:1 green:1 blue:1 bank speed param ph_wave ph_rate ph_spread ph_width']};
+function pfPreset(id){ var d=PF_PRESETS[id]; return {name:d[0],slots:d[1].split(' ').map(function(tok){ var fine=tok.slice(-1)==='+', q=tok.replace('+','').split(':'); return {fn:q[0],index:+(q[1]||0),fine:fine}; })}; }
+function pfWidth(sl){ return sl.fn==='dimmer'&&sl.fine?2:1; }
+function pfFootprint(p){ return p.slots.reduce(function(a,sl){ return a+pfWidth(sl); },0); }
+function profilesBody(){ return {profiles:PROFILES.map(function(p){ return {name:p.name,slots:p.slots.map(function(sl){ return {fn:sl.fn,index:sl.index||0,fine:!!sl.fine}; })}; })}; }
+function renderProfiles(){ renderProfileList(); renderProfileEditor(); }
+function renderProfileList(){
+  var l=el('pf-list'); if(!l) return;
+  if(curProfile>=PROFILES.length) curProfile=Math.max(0,PROFILES.length-1);
+  l.innerHTML=PROFILES.map(function(p,i){ var on=i===curProfile;
+    return '<div data-pf-row="'+i+'" style="display:flex;align-items:center;gap:9px;padding:9px 10px;cursor:pointer;background:'+(on?'rgba(63,212,99,.07)':'var(--well)')+';border:1px solid '+(on?'rgba(63,212,99,.45)':'var(--line)')+'">'
+      +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4);width:14px;text-align:right">'+(i+1)+'</span><span style="flex:1;font:600 13px \'Figtree\'">'+esc(p.name||t('Unnamed'))+'</span>'
+      +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4)">'+pfFootprint(p)+' ch</span></div>'; }).join('');
+  var nb=document.querySelector('[data-pf-new]'); if(nb){ nb.disabled=PROFILES.length>=MAX_PROFILES; nb.style.opacity=nb.disabled?'.4':'1'; }
+}
+function renderProfileEditor(){
+  var m=el('pf-editor'), p=PROFILES[curProfile]; if(!m) return;
+  if(!p){ m.innerHTML=''; return; }
+  var btn='display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer';
+  var at=1, rows='';
+  p.slots.forEach(function(sl,i){
+    var w=pfWidth(sl), dmx=w===2?(at+'-'+(at+1)):String(at); at+=w;
+    var opts=PF_FNS.map(function(f){ return '<option value="'+f+'"'+(f===sl.fn?' selected':'')+'>'+esc(t(PF_LABELS[f]))+'</option>'; }).join('');
+    var opt='';
+    if(['red','green','blue'].indexOf(sl.fn)>=0){ opt='<select data-pf-idx="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:6px 8px;font:500 12px \'DM Mono\'">'+[0,1,2,3].map(function(k){ return '<option value="'+k+'"'+(k===sl.index?' selected':'')+'>'+t('Colour')+' '+(k+1)+'</option>'; }).join('')+'</select>'; }
+    else if(sl.fn==='dimmer'){ opt='<label style="display:inline-flex;align-items:center;gap:7px;font:500 12px \'DM Mono\';color:var(--fg-2)"><input type="checkbox" data-pf-fine="'+i+'"'+(sl.fine?' checked':'')+'/>16-bit</label>'; }
+    rows+='<div data-pf-slot="'+i+'" style="display:grid;grid-template-columns:60px 1.6fr 1fr 70px 40px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule)">'
+      +'<span style="font:500 13px \'DM Mono\';color:var(--accent)">'+dmx+'</span>'
+      +'<select data-pf-fn="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:7px 9px;font:500 13px \'Figtree\'">'+opts+'</select>'
+      +'<span>'+opt+'</span>'
+      +'<span style="display:flex;gap:4px"><button class="btn-sec" data-pf-up="'+i+'" title="'+esc(t('Move up'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↑</button><button class="btn-sec" data-pf-down="'+i+'" title="'+esc(t('Move down'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↓</button></span>'
+      +'<button class="btn-dng" data-pf-del="'+i+'" title="'+esc(t('Delete'))+'" style="width:26px;height:26px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);cursor:pointer;justify-self:end">×</button>'
+      +'</div>';
+  });
+  var presets=Object.keys(PF_PRESETS).map(function(id){ return '<button class="btn-sec" data-pf-preset="'+id+'" style="'+btn+'">'+esc(PF_PRESETS[id][0])+'</button>'; }).join('');
+  var stale=dirty.has('profiles');
+  m.innerHTML='<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">'
+    +'<div style="flex:1;min-width:180px"><div class="eyebrow">'+t('PROFILE')+' '+(curProfile+1)+'</div>'
+    +'<input id="pf-name" value="'+esc(p.name)+'" maxlength="15" placeholder="'+esc(t('Unnamed'))+'" style="'+NAME_STYLE+'"/></div>'
+    +'<span id="pf-foot" style="font:500 13px \'DM Mono\';color:var(--fg-2)">'+pfFootprint(p)+' ch</span></div>'
+    +'<div><div class="eyebrow-sm">'+t('START FROM')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+presets+'</div></div>'
+    +'<div><div class="eyebrow-sm">'+t('CHANNELS')+'</div><div>'+rows+'</div>'
+    +'<button class="btn-sec" data-pf-add style="margin-top:10px;'+btn+(p.slots.length>=MAX_PF_SLOTS?';opacity:.4':'')+'"'+(p.slots.length>=MAX_PF_SLOTS?' disabled':'')+'><i data-lucide="plus" class="ic14"></i>'+t('Add a channel')+'</button></div>'
+    +'<div class="hint">'+esc(t('Effect, speed, parameter, phaser and Block / Groups / Wings channels at 0 keep the effect\'s own value. With the effect channel at 0 the fixture shows its colour, steady. Without a dimmer channel the fixture is at full.'))+'</div>'
+    +'<div style="display:flex;gap:9px;padding-top:14px;border-top:1px solid var(--line);align-items:center;flex-wrap:wrap">'
+    +'<a data-pf-ofl href="/api/profile/'+curProfile+'/fixture" download style="'+btn+';text-decoration:none'+(stale?';opacity:.4;pointer-events:none':'')+'"><i data-lucide="download" class="ic14"></i>'+t('Fixture profile (OFL)')+'</a>'
+    +(stale?'<span class="hint">'+esc(t('Save first: the file is made from the saved profile'))+'</span>':'')
+    +(PROFILES.length>1?'<button class="btn-dng" data-pf-remove style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer;margin-left:auto"><i data-lucide="trash-2" class="ic14"></i>'+t('Delete')+'</button>':'')
+    +'</div>';
+  createIcons(m);
+}
+function pfTouch(){ markDirty('profiles'); renderProfiles(); }
+
 /* ─────────── fixture groups ─────────── */
 // GROUPS[i] = {name, members: [[output, fixture], ...]} (0-based, in order).
 var GROUPS=[], curGroup=-1, MAX_GROUPS=16, MAX_MEMBERS=64;
@@ -2324,6 +2404,7 @@ function saveAll(){
   EFFECTS.forEach(function(e,i){ if(dirty.has('fx'+i)) ops.push(api('POST','/api/effect/'+i,effectBody(e))); });
   SCENES.forEach(function(s,i){ if(dirty.has('scene'+i)) ops.push(api('POST','/api/scene/'+i,sceneBody(s))); });
   if(dirty.has('control')) ops.push(api('POST','/api/control',ctlBody()));
+  if(dirty.has('profiles')) ops.push(api('POST','/api/profiles',profilesBody()));
   if(dirty.has('groups')) ops.push(api('POST','/api/groups',{groups:GROUPS}));
   toast(t('Saving…'));
   Promise.all(ops).then(function(){ dirty.clear(); langDirty=false; updateSaveBar(); toast(t('✓ saved')); return reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
@@ -2516,6 +2597,14 @@ function onClick(e){
   var ctd=e.target.closest('[data-ct-del]'); if(ctd){ CTL.slots.splice(+ctd.getAttribute('data-ct-del'),1); markDirty('control'); renderControl(); return; }
   var ctu=e.target.closest('[data-ct-up]'); if(ctu){ var ui=+ctu.getAttribute('data-ct-up'); if(ui>0){ var tmp=CTL.slots[ui-1]; CTL.slots[ui-1]=CTL.slots[ui]; CTL.slots[ui]=tmp; markDirty('control'); renderControl(); } return; }
   var ctn=e.target.closest('[data-ct-down]'); if(ctn){ var di=+ctn.getAttribute('data-ct-down'); if(di<CTL.slots.length-1){ var tmp2=CTL.slots[di+1]; CTL.slots[di+1]=CTL.slots[di]; CTL.slots[di]=tmp2; markDirty('control'); renderControl(); } return; }
+  var pfr=e.target.closest('[data-pf-row]'); if(pfr){ curProfile=+pfr.getAttribute('data-pf-row'); renderProfiles(); return; }
+  if(e.target.closest('[data-pf-new]')){ if(PROFILES.length<MAX_PROFILES){ var np=pfPreset('rgb'); np.name=t('New profile').slice(0,15); PROFILES.push(np); curProfile=PROFILES.length-1; pfTouch(); } return; }
+  if(e.target.closest('[data-pf-remove]')){ if(PROFILES.length>1){ PROFILES.splice(curProfile,1); pfTouch(); } return; }
+  var pfp=e.target.closest('[data-pf-preset]'); if(pfp){ var keep=PROFILES[curProfile].name, pr=pfPreset(pfp.getAttribute('data-pf-preset')); if(keep && !Object.keys(PF_PRESETS).some(function(k){ return PF_PRESETS[k][0]===keep; })) pr.name=keep; PROFILES[curProfile]=pr; pfTouch(); return; }
+  if(e.target.closest('[data-pf-add]')){ var ap=PROFILES[curProfile]; if(ap.slots.length<MAX_PF_SLOTS){ ap.slots.push({fn:'dimmer',index:0,fine:false}); pfTouch(); } return; }
+  var pfd=e.target.closest('[data-pf-del]'); if(pfd){ var dp=PROFILES[curProfile]; if(dp.slots.length>1){ dp.slots.splice(+pfd.getAttribute('data-pf-del'),1); pfTouch(); } return; }
+  var pfu=e.target.closest('[data-pf-up]'); if(pfu){ var ui2=+pfu.getAttribute('data-pf-up'), us=PROFILES[curProfile].slots; if(ui2>0){ us.splice(ui2-1,0,us.splice(ui2,1)[0]); pfTouch(); } return; }
+  var pfn=e.target.closest('[data-pf-down]'); if(pfn){ var di2=+pfn.getAttribute('data-pf-down'), ds=PROFILES[curProfile].slots; if(di2<ds.length-1){ ds.splice(di2+1,0,ds.splice(di2,1)[0]); pfTouch(); } return; }
   if(e.target.closest('[data-fx-grip]')) return;
   var sdel=e.target.closest('[data-fx-delcol]'); if(sdel){ var nd=+sdel.getAttribute('data-fx-delcol'), sd=EFFECTS[nd-1]; if(sd.colors.length>1){ sd.colors.splice(+sdel.getAttribute('data-k'),1); markDirty('fx'+(nd-1)); renderEffect(nd); } return; }
   var scol=e.target.closest('[data-fx-color]'); if(scol){ openPicker(+scol.getAttribute('data-fx-color'), +scol.getAttribute('data-k'), scol); return; }
@@ -2586,6 +2675,10 @@ function onInput(e){
   for(var mk in MX_KEYS){ if(t.hasAttribute&&t.hasAttribute('data-fx-'+mk)){ var mn=+t.getAttribute('data-fx-'+mk), me=EFFECTS[mn-1], mv=parseInt(t.value,10)||0; me.mx[MX_KEYS[mk][0]]=mv===1?0:mv; var mo=document.querySelector('[data-fx-'+mk+'val="'+mn+'"]'); if(mo) mo.textContent=mxText(me.mx[MX_KEYS[mk][0]],MX_KEYS[mk][1]); markDirty('fx'+(mn-1)); return; } }
   for(var pk in PH_KEYS){ if(t.hasAttribute&&t.hasAttribute('data-fx-'+pk)){ var kn=+t.getAttribute('data-fx-'+pk), ke=EFFECTS[kn-1]; ke.ph[PH_KEYS[pk][0]]=parseInt(t.value,10)||0; var kv=document.querySelector('[data-fx-'+pk+'val="'+kn+'"]'); if(kv) kv.textContent=phText(ke,pk); markDirty('fx'+(kn-1)); return; } }
   if(t.hasAttribute&&t.hasAttribute('data-fx-gen')){ var fn=+t.getAttribute('data-fx-gen'); EFFECTS[fn-1].gen=parseInt(t.value,10)||0; markDirty('fx'+(fn-1)); renderEffect(fn); return; }
+  if(t.id==='pf-name'){ var pn2=PROFILES[curProfile]; if(pn2){ pn2.name=t.value.slice(0,15); markDirty('profiles'); renderProfileList(); var ol=document.querySelector('[data-pf-ofl]'); if(ol){ ol.style.opacity='.4'; ol.style.pointerEvents='none'; } } return; }
+  if(t.hasAttribute&&t.hasAttribute('data-pf-fn')){ var fs=PROFILES[curProfile].slots[+t.getAttribute('data-pf-fn')]; fs.fn=t.value; fs.index=0; fs.fine=false; pfTouch(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-pf-idx')){ PROFILES[curProfile].slots[+t.getAttribute('data-pf-idx')].index=parseInt(t.value,10)||0; pfTouch(); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-pf-fine')){ PROFILES[curProfile].slots[+t.getAttribute('data-pf-fine')].fine=t.checked; pfTouch(); return; }
   if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }
   if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }
   if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); return; }

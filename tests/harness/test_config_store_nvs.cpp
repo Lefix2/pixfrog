@@ -432,6 +432,39 @@ TEST(effect_bank_edits_persist_and_the_scenes_follow) {
     EXPECT_EQ(shim::nvs_raw(kNs, "effects").size(), effect_bank_bytes(2));
 }
 
+TEST(fixture_profiles_default_persist_and_reset) {
+    fresh_boot();
+    EXPECT_EQ(get_profiles().count, 4);  // absent from flash: the presets
+    EXPECT_STREQ(get_profiles().profiles[2].name, "RGB FX");
+
+    ProfileBank b = get_profiles();
+    b.count       = 5;
+    std::strcpy(b.profiles[4].name, "Mine");
+    b.profiles[4].count    = 2;
+    b.profiles[4].slots[0] = profile_slot(FixFn::Dimmer, kProfileArgFine);
+    b.profiles[4].slots[1] = profile_slot(FixFn::Bank, 0x7F);  // a stray arg: cleared on write
+    EXPECT_TRUE(set_profiles(b));
+    EXPECT_EQ(get_profiles().profiles[4].slots[1].arg, 0);
+    EXPECT_EQ(shim::nvs_raw(kNs, "profiles").size(), sizeof(ProfileBank));
+
+    // A fixture's profile index is part of its channel blob.
+    auto c        = get_channel(3);
+    c.fixtures[0] = make_fixture(30, 10, false, 4);
+    c.fixtures[1] = make_fixture(0, 10, true, 2);
+    set_channel(3, c);
+    init();  // reboot
+    EXPECT_EQ(get_profiles().count, 5);
+    EXPECT_STREQ(get_profiles().profiles[4].name, "Mine");
+    EXPECT_EQ(profile_footprint(get_profiles().profiles[4]), 3);
+    EXPECT_EQ(fixture_profile(get_channel(3).fixtures[0]), 2);  // sorted by position
+    EXPECT_EQ(fixture_profile(get_channel(3).fixtures[1]), 4);
+    EXPECT_EQ(fixture_len(get_channel(3).fixtures[1]), 10);
+
+    reset_to_defaults();
+    init();
+    EXPECT_EQ(get_profiles().count, 4);
+}
+
 TEST(web_password_hash_and_check) {
     fresh_boot();
     EXPECT_FALSE(web_password_set());

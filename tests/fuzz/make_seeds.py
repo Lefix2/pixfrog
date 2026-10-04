@@ -204,6 +204,12 @@ fx phaser 0 sin 20 16 128 30 reverse
 fx phaser 0 none
 fx invert 0 1
 fx matricks 0 3 4 2
+profile
+profile add Bars
+profile slots 0 dimmer+fine,red:1,none,bank,wings
+profile preset 1 rgb_fx
+profile name 0 Renamed
+profile del 0
 fx move 0 1
 fx del 8
 fseq list
@@ -240,7 +246,7 @@ ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/sc
           "/api/loglevel", "/api/ota", "GET /api/config", "GET /api/status", "GET /api/backup",
           "GET /api/fseq/files", "GET /api/logs", "/api/show", "/api/control",
           "GET /api/control/fixture", "/api/effect", "/api/effects/add", "/api/effects/move",
-          "/api/groups"]
+          "/api/groups", "/api/profiles", "GET /api/profile/2/fixture"]
 R = {r: i for i, r in enumerate(ROUTES)}
 WEB = [
     (R["/api/global"], 0, '{"refresh_hz":45,"short_name":"rig-a"}'),
@@ -261,6 +267,10 @@ WEB = [
                           '"matricks":{"block":3,"groups":4,"wings":2}}'),
     (R["/api/effects/move"], 0, '{"from":3,"to":0}'),
     (R["/api/groups"], 0, '{"groups":[{"name":"Top","members":[[0,0],[1,0]]}]}'),
+    (R["/api/profiles"], 0, '{"profiles":[{"preset":"rgb_fx","name":"Bars"},{"name":"Spots","slots":['
+                            '{"fn":"dimmer","fine":true},{"fn":"red","index":1},{"fn":"bank"}]}]}'),
+    (R["GET /api/profile/2/fixture"], 0, ""),
+    (R["/api/channel"], 1, '{"protocol":"WS2815","pixel_count":60,"fixtures":[[1,20,0,2],[21,20,1,3]]}'),
     # A backup from before the effect bank: scenes that carry their own look.
     (R["/api/restore"], 0, '{"backup_version":1,"scenes":[{"name":"Old","effect":1,"speed":60,'
                            '"colors":["#ff0000","#0000ff"],"mask":15,"fixture_mode":"mirror"}]}'),

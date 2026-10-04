@@ -1028,6 +1028,111 @@ int cmd_scene(int argc, char** argv) {
                "add [name] | del <n> | move <from> <to>]");
 }
 
+// ── fixture DMX profiles ────────────────────────────────────────────────────
+
+// One slot as "fn", "fn:colour" (red:1 = colour 2) or "dimmer+fine".
+bool parse_profile_slot(char* tok, config::ProfileSlot& out) {
+    uint8_t arg = 0;
+    if (char* plus = strchr(tok, '+')) {
+        if (strcmp(plus, "+fine") != 0) return false;
+        arg   |= config::kProfileArgFine;
+        *plus  = '\0';
+    }
+    if (char* colon = strchr(tok, ':')) {
+        uint32_t k = 0;
+        if (!parse_u32_in(colon + 1, 0, config::kSceneColorsMax - 1, k)) return false;
+        arg    |= static_cast<uint8_t>(k);
+        *colon  = '\0';
+    }
+    const int fn = config::fix_fn_from_id(tok);
+    if (fn < 0) return false;
+    out = config::ProfileSlot{ static_cast<uint8_t>(fn), arg };
+    return true;
+}
+
+void print_profiles(const config::ProfileBank& b) {
+    printf("profiles=%u\n", b.count);
+    for (size_t i = 0; i < b.count; ++i) {
+        const auto& p = b.profiles[i];
+        printf("profile%u name=%s footprint=%u slots=", static_cast<unsigned>(i), p.name,
+               static_cast<unsigned>(config::profile_footprint(p)));
+        for (size_t k = 0; k < p.count; ++k) {
+            const auto& sl = p.slots[k];
+            printf("%s%s", k ? "," : "", config::fix_fn_id(sl.fn));
+            if (sl.arg & config::kProfileArgColor) printf(":%u", sl.arg & config::kProfileArgColor);
+            if (sl.arg & config::kProfileArgFine) printf("+fine");
+        }
+        printf("\n");
+    }
+}
+
+int cmd_profile(int argc, char** argv) {
+    static config::ProfileBank b;  // 548 B: off the console task's stack
+    config::ScopedLock lock;       // read-modify-write
+    b = config::get_profiles();
+    if (argc == 1) {
+        print_profiles(b);
+        return ok();
+    }
+    const char* sub = argv[1];
+    uint32_t n      = 0;
+    if (strcmp(sub, "add") == 0) {
+        // profile add [name] — plain RGB, appended
+        if (b.count >= config::kMaxProfiles) return err("profile bank full (8)");
+        config::Profile& p = b.profiles[b.count];
+        config::profile_apply_preset(p, config::ProfilePreset::Rgb);
+        if (argc >= 3) copy_str(p.name, sizeof(p.name), argv[2]);
+        printf("index=%u\n", b.count++);
+    } else if (argc < 3 || !parse_u32_in(argv[2], 0, b.count - 1u, n)) {
+        return err("usage: profile [add [name] | del <n> | name <n> <text> | "
+                   "preset <n> rgb|dim_rgb|rgb_fx|full | slots <n> <fn[:colour][+fine],...>]");
+    } else if (strcmp(sub, "del") == 0) {
+        // The last profile stays: every fixture points at one.
+        if (argc != 3 || b.count == 1) return err("usage: profile del <n> (one profile must stay)");
+        for (size_t i = n; i + 1 < b.count; ++i)
+            b.profiles[i] = b.profiles[i + 1];
+        --b.count;
+    } else if (strcmp(sub, "name") == 0) {
+        if (argc != 4) return err("usage: profile name <n> <text>");
+        copy_str(b.profiles[n].name, sizeof(b.profiles[n].name), argv[3]);
+    } else if (strcmp(sub, "preset") == 0) {
+        int preset = -1;
+        for (uint8_t k = 0; argc == 4 && k < static_cast<uint8_t>(config::ProfilePreset::Count);
+             ++k)
+            if (strcmp(argv[3], config::profile_preset_id(static_cast<config::ProfilePreset>(k))) ==
+                0)
+                preset = k;
+        if (preset < 0) return err("usage: profile preset <n> rgb|dim_rgb|rgb_fx|full");
+        config::profile_apply_preset(b.profiles[n], static_cast<config::ProfilePreset>(preset));
+    } else if (strcmp(sub, "slots") == 0) {
+        if (argc != 4) return err("usage: profile slots <n> <fn[:colour][+fine],...>");
+        config::Profile& p = b.profiles[n];
+        static char list[config::kMaxProfileSlots * 16];
+        if (strlen(argv[3]) >= sizeof(list)) return err("slots: too long");
+        copy_str(list, sizeof(list), argv[3]);
+        config::ProfileSlot slots[config::kMaxProfileSlots] = {};
+        size_t count                                        = 0;
+        char* save                                          = nullptr;
+        for (char* tok = strtok_r(list, ",", &save); tok; tok = strtok_r(nullptr, ",", &save)) {
+            if (count == config::kMaxProfileSlots) return err("slots: at most 24");
+            if (!parse_profile_slot(tok, slots[count++]))
+                return err(
+                    "slot: dimmer[+fine]|red[:n]|green[:n]|blue[:n]|white|shutter|bank|"
+                    "speed|param|ph_wave|ph_rate|ph_spread|ph_width|block|groups|wings|none");
+        }
+        if (count == 0) return err("slots: at least one");
+        memcpy(p.slots, slots, sizeof(slots));
+        p.count = static_cast<uint8_t>(count);
+    } else {
+        return err("usage: profile [add [name] | del <n> | name <n> <text> | "
+                   "preset <n> rgb|dim_rgb|rgb_fx|full | slots <n> <fn[:colour][+fine],...>]");
+    }
+    if (!config::set_profiles(b)) printf("warn=not_persisted\n");
+    dmx::mark_global_dirty();  // footprints moved: the universe map follows
+    print_profiles(config::get_profiles());
+    return ok();
+}
+
 // ── FSEQ player ─────────────────────────────────────────────────────────────
 
 // fseq playlist [play | clear | add <file> [repeat] | loop on|off | autostart on|off]
@@ -1346,6 +1451,8 @@ void start() {
                  cmd_fx);
     register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|part|clear] — standalone scenes",
                  cmd_scene);
+    register_cmd("profile", "profile [add|del|name|preset|slots] — fixture DMX profiles",
+                 cmd_profile);
     register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",
                  cmd_show);
     register_cmd("ctrl", "ctrl [enable|universe|address|preset|add|set|del|clear] — DMX control",

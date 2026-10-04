@@ -186,3 +186,48 @@ mode as an [Open Fixture Library](https://open-fixture-library.org) JSON
 profile, with named channels, scene names on the Scene bands, effect ranges and
 strobe speeds. Import it into QLC+, or convert it on open-fixture-library.org
 for other desks, then patch one fixture at the configured address.
+
+## Fixture DMX profiles
+
+A **profile** is the ordered list of DMX channels a fixture answers to, like the
+mode of a conventional luminaire. The box keeps up to eight; each fixture of an
+output points at one (the first by default). They drive the fixtures of an
+output in DMX control mode (PROTOCOLS §5.6).
+
+| Function | Value |
+|---|---|
+| Dimmer | intensity; 16-bit with the fine channel next. A profile without a dimmer is at full |
+| Red / Green / Blue (colour n) | colour n of the effect the fixture plays; all three at 0 = the effect's own. With no effect, colour 1 is the fixture's colour |
+| White | the white LED of an RGBW strip, when no effect plays |
+| Shutter | 0 = open, 1–255 = strobe 1–25 Hz |
+| Effect (`bank`) | bands of 8: 0–7 = no effect (colour 1, steady), 8–15 = effect 1 of the bank, 16–23 = effect 2 … |
+| Effect speed / parameter | 0 = the effect's own, 1–255 = override |
+| Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine … |
+| Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |
+| Block / Groups / Wings | 0 = the effect's own, 1 = off, 2–255 = N |
+| Spare | nothing; it keeps a channel free |
+
+Presets, as starting points:
+
+| Preset | Channels |
+|---|---|
+| RGB (3 ch) | red, green, blue |
+| Dim RGB (4 ch) | dimmer, red, green, blue |
+| RGB FX (6 ch) | red, green, blue, effect, effect speed, shutter |
+| Full (16 ch) | dimmer 16-bit, shutter, colour 1 RGB, colour 2 RGB, effect, speed, parameter, phaser wave, rate, spread, width |
+
+Edit them:
+
+- Web UI: the **DMX profiles** screen. *Fixture profile (OFL)* downloads the
+  saved profile as an Open Fixture Library fixture, the effect bands named
+  after the bank's effects.
+- UART: `profile`, `profile add [name]`, `profile preset <n> rgb|dim_rgb|rgb_fx|full`,
+  `profile slots <n> <fn[:colour][+fine],...>` (for example
+  `dimmer+fine,red,green,blue,red:1,bank`), `profile name <n> <text>`,
+  `profile del <n>`.
+- REST: `POST /api/profiles` (`{"profiles":[{name, slots:[{fn, index, fine}]}]}`
+  or `{"preset": …}` entries; the whole list, taken whole or not at all),
+  `GET /api/profile/<n>/fixture`.
+
+A fixture's profile is the optional fourth element of its entry in a channel's
+`fixtures`: `[first, count, reversed, profile]`.

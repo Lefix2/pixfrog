@@ -27,7 +27,8 @@
     var c = S.config;
     return { backup_version: 2, firmware: c.version + ' (demo)', global: clone(c.global),
              channels: clone(c.channels), effects: clone(c.effects), scenes: clone(c.scenes),
-             control: clone(c.control), playlist: clone(S.playlist), groups: clone(c.groups || []) };
+             control: clone(c.control), playlist: clone(S.playlist), groups: clone(c.groups || []),
+             profiles: clone(c.profiles || []) };
   }
   function activeScene() {
     var sc = S.status.show.scenes;
@@ -191,6 +192,14 @@
     }
     if (p === '/api/scenes/stop') { stopScenes(function () { return true; }); return ok(); }
     if (p === '/api/groups') { S.config.groups = clone(body.groups || []); return ok(); }
+    if (p === '/api/profiles') {
+      // The footprint is the box's to compute: a 16-bit dimmer takes two channels.
+      S.config.profiles = clone(body.profiles || []).map(function (pr) {
+        pr.footprint = (pr.slots || []).reduce(function (a, sl) { return a + (sl.fn === 'dimmer' && sl.fine ? 2 : 1); }, 0);
+        return pr;
+      });
+      return ok({ profiles: clone(S.config.profiles) });
+    }
     if (p === '/api/show') {
       var sh = S.status.show;
       if (body.master !== undefined) sh.master = sh.master_local = sh.master.map(function () { return +body.master; });
@@ -217,7 +226,7 @@
       return ok();
     }
     if (p === '/api/restore') {
-      ['global', 'channels', 'effects', 'scenes', 'control', 'groups'].forEach(function (k) {
+      ['global', 'channels', 'effects', 'scenes', 'control', 'groups', 'profiles'].forEach(function (k) {
         if (body[k]) S.config[k] = clone(body[k]);
       });
       if (body.playlist) S.playlist = clone(body.playlist);

@@ -28,6 +28,7 @@ SceneBank g_bank{};
 ControlConfig g_control{};
 FseqPlaylist g_playlist{};
 GroupsConfig g_groups{};
+ProfileBank g_profiles{};
 bool g_nvs_ok = false;
 
 // The config lock (see ScopedLock). Created by init(); before that (and if
@@ -52,6 +53,7 @@ constexpr const char* kKeyRollback = "rollback";
 constexpr const char* kKeyControl  = "control";
 constexpr const char* kKeyPlaylist = "playlist";
 constexpr const char* kKeyGroups   = "groups";
+constexpr const char* kKeyProfiles = "profiles";
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
@@ -316,6 +318,7 @@ void fill_ram_defaults() {
     g_control  = default_control();
     g_playlist = FseqPlaylist{};
     g_groups   = GroupsConfig{};
+    g_profiles = default_profiles();
     g_global   = make_default_global();
     for (size_t i = 0; i < kNumChannels; ++i)
         g_channels[i] = make_default_channel(i);
@@ -445,6 +448,12 @@ void init() {
     // Fixture groups: absent before they existed — none.
     if (!nvs_load_blob(h, kKeyGroups, &g_groups, sizeof(g_groups))) g_groups = GroupsConfig{};
     sanitize_groups(g_groups);
+
+    // Fixture DMX profiles: absent before they existed — the presets (an empty
+    // bank reads as the presets too, see sanitize_profiles).
+    if (!nvs_load_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles)))
+        g_profiles = ProfileBank{};
+    sanitize_profiles(g_profiles);
 
     nvs_commit(h);
     nvs_close(h);
@@ -901,6 +910,7 @@ void reset_to_defaults() {
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
     nvs_save_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist));
     nvs_save_blob(h, kKeyGroups, &g_groups, sizeof(g_groups));
+    nvs_save_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles));
     nvs_commit(h);
     nvs_close(h);
 }
@@ -917,6 +927,23 @@ bool set_control(const ControlConfig& cfg) {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
+}
+
+const ProfileBank& get_profiles() {
+    return g_profiles;
+}
+
+bool set_profiles(const ProfileBank& b) {
+    ScopedLock lock;
+    g_profiles = b;
+    sanitize_profiles(g_profiles);
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_save_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles));
     nvs_commit(h);
     nvs_close(h);
     return true;

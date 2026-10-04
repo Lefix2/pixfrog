@@ -90,6 +90,7 @@ behind the optional password):
 - scenes: `POST /api/scene/{n}[/play|/stop|/delete]` (`{name, parts:[{mask, effect,
   fixture_mode}]}`; play takes `{"outputs":mask}`), `POST /api/scenes/add|move|stop`
 - groups: `POST /api/groups`
+- fixture DMX profiles: `POST /api/profiles`, `GET /api/profile/{n}/fixture` (OFL profile)
 - show control: `POST /api/show`, `POST /api/control`, `GET /api/control/fixture` (OFL profile)
 - FSEQ: `GET /api/fseq/files`, `POST /api/fseq/play` (`{filename, loop?}` or
   `{playlist:true}`), `POST /api/fseq/stop|upload`, `GET|POST /api/fseq/playlist`

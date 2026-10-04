@@ -505,6 +505,172 @@
    ],
    "loop": true
   },
+  "profiles": [
+   {
+    "footprint": 3,
+    "name": "RGB",
+    "slots": [
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     }
+    ]
+   },
+   {
+    "footprint": 4,
+    "name": "Dim RGB",
+    "slots": [
+     {
+      "fine": false,
+      "fn": "dimmer",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     }
+    ]
+   },
+   {
+    "footprint": 6,
+    "name": "RGB FX",
+    "slots": [
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "bank",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "speed",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "shutter",
+      "index": 0
+     }
+    ]
+   },
+   {
+    "footprint": 16,
+    "name": "Full",
+    "slots": [
+     {
+      "fine": true,
+      "fn": "dimmer",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "shutter",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 1
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 1
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 1
+     },
+     {
+      "fine": false,
+      "fn": "bank",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "speed",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "param",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_wave",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_rate",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_spread",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_width",
+      "index": 0
+     }
+    ]
+   }
+  ],
   "scenes": [
    {
     "mask": 255,
