@@ -127,7 +127,7 @@ void task_main(void*) {
 
     ESP_LOGI(TAG, "listening on UDP %d", parser::kPort);
 
-    uint8_t buf[512];
+    static uint8_t buf[512];  // off the 4 kB stack, see artnet_rx
     for (;;) {
         while (running()) {
             sockaddr_in from{};

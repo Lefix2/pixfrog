@@ -354,7 +354,10 @@ void task_main(void*) {
     }
     ESP_LOGI(TAG, "listening on UDP %d", kArtnetPort);
 
-    uint8_t buf[1500];
+    // Static: 1500 B on this task's 4 kB stack left too little under the
+    // log path (capture hook + two vfprintf) — an interrupt landing there
+    // overflowed it. One artnet_rx task at a time, so no sharing.
+    static uint8_t buf[1500];
     while (g_run) {
         sockaddr_in from{};
         socklen_t fl = sizeof(from);
