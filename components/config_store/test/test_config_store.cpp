@@ -441,6 +441,54 @@ static void test_groups_sanitize() {
     EXPECT_EQ(g.groups[1].count, 0);
 }
 
+static void test_effect_from_scene_and_sanitize() {
+    static_assert(sizeof(Effect) == 48, "Effect record size");
+    Scene s{};
+    std::memset(s.name, 'x', sizeof(s.name));  // not terminated
+    s.channel_mask = 0x0F;
+    s.effect       = kSceneFxScanner;
+    s.speed        = 77;
+    s.param        = 5;
+    s.num_colors   = 2;
+    s.fixture_mode = kFixtureModeChain;
+    set_scene_color(s, 0, 1, 2, 3);
+    set_scene_color(s, 1, 4, 5, 6);
+    set_scene_color(s, 2, 7, 8, 9);  // stored past the count: reads as black
+
+    const Effect e = effect_from_scene(s);
+    EXPECT_EQ(e.name[kEffectNameMax - 1], '\0');
+    EXPECT_EQ(e.generator, kSceneFxScanner);
+    EXPECT_EQ(e.speed, 77);
+    EXPECT_EQ(e.param, 5);
+    EXPECT_EQ(e.num_colors, 2);
+    EXPECT_EQ(e.colors[0][2], 3);
+    EXPECT_EQ(e.colors[1][0], 4);
+    EXPECT_EQ(e.colors[2][0], 0);
+    // A scene carries no phaser and no MAtricks: the neutral zero.
+    EXPECT_EQ(e.ph_wave, kPhaserNone);
+    EXPECT_EQ(e.flags, 0);
+    EXPECT_EQ(e.block + e.groups + e.wings, 0);
+
+    s.effect = 200;  // unknown generator
+    EXPECT_EQ(effect_from_scene(s).generator, kSceneFxSolid);
+
+    Effect bad{};
+    std::memset(&bad, 0xFF, sizeof(bad));
+    sanitize_effect(bad);
+    EXPECT_EQ(bad.name[kEffectNameMax - 1], '\0');
+    EXPECT_EQ(bad.generator, kSceneFxSolid);
+    EXPECT_EQ(bad.num_colors, kSceneColorsMax);
+    EXPECT_EQ(bad.ph_wave, kPhaserNone);
+    EXPECT_EQ(bad.flags, kEffectFlagsMask);
+    EXPECT_EQ(bad.reserved[0] + bad.reserved[6], 0);
+    EXPECT_EQ(bad.block, 255);  // any count is valid: the renderer clamps to the run
+
+    Effect zero{};
+    sanitize_effect(zero);
+    EXPECT_EQ(zero.num_colors, 1);
+    EXPECT_EQ(effect_num_colors(Effect{}), 1);
+}
+
 static void test_scene_index_remap() {
     // Delete scene 2 of [0 1 2 3 4].
     EXPECT_EQ(remap_scene_index(1, SceneEdit::Delete, 2), 1);
@@ -473,6 +521,7 @@ int main() {
     test_scene_v1_migration();
     test_scene_colour_accessors();
     test_scene_bank_load_all_layouts();
+    test_effect_from_scene_and_sanitize();
     test_scene_index_remap();
     test_groups_sanitize();
 

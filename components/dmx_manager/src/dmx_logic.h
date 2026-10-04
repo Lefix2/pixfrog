@@ -443,14 +443,12 @@ struct Palette {
     uint8_t n;
 };
 
-inline Palette scene_palette(const config::Scene& s) {
+// Colours past the configured count read as black.
+inline Palette effect_palette(const config::Effect& e) {
     Palette p{};
-    p.n = config::scene_num_colors(s);
-    for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
-        uint8_t rgb[3];
-        config::scene_color(s, k, rgb);
-        p.c[k] = { rgb[0], rgb[1], rgb[2] };
-    }
+    p.n = config::effect_num_colors(e);
+    for (size_t k = 0; k < p.n; ++k)
+        p.c[k] = { e.colors[k][0], e.colors[k][1], e.colors[k][2] };
     return p;
 }
 
@@ -499,7 +497,7 @@ inline uint32_t bounce256(uint64_t travel256, uint32_t span) {
 //   stripes  — param-px bands (default 4) of each colour marching at speed px/s
 namespace fx {
 
-inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                   uint64_t t) {
     const uint64_t pos = static_cast<uint64_t>(t) * speed * 60 % 255000;
     const bool flash   = pos < static_cast<uint64_t>(speed) * 1000;
@@ -508,7 +506,7 @@ inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
         set_px(d, bpp, i, c);
 }
 
-inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                   uint8_t param, uint64_t t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint16_t width = param ? param : 1;
@@ -520,7 +518,8 @@ inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
     }
 }
 
-inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t param, uint64_t t) {
+inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint32_t speed, uint8_t param,
+                    uint64_t t) {
     const uint32_t repeats = param ? param : 1;
     const uint32_t offset  = (static_cast<uint64_t>(t) * speed / 100) % 360;
     for (uint16_t i = 0; i < n; ++i) {
@@ -531,7 +530,7 @@ inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t 
     }
 }
 
-inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                   uint8_t param, uint64_t t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint32_t count = param ? (param > 16 ? 16 : param) : 3;
@@ -557,7 +556,7 @@ inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
     }
 }
 
-inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                      uint8_t param, uint64_t t) {
     const uint32_t repeats = param ? param : 1;
     const uint32_t offset  = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000);
@@ -568,14 +567,15 @@ inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint
                               offset));
 }
 
-inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint64_t t) {
+inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
+                 uint64_t t) {
     const Rgb c = palette_at(p,
                              static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000));
     for (uint16_t i = 0; i < n; ++i)
         set_px(d, bpp, i, c);
 }
 
-inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                     uint8_t param, uint64_t t) {
     const uint32_t density = param ? param : 64;
     const uint64_t ticks   = t * (speed + 4u) / 64;  // 64-bit: no wrap in a lifetime
@@ -594,7 +594,8 @@ inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
     }
 }
 
-inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint64_t t) {
+inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
+                 uint64_t t) {
     // The noise coordinate wraps at 2^32 (every ~6 days at full speed): one
     // reseed of a chaotic field, invisible in flames.
     const uint32_t y    = static_cast<uint32_t>(t * (speed + 8u) / 32);
@@ -612,7 +613,7 @@ inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
     }
 }
 
-inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                     uint8_t param, uint64_t t) {
     const uint32_t span   = n > 1 ? n - 1u : 1u;
     const uint32_t width  = param ? param : (n / 20 ? n / 20 : 1);
@@ -639,7 +640,7 @@ inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
     }
 }
 
-inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                  uint8_t param, uint64_t t) {
     const uint32_t waves = param ? param : 2;
     const uint32_t shift = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 512 / 1000);
@@ -651,7 +652,7 @@ inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
     }
 }
 
-inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                     uint8_t param, uint64_t t) {
     const uint32_t width  = param ? param : 4;
     const uint32_t bands  = p.n > 1 ? p.n : 2;  // a lone colour alternates with black
@@ -665,20 +666,25 @@ inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
 
 }  // namespace fx
 
-// Renders one frame of `scene` at wall-clock time `phase_ms` (animation speed
-// is refresh-rate independent). 64-bit: a 32-bit ms clock wraps after 49.7
-// days, and every effect would jump at that instant on a permanent install. Canonical RGB(W) order;
-// colour order and brightness apply at encode time.
-inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
-                               uint8_t bytes_per_pixel, const config::Scene& scene,
-                               uint64_t phase_ms) {
+// How many speed units of a generator one unit of Effect::speed is worth.
+constexpr uint32_t kEffectSpeedScale = 1;
+
+// Renders one frame of `effect` on a run of `pixel_count` pixels at wall-clock
+// time `phase_ms` (animation speed is refresh-rate independent). 64-bit: a
+// 32-bit ms clock wraps after 49.7 days, and every effect would jump at that
+// instant on a permanent install. Canonical RGB(W) order; colour order and
+// brightness apply at encode time.
+inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                            uint8_t bytes_per_pixel, const config::Effect& effect,
+                            uint64_t phase_ms) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
-    const Palette p = scene_palette(scene);
-    const uint8_t s = scene.speed, k = scene.param;
+    const Palette p   = effect_palette(effect);
+    const uint32_t s  = effect.speed * kEffectSpeedScale;
+    const uint8_t k   = effect.param;
     const uint16_t n  = pixel_count;
     const uint8_t bpp = bytes_per_pixel;
-    switch (scene.effect) {
+    switch (effect.generator) {
     case config::kSceneFxChase: fx::chase(dst, n, bpp, p, s, k, phase_ms); break;
     case config::kSceneFxRainbow: fx::rainbow(dst, n, bpp, s, k, phase_ms); break;
     case config::kSceneFxBlobs: fx::blobs(dst, n, bpp, p, s, k, phase_ms); break;
@@ -691,6 +697,13 @@ inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel
     case config::kSceneFxStripes: fx::stripes(dst, n, bpp, p, s, k, phase_ms); break;
     default: fx::solid(dst, n, bpp, p, s, phase_ms); break;
     }
+}
+
+inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                               uint8_t bytes_per_pixel, const config::Scene& scene,
+                               uint64_t phase_ms) {
+    fill_effect_run(dst, dst_capacity, pixel_count, bytes_per_pixel,
+                    config::effect_from_scene(scene), phase_ms);
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -736,9 +749,9 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
     return k;
 }
 
-// Renders `scene` on channel `cc`, spread over its fixtures as the scene's
-// fixture_mode says; pixels outside every fixture stay dark. A channel
-// without fixtures (or a Strip scene) gets the plain whole-strip pattern.
+// Renders `effect` on channel `cc`, spread over its fixtures as `mode`
+// (kFixtureMode*) says; pixels outside every fixture stay dark. A channel
+// without fixtures (or the Strip mode) gets the plain whole-strip pattern.
 // A fixture mounted the other way round runs the effect backwards: its
 // pixels are flipped in place once the pattern is drawn.
 inline void reverse_fixtures(uint8_t* dst, uint8_t bpp, const Span* sp, size_t n) {
@@ -755,25 +768,24 @@ inline void reverse_fixtures(uint8_t* dst, uint8_t bpp, const Span* sp, size_t n
     }
 }
 
-inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
-                                  const config::ChannelConfig& cc, uint8_t bpp,
-                                  const config::Scene& scene, uint64_t phase_ms) {
+inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
+                                   const config::ChannelConfig& cc, uint8_t bpp,
+                                   const config::Effect& effect, uint8_t mode, uint64_t phase_ms) {
     Span sp[config::kMaxFixtures];
-    const uint8_t mode = scene.fixture_mode;
     const size_t n     = mode == config::kFixtureModeStrip || mode >= config::kFixtureModeCount
                            ? 0
                            : fixture_spans(cc, sp, config::kMaxFixtures);
     const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
     if (n == 0 || total > dst_capacity || bpp == 0) {
-        fill_scene_pattern(dst, dst_capacity, cc.pixel_count, bpp, scene, phase_ms);
+        fill_effect_run(dst, dst_capacity, cc.pixel_count, bpp, effect, phase_ms);
         return;
     }
     if (mode == config::kFixtureModeEach) {
         std::memset(dst, 0, total);
         for (size_t i = 0; i < n; ++i)
-            fill_scene_pattern(dst + static_cast<size_t>(sp[i].first) * bpp,
-                               dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count,
-                               bpp, scene, phase_ms);
+            fill_effect_run(dst + static_cast<size_t>(sp[i].first) * bpp,
+                            dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count, bpp,
+                            effect, phase_ms);
         reverse_fixtures(dst, bpp, sp, n);
         return;
     }
@@ -785,7 +797,7 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
     uint32_t len         = 0;
     for (size_t i = 0; i < chained; ++i)
         len += sp[i].count;
-    fill_scene_pattern(dst, dst_capacity, static_cast<uint16_t>(len), bpp, scene, phase_ms);
+    fill_effect_run(dst, dst_capacity, static_cast<uint16_t>(len), bpp, effect, phase_ms);
     uint32_t at = len;
     for (size_t i = chained; i-- > 0;) {
         at -= sp[i].count;
@@ -813,6 +825,13 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
             cursor = static_cast<uint32_t>(sp[i].first) + sp[i].count;
     }
     reverse_fixtures(dst, bpp, sp, n);
+}
+
+inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
+                                  const config::ChannelConfig& cc, uint8_t bpp,
+                                  const config::Scene& scene, uint64_t phase_ms) {
+    fill_effect_on_channel(dst, dst_capacity, cc, bpp, config::effect_from_scene(scene),
+                           scene.fixture_mode, phase_ms);
 }
 
 // ── DMX layout ──────────────────────────────────────────────────────────────

@@ -320,6 +320,76 @@ inline void set_scene_color(Scene& s, size_t k, uint8_t r, uint8_t g, uint8_t b)
     }
 }
 
+// An effect: a reusable look, with no target — what a scene part or a
+// fixture's DMX profile plays. Bytes only, so the struct has no padding and is
+// its own NVS record; every field's zero is its neutral value, which lets
+// later firmware give the reserved bytes a meaning without a migration.
+constexpr size_t kEffectNameMax = 16;
+
+// Effect::ph_wave — the dimmer phaser's waveform. Persisted: append only.
+constexpr uint8_t kPhaserNone      = 0;
+constexpr uint8_t kPhaserSin       = 1;
+constexpr uint8_t kPhaserCos       = 2;
+constexpr uint8_t kPhaserRampUp    = 3;
+constexpr uint8_t kPhaserRampDown  = 4;
+constexpr uint8_t kPhaserTriangle  = 5;
+constexpr uint8_t kPhaserPwm       = 6;
+constexpr uint8_t kPhaserBump      = 7;
+constexpr uint8_t kPhaserWaveCount = 8;
+
+// Effect::flags
+constexpr uint8_t kEffectDimmerInvert  = 0x01;  // intensity negative of the whole effect
+constexpr uint8_t kEffectPhaserReverse = 0x02;  // the phaser travels the other way
+constexpr uint8_t kEffectFlagsMask     = 0x03;
+
+struct Effect {
+    char name[kEffectNameMax];           // NUL-terminated
+    uint8_t generator;                   // kSceneFx*
+    uint8_t speed;                       // per generator — see fill_effect_run
+    uint8_t param;                       // per generator; 0 = its default
+    uint8_t num_colors;                  // 1..kSceneColorsMax; 0 reads as 1
+    uint8_t colors[kSceneColorsMax][3];  // RGB
+    uint8_t ph_wave;                     // kPhaser*; 0 = no dimmer phaser
+    uint8_t ph_rate;                     // 1/20 Hz per unit; 0 = a still wave
+    uint8_t ph_spread;                   // 1/16 cycle along the run; 0 = every pixel in phase
+    uint8_t ph_width;                    // share of the cycle the wave takes, n/255; 0 = all of it
+    uint8_t ph_low;                      // dimmer floor
+    uint8_t flags;                       // kEffect*
+    uint8_t block;                       // N neighbouring pixels share a value; 0/1 = off
+    uint8_t groups;                      // the pattern repeats every N; 0/1 = off
+    uint8_t wings;                       // the run splits in N mirrored parts; 0/1 = off
+    uint8_t reserved[7];
+};
+static_assert(sizeof(Effect) == 48, "Effect is an NVS record: bytes only, no padding");
+
+inline uint8_t effect_num_colors(const Effect& e) {
+    if (e.num_colors == 0) return 1;
+    return e.num_colors > kSceneColorsMax ? static_cast<uint8_t>(kSceneColorsMax) : e.num_colors;
+}
+
+inline void sanitize_effect(Effect& e) {
+    e.name[kEffectNameMax - 1] = '\0';
+    if (e.generator >= kSceneFxCount) e.generator = kSceneFxSolid;
+    e.num_colors = effect_num_colors(e);
+    if (e.ph_wave >= kPhaserWaveCount) e.ph_wave = kPhaserNone;
+    e.flags &= kEffectFlagsMask;
+    std::memset(e.reserved, 0, sizeof(e.reserved));
+}
+
+// The look of a v3 scene, without its target.
+inline Effect effect_from_scene(const Scene& s) {
+    Effect e{};
+    std::memcpy(e.name, s.name, kEffectNameMax);
+    e.name[kEffectNameMax - 1] = '\0';
+    e.generator                = s.effect < kSceneFxCount ? s.effect : kSceneFxSolid;
+    e.speed                    = s.speed;
+    e.param                    = s.param;
+    e.num_colors               = scene_num_colors(s);
+    for (size_t k = 0; k < kSceneColorsMax; ++k)
+        scene_color(s, k, e.colors[k]);
+    return e;
+}
+
 // v1 stored exactly kLegacyNumScenes × 25-byte records in one blob; the grown
 // record no longer lines up with it, so it is re-packed record by record.
 // Solid used to ignore speed, which now drives its strobe: an upgraded solid

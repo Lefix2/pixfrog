@@ -1054,6 +1054,51 @@ static void test_scene_fade_crosses_palette() {
 
 // Every effect must stay within pixel_count × bpp, zero the W die, and cope
 // with 1-pixel strips, max-size strips and extreme parameters.
+// A scene and the effect made from it draw the same frame, on a plain run and
+// through every fixture mode.
+static void test_effect_run_matches_scene() {
+    using namespace pixfrog::config;
+    constexpr int kN = 60;
+    uint8_t a[kN * 4], b[kN * 4];
+    ChannelConfig cc{};
+    cc.protocol    = pixfrog::led::Protocol::SK6812;
+    cc.pixel_count = kN;
+    cc.grouping    = 1;
+    cc.fixtures[0] = { 0, 20 };
+    cc.fixtures[1] = { 25, 10 | kFixtureReversed };
+    cc.fixtures[2] = { 40, 20 };
+    bool same      = true;
+    for (uint8_t fx = 0; fx < kSceneFxCount; ++fx)
+        for (uint64_t t : { 0ull, 1234ull, 987654321ull }) {
+            Scene s        = with_color(mk_scene(fx, 200, 30, 10, 37, 3), 0, 90, 255);
+            const Effect e = effect_from_scene(s);
+            std::memset(a, 0xAA, sizeof(a));
+            std::memset(b, 0xAA, sizeof(b));
+            fill_scene_pattern(a, sizeof(a), kN, 4, s, t);
+            fill_effect_run(b, sizeof(b), kN, 4, e, t);
+            same = same && std::memcmp(a, b, sizeof(a)) == 0;
+            for (uint8_t mode = 0; mode < kFixtureModeCount; ++mode) {
+                s.fixture_mode = mode;
+                fill_scene_on_channel(a, sizeof(a), cc, 4, s, t);
+                fill_effect_on_channel(b, sizeof(b), cc, 4, e, mode, t);
+                same = same && std::memcmp(a, b, sizeof(a)) == 0;
+            }
+        }
+    EXPECT_TRUE(same);
+
+    // An unknown generator falls back to Solid; a too-small buffer is left alone.
+    Effect e{};
+    e.generator    = 99;
+    e.colors[0][0] = 9;
+    std::memset(a, 0, sizeof(a));
+    fill_effect_run(a, sizeof(a), 2, 3, e, 0);
+    EXPECT_EQ(a[0], 9);
+    EXPECT_EQ(a[3], 9);
+    a[0] = 0x55;
+    fill_effect_run(a, 2, 2, 3, e, 0);
+    EXPECT_EQ(a[0], 0x55);
+}
+
 static void test_scene_all_effects_bounded() {
     using namespace pixfrog::config;
     constexpr int kN = 1024;
@@ -1508,6 +1553,7 @@ int main() {
     test_scene_scanner_bounces();
     test_scene_stripes_alternate_palette();
     test_scene_fade_crosses_palette();
+    test_effect_run_matches_scene();
     test_scene_all_effects_bounded();
     test_hue_wheel_endpoints();
     test_merge_single_source_passthrough();
