@@ -319,6 +319,26 @@ where a scene plays, and its order is the strip the effect runs along —
 - Editing an output's fixture list can shift what a member points at (it is
   an index); the editor flags members that no longer exist.
 
+Scenes on groups (`dmx::group_play / group_stop`, the render task draws them):
+- A scene playing on a group is drawn **once a frame** along the group's
+  virtual strip (members end to end, in order — `logic::render_group_strip`):
+  `each` member on its own, `strip`/`chain` one effect across, `mirror` over the
+  first half mirrored on the rest; the scene's **reverse** bit runs it from the
+  far end (in mirror: from the centre out). Each member's slice then goes into
+  its fixture (`put_member`: flipped for a reversed bar or an inverted output;
+  RGB, W off on RGBW).
+- Ownership is per fixture: a play takes its group's fixtures over from any
+  other play, the rest keep theirs; a fixture nobody owns shows its output's
+  own source (live, FSEQ, an output scene). Starting a scene on outputs, or
+  stopping them, takes their fixtures back. Fixtures crossfade from a snapshot
+  of what they showed (`scene_fade_ms` / the desk's Fade).
+- Up to 16 plays; strips up to 4096 pixels (PSRAM). A scene's default group and
+  reverse share `Scene::fixture_mode` with the mode (`pack_scene_mode`): a scene
+  with a default group plays there when started whole (web ▶, boot, failsafe,
+  menu). API: `POST /api/scene/n/play {"group": g}`, `"group"`/`"reverse"` on
+  scenes, `show.plays` = `[[scene, group], …]` in the status; console
+  `scene play <n> group <g>`.
+
 ### 5.6 DMX layout and auto-patch
 
 How a channel's pixels fill its universes is per channel

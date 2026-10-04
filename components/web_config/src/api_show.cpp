@@ -395,6 +395,17 @@ cJSON* build_show_json() {
     for (size_t o = 0; o < config::kNumChannels; ++o)
         cJSON_AddItemToArray(jso, cJSON_CreateNumber(dmx::scene_on_output(o)));
     cJSON_AddItemToObject(js, "scenes", jso);
+    // Scenes on groups: [[scene, group], ...] (the fixtures they own).
+    dmx::PlayInfo plays[16];
+    const size_t np = dmx::active_plays(plays, 16);
+    cJSON* jpl      = cJSON_CreateArray();
+    for (size_t i = 0; i < np && i < 16; ++i) {
+        cJSON* p = cJSON_CreateArray();
+        cJSON_AddItemToArray(p, cJSON_CreateNumber(plays[i].scene));
+        cJSON_AddItemToArray(p, cJSON_CreateNumber(plays[i].group));
+        cJSON_AddItemToArray(jpl, p);
+    }
+    cJSON_AddItemToObject(js, "plays", jpl);
     return js;
 }
 
@@ -454,20 +465,30 @@ esp_err_t handle_post_scene(httpd_req_t* req) {
         return send_err(req, 404, "no such scene");
 
     if (strstr(tail, "/play")) {
-        // Optional {"outputs": mask}: the zone to claim (∩ the scene's mask).
+        // Optional {"outputs": mask}: the zone to claim (∩ the scene's mask),
+        // or {"group": g}: play on that fixture group.
         uint8_t outs = dmx::kAllOutputs;
+        int group    = -1;
         if (req->content_len > 0) {
             char pb[64];
             if (!read_body(req, pb, sizeof(pb) - 1)) return send_err(req, 400, "body too large");
             cJSON* pj       = cJSON_Parse(pb);
             const cJSON* jo = pj ? cJSON_GetObjectItemCaseSensitive(pj, "outputs") : nullptr;
-            const bool bad  = !pj || (jo && (!cJSON_IsNumber(jo) ||
-                                            !(jo->valuedouble >= 1 && jo->valuedouble <= 255)));
+            const cJSON* jg = pj ? cJSON_GetObjectItemCaseSensitive(pj, "group") : nullptr;
+            const bool bad  = !pj ||
+                             (jo && (!cJSON_IsNumber(jo) ||
+                                     !(jo->valuedouble >= 1 && jo->valuedouble <= 255))) ||
+                             (jg && (!cJSON_IsNumber(jg) || jg->valuedouble < 0 ||
+                                     jg->valuedouble >= config::get_groups().count));
             if (!bad && jo) outs = static_cast<uint8_t>(jo->valuedouble);
+            if (!bad && jg) group = static_cast<int>(jg->valuedouble);
             cJSON_Delete(pj);
-            if (bad) return send_err(req, 400, "outputs: 1..255");
+            if (bad) return send_err(req, 400, "outputs: 1..255, or group: an existing group");
         }
-        dmx::scene_start_on(static_cast<uint8_t>(idx), outs);
+        if (group >= 0)
+            dmx::group_play(static_cast<uint8_t>(idx), static_cast<uint8_t>(group));
+        else
+            dmx::scene_start_on(static_cast<uint8_t>(idx), outs);
         return send_ok(req);
     }
     if (strstr(tail, "/stop")) {

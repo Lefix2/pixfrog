@@ -759,7 +759,7 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
                                   const config::ChannelConfig& cc, uint8_t bpp,
                                   const config::Scene& scene, uint64_t phase_ms) {
     Span sp[config::kMaxFixtures];
-    const uint8_t mode = scene.fixture_mode;
+    const uint8_t mode = config::scene_mode_of(scene.fixture_mode);
     const size_t n     = mode == config::kFixtureModeStrip || mode >= config::kFixtureModeCount
                            ? 0
                            : fixture_spans(cc, sp, config::kMaxFixtures);
@@ -813,6 +813,119 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
             cursor = static_cast<uint32_t>(sp[i].first) + sp[i].count;
     }
     reverse_fixtures(dst, bpp, sp, n);
+}
+
+// ── Scenes on groups ────────────────────────────────────────────────────────
+//
+// A group is an ordered list of fixtures on any outputs (config::FixtureGroup).
+// A scene playing on it is drawn once along the group's "virtual strip" — the
+// members end to end, in group order — then each member's slice is copied
+// into its fixture on its output.
+
+// Pixels a..a+n of a buffer, back to front.
+inline void reverse_px(uint8_t* d, uint8_t bpp, uint32_t n) {
+    uint8_t tmp[8];
+    if (n < 2) return;
+    for (uint8_t *a = d, *b = d + static_cast<size_t>(n - 1) * bpp; a < b; a += bpp, b -= bpp) {
+        std::memcpy(tmp, a, bpp);
+        std::memcpy(a, b, bpp);
+        std::memcpy(b, tmp, bpp);
+    }
+}
+
+// Each fixture of `cc` by its index (strip order), as a source-buffer span;
+// count 0 for a fixture cut off by the strip's end. `flip` is set when the
+// buffer runs through the fixture against its strip order (an inverted output)
+// or the fixture is mounted backwards — not both.
+inline void fixture_spans_by_index(const config::ChannelConfig& cc,
+                                   Span out[config::kMaxFixtures]) {
+    const size_t nf       = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+    const size_t ng       = led::gap_count(cc.gaps, led::kMaxPixelGaps);
+    const uint32_t live_n = cc.pixel_count;
+    const uint32_t group  = cc.grouping ? cc.grouping : 1;
+    for (size_t i = 0; i < config::kMaxFixtures; ++i) {
+        out[i] = Span{ 0, 0, false };
+        if (i >= nf) continue;
+        const uint32_t end = static_cast<uint32_t>(cc.fixtures[i].pos) +
+                             config::fixture_len(cc.fixtures[i]);
+        uint32_t a = led::live_within(cc.fixtures[i].pos, cc.gaps, ng);
+        uint32_t b = led::live_within(end, cc.gaps, ng);
+        if (b > live_n) b = live_n;
+        if (b <= a) continue;
+        if (cc.invert_direction) {
+            const uint32_t t = a;
+            a                = live_n - b;
+            b                = live_n - t;
+        }
+        const uint32_t ga = a / group, gb = (b + group - 1) / group;
+        out[i] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga),
+                       config::fixture_reversed(cc.fixtures[i]) != cc.invert_direction };
+    }
+}
+
+// Draws `scene` along a virtual strip of members `lens[0..n)` (pixels each,
+// end to end) into `strip` (RGB, 3 bytes a pixel), honouring the scene's
+// fixture mode and direction:
+//   each           every member plays the effect on its own
+//   strip, chain   one effect over the whole strip
+//   mirror         over the first half of the members, mirrored on the rest
+//   reverse        the effect runs from the far end (each: from each member's)
+// Returns the strip length, 0 when it does not fit `cap` bytes.
+inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* lens, size_t n,
+                                   const config::Scene& scene, uint64_t phase_ms) {
+    constexpr uint8_t bpp = 3;
+    uint32_t total        = 0;
+    for (size_t i = 0; i < n; ++i)
+        total += lens[i];
+    if (total == 0 || static_cast<size_t>(total) * bpp > cap) return 0;
+    const uint8_t mode = config::scene_mode_of(scene.fixture_mode);
+    const bool rev     = config::scene_reverse_of(scene.fixture_mode);
+    if (mode == config::kFixtureModeEach) {
+        uint32_t at = 0;
+        for (size_t i = 0; i < n; at += lens[i++]) {
+            fill_scene_pattern(strip + static_cast<size_t>(at) * bpp, cap - at * bpp, lens[i], bpp,
+                               scene, phase_ms);
+            if (rev) reverse_px(strip + static_cast<size_t>(at) * bpp, bpp, lens[i]);
+        }
+        return total;
+    }
+    if (mode != config::kFixtureModeMirror) {
+        fill_scene_pattern(strip, cap, static_cast<uint16_t>(total), bpp, scene, phase_ms);
+        if (rev) reverse_px(strip, bpp, total);
+        return total;
+    }
+    // Mirror: the first half drawn as one strip, then member n-1-i is member
+    // i back to front (resampled when the two differ in length).
+    const size_t half = (n + 1) / 2;
+    uint32_t hlen     = 0;
+    for (size_t i = 0; i < half; ++i)
+        hlen += lens[i];
+    fill_scene_pattern(strip, cap, static_cast<uint16_t>(hlen), bpp, scene, phase_ms);
+    if (rev) reverse_px(strip, bpp, hlen);
+    uint32_t offs[config::kMaxGroupMembers + 1];
+    offs[0] = 0;
+    for (size_t i = 0; i < n && i < config::kMaxGroupMembers; ++i)
+        offs[i + 1] = offs[i] + lens[i];
+    for (size_t i = half; i < n; ++i) {
+        const size_t from = n - 1 - i;
+        for (uint32_t j = 0; j < lens[i]; ++j) {
+            const uint32_t src = lens[from] ? lens[from] - 1 - j * lens[from] / lens[i] : 0;
+            std::memcpy(strip + static_cast<size_t>(offs[i] + j) * bpp,
+                        strip + static_cast<size_t>(offs[from] + src) * bpp, bpp);
+        }
+    }
+    return total;
+}
+
+// One member's slice (`count` RGB pixels) into its fixture's span of an
+// output buffer of `bpp` bytes a pixel (W off), back to front when `flip`.
+inline void put_member(uint8_t* dst, uint8_t bpp, const Span& sp, const uint8_t* slice,
+                       uint32_t count) {
+    const uint32_t n = count < sp.count ? count : sp.count;
+    for (uint32_t j = 0; j < n; ++j) {
+        const uint8_t* p = slice + static_cast<size_t>(sp.reversed ? n - 1 - j : j) * 3;
+        set_px(dst, bpp, static_cast<uint16_t>(sp.first + j), p[0], p[1], p[2]);
+    }
 }
 
 // ── DMX layout ──────────────────────────────────────────────────────────────

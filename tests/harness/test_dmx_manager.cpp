@@ -754,6 +754,113 @@ TEST(eight_full_rgbw_outputs_leave_room_for_the_control_universe) {
     dmx::handle_pending_remaps();
 }
 
+// ── Scenes on groups ─────────────────────────────────────────────────────────
+// Outputs 1-2, 5 bars of 4 LEDs each. "Top" runs from output 1's last bar
+// (left edge) to output 2's last bar (right edge); "Centre" = the two bars
+// next to the middle.
+namespace {
+config::ChannelConfig g_saved_ch[2];
+void two_outputs_of_bars() {
+    for (size_t ch = 0; ch < 2; ++ch) {
+        g_saved_ch[ch]     = config::get_channel(ch);
+        auto c             = g_saved_ch[ch];
+        c.protocol         = led::Protocol::WS2815;
+        c.pixel_count      = 20;
+        c.grouping         = 1;
+        c.invert_direction = false;
+        std::memset(c.gaps, 0, sizeof(c.gaps));
+        std::memset(c.fixtures, 0, sizeof(c.fixtures));
+        for (uint16_t k = 0; k < 5; ++k)
+            c.fixtures[k] = { static_cast<uint16_t>(k * 4), 4 };
+        c.universe_start = static_cast<uint16_t>(200 + ch);
+        config::set_channel(ch, c);
+        dmx::mark_channel_dirty(ch);
+    }
+    dmx::handle_pending_remaps();
+    static config::GroupsConfig g{};
+    g       = config::GroupsConfig{};
+    g.count = 2;
+    std::strcpy(g.groups[0].name, "Top");
+    g.groups[0].count = 10;
+    for (uint8_t k = 0; k < 5; ++k) {
+        g.groups[0].members[k]     = { 0, static_cast<uint8_t>(4 - k) };
+        g.groups[0].members[5 + k] = { 1, k };
+    }
+    std::strcpy(g.groups[1].name, "Centre");
+    g.groups[1].count      = 2;
+    g.groups[1].members[0] = { 0, 0 };
+    g.groups[1].members[1] = { 1, 0 };
+    config::set_groups(g);
+}
+const uint8_t* frame(size_t ch) {
+    dmx::swap_universes();
+    dmx::decode_pixels_for_channel(ch);
+    return dmx::pixel_back_buffer(ch);
+}
+}  // namespace
+
+TEST(a_scene_on_a_group_spans_outputs_and_yields_to_a_smaller_one) {
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);  // nothing left on the outputs
+    auto gl          = config::get_global();
+    gl.failsafe_mode = config::kFailsafeHold;  // live = what arrived: nothing here
+    config::set_global(gl);
+    two_outputs_of_bars();
+    solid_scene(0, 200, 0, 0);
+    solid_scene(1, 0, 0, 150);
+    const uint8_t live0 = frame(0)[0], live1 = frame(1)[19 * 3];  // whatever the banks hold
+    dmx::group_play(0, 0, 0);                                     // red on Top, no fade
+    EXPECT_EQ(frame(0)[0], 200);
+    EXPECT_EQ(frame(1)[19 * 3], 200);
+    dmx::group_play(1, 1, 0);  // blue on Centre: those two bars only
+    EXPECT_EQ(dmx::fixture_scene(0, 0), 1);
+    EXPECT_EQ(dmx::fixture_scene(0, 1), 0);
+    const uint8_t* o1 = frame(0);
+    EXPECT_EQ(o1[0 * 3 + 2], 150);  // bar 1 of output 1: blue
+    EXPECT_EQ(o1[4 * 3], 200);      // bar 2: still red
+    dmx::PlayInfo plays[4];
+    EXPECT_EQ(dmx::active_plays(plays, 4), 2u);
+    dmx::group_stop(1, 0);  // Centre stops: its bars go back to their output (live)
+    EXPECT_EQ(dmx::fixture_scene(0, 0), -1);
+    EXPECT_EQ(frame(0)[0], live0);
+    dmx::scene_start_on(1, 0x01, 0);  // output 1 whole: takes its Top bars back
+    EXPECT_EQ(dmx::fixture_scene(0, 3), -1);
+    EXPECT_EQ(dmx::fixture_scene(1, 3), 0);  // output 2 keeps Top
+    EXPECT_EQ(frame(0)[8 * 3 + 2], 150);
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);  // everything back to live
+    EXPECT_EQ(dmx::active_plays(plays, 4), 0u);
+    EXPECT_EQ(frame(1)[19 * 3], live1);
+}
+
+// Chained along Top: the strip continues from output 1's left bar to output
+// 2's right bar, whatever the wiring; reversed it runs from the right edge.
+TEST(a_chained_scene_runs_along_the_group_order) {
+    reset_show();
+    two_outputs_of_bars();
+    config::Scene sc{};
+    sc.effect       = config::kSceneFxGradient;
+    sc.num_colors   = 2;
+    sc.channel_mask = 0xFF;
+    config::set_scene_color(sc, 0, 255, 0, 0);
+    config::set_scene_color(sc, 1, 0, 0, 255);
+    sc.param        = 1;
+    sc.fixture_mode = config::pack_scene_mode(config::kFixtureModeChain, false, 0);
+    config::set_scene(2, sc);
+    uint8_t ref[40 * 3];
+    dmx::scene_start(2);  // its default group: Top
+    EXPECT_EQ(dmx::fixture_scene(1, 4), 2);
+    const uint8_t* a = frame(0);
+    uint8_t out1[20 * 3];
+    std::memcpy(out1, a, sizeof(out1));
+    const uint8_t* b = frame(1);
+    // Member 1 (output 1, bar 5 = LEDs 16-19) holds the strip's start, member
+    // 10 (output 2, bar 5) its end: they differ, and member 5 (output 1, bar
+    // 1) meets member 6 (output 2, bar 1) in the middle.
+    EXPECT_TRUE(std::memcmp(out1 + 16 * 3, b + 16 * 3, 3) != 0);
+    (void)ref;
+    dmx::scene_stop();
+}
+
 // ── Accessors and corners ───────────────────────────────────────────────────
 
 TEST(accessors_report_the_current_state) {

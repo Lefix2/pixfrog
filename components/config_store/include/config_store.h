@@ -261,6 +261,25 @@ inline const char* fixture_mode_id(uint8_t m) {
     return m < kFixtureModeCount ? kIds[m] : "each";
 }
 
+// Scene::fixture_mode packs three settings (the Scene layout is frozen):
+//   bits 0-1  the mode above
+//   bit  2    reverse: the effect runs from the far end (edges → centre)
+//   bits 3-7  default group + 1 (0 = none: the scene plays on its outputs)
+constexpr uint8_t kSceneReverseBit = 0x04;
+inline uint8_t scene_mode_of(uint8_t packed) {
+    return packed & 0x03;
+}
+inline bool scene_reverse_of(uint8_t packed) {
+    return (packed & kSceneReverseBit) != 0;
+}
+inline int scene_group_of(uint8_t packed) {
+    return static_cast<int>(packed >> 3) - 1;
+}
+inline uint8_t pack_scene_mode(uint8_t mode, bool reverse, int group) {
+    const int g = group < 0 || group > 30 ? 0 : group + 1;
+    return static_cast<uint8_t>((mode & 0x03) | (reverse ? kSceneReverseBit : 0) | (g << 3));
+}
+
 // Display names, indexed by effect id (fixture profiles, TFT).
 inline const char* scene_fx_label(uint8_t fx) {
     static const char* const kLabels[] = { "Solid",    "Chase", "Rainbow", "Blobs",

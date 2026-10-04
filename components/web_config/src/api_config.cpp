@@ -70,7 +70,10 @@ static cJSON* build_scenes_json() {
         cJSON_AddNumberToObject(js, "speed", sc.speed);
         cJSON_AddNumberToObject(js, "param", sc.param);
         cJSON_AddNumberToObject(js, "mask", sc.channel_mask);
-        cJSON_AddStringToObject(js, "fixture_mode", config::fixture_mode_id(sc.fixture_mode));
+        cJSON_AddStringToObject(js, "fixture_mode",
+                                config::fixture_mode_id(config::scene_mode_of(sc.fixture_mode)));
+        cJSON_AddBoolToObject(js, "reverse", config::scene_reverse_of(sc.fixture_mode));
+        cJSON_AddNumberToObject(js, "group", config::scene_group_of(sc.fixture_mode));
         cJSON_AddItemToArray(jscenes, js);
     }
     return jscenes;
@@ -479,9 +482,20 @@ void apply_scene_json(const cJSON* js, config::Scene& sc) {
     num("speed", 255, &sc.speed);
     num("param", 255, &sc.param);
     num("mask", 255, &sc.channel_mask);
+    // fixture_mode, reverse and group share one byte (pack_scene_mode).
+    uint8_t mode    = config::scene_mode_of(sc.fixture_mode);
+    bool reverse    = config::scene_reverse_of(sc.fixture_mode);
+    int group       = config::scene_group_of(sc.fixture_mode);
     const cJSON* fm = cJSON_GetObjectItemCaseSensitive(js, "fixture_mode");
     for (uint8_t m = 0; cJSON_IsString(fm) && m < config::kFixtureModeCount; ++m)
-        if (std::strcmp(fm->valuestring, config::fixture_mode_id(m)) == 0) sc.fixture_mode = m;
+        if (std::strcmp(fm->valuestring, config::fixture_mode_id(m)) == 0) mode = m;
+    const cJSON* jrv = cJSON_GetObjectItemCaseSensitive(js, "reverse");
+    if (cJSON_IsBool(jrv)) reverse = cJSON_IsTrue(jrv);
+    const cJSON* jgr = cJSON_GetObjectItemCaseSensitive(js, "group");  // -1 = its outputs
+    if (cJSON_IsNumber(jgr) && jgr->valuedouble >= -1 &&
+        jgr->valuedouble < static_cast<double>(config::kMaxGroups))
+        group = static_cast<int>(jgr->valuedouble);
+    sc.fixture_mode = config::pack_scene_mode(mode, reverse, group);
 
     uint8_t rgb[3];
     const cJSON* cols = cJSON_GetObjectItemCaseSensitive(js, "colors");

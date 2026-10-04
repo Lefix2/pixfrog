@@ -811,6 +811,64 @@ static void test_reversed_fixture_runs_backwards() {
     EXPECT_EQ(pixfrog::config::fixture_len(f[1]), 4);
 }
 
+// A scene along a group's virtual strip: chained over members of any
+// length, each member on its own, mirrored about the middle, reversed.
+static void test_group_strip_modes() {
+    const uint16_t lens[4] = { 4, 6, 6, 4 };
+    auto sc                = with_color(mk_scene(4 /*gradient*/, 255, 0, 0, 0, 1), 0, 0, 255);
+    uint8_t strip[20 * 3], ref[20 * 3];
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeChain, false,
+                                                       -1);
+    EXPECT_EQ(render_group_strip(strip, sizeof(strip), lens, 4, sc, 0), 20u);
+    fill_scene_pattern(ref, sizeof(ref), 20, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(strip, ref, sizeof(ref)) == 0);  // one strip, end to end
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeChain, true,
+                                                       -1);
+    render_group_strip(strip, sizeof(strip), lens, 4, sc, 0);
+    for (int j = 0; j < 20; ++j)  // reversed: from the far end
+        EXPECT_TRUE(std::memcmp(strip + j * 3, ref + (19 - j) * 3, 3) == 0);
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeEach, false,
+                                                       -1);
+    render_group_strip(strip, sizeof(strip), lens, 4, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 6, 3, sc, 0);
+    EXPECT_TRUE(std::memcmp(strip + 4 * 3, ref, 6 * 3) == 0);  // member 2 on its own
+    sc.fixture_mode = pixfrog::config::pack_scene_mode(pixfrog::config::kFixtureModeMirror, false,
+                                                       -1);
+    render_group_strip(strip, sizeof(strip), lens, 4, sc, 0);
+    for (int j = 0; j < 4; ++j)  // last member = first, back to front
+        EXPECT_TRUE(std::memcmp(strip + (16 + j) * 3, strip + (3 - j) * 3, 3) == 0);
+    for (int j = 0; j < 6; ++j)  // third = second, back to front
+        EXPECT_TRUE(std::memcmp(strip + (10 + j) * 3, strip + (9 - j) * 3, 3) == 0);
+    EXPECT_EQ(render_group_strip(strip, 10, lens, 4, sc, 0), 0u);  // does not fit
+    // A slice into a fixture: RGBW output, flipped (bar reversed).
+    uint8_t out[6 * 4];
+    std::memset(out, 0xEE, sizeof(out));
+    const uint8_t slice[3 * 3] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    put_member(out, 4, Span{ 2, 3, true }, slice, 3);
+    EXPECT_EQ(out[2 * 4], 7);      // its first pixel holds the slice's last
+    EXPECT_EQ(out[2 * 4 + 3], 0);  // W off
+    EXPECT_EQ(out[4 * 4], 1);
+    EXPECT_EQ(out[0], 0xEE);  // outside the span: untouched
+}
+
+// Spans by fixture index; flip = reversed bar XOR inverted output.
+static void test_fixture_spans_by_index() {
+    auto cc        = fixture_chan(10);
+    cc.fixtures[0] = { 0, 4 };
+    cc.fixtures[1] = { 4, static_cast<uint16_t>(6 | pixfrog::config::kFixtureReversed) };
+    Span sp[pixfrog::config::kMaxFixtures];
+    fixture_spans_by_index(cc, sp);
+    EXPECT_EQ(sp[1].first, 4);
+    EXPECT_TRUE(sp[1].reversed);
+    EXPECT_TRUE(!sp[0].reversed);
+    EXPECT_EQ(sp[2].count, 0);
+    cc.invert_direction = true;
+    fixture_spans_by_index(cc, sp);
+    EXPECT_EQ(sp[0].first, 6);  // index order kept, positions from the far end
+    EXPECT_TRUE(sp[0].reversed);
+    EXPECT_TRUE(!sp[1].reversed);  // reversed twice
+}
+
 static void test_fixtures_normalize_drops_overlaps() {
     pixfrog::config::Fixture f[4] = { { 20, 5 }, { 0, 10 }, { 5, 3 }, { 2000, 4 } };
     EXPECT_EQ(pixfrog::config::normalize_fixtures(f, 4), 2u);
@@ -1495,6 +1553,8 @@ int main() {
     test_fixture_spans_follow_invert_and_grouping();
     test_fixture_modes_each_chain_mirror();
     test_fixtures_normalize_drops_overlaps();
+    test_group_strip_modes();
+    test_fixture_spans_by_index();
     test_reversed_fixture_runs_backwards();
     test_scene_solid();
     test_scene_solid_rgbw_white_off();
