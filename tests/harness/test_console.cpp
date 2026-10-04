@@ -495,6 +495,14 @@ TEST(ctrl_composes_the_control_mode) {
     EXPECT_EQ(dmx::control_universe(), 42);
     EXPECT_TRUE(run("ctrl clear"));
     EXPECT_TRUE(run("ctrl address 500"));
+    EXPECT_TRUE(run("ctrl add bank 0f"));  // the functions on the effect a scene plays
+    EXPECT_TRUE(run("ctrl add ph_wave"));
+    EXPECT_TRUE(run("ctrl add wings"));
+    EXPECT_TRUE(run("ctrl"));
+    EXPECT_TRUE(has("bank"));
+    EXPECT_TRUE(has("ph_wave"));
+    EXPECT_TRUE(has("wings"));
+    EXPECT_TRUE(run("ctrl clear"));
     EXPECT_TRUE(run("ctrl add scene 0f"));
     EXPECT_TRUE(run("ctrl add scene f0"));  // two zones from one desk
     EXPECT_TRUE(run("ctrl add red ff 2"));

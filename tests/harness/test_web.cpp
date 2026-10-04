@@ -908,6 +908,51 @@ TEST(fixture_profile_covers_every_control_function) {
     EXPECT_EQ(gapless, 3);  // speed, param, scene
     const cJSON* fade = cJSON_GetObjectItemCaseSensitive(avail, "Fade time");
     EXPECT_TRUE(fade != nullptr);
+
+    // The channels on the effect a scene plays: bank, phaser, Block / Groups /
+    // Wings — every one a gapless 0..255 list.
+    EXPECT_EQ(
+        post("/api/control",
+             "{\"slots\":[{\"fn\":\"bank\",\"mask\":15},{\"fn\":\"ph_wave\"},"
+             "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"effect\"}]}")
+            .status,
+        200);
+    Json fx(get("/api/control/fixture").body);
+    int listed = 0;
+    for (const cJSON* ch = fx["availableChannels"]->child; ch; ch = ch->next) {
+        int next = 0;
+        for (const cJSON* cap = cJSON_GetObjectItemCaseSensitive(ch, "capabilities")->child; cap;
+             cap              = cap->next) {
+            const cJSON* r = cJSON_GetObjectItemCaseSensitive(cap, "dmxRange");
+            EXPECT_EQ(static_cast<int>(cJSON_GetArrayItem(r, 0)->valuedouble), next);
+            next = static_cast<int>(cJSON_GetArrayItem(r, 1)->valuedouble) + 1;
+        }
+        EXPECT_EQ(next, 256);
+        ++listed;
+    }
+    EXPECT_EQ(listed, 9);
+    // The bank channel names the effects, band by band; the generator channel
+    // is no longer called "Effect".
+    const cJSON* bank = cJSON_GetObjectItemCaseSensitive(fx["availableChannels"],
+                                                         "Effect (out 1-4)");
+    EXPECT_TRUE(bank != nullptr);
+    const cJSON* caps = cJSON_GetObjectItemCaseSensitive(bank, "capabilities");
+    EXPECT_EQ(cJSON_GetArraySize(caps), static_cast<int>(config::num_effects()) + 2);
+    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(caps, 2), "effectName")->valuestring,
+                 config::get_effect(1).name);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(fx["availableChannels"], "Generator") != nullptr);
+    const cJSON* wave = cJSON_GetObjectItemCaseSensitive(fx["availableChannels"], "Phaser wave");
+    EXPECT_STREQ(cJSON_GetObjectItem(
+                     cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(wave, "capabilities"), 2),
+                     "effectName")
+                     ->valuestring,
+                 "Phaser sine");
+    Json ctl(get("/api/config").body);
+    EXPECT_STREQ(cJSON_GetObjectItem(
+                     cJSON_GetArrayItem(cJSON_GetObjectItem(ctl["control"], "slots"), 0), "fn")
+                     ->valuestring,
+                 "bank");
     post("/api/control", "{\"preset\":\"simple\"}");
 }
 

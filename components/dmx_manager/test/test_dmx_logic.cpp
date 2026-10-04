@@ -1812,6 +1812,78 @@ static void test_control_evaluate() {
     EXPECT_EQ(ev.fade_ms, 0);
 }
 
+// The desk's channels on the effect an output plays: bank, phaser, MAtricks.
+static void test_control_effect_functions() {
+    using config::CtlFn;
+    EXPECT_EQ(phaser_wave_from_dmx(0), -1);  // band 0: the effect's own
+    EXPECT_EQ(phaser_wave_from_dmx(7), -1);
+    EXPECT_EQ(phaser_wave_from_dmx(8), config::kPhaserNone);  // band 1: no phaser
+    EXPECT_EQ(phaser_wave_from_dmx(16), config::kPhaserSin);
+    EXPECT_EQ(phaser_wave_from_dmx(8 * config::kPhaserWaveCount + 7), config::kPhaserBump);
+    EXPECT_EQ(phaser_wave_from_dmx(8 * config::kPhaserWaveCount + 8), -1);  // past the last wave
+    EXPECT_EQ(phaser_wave_from_dmx(255), -1);
+
+    config::ControlConfig c{};
+    c.enabled         = 1;
+    c.address         = 1;
+    const CtlFn fns[] = { CtlFn::Bank,    CtlFn::PhWave, CtlFn::PhRate, CtlFn::PhSpread,
+                          CtlFn::PhWidth, CtlFn::Block,  CtlFn::Groups, CtlFn::Wings };
+    for (CtlFn fn : fns)
+        c.slots[c.count++] = config::control_slot(fn, 0x0F);
+    uint8_t u[8] = { 24, 16, 40, 16, 128, 3, 4, 2 };  // effect 3, sine
+    ControlEval ev;
+    evaluate_control(c, u, sizeof(u), ev);
+    const EffectOverride& o = ev.ovr[0];
+    EXPECT_EQ(o.bank, 2);
+    EXPECT_EQ(o.ph_wave, config::kPhaserSin);
+    EXPECT_EQ(o.ph_rate, 40);
+    EXPECT_EQ(o.ph_spread, 16);
+    EXPECT_EQ(o.ph_width, 128);
+    EXPECT_EQ(o.block, 3);
+    EXPECT_EQ(o.groups, 4);
+    EXPECT_EQ(o.wings, 2);
+    EXPECT_EQ(ev.ovr[4].bank, -1);  // outside the slots' group
+    EXPECT_EQ(ev.ovr[4].wings, -1);
+
+    // Everything at 0: the effect's own, nothing overridden.
+    std::memset(u, 0, sizeof(u));
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_EQ(o.bank, -1);
+    EXPECT_EQ(o.ph_wave, -1);
+    EXPECT_EQ(o.ph_rate + o.ph_spread + o.ph_width + o.block + o.groups + o.wings, -6);
+    u[5] = 1;  // 1 switches a count off, which is not "the effect's own"
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_EQ(o.block, 1);
+
+    // Applied to an effect: only what the desk asked for moves.
+    config::Effect e{};
+    e.ph_wave = config::kPhaserCos;
+    e.ph_rate = 9;
+    e.block   = 7;
+    e.wings   = 4;
+    EffectOverride ask;
+    ask.bank      = 5;  // not this function's business: the caller swaps the effect
+    ask.ph_wave   = config::kPhaserNone;
+    ask.ph_spread = 32;
+    ask.ph_width  = 200;
+    ask.block     = 1;
+    ask.groups    = 6;
+    apply_effect_override(e, ask);
+    EXPECT_EQ(e.ph_wave, config::kPhaserNone);
+    EXPECT_EQ(e.ph_rate, 9);
+    EXPECT_EQ(e.ph_spread, 32);
+    EXPECT_EQ(e.ph_width, 200);
+    EXPECT_EQ(e.block, 1);
+    EXPECT_EQ(e.groups, 6);
+    EXPECT_EQ(e.wings, 4);
+    ask         = EffectOverride{};
+    ask.ph_rate = 77;
+    ask.wings   = 2;
+    apply_effect_override(e, ask);
+    EXPECT_EQ(e.ph_rate, 77);
+    EXPECT_EQ(e.wings, 2);
+}
+
 static void test_effect_override_applies() {
     config::Effect e{};
     e.generator  = config::kSceneFxSolid;
@@ -1959,6 +2031,7 @@ int main() {
     test_control_presets_and_footprint();
     test_control_sanitize();
     test_control_evaluate();
+    test_control_effect_functions();
     test_effect_override_applies();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);

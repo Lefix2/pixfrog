@@ -444,6 +444,9 @@ def test_control_editor_preset_zone_and_save(page, device):
     for o in range(4, 8):  # the scene channel (row 3) plays on outputs 1-4 only
         page.locator(f'[data-ct-out="3"][data-o="{o}"]').click()
     page.locator('[data-ct-fn="4"]').select_option("fseq")
+    page.locator('[data-ct-fn="5"]').select_option("bank")  # the effect, picked in the bank
+    page.locator('[data-ct-fn="6"]').select_option("ph_wave")
+    expect(page.locator('[data-ct-fn="5"] option:checked')).to_have_text("Effect of the bank")
     page.locator("#ct-en").check(force=True)
     page.locator("#ct-uni").fill("77")
     save(page)
@@ -451,6 +454,7 @@ def test_control_editor_preset_zone_and_save(page, device):
     assert c["enabled"] and c["universe"] == 77 and len(c["slots"]) == 15
     assert c["slots"][3] == {"fn": "scene", "mask": 15, "index": 0, "fine": False}
     assert c["slots"][4]["fn"] == "fseq"
+    assert c["slots"][5]["fn"] == "bank" and c["slots"][6]["fn"] == "ph_wave"
     expect(page.locator("#ct-state")).to_contain_text("waiting")
 
 

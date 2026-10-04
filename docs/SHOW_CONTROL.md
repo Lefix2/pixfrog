@@ -135,9 +135,13 @@ an output group.
 | Blackout | ≥ 128 = dark |
 | Strobe | 0 = off, 1–255 = 1–25 Hz |
 | Scene | bands of 8: 0–7 = none, 8–15 = scene 1, 16–23 = scene 2 … |
+| Effect (`bank`) | bands of 8: 0–7 = the effect the scene's part plays, 8–15 = effect 1 of the bank, 16–23 = effect 2 … — played on the slot's outputs in place of the scene's own, for as long as the fader stays there |
 | Speed / Param | 0 = the effect's own, 1–255 = override |
-| Effect | 0 = the effect's own generator, 1–255 spread over the 11 generators |
+| Generator (`effect`) | 0 = the effect's own generator, 1–255 spread over the 11 generators |
 | Red / Green / Blue (colour n) | overrides colour n of the effect an output plays; all three at 0 = the effect's own |
+| Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine, then cosine, ramp up, ramp down, triangle, PWM, bump |
+| Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |
+| Block / Groups / Wings | 0 = the effect's own, 1 = off, 2–255 = N |
 | Fade | scene fade time, value × 0.1 s |
 | FSEQ | bands of 8: 0–7 = stop, 8–15 = file 1 … (the order of the file list) |
 | Spare | nothing; it keeps a channel free |
@@ -164,7 +168,7 @@ an output group.
 | Preset | Channels |
 |---|---|
 | Simple (6 ch) | master 16-bit, blackout, strobe, scene, fade |
-| Full (16 ch) | master 16-bit, blackout, strobe, scene, speed, param, effect, colour 1 RGB, colour 2 RGB, fade, FSEQ |
+| Full (16 ch) | master 16-bit, blackout, strobe, scene, speed, param, generator, colour 1 RGB, colour 2 RGB, fade, FSEQ |
 
 **Editors:**
 - web: *DMX control*, with the channel map and overlap and overflow warnings;

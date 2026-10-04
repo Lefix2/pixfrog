@@ -1330,10 +1330,19 @@ inline int effect_from_dmx(uint8_t v) {
 }
 
 // Per-output scene overrides from the control universe (-1 = not overridden).
+// What a desk asks of the effect an output plays; -1 = the effect's own.
 struct EffectOverride {
+    int16_t bank      = -1;  // another effect of the bank altogether
     int16_t speed     = -1;
     int16_t param     = -1;
     int16_t generator = -1;
+    int16_t ph_wave   = -1;
+    int16_t ph_rate   = -1;
+    int16_t ph_spread = -1;
+    int16_t ph_width  = -1;
+    int16_t block     = -1;
+    int16_t groups    = -1;
+    int16_t wings     = -1;
     int16_t color[config::kSceneColorsMax][3];
     EffectOverride() {
         for (auto& c : color)
@@ -1341,10 +1350,22 @@ struct EffectOverride {
     }
 };
 
+// Everything but `bank`: swapping the effect itself is the caller's, which
+// holds the bank (see dmx_manager's render_source).
 inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
-    if (o.speed >= 0) e.speed = static_cast<uint8_t>(o.speed);
-    if (o.param >= 0) e.param = static_cast<uint8_t>(o.param);
-    if (o.generator >= 0) e.generator = static_cast<uint8_t>(o.generator);
+    auto take = [](uint8_t& field, int16_t v) {
+        if (v >= 0) field = static_cast<uint8_t>(v);
+    };
+    take(e.speed, o.speed);
+    take(e.param, o.param);
+    take(e.generator, o.generator);
+    take(e.ph_wave, o.ph_wave);
+    take(e.ph_rate, o.ph_rate);
+    take(e.ph_spread, o.ph_spread);
+    take(e.ph_width, o.ph_width);
+    take(e.block, o.block);
+    take(e.groups, o.groups);
+    take(e.wings, o.wings);
     for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
         const int16_t* c = o.color[k];
         if (c[0] < 0 && c[1] < 0 && c[2] < 0) continue;
@@ -1352,6 +1373,13 @@ inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
             e.colors[k][j] = static_cast<uint8_t>(c[j] < 0 ? 0 : c[j]);
         if (k + 1 > config::effect_num_colors(e)) e.num_colors = static_cast<uint8_t>(k + 1);
     }
+}
+
+// Phaser wave a desk's wave channel selects, in bands of 8: -1 = the effect's
+// own (band 0, or past the last wave), else kPhaser* — band 1 is "no phaser".
+inline int phaser_wave_from_dmx(uint8_t v) {
+    const uint8_t band = dmx_band(v);
+    return band >= 1 && band <= config::kPhaserWaveCount ? band - 1 : -1;
 }
 
 // What one control-universe frame asks for. Masters multiply, blackouts OR,
@@ -1424,6 +1452,30 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
                 break;
             case config::CtlFn::Effect:
                 if (v) out.ovr[o].generator = static_cast<int16_t>(effect_from_dmx(v));
+                break;
+            case config::CtlFn::Bank:
+                if (dmx_band(v)) out.ovr[o].bank = static_cast<int16_t>(dmx_band(v) - 1);
+                break;
+            case config::CtlFn::PhWave:
+                out.ovr[o].ph_wave = static_cast<int16_t>(phaser_wave_from_dmx(v));
+                break;
+            case config::CtlFn::PhRate:
+                if (v) out.ovr[o].ph_rate = v;
+                break;
+            case config::CtlFn::PhSpread:
+                if (v) out.ovr[o].ph_spread = v;
+                break;
+            case config::CtlFn::PhWidth:
+                if (v) out.ovr[o].ph_width = v;
+                break;
+            case config::CtlFn::Block:
+                if (v) out.ovr[o].block = v;
+                break;
+            case config::CtlFn::Groups:
+                if (v) out.ovr[o].groups = v;
+                break;
+            case config::CtlFn::Wings:
+                if (v) out.ovr[o].wings = v;
                 break;
             case config::CtlFn::Red:
             case config::CtlFn::Green:

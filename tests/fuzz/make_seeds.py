@@ -225,6 +225,9 @@ ctrl enable 1
 ctrl universe 77
 ctrl address 500
 ctrl add scene 0f
+ctrl add bank 0f
+ctrl add ph_wave
+ctrl add wings f0
 ctrl set 0 master ff 0 1
 ctrl del 1
 scene play 1 0f

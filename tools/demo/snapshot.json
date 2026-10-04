@@ -737,7 +737,53 @@
      "type": "ColorIntensity"
     }
    },
-   "Effect": {
+   "Effect parameter": {
+    "capabilities": [
+     {
+      "dmxRange": [
+       0,
+       0
+      ],
+      "type": "NoFunction"
+     },
+     {
+      "dmxRange": [
+       1,
+       255
+      ],
+      "parameterEnd": "high",
+      "parameterStart": "low",
+      "type": "EffectParameter"
+     }
+    ]
+   },
+   "Effect speed": {
+    "capabilities": [
+     {
+      "dmxRange": [
+       0,
+       0
+      ],
+      "type": "NoFunction"
+     },
+     {
+      "dmxRange": [
+       1,
+       255
+      ],
+      "speedEnd": "fast",
+      "speedStart": "slow",
+      "type": "EffectSpeed"
+     }
+    ]
+   },
+   "Fade time": {
+    "capability": {
+     "comment": "Scene fade time, value x 0.1 s",
+     "type": "Generic"
+    }
+   },
+   "Generator": {
     "capabilities": [
      {
       "dmxRange": [
@@ -836,12 +882,6 @@
      }
     ]
    },
-   "Fade time": {
-    "capability": {
-     "comment": "Scene fade time, value x 0.1 s",
-     "type": "Generic"
-    }
-   },
    "Master": {
     "capability": {
      "type": "Intensity"
@@ -932,46 +972,6 @@
      }
     ]
    },
-   "Scene parameter": {
-    "capabilities": [
-     {
-      "dmxRange": [
-       0,
-       0
-      ],
-      "type": "NoFunction"
-     },
-     {
-      "dmxRange": [
-       1,
-       255
-      ],
-      "parameterEnd": "high",
-      "parameterStart": "low",
-      "type": "EffectParameter"
-     }
-    ]
-   },
-   "Scene speed": {
-    "capabilities": [
-     {
-      "dmxRange": [
-       0,
-       0
-      ],
-      "type": "NoFunction"
-     },
-     {
-      "dmxRange": [
-       1,
-       255
-      ],
-      "speedEnd": "fast",
-      "speedStart": "slow",
-      "type": "EffectSpeed"
-     }
-    ]
-   },
    "Show file": {
     "capabilities": [
      {
@@ -1033,9 +1033,9 @@
      "Blackout",
      "Strobe",
      "Scene",
-     "Scene speed",
-     "Scene parameter",
-     "Effect",
+     "Effect speed",
+     "Effect parameter",
+     "Generator",
      "Colour 1 red",
      "Colour 1 green",
      "Colour 1 blue",

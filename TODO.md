@@ -49,10 +49,7 @@ Feedback from a lighting operator (GrandMA): drive the box like a conventional
 fixture, not only as a pixel-mapped node. In landing order — each item builds
 on the one before.
 
-- [ ] ★ **Control universe: bank and phaser functions** — slots for the bank
-      effect, the phaser (wave, rate, spread, width) and Block / Groups / Wings
-      on the scene an output plays.
-- [ ] **Fixture DMX profiles** — a small library of composable profiles (ordered
+- [ ] ★ **Fixture DMX profiles** — a small library of composable profiles (ordered
       channel functions: dimmer, colours, shutter, effect bank, speed, param,
       phaser, MAtricks), one per fixture, presets from 3 to 16 channels, an
       Open Fixture Library export per profile.

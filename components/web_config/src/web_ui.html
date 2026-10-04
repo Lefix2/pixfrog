@@ -536,7 +536,7 @@
             <div id="ct-slots"></div>
             <div style="padding:12px 18px;background:var(--well)"><button class="btn-pri" data-ct-add style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="Add a channel">Add a channel</span></button></div>
           </div>
-          <div style="font:500 12px 'DM Mono';color:var(--fg-4);line-height:1.6" data-i18n="Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. Speed, parameter, effect and colour channels at 0 keep the scene's own value. A scene channel with a partial output group plays its scene on those outputs only.">Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. Speed, parameter, effect and colour channels at 0 keep the scene's own value. A scene channel with a partial output group plays its scene on those outputs only.</div>
+          <div style="font:500 12px 'DM Mono';color:var(--fg-4);line-height:1.6" data-i18n="Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. The other channels act on the effect an output's scene plays, and keep its own value at 0: speed, parameter, generator, colours, phaser, Block / Groups / Wings — and the effect itself, picked in the bank by bands of 8. A scene channel with a partial output group plays its scene on those outputs only.">Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. The other channels act on the effect an output's scene plays, and keep its own value at 0: speed, parameter, generator, colours, phaser, Block / Groups / Wings — and the effect itself, picked in the bank by bands of 8. A scene channel with a partial output group plays its scene on those outputs only.</div>
         </div>
       </div>
 
@@ -833,11 +833,12 @@ var FR={
   'OUTPUTS':'SORTIES',
   'OPTION':'OPTION',
   'Add a channel':'Ajouter un canal',
-  'Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. Speed, parameter, effect and colour channels at 0 keep the scene\'s own value. A scene channel with a partial output group plays its scene on those outputs only.':'Les canaux scène et fichier show utilisent des tranches de 8 valeurs (0-7 = aucun, 8-15 = élément 1…) et agissent quand la valeur change. Les canaux vitesse, paramètre, effet et couleur à 0 gardent la valeur de la scène. Un canal scène limité à un groupe de sorties joue sa scène sur ces sorties uniquement.',
+  'Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. The other channels act on the effect an output\'s scene plays, and keep its own value at 0: speed, parameter, generator, colours, phaser, Block / Groups / Wings — and the effect itself, picked in the bank by bands of 8. A scene channel with a partial output group plays its scene on those outputs only.':'Les canaux scène et fichier show utilisent des tranches de 8 valeurs (0-7 = aucun, 8-15 = élément 1…) et agissent quand la valeur change. Les autres canaux agissent sur l’effet que joue la scène d’une sortie, et gardent sa valeur à 0 : vitesse, paramètre, générateur, couleurs, phaser, Block / Groups / Wings — et l’effet lui-même, choisi dans la banque par tranches de 8. Un canal scène limité à un groupe de sorties joue sa scène sur ces sorties uniquement.',
   'Spare':'Réserve',
   'Scene':'Scène',
-  'Scene speed':'Vitesse de scène',
-  'Scene parameter':'Paramètre de scène',
+  'Effect speed':'Vitesse de l’effet',
+  'Effect parameter':'Paramètre de l’effet',
+  'Generator':'Générateur','Effect of the bank':'Effet de la banque','Phaser wave':'Onde du phaser','Phaser rate':'Cadence du phaser','Phaser spread':'Étalement du phaser','Phaser width':'Largeur du phaser',
   'Colour red':'Couleur rouge',
   'Colour green':'Couleur verte',
   'Colour blue':'Couleur bleue',
@@ -2239,8 +2240,8 @@ function gmDragEnd(){
 }
 /* ─────────── DMX control universe ─────────── */
 var CTL={enabled:false,universe:100,address:1,slots:[]}, CTL_STATE='off';
-var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq'];
-var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Scene speed',param:'Scene parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Effect',fade:'Fade time',fseq:'Show file'};
+var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq','bank','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings'];
+var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Effect speed',param:'Effect parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Generator',fade:'Fade time',fseq:'Show file',bank:'Effect of the bank',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings'};
 function ctlWidth(sl){ return (sl.fn==='master'&&sl.fine)?2:1; }
 function ctlFootprint(){ return CTL.slots.reduce(function(n,sl){ return n+ctlWidth(sl); },0); }
 function ctlPreset(which){

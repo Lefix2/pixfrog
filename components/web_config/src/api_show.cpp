@@ -143,6 +143,56 @@ static void ofl_channel_name(char* out, size_t cap, const char* base, uint8_t ma
     snprintf(out, cap, "%s (out %s)", base, outs);
 }
 
+// "0 = the effect's own, 1-255 = override" as an OFL capability pair.
+static void ofl_override(cJSON* caps, cJSON* cap) {
+    ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+    ofl_range(caps, 1, 255, cap);
+}
+
+static cJSON* ofl_generic(const char* comment) {
+    cJSON* c = ofl_cap("Generic");
+    cJSON_AddStringToObject(c, "comment", comment);
+    return c;
+}
+
+// Bands of 8 over the effect bank: `none` names band 0.
+static void ofl_bank(cJSON* caps, const char* none) {
+    ofl_range(caps, 0, 7, ofl_generic(none));
+    const size_t n = config::num_effects();
+    for (size_t i = 0; i < n; ++i) {
+        cJSON* c = ofl_cap("Effect");
+        cJSON_AddStringToObject(c, "effectName", config::get_effect(i).name);
+        ofl_range(caps, static_cast<int>(8 * (i + 1)), static_cast<int>(8 * (i + 1) + 7), c);
+    }
+    if (8 * (n + 1) <= 255)
+        ofl_range(caps, static_cast<int>(8 * (n + 1)), 255, ofl_cap("NoFunction"));
+}
+
+// Bands of 8 over the phaser waves: band 0 = the effect's own, band 1 = none.
+static void ofl_phaser_wave(cJSON* caps) {
+    static const char* const kNames[] = { "No phaser",      "Phaser sine",      "Phaser cosine",
+                                          "Phaser ramp up", "Phaser ramp down", "Phaser triangle",
+                                          "Phaser PWM",     "Phaser bump" };
+    static_assert(sizeof(kNames) / sizeof(kNames[0]) == config::kPhaserWaveCount,
+                  "one name per waveform");
+    ofl_range(caps, 0, 7, ofl_generic("The effect's own phaser"));
+    for (int w = 0; w < config::kPhaserWaveCount; ++w) {
+        cJSON* c = ofl_cap("Effect");
+        cJSON_AddStringToObject(c, "effectName", kNames[w]);
+        ofl_range(caps, 8 * (w + 1), 8 * (w + 1) + 7, c);
+    }
+    ofl_range(caps, 8 * (config::kPhaserWaveCount + 1), 255, ofl_cap("NoFunction"));
+}
+
+// "0 = the effect's own, 1 = off, 2-255 = N" (Block / Groups / Wings).
+static void ofl_count(cJSON* caps, const char* what) {
+    char note[48];
+    ofl_range(caps, 0, 0, ofl_generic("The effect's own"));
+    ofl_range(caps, 1, 1, ofl_generic("Off"));
+    snprintf(note, sizeof(note), "%s: the value itself, 2 to 255", what);
+    ofl_range(caps, 2, 255, ofl_generic(note));
+}
+
 static cJSON* ofl_channel(const config::ControlSlot& sl) {
     cJSON* ch     = cJSON_CreateObject();
     cJSON* caps   = cJSON_CreateArray();
@@ -223,6 +273,24 @@ static cJSON* ofl_channel(const config::ControlSlot& sl) {
         }
         break;
     }
+    case config::CtlFn::Bank: ofl_bank(caps, "The scene's own effect"); break;
+    case config::CtlFn::PhWave: ofl_phaser_wave(caps); break;
+    case config::CtlFn::PhRate: {
+        cJSON* c = ofl_cap("EffectSpeed");
+        cJSON_AddStringToObject(c, "speedStart", "0.05Hz");
+        cJSON_AddStringToObject(c, "speedEnd", "12.75Hz");
+        ofl_override(caps, c);
+        break;
+    }
+    case config::CtlFn::PhSpread:
+        ofl_override(caps, ofl_generic("Phase spread along the run, value / 16 cycles"));
+        break;
+    case config::CtlFn::PhWidth:
+        ofl_override(caps, ofl_generic("Share of the cycle the wave takes, value / 255"));
+        break;
+    case config::CtlFn::Block: ofl_count(caps, "Pixels sharing a value"); break;
+    case config::CtlFn::Groups: ofl_count(caps, "Pattern repeats every"); break;
+    case config::CtlFn::Wings: ofl_count(caps, "Mirrored parts"); break;
     case config::CtlFn::Fade: {
         cJSON* c = ofl_cap("Generic");
         cJSON_AddStringToObject(c, "comment", "Scene fade time, value x 0.1 s");
@@ -253,8 +321,8 @@ static const char* ofl_base_name(const config::ControlSlot& sl, char* buf, size_
     case config::CtlFn::Blackout: return "Blackout";
     case config::CtlFn::Strobe: return "Strobe";
     case config::CtlFn::Scene: return "Scene";
-    case config::CtlFn::Speed: return "Scene speed";
-    case config::CtlFn::Param: return "Scene parameter";
+    case config::CtlFn::Speed: return "Effect speed";
+    case config::CtlFn::Param: return "Effect parameter";
     case config::CtlFn::Red:
     case config::CtlFn::Green:
     case config::CtlFn::Blue:
@@ -263,9 +331,17 @@ static const char* ofl_base_name(const config::ControlSlot& sl, char* buf, size_
                  : sl.fn == static_cast<uint8_t>(config::CtlFn::Green) ? "green"
                                                                        : "blue");
         return buf;
-    case config::CtlFn::Effect: return "Effect";
+    case config::CtlFn::Effect: return "Generator";
     case config::CtlFn::Fade: return "Fade time";
     case config::CtlFn::Fseq: return "Show file";
+    case config::CtlFn::Bank: return "Effect";
+    case config::CtlFn::PhWave: return "Phaser wave";
+    case config::CtlFn::PhRate: return "Phaser rate";
+    case config::CtlFn::PhSpread: return "Phaser spread";
+    case config::CtlFn::PhWidth: return "Phaser width";
+    case config::CtlFn::Block: return "Block";
+    case config::CtlFn::Groups: return "Groups";
+    case config::CtlFn::Wings: return "Wings";
     default: return nullptr;
     }
 }

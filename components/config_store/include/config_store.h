@@ -825,23 +825,34 @@ enum class CtlFn : uint8_t {
     Blackout = 2,  // >= 128 = outputs dark
     Strobe   = 3,  // 0 = off, 1..255 = 1..25 Hz
     Scene    = 4,  // bands of 8: 0-7 = no scene, 8-15 = scene 1, ...
-    Speed    = 5,  // 0 = the scene's own, 1..255 = override
-    Param    = 6,  // 0 = the scene's own, 1..255 = override
-    Red      = 7,  // colour `index` override (R, G and B all 0 = the scene's own)
+    Speed    = 5,  // 0 = the effect's own, 1..255 = override
+    Param    = 6,  // 0 = the effect's own, 1..255 = override
+    Red      = 7,  // colour `index` override (R, G and B all 0 = the effect's own)
     Green    = 8,
     Blue     = 9,
-    Effect   = 10,  // 0 = the scene's own, 1..255 spread over the effects
+    Effect   = 10,  // generator: 0 = the effect's own, 1..255 spread over the generators
     Fade     = 11,  // scene crossfade, value × 100 ms
     Fseq     = 12,  // bands of 8: 0-7 = stop, 8-15 = file 1, ...
+    // What follows acts, like Speed and Param, on the effect an output's scene plays.
+    Bank     = 13,  // bands of 8: 0-7 = the scene's own effect, 8-15 = effect 1 of the bank, ...
+    PhWave   = 14,  // bands of 8: 0-7 = the effect's own, 8-15 = no phaser, 16-23 = sine, ...
+    PhRate   = 15,  // 0 = the effect's own, 1..255 = override
+    PhSpread = 16,
+    PhWidth  = 17,
+    Block    = 18,  // 0 = the effect's own, 1 = off, 2..255 = N
+    Groups   = 19,
+    Wings    = 20,
     Count,
 };
 constexpr uint8_t kCtlFlagFine = 0x01;  // Master only: coarse + fine channel
 
 // Lower-case ids (console, REST, backup) — indexed by CtlFn.
 inline const char* ctl_fn_id(uint8_t fn) {
-    static const char* const kIds[] = { "none",   "master", "blackout", "strobe", "scene",
-                                        "speed",  "param",  "red",      "green",  "blue",
-                                        "effect", "fade",   "fseq" };
+    static const char* const kIds[] = { "none",    "master",    "blackout", "strobe", "scene",
+                                        "speed",   "param",     "red",      "green",  "blue",
+                                        "effect",  "fade",      "fseq",     "bank",   "ph_wave",
+                                        "ph_rate", "ph_spread", "ph_width", "block",  "groups",
+                                        "wings" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(CtlFn::Count),
                   "one id per control function");
     return fn < static_cast<uint8_t>(CtlFn::Count) ? kIds[fn] : "none";

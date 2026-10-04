@@ -765,6 +765,12 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         config::Effect effect;
         uint8_t mode;
         if (config::copy_scene_part(static_cast<size_t>(src), ch, effect, mode)) {
+            // The desk's Bank channel: another effect of the bank on this
+            // output (a band past the bank keeps the scene's own).
+            config::Effect picked;
+            if (g_ovr[ch].bank >= 0 &&
+                config::copy_effect(static_cast<size_t>(g_ovr[ch].bank), picked))
+                effect = picked;
             logic::apply_effect_override(effect, g_ovr[ch]);
             logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, mode, t);
             return;

@@ -743,6 +743,52 @@ TEST(control_fade_fseq_and_scene_overrides) {
     EXPECT_EQ(dmx::scene_fade_ms(), 0u);
 }
 
+// The desk's Bank channel plays another effect of the bank on the outputs of
+// its group, whatever the scene's part says; the phaser channels dim it.
+TEST(control_bank_and_phaser_act_on_the_playing_scene) {
+    solid_scene(0, 200, 0, 0);
+    solid_scene(1, 0, 0, 90);  // effect 1: what the Bank channel will pick
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = kCtrlUni;
+    c.count    = 0;
+    for (auto fn : { config::CtlFn::Scene, config::CtlFn::Bank, config::CtlFn::PhWave,
+                     config::CtlFn::PhWidth })
+        c.slots[c.count++] = config::control_slot(fn);
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+
+    uint8_t u[4] = { 8, 0, 0, 0 };  // scene 1, everything else the effect's own
+    ctrl_frame(u, sizeof(u));
+    const uint8_t* px = decode0();
+    EXPECT_EQ(px[0], 200);
+    u[1] = 16;  // bank: effect 2
+    ctrl_frame(u, sizeof(u));
+    px = decode0();
+    EXPECT_EQ(px[0], 0);
+    EXPECT_EQ(px[2], 90);
+    EXPECT_EQ(dmx::scene_on_output(0), 0);  // still the same scene playing
+    u[1] = 248;                             // a band past the bank: the scene's own effect
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(decode0()[0], 200);
+
+    // PWM with no lit share to speak of: the still wave leaves pixel 0 lit
+    // and the rest of the strip dark.
+    u[1] = 0;
+    u[2] = 8 * (config::kPhaserPwm + 1);
+    u[3] = 1;
+    ctrl_frame(u, sizeof(u));
+    px = decode0();
+    EXPECT_EQ(px[0], 200);
+    u[2] = 8 * (config::kPhaserRampUp + 1);  // a still ramp at its foot: dark
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(decode0()[0], 0);
+    u[2] = 8;  // "no phaser" from the desk
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(decode0()[0], 200);
+}
+
 TEST(control_can_share_an_output_universe) {
     enable_control(config::ControlPreset::Simple, 1, 100);  // channel 0's universe, from slot 100
     EXPECT_EQ(dmx::channel_for_universe(1), 0);
