@@ -175,6 +175,37 @@ static void test_layout_one_fixture_per_universe() {
     EXPECT_EQ(r[0].bytes, 510);
 }
 
+// One colour per fixture: 3 channels a bar, in strip order, the bar filled
+// with it; 170 bars a universe at most (whole pixels).
+static void test_one_colour_per_fixture() {
+    auto c = rgb_chan(20, config::kPackFixtureColour);
+    for (uint16_t k = 0; k < 5; ++k)
+        c.fixtures[k] = { static_cast<uint16_t>(k * 4), 4 };
+    c.invert_direction = true;  // DMX bar 1 = strip bar 1 whatever the direction
+    DmxRun r[kMaxDmxRuns];
+    EXPECT_EQ(channel_layout(c, r, kMaxDmxRuns), 5u);
+    EXPECT_EQ(r[1].slot, 3);
+    EXPECT_EQ(r[1].fill, 4);
+    EXPECT_EQ(channel_universes_used(c), 1u);
+    uint8_t u1[512]{};
+    for (int b = 0; b < 5; ++b)
+        u1[b * 3] = static_cast<uint8_t>(10 * (b + 1));  // bar b+1: red 10(b+1)
+    auto get = [&](uint16_t u) -> const uint8_t* { return u == 1 ? u1 : nullptr; };
+    uint8_t px[20 * 3];
+    EXPECT_TRUE(decode_pixels(px, sizeof(px), c, get));
+    EXPECT_EQ(px[(19 - 0) * 3], 10);  // inverted: bar 1 at the buffer's end
+    EXPECT_EQ(px[(19 - 3) * 3], 10);
+    EXPECT_EQ(px[0], 50);  // bar 5 at its start
+    // No fixtures: one colour for the whole strip.
+    auto all = rgb_chan(20, config::kPackFixtureColour);
+    EXPECT_EQ(channel_layout(all, r, kMaxDmxRuns), 1u);
+    EXPECT_EQ(r[0].fill, 20);
+    // A start at slot 511: not one RGB colour left there, the next universe.
+    auto late = rgb_chan(20, config::kPackFixtureColour, 511);
+    channel_layout(late, r, kMaxDmxRuns);
+    EXPECT_EQ(r[0].uni_off, 1);
+}
+
 static void test_decode_per_fixture_leaves_the_rest_dark() {
     auto c        = rgb_chan(10, config::kPackPerFixture);
     c.fixtures[0] = { 0, 3 };
@@ -1622,6 +1653,7 @@ int main() {
     test_layout_counts_the_start_address();
     test_layout_one_fixture_per_universe();
     test_decode_per_fixture_leaves_the_rest_dark();
+    test_one_colour_per_fixture();
     test_auto_patch_compact_and_forced_packing();
     test_universe_map_shares_a_universe();
     test_fixture_spans_skip_the_dead_leds();

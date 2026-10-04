@@ -414,6 +414,9 @@ def test_auto_patch_compact_whole_pixels_and_per_output_layout(page, device):
     page.locator("#cd-pack").select_option("fixture")
     save(page)
     assert device.get("/api/config")["channels"][0]["packing"] == "fixture"
+    page.locator("#cd-pack").select_option("colour")  # one colour a bar
+    save(page)
+    assert device.get("/api/config")["channels"][0]["packing"] == "colour"
     device.post("/api/channel/1", {"protocol": "WS2815", "pixel_count": 50})  # a second output
     page.reload()
     nav(page, "patch")

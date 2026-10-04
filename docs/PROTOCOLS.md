@@ -350,6 +350,7 @@ console), from `(universe_start, dmx_start)`:
 | `continuous` (default) | byte after byte; a pixel may straddle two universes | 6 universes |
 | `whole` | whole pixels only: 170 RGB / 128 RGBW per universe (xLights / Falcon / FPP "510 channels") | 7 universes |
 | `fixture` | each fixture (§5.5) from slot 1 of a universe of its own, whole pixels inside; pixels in no fixture get no data; no fixtures = `whole` | 1 + per fixture |
+| `colour` | one colour per fixture: 3 channels a bar (4 RGBW), bars in strip order, the bar lit with it — patch each bar as a plain RGB fixture; no fixtures = one colour for all | a few slots |
 
 `logic::channel_layout` turns a channel into runs (universe offset, slot,
 buffer offset, bytes); decoding, the universe span (`channel_universe_span`,

@@ -472,9 +472,10 @@ inline size_t fixture_count(const Fixture* f, size_t n) {
 constexpr uint8_t kPackContinuous  = 0;  // byte after byte: a pixel may straddle two universes
 constexpr uint8_t kPackWholePixels = 1;  // whole pixels only (170 RGB / 128 RGBW per universe)
 constexpr uint8_t kPackPerFixture  = 2;  // each fixture from slot 1 of a new universe, whole pixels
-constexpr uint8_t kPackCount       = 3;
+constexpr uint8_t kPackFixtureColour = 3;  // one colour per fixture: 3 (RGBW: 4) channels a bar
+constexpr uint8_t kPackCount         = 4;
 inline const char* packing_id(uint8_t p) {
-    static const char* const kIds[] = { "continuous", "whole", "fixture" };
+    static const char* const kIds[] = { "continuous", "whole", "fixture", "colour" };
     return p < kPackCount ? kIds[p] : "continuous";
 }
 inline int packing_from_id(const char* s) {
