@@ -83,7 +83,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 34);
+    EXPECT_EQ(shim::http_routes(), 35);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -258,6 +258,35 @@ TEST(channel_fixtures_round_trip_and_overlaps_are_refused) {
     EXPECT_EQ(config::fixture_count(config::get_channel(0).fixtures, config::kMaxFixtures), 0u);
     for (size_t ch = 0; ch < config::kNumChannels; ++ch)
         config::set_channel(ch, saved[ch]);
+}
+
+// Fixture groups: ordered [output, fixture] lists, replaced whole, in the
+// config and the backup; a malformed list is refused and the stored one kept.
+TEST(fixture_groups_round_trip_and_bad_lists_are_refused) {
+    const auto r = post("/api/groups",
+                        "{\"groups\":[{\"name\":\"Top\",\"members\":[[0,4],[0,3],[1,0],[1,1]]},"
+                        "{\"name\":\"Bar HG3\",\"members\":[[0,2],[0,2]]}]}");
+    EXPECT_EQ(r.status, 200);
+    const auto& g = config::get_groups();
+    EXPECT_EQ(g.count, 2);
+    EXPECT_STREQ(g.groups[0].name, "Top");
+    EXPECT_EQ(g.groups[0].count, 4);
+    EXPECT_EQ(g.groups[0].members[0].fixture, 4);  // the order is kept
+    EXPECT_EQ(g.groups[1].count, 1);               // a repeated member is dropped
+    Json cfg(get("/api/config").body);
+    EXPECT_EQ(cJSON_GetArraySize(cfg["groups"]), 2);
+    EXPECT_EQ(post("/api/groups", "{\"groups\":[{\"name\":\"X\",\"members\":[[8,0]]}]}").status,
+              400);  // output 8 does not exist
+    EXPECT_EQ(post("/api/groups", "{\"groups\":{}}").status, 400);
+    EXPECT_EQ(post("/api/groups", "{oops").status, 400);
+    EXPECT_EQ(config::get_groups().count, 2);  // kept
+    const std::string backup = get("/api/backup").body;
+    config::reset_to_defaults();
+    EXPECT_EQ(config::get_groups().count, 0);
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    EXPECT_EQ(config::get_groups().count, 2);
+    EXPECT_EQ(post("/api/groups", "{\"groups\":[]}").status, 200);
+    EXPECT_EQ(config::get_groups().count, 0);
 }
 
 // The dashboard button: every configured output, or the outputs asked for.

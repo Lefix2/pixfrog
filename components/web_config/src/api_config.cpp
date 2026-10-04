@@ -160,6 +160,7 @@ esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "channels", build_channels_json());
     cJSON_AddItemToObject(root, "control", build_control_json());
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
+    cJSON_AddItemToObject(root, "groups", build_groups_json());
     return send_json(req, root);
 }
 
@@ -206,6 +207,7 @@ esp_err_t handle_backup(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "control", build_control_json());
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
+    cJSON_AddItemToObject(root, "groups", build_groups_json());
     static char disposition[96];  // httpd keeps the pointer until the send
     backup_filename(req, disposition, sizeof(disposition));
     httpd_resp_set_hdr(req, "Content-Disposition", disposition);
@@ -546,6 +548,13 @@ esp_err_t handle_restore(httpd_req_t* req) {
         const char* why        = nullptr;
         if (apply_playlist_json(jpl, p, &why)) config::set_playlist(p);
     }
+    // Groups: likewise all or nothing.
+    cJSON* jgr = cJSON_GetObjectItemCaseSensitive(j, "groups");
+    if (cJSON_IsArray(jgr)) {
+        static config::GroupsConfig gr;  // 2.4 kB: off the httpd stack
+        const char* why = nullptr;
+        if (apply_groups_json(jgr, gr, &why)) config::set_groups(gr);
+    }
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
     if (cJSON_IsArray(jchs)) {
         const int n = cJSON_GetArraySize(jchs);
@@ -743,6 +752,87 @@ esp_err_t handle_autopatch(httpd_req_t* req) {
     cJSON_AddNumberToObject(root, "next_free", next);
     cJSON_AddNumberToObject(root, "universes", static_cast<double>(universes));
     cJSON_AddNumberToObject(root, "pool", static_cast<double>(dmx::kNumUniverses));
+    return send_json(req, root);
+}
+
+// ── Fixture groups ──────────────────────────────────────────────────────────
+// [{"name": "Top", "members": [[output, fixture], ...]}, ...] — 0-based, the
+// members in the group's order (the strip a scene runs along).
+
+cJSON* build_groups_json() {
+    const auto& g = config::get_groups();
+    cJSON* arr    = cJSON_CreateArray();
+    for (size_t i = 0; i < g.count; ++i) {
+        const auto& fg = g.groups[i];
+        cJSON* jg      = cJSON_CreateObject();
+        cJSON_AddStringToObject(jg, "name", fg.name);
+        cJSON* jm = cJSON_AddArrayToObject(jg, "members");
+        for (size_t m = 0; m < fg.count; ++m) {
+            cJSON* pair = cJSON_CreateArray();
+            cJSON_AddItemToArray(pair, cJSON_CreateNumber(fg.members[m].output));
+            cJSON_AddItemToArray(pair, cJSON_CreateNumber(fg.members[m].fixture));
+            cJSON_AddItemToArray(jm, pair);
+        }
+        cJSON_AddItemToArray(arr, jg);
+    }
+    return arr;
+}
+
+// All or nothing: a malformed group refuses the whole list (`g` untouched
+// only on success matters to the caller, which then stores it).
+bool apply_groups_json(const cJSON* j, config::GroupsConfig& g, const char** why) {
+    if (!cJSON_IsArray(j) || cJSON_GetArraySize(j) > static_cast<int>(config::kMaxGroups)) {
+        if (why) *why = "groups: a list of at most 16";
+        return false;
+    }
+    g = config::GroupsConfig{};
+    for (const cJSON* jg = j->child; jg; jg = jg->next) {
+        config::FixtureGroup& fg = g.groups[g.count];
+        const cJSON* jn          = cJSON_GetObjectItemCaseSensitive(jg, "name");
+        const cJSON* jm          = cJSON_GetObjectItemCaseSensitive(jg, "members");
+        if (!cJSON_IsString(jn) || !cJSON_IsArray(jm) ||
+            cJSON_GetArraySize(jm) > static_cast<int>(config::kMaxGroupMembers)) {
+            if (why) *why = "groups: {name, members: at most 64 [output, fixture]}";
+            return false;
+        }
+        std::strncpy(fg.name, jn->valuestring, config::kGroupNameMax - 1);
+        for (const cJSON* p = jm->child; p; p = p->next) {
+            const cJSON* jo = cJSON_GetArrayItem(p, 0);
+            const cJSON* jf = cJSON_GetArrayItem(p, 1);
+            if (!cJSON_IsNumber(jo) || !cJSON_IsNumber(jf) || jo->valuedouble < 0 ||
+                jo->valuedouble >= config::kNumChannels || jf->valuedouble < 0 ||
+                jf->valuedouble >= config::kMaxFixtures) {
+                if (why) *why = "groups: member [output 0..7, fixture 0..31]";
+                return false;
+            }
+            fg.members[fg.count++] = config::FixtureRef{ static_cast<uint8_t>(jo->valuedouble),
+                                                         static_cast<uint8_t>(jf->valuedouble) };
+        }
+        ++g.count;
+    }
+    return true;
+}
+
+// ── POST /api/groups ────────────────────────────────────────────────────────
+// {"groups": [...]} replaces the whole list. Up to ~9 kB: in PSRAM, once.
+esp_err_t handle_post_groups(httpd_req_t* req) {
+    if (!require_auth(req)) return ESP_OK;
+    constexpr size_t kMax = 12288;
+    static char* buf      = nullptr;
+    if (!buf) buf = static_cast<char*>(heap_caps_malloc(kMax, MALLOC_CAP_SPIRAM));
+    if (!buf) buf = static_cast<char*>(malloc(kMax));
+    if (!buf) return send_err(req, 500, "out of memory");
+    if (!read_body(req, buf, kMax - 1)) return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(buf);
+    if (!j) return send_err(req, 400, "invalid JSON");
+    static config::GroupsConfig g;  // 2.4 kB: off the httpd stack
+    const char* why = nullptr;
+    const bool ok   = apply_groups_json(cJSON_GetObjectItemCaseSensitive(j, "groups"), g, &why);
+    cJSON_Delete(j);
+    if (!ok) return send_err(req, 400, why);
+    config::set_groups(g);
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "groups", build_groups_json());
     return send_json(req, root);
 }
 

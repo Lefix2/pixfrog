@@ -106,6 +106,8 @@ struct GlobalApplied {
 GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const char** why);
 void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** why);
 cJSON* build_playlist_json();  // api_fseq.cpp
+cJSON* build_groups_json();    // api_config.cpp
+bool apply_groups_json(const cJSON* j, config::GroupsConfig& g, const char** why);
 bool apply_playlist_json(const cJSON* j, config::FseqPlaylist& p, const char** why);
 cJSON* build_status_json();  // api_status.cpp
 
@@ -138,6 +140,7 @@ esp_err_t handle_fseq_stop(httpd_req_t* req);
 esp_err_t handle_fseq_upload(httpd_req_t* req);
 esp_err_t handle_get_playlist(httpd_req_t* req);
 esp_err_t handle_post_playlist(httpd_req_t* req);
+esp_err_t handle_post_groups(httpd_req_t* req);
 esp_err_t handle_ota(httpd_req_t* req);
 esp_err_t handle_rollback_ack(httpd_req_t* req);
 esp_err_t handle_reboot(httpd_req_t* req);
