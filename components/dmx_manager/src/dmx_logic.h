@@ -943,6 +943,7 @@ struct DmxRun {
     uint16_t slot;     // 0-based in that universe
     uint16_t dst;      // byte offset in the pixel buffer
     uint16_t bytes;
+    uint16_t fill = 0;  // > 1: these bytes are one pixel, repeated over `fill` pixels
 };
 constexpr size_t kMaxDmxRuns = 96;
 
@@ -983,6 +984,29 @@ inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit) {
     const uint32_t total = static_cast<uint32_t>(cc.pixel_count) * bpp;
     if (cc.packing == config::kPackContinuous) {
         place(0, total, false);
+        return k;
+    }
+    if (cc.packing == config::kPackFixtureColour) {
+        // One colour per fixture, in strip order, one pixel's channels each,
+        // never split across universes; no fixtures = one colour for all.
+        Span by[config::kMaxFixtures];
+        fixture_spans_by_index(cc, by);
+        const size_t nf = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+        auto one        = [&](uint32_t first, uint32_t count) {
+            if (kUniverseSize - slot < bpp) {
+                ++uni;
+                slot = 0;
+            }
+            DmxRun r{ static_cast<uint16_t>(uni), static_cast<uint16_t>(slot),
+                      static_cast<uint16_t>(first * bpp), static_cast<uint16_t>(bpp) };
+            r.fill = static_cast<uint16_t>(count);
+            visit(r);
+            ++k;
+            slot += bpp;
+        };
+        if (nf == 0) one(0, cc.pixel_count);
+        for (size_t i = 0; i < nf; ++i)
+            if (by[i].count) one(by[i].first, by[i].count);
         return k;
     }
     Span sp[config::kMaxFixtures];
@@ -1183,7 +1207,10 @@ inline bool decode_pixels(uint8_t* dst, size_t dst_capacity, const config::Chann
     bool all = true;
     for_each_dmx_run(cc, [&](const DmxRun& r) {
         const uint8_t* src = get_universe(static_cast<uint16_t>(cc.universe_start + r.uni_off));
-        if (src) {
+        if (src && r.fill > 1) {  // one colour over a whole fixture
+            for (uint32_t p = 0; p < r.fill && r.dst + (p + 1) * r.bytes <= total; ++p)
+                std::memcpy(dst + r.dst + p * r.bytes, src + r.slot, r.bytes);
+        } else if (src) {
             std::memcpy(dst + r.dst, src + r.slot, r.bytes);
         } else {
             std::memset(dst + r.dst, 0, r.bytes);
