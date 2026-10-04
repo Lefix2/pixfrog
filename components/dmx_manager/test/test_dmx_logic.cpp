@@ -1440,6 +1440,31 @@ static void test_control_group_slots() {
     EXPECT_EQ(config::scene_mode_of(sc.fixture_mode), config::kFixtureModeMirror);
     EXPECT_TRUE(config::scene_reverse_of(sc.fixture_mode));
     EXPECT_EQ(config::scene_group_of(sc.fixture_mode), 4);  // its group kept
+    // Speed / Param / Effect on a group; Direction / FixMode on outputs.
+    config::ControlConfig d{};
+    d.enabled          = 1;
+    d.address          = 1;
+    d.count            = 5;
+    d.slots[0]         = config::control_slot(config::CtlFn::Speed, 2, 0, config::kCtlFlagGroup);
+    d.slots[1]         = config::control_slot(config::CtlFn::Param, 2, 0, config::kCtlFlagGroup);
+    d.slots[2]         = config::control_slot(config::CtlFn::Effect, 2, 0, config::kCtlFlagGroup);
+    d.slots[3]         = config::control_slot(config::CtlFn::Direction, 0x01);
+    d.slots[4]         = config::control_slot(config::CtlFn::FixMode, 0x01);
+    const uint8_t w[5] = { 40, 50, 255, 10, 70 };
+    evaluate_control(d, w, sizeof(w), ev);
+    EXPECT_EQ(ev.govr[2].speed, 40);
+    EXPECT_EQ(ev.govr[2].param, 50);
+    EXPECT_TRUE(ev.govr[2].effect >= 0);
+    EXPECT_EQ(ev.ovr[0].reverse, 0);  // 10: forward
+    EXPECT_EQ(ev.ovr[0].fix_mode, config::kFixtureModeChain);
+    EXPECT_EQ(ev.ovr[1].reverse, -1);  // output 2 not in the mask
+    config::Scene sc2{};
+    sc2.fixture_mode = config::pack_scene_mode(config::kFixtureModeMirror, true, -1);
+    SceneOverride only_dir;
+    only_dir.reverse = 0;  // the mode stays the scene's own
+    apply_scene_override(sc2, only_dir);
+    EXPECT_EQ(config::scene_mode_of(sc2.fixture_mode), config::kFixtureModeMirror);
+    EXPECT_TRUE(!config::scene_reverse_of(sc2.fixture_mode));
     // A group target on a function that has none is dropped.
     c.slots[0] = config::control_slot(config::CtlFn::Strobe, 3, 0, config::kCtlFlagGroup);
     config::sanitize_control(c);

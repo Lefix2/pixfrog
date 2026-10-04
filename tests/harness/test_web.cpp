@@ -694,6 +694,10 @@ TEST(control_slots_target_groups) {
     const std::string prof = get("/api/control/fixture").body;
     EXPECT_TRUE(prof.find("Scene (Top)") != std::string::npos);
     EXPECT_TRUE(prof.find("From the far end") != std::string::npos);
+    post("/api/control", "{\"slots\":[{\"fn\":\"fixmode\"}]}");  // on outputs
+    const std::string prof2 = get("/api/control/fixture").body;
+    EXPECT_TRUE(prof2.find("Fixture mode") != std::string::npos);
+    EXPECT_TRUE(prof2.find("Mirrored") != std::string::npos);
     post("/api/control", "{\"preset\":\"simple\"}");
     post("/api/groups", "{\"groups\":[]}");
 }
