@@ -49,12 +49,7 @@ Feedback from a lighting operator (GrandMA): drive the box like a conventional
 fixture, not only as a pixel-mapped node. In landing order — each item builds
 on the one before.
 
-- [ ] ★ **Dimmer phaser on an effect** — a dimmer layer over any generator:
-      Sin, Cos, Ramp+, Ramp−, Triangle, PWM, Bump, with rate, phase spread
-      along the pixels, width and floor.
-- [ ] **Dimmer invert on an effect** — intensity negative of the whole effect
-      (lit becomes dark, dark takes colour 1), with or without a phaser.
-- [ ] **Block / Groups / Wings on an effect** — MAtricks at pixel level, stored
+- [ ] ★ **Block / Groups / Wings on an effect** — MAtricks at pixel level, stored
       in the effect: N neighbours share a value, the pattern repeats every N,
       the run splits in N mirrored parts.
 - [ ] **Control universe: bank and phaser functions** — slots for the bank

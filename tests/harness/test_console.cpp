@@ -144,7 +144,8 @@ TEST(fx_commands_manage_the_bank) {
     for (size_t i = 0; i < config::num_effects(); ++i)
         saved.push_back(config::get_effect(i));
     EXPECT_TRUE(run("fx"));
-    EXPECT_TRUE(has("fx1 name=Chase generator=chase color=ffffff,ff7800 speed=30 param=3 used=1"));
+    EXPECT_TRUE(has("fx1 name=Chase generator=chase color=ffffff,ff7800 speed=30 param=3 "
+                    "phaser=none,0,0,0,0 invert=0 used=1"));
     EXPECT_TRUE(run("fx add Extra"));
     EXPECT_TRUE(has("index=8"));
     EXPECT_EQ(config::num_effects(), 9);
@@ -160,7 +161,43 @@ TEST(fx_commands_manage_the_bank) {
     EXPECT_TRUE(run("fx name 8 Renamed"));
     EXPECT_STREQ(config::get_effect(8).name, "Renamed");
     EXPECT_TRUE(run("fx"));
-    EXPECT_TRUE(has("fx8 name=Renamed generator=rainbow color=ffffff speed=0 param=0 used=0"));
+    EXPECT_TRUE(has("fx8 name=Renamed generator=rainbow color=ffffff speed=0 param=0 "
+                    "phaser=none,0,0,0,0 invert=0 used=0"));
+
+    // The dimmer phaser: what is left out keeps its value.
+    EXPECT_TRUE(run("fx phaser 8 sin 20 16 128 30 reverse"));
+    const auto& ph = config::get_effect(8);
+    EXPECT_EQ(ph.ph_wave, config::kPhaserSin);
+    EXPECT_EQ(ph.ph_rate, 20);
+    EXPECT_EQ(ph.ph_spread, 16);
+    EXPECT_EQ(ph.ph_width, 128);
+    EXPECT_EQ(ph.ph_low, 30);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse);
+    EXPECT_TRUE(run("fx phaser 8 bump 40 8"));  // width, floor and direction kept
+    EXPECT_EQ(ph.ph_wave, config::kPhaserBump);
+    EXPECT_EQ(ph.ph_rate, 40);
+    EXPECT_EQ(ph.ph_width, 128);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse);
+    EXPECT_TRUE(run("fx phaser 8 pwm 40 8 0 0 forward"));
+    EXPECT_EQ(ph.flags, 0);
+    EXPECT_TRUE(run("fx invert 8 1"));
+    EXPECT_EQ(ph.flags, config::kEffectDimmerInvert);
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("phaser=pwm,40,8,0,0 invert=1 used=0"));
+    EXPECT_TRUE(run("fx phaser 8 ramp_down 1 2 3 4 reverse"));
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("phaser=ramp_down,1,2,3,4,reverse invert=1"));
+    EXPECT_TRUE(run("fx phaser 8 none"));  // the wave alone
+    EXPECT_EQ(ph.ph_wave, config::kPhaserNone);
+    EXPECT_EQ(ph.ph_rate, 1);
+    EXPECT_TRUE(run("fx invert 8 0"));
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse);
+    for (const char* bad :
+         { "fx phaser 8", "fx phaser 8 wobble", "fx phaser 8 sin 1", "fx phaser 8 sin 1 2 3",
+           "fx phaser 8 sin 256 0", "fx phaser 8 sin 1 2 3 4 sideways", "fx phaser 99 sin",
+           "fx phaser 8 sin 1 2 3 4 reverse x", "fx invert 8", "fx invert 8 maybe",
+           "fx invert 99 1" })
+        EXPECT_FALSE(run(bad));
 
     EXPECT_TRUE(run("fx move 8 0"));  // the scenes follow their effect
     EXPECT_STREQ(config::get_effect(0).name, "Renamed");

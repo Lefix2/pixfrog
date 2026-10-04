@@ -703,12 +703,111 @@ inline uint32_t effect_rate(const config::Effect& e) {
     return e.generator == config::kSceneFxSolid ? e.speed : 2u * e.speed;
 }
 
-// Renders one frame of `effect` on a run of `pixel_count` pixels.
+// ── Dimmer phaser ───────────────────────────────────────────────────────────
+// A dimmer layer over whatever the generator drew: a waveform travelling
+// along the run (Effect::ph_*), as on a desk's phaser.
+
+// One sine period, 0..255 around 127.5, by 1/256 of a turn.
+inline constexpr uint8_t kSin8[256] = {
+    128, 131, 134, 137, 140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173, 176, 179, 182,
+    185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215, 218, 220, 222, 224, 226, 228,
+    230, 232, 234, 235, 237, 238, 240, 241, 243, 244, 245, 246, 248, 249, 250, 250, 251, 252, 253,
+    253, 254, 254, 254, 255, 255, 255, 255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251, 250,
+    250, 249, 248, 246, 245, 244, 243, 241, 240, 238, 237, 235, 234, 232, 230, 228, 226, 224, 222,
+    220, 218, 215, 213, 211, 208, 206, 203, 201, 198, 196, 193, 190, 188, 185, 182, 179, 176, 173,
+    170, 167, 165, 162, 158, 155, 152, 149, 146, 143, 140, 137, 134, 131, 128, 124, 121, 118, 115,
+    112, 109, 106, 103, 100, 97,  93,  90,  88,  85,  82,  79,  76,  73,  70,  67,  65,  62,  59,
+    57,  54,  52,  49,  47,  44,  42,  40,  37,  35,  33,  31,  29,  27,  25,  23,  21,  20,  18,
+    17,  15,  14,  12,  11,  10,  9,   7,   6,   5,   5,   4,   3,   2,   2,   1,   1,   1,   0,
+    0,   0,   0,   0,   0,   0,   1,   1,   1,   2,   2,   3,   4,   5,   5,   6,   7,   9,   10,
+    11,  12,  14,  15,  17,  18,  20,  21,  23,  25,  27,  29,  31,  33,  35,  37,  40,  42,  44,
+    47,  49,  52,  54,  57,  59,  62,  65,  67,  70,  73,  76,  79,  82,  85,  88,  90,  93,  97,
+    100, 103, 106, 109, 112, 115, 118, 121, 124,
+};
+
+// The waveform's level (0..255) at `phase` (one cycle per 65536). `width` is
+// the share of the cycle the wave takes, n/255 (0 = all of it): the wave runs
+// compressed, then holds its end level. For PWM it is the lit share (0 = half).
+inline uint8_t phaser_level(uint8_t wave, uint32_t phase, uint8_t width) {
+    uint32_t x = phase & 0xFFFF;
+    if (wave == config::kPhaserPwm) return x * 255 < (width ? width : 128u) * 65536 ? 255 : 0;
+    if (width && width < 255) {
+        x = x * 255 / width;
+        if (x > 0xFFFF) x = 0xFFFF;
+    }
+    switch (wave) {
+    case config::kPhaserSin: return kSin8[x >> 8];
+    case config::kPhaserCos: return kSin8[((x >> 8) + 64) & 255];
+    case config::kPhaserRampUp: return static_cast<uint8_t>(x >> 8);
+    case config::kPhaserRampDown: return static_cast<uint8_t>(255 - (x >> 8));
+    case config::kPhaserTriangle:
+        return static_cast<uint8_t>(x < 0x8000 ? x >> 7 : (0xFFFF - x) >> 7);
+    case config::kPhaserBump: {  // the upper half of the sine: a hump from 0 and back
+        const int up = 2 * kSin8[x >> 9] - 255;
+        return static_cast<uint8_t>(up > 0 ? up : 0);
+    }
+    default: return 255;
+    }
+}
+
+// The phaser's dimmer (0..255) for pixel `i` of a run of `n` at `phase_ms`.
+// ph_rate counts 1/20 Hz (3 BPM a step), ph_spread 1/16 cycle along the run.
+inline uint8_t phaser_dimmer(const config::Effect& e, uint32_t i, uint32_t n, uint64_t phase_ms) {
+    const uint32_t time  = static_cast<uint32_t>(phase_ms * e.ph_rate * 4096 / 1250);
+    const uint32_t along = n ? i * e.ph_spread * 4096u / n : 0;
+    const uint32_t phase = (e.flags & config::kEffectPhaserReverse) ? time + along : time - along;
+    const uint32_t level = phaser_level(e.ph_wave, phase, e.ph_width);
+    return static_cast<uint8_t>(e.ph_low + (255u - e.ph_low) * level / 255);
+}
+
+// Applies the effect's dimmer layers to the `n` pixels the generator just
+// drew: the phaser, then the invert — an intensity negative measured against
+// colour 1 (a pixel as bright as colour 1 goes dark, a dark one takes colour
+// 1). The invert is worked out from the generator's pixel, so a pixel the
+// phaser dimmed to black still knows its hue.
+inline void apply_effect_dimmer(uint8_t* d, uint16_t n, uint8_t bpp, const config::Effect& e,
+                                uint64_t phase_ms) {
+    const bool phaser = e.ph_wave != config::kPhaserNone && e.ph_wave < config::kPhaserWaveCount;
+    const bool invert = (e.flags & config::kEffectDimmerInvert) != 0;
+    if (!phaser && !invert) return;
+    const uint8_t* c1 = e.colors[0];
+    uint32_t ref      = c1[0] > c1[1] ? c1[0] : c1[1];
+    if (c1[2] > ref) ref = c1[2];
+    // Rainbow ignores the palette: its reference is full brightness.
+    if (e.generator == config::kSceneFxRainbow) ref = 255;
+    for (uint16_t i = 0; i < n; ++i) {
+        uint8_t* px        = d + static_cast<size_t>(i) * bpp;
+        const uint32_t dim = phaser ? phaser_dimmer(e, i, n, phase_ms) + 1u : 256u;
+        if (!invert) {
+            for (uint8_t k = 0; k < 3; ++k)
+                px[k] = static_cast<uint8_t>(px[k] * dim >> 8);
+            continue;
+        }
+        uint32_t own = px[0] > px[1] ? px[0] : px[1];  // the generator's intensity here
+        if (px[2] > own) own = px[2];
+        if (own == 0) {
+            px[0] = c1[0];
+            px[1] = c1[1];
+            px[2] = c1[2];
+            continue;
+        }
+        const uint32_t lum  = own * dim >> 8;
+        const uint32_t left = lum < ref ? ref - lum : 0;
+        for (uint8_t k = 0; k < 3; ++k)
+            px[k] = static_cast<uint8_t>(px[k] * left / own);
+    }
+}
+
+// Renders one frame of `effect` on a run of `pixel_count` pixels: the
+// generator, then the dimmer layers.
 inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
                             uint8_t bytes_per_pixel, const config::Effect& effect,
                             uint64_t phase_ms) {
+    const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
+    if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
     fill_generator(dst, dst_capacity, pixel_count, bytes_per_pixel, effect.generator,
                    effect_palette(effect), effect_rate(effect), effect.param, phase_ms);
+    apply_effect_dimmer(dst, pixel_count, bytes_per_pixel, effect, phase_ms);
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────

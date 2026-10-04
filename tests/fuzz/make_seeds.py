@@ -200,6 +200,9 @@ fx add Extra
 fx set 0 blobs 005aff,ff008c 40 4
 fx set 0 solid ff0000,00ff00,0000ff,ffffff,000000 0 0
 fx name 0 Renamed
+fx phaser 0 sin 20 16 128 30 reverse
+fx phaser 0 none
+fx invert 0 1
 fx move 0 1
 fx del 8
 fseq list
@@ -249,6 +252,8 @@ WEB = [
     (R["/api/effect"], 3, '{"name":"Blobs","generator":3,"speed":40,"param":4,'
                           '"colors":["#005aff","#ff008c"]}'),
     (R["/api/effects/add"], 0, '{"name":"Web","generator":8,"colors":["#ff0000"]}'),
+    (R["/api/effect"], 1, '{"phaser":{"wave":"bump","rate":40,"spread":8,"width":200,"low":12,'
+                          '"reverse":true},"invert":true}'),
     (R["/api/effects/move"], 0, '{"from":3,"to":0}'),
     (R["/api/groups"], 0, '{"groups":[{"name":"Top","members":[[0,0],[1,0]]}]}'),
     # A backup from before the effect bank: scenes that carry their own look.

@@ -970,6 +970,10 @@ var FR={
   'Effect bank full (31)':'Banque d’effets pleine (31)','Effect added':'Effet ajouté','Effect deleted':'Effet supprimé','Effect moved':'Effet déplacé','Effect duplicated':'Effet dupliqué',
   'Still played by scene ':'Encore joué par la scène ',' — give them another effect first':' — donnez-leur d’abord un autre effet',
   'Delete effect':'Supprimer l’effet','Effects after it move up one slot; the scenes follow theirs.':'Les effets suivants remontent d’un rang ; les scènes suivent le leur.',
+  'DIMMER PHASER':'PHASER DIMMER','No phaser':'Sans phaser','Sine':'Sinus','Cosine':'Cosinus','Ramp up':'Rampe montante','Ramp down':'Rampe descendante','Triangle':'Triangle','PWM':'PWM','Bump':'Bosse',
+  'RATE':'CADENCE','SPREAD':'ÉTALEMENT','WAVE WIDTH':'LARGEUR D’ONDE','LIT SHARE':'PART ALLUMÉE','FLOOR':'PLANCHER','still':'figé','cycle':'cycle','cycles':'cycles','in phase':'en phase',
+  'Reverse':'Inverser le sens','The wave travels towards the start of the run':'L’onde se déplace vers le début du ruban',
+  'Dimmer invert':'Dimmer inversé','Lit becomes dark, dark takes color 1':'L’allumé devient sombre, le sombre prend la couleur 1',
   'PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
   'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
   'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
@@ -1098,6 +1102,31 @@ function paramText(e){ return e.param?String(e.param):t('auto'); }
 function swatchBg(cols){ return cols.length>1?'linear-gradient(135deg,'+cols.join(',')+')':cols[0]; }
 // The look of effect `e` as a swatch background; a missing effect is black.
 function fxSwatch(e){ return !e?'#000':(fxOf(e).nocol?RAINBOW_BG:swatchBg(e.colors)); }
+// The dimmer phaser: waveform ids as the API names them.
+var PH_WAVES=[['none','No phaser'],['sin','Sine'],['cos','Cosine'],['ramp_up','Ramp up'],['ramp_down','Ramp down'],['triangle','Triangle'],['pwm','PWM'],['bump','Bump']];
+// rate counts 1/20 Hz (3 BPM a step), spread 1/16 cycle along the run, width and floor n/255.
+var PH_KEYS={phrate:['rate',function(e){ return e.ph.rate?(e.ph.rate/20).toFixed(2)+' Hz · '+(e.ph.rate*3)+' BPM':t('still'); }],
+  phspread:['spread',function(e){ return e.ph.spread?(+(e.ph.spread/16).toFixed(2))+' '+t(e.ph.spread===16?'cycle':'cycles'):t('in phase'); }],
+  phwidth:['width',function(e){ return e.ph.width?Math.round(e.ph.width*100/255)+' %':t('auto'); }],
+  phlow:['low',function(e){ return Math.round(e.ph.low*100/255)+' %'; }]};
+function phText(e,kind){ return PH_KEYS[kind][1](e); }
+function toggleRow(attr,on,title,hint){
+  return '<label style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:10px 12px;cursor:pointer"><div><div class="h-sm">'+esc(t(title))+'</div>'+(hint?'<div class="hint">'+esc(t(hint))+'</div>':'')+'</div><span class="sw"><input '+attr+' type="checkbox"'+(on?' checked':'')+'/><span></span></span></label>';
+}
+function phaserHTML(e){
+  var opts=PH_WAVES.map(function(w){ return '<option value="'+w[0]+'"'+(w[0]===e.ph.wave?' selected':'')+'>'+esc(t(w[1]))+'</option>'; }).join('');
+  var on=e.ph.wave!=='none';
+  return '<div style="display:flex;flex-direction:column;gap:11px;padding-top:14px;border-top:1px solid var(--line)">'
+    +'<div><div class="eyebrow-sm">'+t('DIMMER PHASER')+'</div><select data-fx-wave="'+e.n+'" style="'+SEL_STYLE+'">'+opts+'</select></div>'
+    +(on?'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'
+      +slider('phrate',e,'RATE',255,e.ph.rate,phText(e,'phrate'))
+      +slider('phspread',e,'SPREAD',Math.max(64,e.ph.spread),e.ph.spread,phText(e,'phspread'))
+      +slider('phwidth',e,e.ph.wave==='pwm'?'LIT SHARE':'WAVE WIDTH',255,e.ph.width,phText(e,'phwidth'))
+      +slider('phlow',e,'FLOOR',255,e.ph.low,phText(e,'phlow'))+'</div>'
+      +toggleRow('data-fx-phrev="'+e.n+'"',e.ph.reverse,'Reverse','The wave travels towards the start of the run'):'')
+    +toggleRow('data-fx-invert="'+e.n+'"',e.invert,'Dimmer invert','Lit becomes dark, dark takes color 1')
+    +'</div>';
+}
 function fxColorChip(e,k){
   var c=e.colors[k], many=e.colors.length>1;
   return '<div data-fx-color="'+e.n+'" data-k="'+k+'" class="sc-color" style="display:flex;align-items:center;gap:6px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:6px 7px;cursor:pointer;transition:border-color .12s,background .12s">'
@@ -1177,6 +1206,7 @@ function effectCardHTML(e){
     +'<div><div class="eyebrow-sm">'+t('GENERATOR')+'</div><select data-fx-gen="'+e.n+'" style="'+SEL_STYLE+'">'+opts+'</select></div>'
     +colsHtml
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'+sliders+'</div>'
+    +phaserHTML(e)
     +'<div class="hint" data-fx-users>'+esc(users.length?(t('Played by scene ')+users.join(', ')):t('No scene plays this effect yet'))+'</div>'
     +cardFooter('fx-dup','fx-del')
     +'</div>';
@@ -2064,7 +2094,7 @@ function reloadConfig(){
     setLive('side-ver',(d.version||'?')+' · esp32-p4 · '+(d.ota_partition||'?'));
     setLive('part-line',(d.version||'')+' · '+(d.ota_partition||''));
     CHANS=(d.channels||[]).map(buildChan);
-    EFFECTS=(d.effects||[]).map(function(e,i){ return {n:i+1,name:e.name||'',gen:e.generator||0,colors:(e.colors&&e.colors.length)?e.colors.slice(0,MAX_COLORS):['#000000'],speed:e.speed||0,param:e.param||0}; });
+    EFFECTS=(d.effects||[]).map(function(e,i){ return {n:i+1,name:e.name||'',gen:e.generator||0,colors:(e.colors&&e.colors.length)?e.colors.slice(0,MAX_COLORS):['#000000'],speed:e.speed||0,param:e.param||0,ph:phaserOf(e.phaser),invert:!!e.invert}; });
     SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',parts:(sc.parts||[]).map(function(p){ return {mask:p.mask||0,effect:p.effect||0,mode:p.fixture_mode||'each'}; })}; });
     if(curEffect>=EFFECTS.length) curEffect=Math.max(0,EFFECTS.length-1);
     if(curScene>=SCENES.length) curScene=Math.max(0,SCENES.length-1);
@@ -2123,7 +2153,8 @@ function buildGlobalBody(){
   return b;
 }
 function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:layToWire(c).pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:layToWire(c).gaps,fixtures:layToWire(c).fixtures,packing:c.pack||'continuous'}; }
-function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param}; }
+function phaserOf(p){ p=p||{}; return {wave:p.wave||'none',rate:p.rate||0,spread:p.spread||0,width:p.width||0,low:p.low||0,reverse:!!p.reverse}; }
+function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param,phaser:e.ph,invert:e.invert}; }
 function sceneBody(s){ return {name:s.name,parts:s.parts.map(function(p){ return {mask:p.mask,effect:p.effect,fixture_mode:p.mode||'each'}; })}; }
 // How the effect spreads over a channel's fixtures (a channel without any is one strip).
 var FIX_MODES=[['each','Each fixture'],['strip','Whole strip'],['chain','Fixtures in a row'],['mirror','Mirrored']];
@@ -2533,6 +2564,10 @@ function onInput(e){
   if(t.hasAttribute&&t.hasAttribute('data-fx-name')){ var en=+t.getAttribute('data-fx-name'); EFFECTS[en-1].name=t.value; markDirty('fx'+(en-1)); renderEffectList(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-speed')){ var sn=+t.getAttribute('data-fx-speed'); EFFECTS[sn-1].speed=parseInt(t.value,10)||0; var sv=document.querySelector('[data-fx-speedval="'+sn+'"]'); if(sv) sv.textContent=speedText(EFFECTS[sn-1]); markDirty('fx'+(sn-1)); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-param')){ var pn=+t.getAttribute('data-fx-param'); EFFECTS[pn-1].param=parseInt(t.value,10)||0; var pv=document.querySelector('[data-fx-paramval="'+pn+'"]'); if(pv) pv.textContent=paramText(EFFECTS[pn-1]); markDirty('fx'+(pn-1)); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-wave')){ var wn=+t.getAttribute('data-fx-wave'); EFFECTS[wn-1].ph.wave=t.value; markDirty('fx'+(wn-1)); renderEffect(wn); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-phrev')){ var rn=+t.getAttribute('data-fx-phrev'); EFFECTS[rn-1].ph.reverse=t.checked; markDirty('fx'+(rn-1)); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-invert')){ var vn=+t.getAttribute('data-fx-invert'); EFFECTS[vn-1].invert=t.checked; markDirty('fx'+(vn-1)); return; }
+  for(var pk in PH_KEYS){ if(t.hasAttribute&&t.hasAttribute('data-fx-'+pk)){ var kn=+t.getAttribute('data-fx-'+pk), ke=EFFECTS[kn-1]; ke.ph[PH_KEYS[pk][0]]=parseInt(t.value,10)||0; var kv=document.querySelector('[data-fx-'+pk+'val="'+kn+'"]'); if(kv) kv.textContent=phText(ke,pk); markDirty('fx'+(kn-1)); return; } }
   if(t.hasAttribute&&t.hasAttribute('data-fx-gen')){ var fn=+t.getAttribute('data-fx-gen'); EFFECTS[fn-1].gen=parseInt(t.value,10)||0; markDirty('fx'+(fn-1)); renderEffect(fn); return; }
   if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }
   if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }

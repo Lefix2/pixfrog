@@ -468,6 +468,11 @@ static esp_err_t send_index(httpd_req_t* req, int idx) {
     return send_json(req, root);
 }
 
+// An effect or a scene body (a name and 4 colours + the phaser, or a name
+// and up to 8 parts). Static, off the httpd stack — the server runs one
+// handler at a time.
+static char g_scene_body[640];
+
 // ── Effect bank ──────────────────────────────────────────────────────────────
 // POST /api/effect/{n}          partial update (apply_effect_json)
 // POST /api/effect/{n}/delete   remove it (409 while a scene plays it); later
@@ -489,9 +494,9 @@ esp_err_t handle_post_effect(httpd_req_t* req) {
         return send_ok(req);
     }
 
-    char buf[384];  // name + 4 colours + numbers
-    if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large or empty");
-    cJSON* j = cJSON_Parse(buf);
+    if (!read_body(req, g_scene_body, sizeof(g_scene_body) - 1))
+        return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(g_scene_body);
     if (!j) return send_err(req, 400, "invalid JSON");
 
     config::ScopedLock lock;  // read-modify-write
@@ -509,9 +514,9 @@ esp_err_t handle_effects_add(httpd_req_t* req) {
     e.num_colors = 1;
     std::memset(e.colors[0], 255, 3);
     if (req->content_len > 0) {
-        char buf[384];
-        if (!read_body(req, buf, sizeof(buf) - 1)) return send_err(req, 400, "body too large");
-        cJSON* j = cJSON_Parse(buf);
+        if (!read_body(req, g_scene_body, sizeof(g_scene_body) - 1))
+            return send_err(req, 400, "body too large");
+        cJSON* j = cJSON_Parse(g_scene_body);
         if (!j) return send_err(req, 400, "invalid JSON");
         apply_effect_json(j, e);
         cJSON_Delete(j);
@@ -536,10 +541,6 @@ esp_err_t handle_effects_move(httpd_req_t* req) {
 // POST /api/scenes/add         append (optional scene JSON body) → {"index":n}
 // POST /api/scenes/move        {"from":a,"to":b}
 // POST /api/scenes/stop
-
-// A scene body: the name and up to 8 parts. Static, off the httpd stack — the
-// server runs one handler at a time.
-static char g_scene_body[640];
 
 esp_err_t handle_post_scene(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;

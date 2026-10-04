@@ -1139,6 +1139,199 @@ static void test_effect_speed_counts_double() {
     EXPECT_EQ(effect_speed_from_v3(kSceneFxSolid, 255), 255);
 }
 
+// ── Dimmer phaser ───────────────────────────────────────────────────────────
+
+static void test_phaser_waveforms() {
+    using namespace pixfrog::config;
+    // The sine table: mid at 0, crest a quarter in, trough at three quarters.
+    EXPECT_EQ(kSin8[0], 128);
+    EXPECT_EQ(kSin8[64], 255);
+    EXPECT_EQ(kSin8[128], 128);
+    EXPECT_EQ(kSin8[192], 0);
+    bool mirror = true;
+    for (int i = 1; i < 128; ++i)
+        mirror = mirror && kSin8[i] + kSin8[256 - i] == 255;
+    EXPECT_TRUE(mirror);
+
+    constexpr uint32_t q = 0x4000;  // a quarter cycle
+    EXPECT_EQ(phaser_level(kPhaserSin, 0, 0), 128);
+    EXPECT_EQ(phaser_level(kPhaserSin, q, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserSin, 3 * q, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserCos, 0, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserCos, 2 * q, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 0, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 2 * q, 0), 128);
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 0xFFFF, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserRampDown, 0, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserRampDown, 0xFFFF, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 0, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, q, 0), 128);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 2 * q, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 3 * q, 0), 127);
+    EXPECT_EQ(phaser_level(kPhaserBump, 0, 0), 1);
+    EXPECT_EQ(phaser_level(kPhaserBump, 2 * q, 0), 255);
+    EXPECT_TRUE(phaser_level(kPhaserBump, 0xFFFF, 0) < 8);
+    EXPECT_EQ(phaser_level(kPhaserPwm, 0, 0), 255);  // half lit by default
+    EXPECT_EQ(phaser_level(kPhaserPwm, 2 * q - 1, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserPwm, 2 * q + 512, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserPwm, q - 512, 64), 255);  // width = the lit share
+    EXPECT_EQ(phaser_level(kPhaserPwm, q + 512, 64), 0);
+    EXPECT_EQ(phaser_level(kPhaserNone, q, 0), 255);  // no wave: full
+    EXPECT_EQ(phaser_level(99, q, 0), 255);
+    // The cycle wraps: only the low 16 bits of the phase count.
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 0x30000 + 2 * q, 0), 128);
+
+    // Width: the wave runs in that share of the cycle (128/255, about half
+    // here), then holds its end.
+    EXPECT_TRUE(phaser_level(kPhaserTriangle, q / 2, 128) >= 126);  // half-way up already
+    EXPECT_TRUE(phaser_level(kPhaserTriangle, q, 128) >= 253);      // the crest, twice as early
+    EXPECT_TRUE(phaser_level(kPhaserTriangle, 2 * q, 128) <= 2);    // done
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 3 * q, 128), 0);        // held at the end
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 3 * q, 128), 255);        // a ramp holds its top
+    EXPECT_EQ(phaser_level(kPhaserRampUp, q, 255), 64);             // 255 = the whole cycle
+}
+
+static void test_phaser_dimmer_rate_spread_and_floor() {
+    using namespace pixfrog::config;
+    Effect e{};
+    e.ph_wave = kPhaserRampUp;
+    e.ph_rate = 20;  // 20 × 1/20 Hz = one cycle a second
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 0), 0);
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 500), 128);
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 1500), 128);  // periodic
+    EXPECT_EQ(phaser_dimmer(e, 7, 10, 500), 128);   // no spread: every pixel in phase
+    e.ph_rate = 0;                                  // a still wave
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 123456), 0);
+
+    // Spread 16 = one whole cycle along the run; the wave travels up the run,
+    // so a pixel further on is earlier in the cycle.
+    e.ph_spread = 16;
+    e.ph_rate   = 20;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 500), 128);
+    EXPECT_EQ(phaser_dimmer(e, 2, 8, 500), 64);   // a quarter cycle behind
+    EXPECT_EQ(phaser_dimmer(e, 4, 8, 500), 0);    // half a cycle behind
+    EXPECT_EQ(phaser_dimmer(e, 2, 8, 750), 128);  // what pixel 0 showed 250 ms ago
+    e.flags = kEffectPhaserReverse;
+    EXPECT_EQ(phaser_dimmer(e, 2, 8, 500), 192);  // ahead instead
+    e.flags = 0;
+    EXPECT_EQ(phaser_dimmer(e, 0, 0, 500), 128);  // an empty run is not a division by zero
+
+    // The floor lifts the whole wave: low..255 instead of 0..255.
+    e.ph_spread = 0;
+    e.ph_low    = 55;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 0), 55);
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 500), 55 + 200 * 128 / 255);
+    e.ph_low = 255;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 0), 255);
+    // A long uptime does not make the wave jump: same phase one cycle later.
+    e.ph_low               = 0;
+    const uint64_t far_off = 5'000'000'000'000ull;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, far_off + 250), phaser_dimmer(e, 0, 8, far_off + 1250));
+}
+
+static config::Effect solid_effect(uint8_t r, uint8_t g, uint8_t b) {
+    config::Effect e{};
+    e.generator    = config::kSceneFxSolid;
+    e.num_colors   = 1;
+    e.colors[0][0] = r;
+    e.colors[0][1] = g;
+    e.colors[0][2] = b;
+    return e;
+}
+
+static void test_effect_dimmer_layers() {
+    using namespace pixfrog::config;
+    uint8_t a[8 * 4], b[8 * 4];
+
+    // No phaser, no invert: the generator's frame, untouched.
+    Effect e = solid_effect(200, 100, 50);
+    fill_generator(a, sizeof(a), 8, 3, e.generator, effect_palette(e), 0, 0, 0);
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(std::memcmp(a, b, 24), 0);
+
+    // A still ramp spread over the run dims each pixel by its own level and
+    // keeps the hue. Pixel 0 is at the top of the ramp.
+    e.ph_wave   = kPhaserRampDown;
+    e.ph_spread = 16;
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(b[0], 200);                       // level 255
+    EXPECT_EQ(b[4 * 3], 200 * (128 + 1) >> 8);  // half a cycle behind: level 128
+    EXPECT_EQ(b[4 * 3 + 1], 100 * (128 + 1) >> 8);
+    EXPECT_TRUE(b[1 * 3] < 40);  // an eighth behind wraps to the ramp's end
+    // RGBW: the white byte the generators leave at 0 stays there.
+    std::memset(b, 0xEE, sizeof(b));
+    fill_effect_run(b, sizeof(b), 8, 4, e, 0);
+    EXPECT_EQ(b[0], 200);
+    EXPECT_EQ(b[3], 0);
+
+    // An out-of-range wave is no phaser at all.
+    e.ph_wave = 77;
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(std::memcmp(a, b, 24), 0);
+}
+
+static void test_effect_dimmer_invert() {
+    using namespace pixfrog::config;
+    uint8_t b[16 * 3];
+
+    // A steady colour inverted is dark: every pixel is as bright as colour 1.
+    Effect e = solid_effect(128, 0, 0);
+    e.flags  = kEffectDimmerInvert;
+    fill_effect_run(b, sizeof(b), 4, 3, e, 0);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);
+
+    // With a phaser it is the complement, measured against colour 1 — never
+    // brighter than the colour itself.
+    e.ph_wave   = kPhaserRampDown;
+    e.ph_spread = 16;
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(b[0], 0);                              // phaser full → dark
+    EXPECT_EQ(b[4 * 3], 128 - (128 * 129 >> 8));     // phaser half → the other half
+    EXPECT_TRUE(b[1 * 3] > 100 && b[1 * 3] <= 128);  // phaser near 0 → nearly full
+    EXPECT_EQ(b[1 * 3 + 1], 0);                      // the hue is kept
+
+    // A chase inverted: a lit strip with a dark gap running through it.
+    Effect c{};
+    c.generator    = kSceneFxChase;
+    c.num_colors   = 1;
+    c.colors[0][1] = 90;
+    c.flags        = kEffectDimmerInvert;
+    fill_effect_run(b, sizeof(b), 16, 3, c, 0);  // the head is on pixel 0
+    EXPECT_EQ(b[1], 0);
+    EXPECT_EQ(b[5 * 3 + 1], 90);
+    EXPECT_EQ(b[5 * 3], 0);
+
+    // A pixel brighter than colour 1 (another palette colour) just goes dark.
+    Effect two       = c;
+    two.num_colors   = 2;
+    two.colors[1][0] = 255;  // the second head, at half the run
+    fill_effect_run(b, sizeof(b), 16, 3, two, 0);
+    EXPECT_EQ(b[8 * 3] + b[8 * 3 + 1] + b[8 * 3 + 2], 0);
+
+    // Rainbow has its own hue everywhere: the invert follows the phaser and a
+    // pixel the phaser blacked out comes back in its own colour.
+    Effect r{};
+    r.generator = kSceneFxRainbow;
+    r.flags     = kEffectDimmerInvert;
+    r.ph_wave   = kPhaserPwm;  // half the run lit, half dark
+    r.ph_spread = 16;
+    uint8_t plain[16 * 3];
+    Effect rp  = r;
+    rp.flags   = 0;
+    rp.ph_wave = kPhaserNone;
+    fill_effect_run(plain, sizeof(plain), 16, 3, rp, 0);
+    fill_effect_run(b, sizeof(b), 16, 3, r, 0);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);  // lit by the phaser → dark
+    bool kept = false, dark_side_lit = true;
+    for (int i = 1; i < 8; ++i) {  // the phaser's dark half
+        const uint8_t* p = b + i * 3;
+        dark_side_lit    = dark_side_lit && p[0] + p[1] + p[2] > 0;
+        kept             = kept || std::memcmp(p, plain + i * 3, 3) == 0;
+    }
+    EXPECT_TRUE(dark_side_lit);
+    EXPECT_TRUE(kept);
+}
+
 static void test_scene_all_effects_bounded() {
     using namespace pixfrog::config;
     constexpr int kN = 1024;
@@ -1593,6 +1786,10 @@ int main() {
     test_scene_fade_crosses_palette();
     test_migrated_effect_matches_v3_scene();
     test_effect_speed_counts_double();
+    test_phaser_waveforms();
+    test_phaser_dimmer_rate_spread_and_floor();
+    test_effect_dimmer_layers();
+    test_effect_dimmer_invert();
     test_scene_all_effects_bounded();
     test_hue_wheel_endpoints();
     test_merge_single_source_passthrough();

@@ -773,7 +773,11 @@ int cmd_fx(int argc, char** argv) {
             for (size_t k = 0; k < config::effect_num_colors(e); ++k)
                 printf("%s%02x%02x%02x", k ? "," : "", e.colors[k][0], e.colors[k][1],
                        e.colors[k][2]);
-            printf(" speed=%u param=%u used=%d\n", e.speed, e.param, config::effect_in_use(i));
+            // phaser: wave,rate,spread,width,low[,reverse]
+            printf(" speed=%u param=%u phaser=%s,%u,%u,%u,%u%s invert=%d used=%d\n", e.speed,
+                   e.param, config::phaser_wave_id(e.ph_wave), e.ph_rate, e.ph_spread, e.ph_width,
+                   e.ph_low, (e.flags & config::kEffectPhaserReverse) ? ",reverse" : "",
+                   (e.flags & config::kEffectDimmerInvert) != 0, config::effect_in_use(i));
         }
         return ok();
     }
@@ -814,6 +818,50 @@ int cmd_fx(int argc, char** argv) {
         if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
         return ok();
     }
+    if (strcmp(argv[1], "phaser") == 0) {
+        // fx phaser <n> <wave> [<rate> <spread> [<width> <low> [reverse|forward]]] — the
+        // dimmer phaser; what is left out keeps its value.
+        if (argc < 4 || argc == 5 || argc == 7 || argc > 9 || !parse_effect_index(argv[2], n))
+            return err("usage: fx phaser <n> <wave> [<rate> <spread> [<width> <low> "
+                       "[reverse|forward]]]");
+        const int wave = config::phaser_wave_from_id(argv[3]);
+        if (wave < 0) return err("wave: none|sin|cos|ramp_up|ramp_down|triangle|pwm|bump");
+        uint32_t v[4] = {};
+        for (int k = 4; k < argc && k < 8; ++k)
+            if (!parse_u32_in(argv[k], 0, 255, v[k - 4]))
+                return err("rate, spread, width, low: 0..255");
+        const bool reverse = argc == 9 && strcmp(argv[8], "reverse") == 0;
+        if (argc == 9 && !reverse && strcmp(argv[8], "forward") != 0)
+            return err("direction: reverse|forward");
+        config::ScopedLock lock;
+        auto e    = config::get_effect(n);
+        e.ph_wave = static_cast<uint8_t>(wave);
+        if (argc >= 6) {
+            e.ph_rate   = static_cast<uint8_t>(v[0]);
+            e.ph_spread = static_cast<uint8_t>(v[1]);
+        }
+        if (argc >= 8) {
+            e.ph_width = static_cast<uint8_t>(v[2]);
+            e.ph_low   = static_cast<uint8_t>(v[3]);
+        }
+        if (argc == 9)
+            e.flags = static_cast<uint8_t>(reverse ? e.flags | config::kEffectPhaserReverse
+                                                   : e.flags & ~config::kEffectPhaserReverse);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "invert") == 0) {
+        // fx invert <n> 0|1 — the intensity negative of the whole effect
+        bool on = false;
+        if (argc != 4 || !parse_effect_index(argv[2], n) || !parse_bool(argv[3], on))
+            return err("usage: fx invert <n> 0|1");
+        config::ScopedLock lock;
+        auto e  = config::get_effect(n);
+        e.flags = static_cast<uint8_t>(on ? e.flags | config::kEffectDimmerInvert
+                                          : e.flags & ~config::kEffectDimmerInvert);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
     if (strcmp(argv[1], "add") == 0) {
         // fx add [name] — a solid white effect, appended.
         config::Effect e{};
@@ -837,8 +885,8 @@ int cmd_fx(int argc, char** argv) {
         config::move_effect(n, to);
         return ok();
     }
-    return err("usage: fx [name <n> <text> | set <n> ... | add [name] | del <n> | "
-               "move <from> <to>]");
+    return err("usage: fx [name <n> <text> | set <n> ... | phaser <n> ... | invert <n> 0|1 | "
+               "add [name] | del <n> | move <from> <to>]");
 }
 
 // ── standalone scenes ───────────────────────────────────────────────────────
@@ -1275,7 +1323,7 @@ void start() {
     register_cmd("identify", "identify <ch>|all [blinks] — blink strips white to locate them",
                  cmd_identify);
     register_cmd("audio", "audio test | audio tone <Hz> [ms] — the speaker", cmd_audio);
-    register_cmd("fx", "fx [name|set|add|del|move] — the effect bank", cmd_fx);
+    register_cmd("fx", "fx [name|set|phaser|invert|add|del|move] — the effect bank", cmd_fx);
     register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|part|clear] — standalone scenes",
                  cmd_scene);
     register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",

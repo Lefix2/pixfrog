@@ -246,6 +246,36 @@ def test_generator_dropdown_and_param_slider(page, device):
     assert e["generator"] == 6 and e["param"] == 120 and e["speed"] == 200
 
 
+def test_dimmer_phaser_and_invert(page, device):
+    nav(page, "effects")
+    expect(page.locator("[data-fx-phrate]")).to_have_count(0)  # no phaser: no phaser sliders
+    page.locator("[data-fx-wave]").select_option("sin")
+    page.locator("[data-fx-phrate]").fill("20")
+    expect(page.locator("[data-fx-phrateval]")).to_contain_text("1.00 Hz · 60 BPM")
+    page.locator("[data-fx-phspread]").fill("16")
+    expect(page.locator("[data-fx-phspreadval]")).to_contain_text("1 cycle")
+    page.locator("[data-fx-phwidth]").fill("128")
+    page.locator("[data-fx-phlow]").fill("51")
+    expect(page.locator("[data-fx-phlowval]")).to_contain_text("20 %")
+    page.locator("[data-fx-phrev]").check(force=True)
+    page.locator("[data-fx-invert]").check(force=True)
+    save(page)
+    e = device.get("/api/config")["effects"][0]
+    assert e["phaser"] == {"wave": "sin", "rate": 20, "spread": 16, "width": 128, "low": 51,
+                           "reverse": True}
+    assert e["invert"] is True
+    # Reloaded from the box, the card shows what was saved.
+    expect(page.locator("[data-fx-wave]")).to_have_value("sin")
+    expect(page.locator("[data-fx-phrate]")).to_have_value("20")
+    expect(page.locator("[data-fx-invert]")).to_be_checked()
+
+    page.locator("[data-fx-wave]").select_option("none")
+    page.locator("[data-fx-invert]").uncheck(force=True)
+    save(page)
+    e = device.get("/api/config")["effects"][0]
+    assert e["phaser"]["wave"] == "none" and e["invert"] is False
+
+
 # ── channels ─────────────────────────────────────────────────────────────────
 
 def test_pixel_count_above_budget_warns_and_is_kept(page, device):

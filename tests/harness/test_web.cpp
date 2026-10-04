@@ -363,6 +363,35 @@ TEST(effect_endpoints_manage_the_bank) {
     EXPECT_EQ(post(url, "").status, 400);
     EXPECT_EQ(post("/api/effect/99", "{}").status, 404);
 
+    // The dimmer phaser and the invert: partial like the rest.
+    EXPECT_EQ(post(url,
+                   "{\"phaser\":{\"wave\":\"triangle\",\"rate\":20,\"spread\":16,\"width\":128,"
+                   "\"low\":30,\"reverse\":true},\"invert\":true}")
+                  .status,
+              200);
+    const auto& ph = config::get_effect(n);
+    EXPECT_EQ(ph.ph_wave, config::kPhaserTriangle);
+    EXPECT_EQ(ph.ph_rate, 20);
+    EXPECT_EQ(ph.ph_spread, 16);
+    EXPECT_EQ(ph.ph_width, 128);
+    EXPECT_EQ(ph.ph_low, 30);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse | config::kEffectDimmerInvert);
+    post(url, "{\"phaser\":{\"wave\":\"wobble\",\"rate\":300,\"reverse\":1},\"invert\":\"yes\"}");
+    EXPECT_EQ(ph.ph_wave, config::kPhaserTriangle);  // unknown or mistyped: kept
+    EXPECT_EQ(ph.ph_rate, 20);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse | config::kEffectDimmerInvert);
+    post(url, "{\"phaser\":{\"wave\":\"none\",\"reverse\":false},\"invert\":false}");
+    EXPECT_EQ(ph.ph_wave, config::kPhaserNone);
+    EXPECT_EQ(ph.ph_spread, 16);  // left out: kept
+    EXPECT_EQ(ph.flags, 0);
+    post(url, "{\"phaser\":7}");  // not an object: ignored
+    Json withph(get("/api/config").body);
+    const cJSON* jph = cJSON_GetObjectItem(
+        cJSON_GetArrayItem(withph["effects"], static_cast<int>(n)), "phaser");
+    EXPECT_STREQ(cJSON_GetObjectItem(jph, "wave")->valuestring, "none");
+    EXPECT_EQ(cJSON_GetObjectItem(jph, "spread")->valueint, 16);
+    EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(jph, "reverse")));
+
     // Moved to the front: every scene keeps its look.
     EXPECT_EQ(post("/api/effects/move", "{\"from\":" + std::to_string(n) + ",\"to\":0}").status,
               200);
@@ -496,6 +525,8 @@ TEST(post_and_restore_parse_the_same_fields) {
 TEST(backup_then_restore_round_trips) {
     post("/api/channel/3", "{\"protocol\":\"APA102\",\"pixel_count\":77,\"gaps\":[[5,1]]}");
     post("/api/global", "{\"short_name\":\"before\"}");
+    post("/api/effect/2", "{\"phaser\":{\"wave\":\"bump\",\"rate\":9,\"spread\":4,\"width\":200,"
+                          "\"low\":12,\"reverse\":true},\"invert\":true}");
     const auto backup = get("/api/backup");
     EXPECT_EQ(backup.status, 200);
     EXPECT_TRUE(backup.headers.at("Content-Disposition").find("attachment") != std::string::npos);
@@ -508,6 +539,10 @@ TEST(backup_then_restore_round_trips) {
     EXPECT_TRUE(cJSON_Compare(a["channels"], b["channels"], true));
     EXPECT_TRUE(cJSON_Compare(a["effects"], b["effects"], true));
     EXPECT_TRUE(cJSON_Compare(a["scenes"], b["scenes"], true));
+    EXPECT_EQ(config::get_effect(2).ph_wave, config::kPhaserBump);  // the phaser came back
+    EXPECT_EQ(config::get_effect(2).ph_width, 200);
+    EXPECT_EQ(config::get_effect(2).flags,
+              config::kEffectPhaserReverse | config::kEffectDimmerInvert);
     EXPECT_STREQ(config::get_global().short_name, "before");
     EXPECT_EQ(post("/api/restore", "garbage").status, 400);
 

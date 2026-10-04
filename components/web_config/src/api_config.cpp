@@ -66,6 +66,14 @@ static cJSON* build_effects_json() {
         }
         cJSON_AddNumberToObject(je, "speed", e.speed);
         cJSON_AddNumberToObject(je, "param", e.param);
+        cJSON* jp = cJSON_AddObjectToObject(je, "phaser");
+        cJSON_AddStringToObject(jp, "wave", config::phaser_wave_id(e.ph_wave));
+        cJSON_AddNumberToObject(jp, "rate", e.ph_rate);
+        cJSON_AddNumberToObject(jp, "spread", e.ph_spread);
+        cJSON_AddNumberToObject(jp, "width", e.ph_width);
+        cJSON_AddNumberToObject(jp, "low", e.ph_low);
+        cJSON_AddBoolToObject(jp, "reverse", (e.flags & config::kEffectPhaserReverse) != 0);
+        cJSON_AddBoolToObject(je, "invert", (e.flags & config::kEffectDimmerInvert) != 0);
         cJSON_AddItemToArray(jfx, je);
     }
     return jfx;
@@ -516,6 +524,22 @@ void apply_effect_json(const cJSON* je, config::Effect& e) {
         std::memcpy(e.colors, parsed, static_cast<size_t>(n) * 3);
         e.num_colors = static_cast<uint8_t>(n);
     }
+    auto flag = [&](const cJSON* obj, const char* key, uint8_t bit) {
+        const cJSON* b = cJSON_GetObjectItemCaseSensitive(obj, key);
+        if (cJSON_IsBool(b))
+            e.flags = static_cast<uint8_t>(cJSON_IsTrue(b) ? e.flags | bit : e.flags & ~bit);
+    };
+    flag(je, "invert", config::kEffectDimmerInvert);
+    const cJSON* jp = cJSON_GetObjectItemCaseSensitive(je, "phaser");
+    if (!cJSON_IsObject(jp)) return;
+    const cJSON* jw = cJSON_GetObjectItemCaseSensitive(jp, "wave");
+    const int wave  = cJSON_IsString(jw) ? config::phaser_wave_from_id(jw->valuestring) : -1;
+    if (wave >= 0) e.ph_wave = static_cast<uint8_t>(wave);
+    apply_u8_json(jp, "rate", 255, &e.ph_rate);
+    apply_u8_json(jp, "spread", 255, &e.ph_spread);
+    apply_u8_json(jp, "width", 255, &e.ph_width);
+    apply_u8_json(jp, "low", 255, &e.ph_low);
+    flag(jp, "reverse", config::kEffectPhaserReverse);
 }
 
 // Partial update. "parts", when present, replaces the scene's parts — and is

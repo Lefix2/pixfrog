@@ -341,6 +341,18 @@ constexpr uint8_t kPhaserPwm       = 6;
 constexpr uint8_t kPhaserBump      = 7;
 constexpr uint8_t kPhaserWaveCount = 8;
 
+inline const char* phaser_wave_id(uint8_t w) {
+    static const char* const kIds[] = { "none",      "sin",      "cos", "ramp_up",
+                                        "ramp_down", "triangle", "pwm", "bump" };
+    static_assert(sizeof(kIds) / sizeof(kIds[0]) == kPhaserWaveCount, "one id per waveform");
+    return w < kPhaserWaveCount ? kIds[w] : "none";
+}
+inline int phaser_wave_from_id(const char* s) {
+    for (uint8_t w = 0; w < kPhaserWaveCount; ++w)
+        if (std::strcmp(s, phaser_wave_id(w)) == 0) return w;
+    return -1;
+}
+
 // Effect::flags
 constexpr uint8_t kEffectDimmerInvert  = 0x01;  // intensity negative of the whole effect
 constexpr uint8_t kEffectPhaserReverse = 0x02;  // the phaser travels the other way

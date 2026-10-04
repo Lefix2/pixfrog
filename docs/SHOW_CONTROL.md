@@ -48,6 +48,31 @@ Speed runs 0–255, in steps of two generator units: 2 px/s per step for chase,
 scanner and stripes (up to 510 px/s), 20 °/s for rainbow. Solid is apart: its
 speed is a strobe frequency, 0–60 Hz, where 255 means "steady colour 2".
 
+### Dimmer phaser and invert
+
+An effect can carry a **dimmer phaser**: a waveform that dims what the
+generator draws, travelling along the pixels of the run (a fixture, or the
+chained fixtures, as the part's fixture mode says).
+
+| Setting | Meaning |
+|---|---|
+| Wave | none, sine, cosine, ramp up, ramp down, triangle, PWM, bump (a half-sine hump) |
+| Rate | 0–255, 0.05 Hz (3 BPM) a step — 0 is a still wave, 255 is 12.75 Hz |
+| Spread | phase shift along the run, 1/16 cycle a step: 0 = every pixel in phase (the run breathes as one), 16 = one whole wave along the run |
+| Width | the share of the cycle the wave takes (n/255, 0 = all of it): it runs compressed, then holds its end level. For PWM, the lit share (0 = half) |
+| Floor | the dimmer's low point (n/255): the wave runs between the floor and full |
+| Reverse | the wave travels towards the start of the run |
+
+**Dimmer invert** is the intensity negative of the whole effect, with or
+without a phaser: a pixel as bright as colour 1 goes dark, a dark pixel takes
+colour 1, the hue is kept in between. A chase becomes a lit strip with a dark
+gap running through it; a sine phaser shifts by half a cycle; a steady colour
+alone goes dark.
+
+UART: `fx phaser <n> <wave> [<rate> <spread> [<width> <low> [reverse|forward]]]`,
+`fx invert <n> 0|1`. REST: `"phaser": {"wave", "rate", "spread", "width", "low",
+"reverse"}` and `"invert"` in the effect.
+
 | Edit | Effects | Scenes |
 |---|---|---|
 | Web UI | **Effects** screen | **Scenes** screen: the parts, their outputs, effect and fixture mode |

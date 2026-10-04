@@ -74,6 +74,30 @@ def run(board: Board):
     c.check("solid speed 255 = colour 2", board.get("pixr 0 0 3", "data") == "002200")
     board.cmd("scene stop")
 
+    # Dimmer phaser: a still PWM spread once along the strip (reversed, so
+    # the cycle runs up the strip) lights its first half only; inverted, the
+    # other half.
+    n_px = int(board.get("ch 0", "pixels") or 0)
+    board.cmd("fx set 0 solid 808080 0 0")
+    board.cmd("fx phaser 0 pwm 0 16 0 0 reverse")
+    board.cmd("scene play 0")
+    board.cmd("status")
+    d = board.get("pixr 0", "data", deadline=8) or ""
+    px = [d[i:i + 6] for i in range(0, len(d) - 5, 6)]
+    lit = [p != "000000" for p in px]
+    c.check("phaser: one half lit, one half dark",
+            n_px >= 4 and len(px) == n_px and lit[0] and not lit[-1] and
+            abs(sum(lit) - n_px / 2) <= 1)
+    board.cmd("fx invert 0 1")
+    board.cmd("status")
+    d = board.get("pixr 0", "data", deadline=8) or ""
+    px = [d[i:i + 6] for i in range(0, len(d) - 5, 6)]
+    c.check("invert: the halves swap", len(px) == n_px and px[0] == "000000" and
+            px[-1] == "808080")
+    board.cmd("fx invert 0 0")
+    board.cmd("fx phaser 0 none 0 0 0 0 forward")
+    board.cmd("scene stop")
+
     # Scene list: add / rename / move / delete, persisted across a reboot.
     count = lambda: sum(1 for l in board.cmd("scene").splitlines()
                         if l.strip().startswith("scene") and "name=" in l)
