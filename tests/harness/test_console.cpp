@@ -145,7 +145,7 @@ TEST(fx_commands_manage_the_bank) {
         saved.push_back(config::get_effect(i));
     EXPECT_TRUE(run("fx"));
     EXPECT_TRUE(has("fx1 name=Chase generator=chase color=ffffff,ff7800 speed=30 param=3 "
-                    "phaser=none,0,0,0,0 invert=0 used=1"));
+                    "phaser=none,0,0,0,0 invert=0 matricks=0,0,0 used=1"));
     EXPECT_TRUE(run("fx add Extra"));
     EXPECT_TRUE(has("index=8"));
     EXPECT_EQ(config::num_effects(), 9);
@@ -162,7 +162,7 @@ TEST(fx_commands_manage_the_bank) {
     EXPECT_STREQ(config::get_effect(8).name, "Renamed");
     EXPECT_TRUE(run("fx"));
     EXPECT_TRUE(has("fx8 name=Renamed generator=rainbow color=ffffff speed=0 param=0 "
-                    "phaser=none,0,0,0,0 invert=0 used=0"));
+                    "phaser=none,0,0,0,0 invert=0 matricks=0,0,0 used=0"));
 
     // The dimmer phaser: what is left out keeps its value.
     EXPECT_TRUE(run("fx phaser 8 sin 20 16 128 30 reverse"));
@@ -183,7 +183,7 @@ TEST(fx_commands_manage_the_bank) {
     EXPECT_TRUE(run("fx invert 8 1"));
     EXPECT_EQ(ph.flags, config::kEffectDimmerInvert);
     EXPECT_TRUE(run("fx"));
-    EXPECT_TRUE(has("phaser=pwm,40,8,0,0 invert=1 used=0"));
+    EXPECT_TRUE(has("phaser=pwm,40,8,0,0 invert=1 matricks=0,0,0 used=0"));
     EXPECT_TRUE(run("fx phaser 8 ramp_down 1 2 3 4 reverse"));
     EXPECT_TRUE(run("fx"));
     EXPECT_TRUE(has("phaser=ramp_down,1,2,3,4,reverse invert=1"));
@@ -197,6 +197,19 @@ TEST(fx_commands_manage_the_bank) {
            "fx phaser 8 sin 256 0", "fx phaser 8 sin 1 2 3 4 sideways", "fx phaser 99 sin",
            "fx phaser 8 sin 1 2 3 4 reverse x", "fx invert 8", "fx invert 8 maybe",
            "fx invert 99 1" })
+        EXPECT_FALSE(run(bad));
+
+    // Block / Groups / Wings.
+    EXPECT_TRUE(run("fx matricks 8 3 4 2"));
+    EXPECT_EQ(ph.block, 3);
+    EXPECT_EQ(ph.groups, 4);
+    EXPECT_EQ(ph.wings, 2);
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("matricks=3,4,2 used=0"));
+    EXPECT_TRUE(run("fx matricks 8 0 0 0"));
+    EXPECT_EQ(ph.block + ph.groups + ph.wings, 0);
+    for (const char* bad : { "fx matricks 8", "fx matricks 8 1 2", "fx matricks 8 1 2 256",
+                             "fx matricks 8 x 2 3", "fx matricks 99 1 2 3" })
         EXPECT_FALSE(run(bad));
 
     EXPECT_TRUE(run("fx move 8 0"));  // the scenes follow their effect

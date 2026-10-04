@@ -203,6 +203,7 @@ fx name 0 Renamed
 fx phaser 0 sin 20 16 128 30 reverse
 fx phaser 0 none
 fx invert 0 1
+fx matricks 0 3 4 2
 fx move 0 1
 fx del 8
 fseq list
@@ -253,7 +254,8 @@ WEB = [
                           '"colors":["#005aff","#ff008c"]}'),
     (R["/api/effects/add"], 0, '{"name":"Web","generator":8,"colors":["#ff0000"]}'),
     (R["/api/effect"], 1, '{"phaser":{"wave":"bump","rate":40,"spread":8,"width":200,"low":12,'
-                          '"reverse":true},"invert":true}'),
+                          '"reverse":true},"invert":true,'
+                          '"matricks":{"block":3,"groups":4,"wings":2}}'),
     (R["/api/effects/move"], 0, '{"from":3,"to":0}'),
     (R["/api/groups"], 0, '{"groups":[{"name":"Top","members":[[0,0],[1,0]]}]}'),
     # A backup from before the effect bank: scenes that carry their own look.

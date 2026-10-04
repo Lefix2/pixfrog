@@ -385,12 +385,29 @@ TEST(effect_endpoints_manage_the_bank) {
     EXPECT_EQ(ph.ph_spread, 16);  // left out: kept
     EXPECT_EQ(ph.flags, 0);
     post(url, "{\"phaser\":7}");  // not an object: ignored
+
+    // Block / Groups / Wings.
+    EXPECT_EQ(post(url, "{\"matricks\":{\"block\":3,\"groups\":4,\"wings\":2}}").status, 200);
+    EXPECT_EQ(ph.block, 3);
+    EXPECT_EQ(ph.groups, 4);
+    EXPECT_EQ(ph.wings, 2);
+    post(url, "{\"matricks\":{\"block\":300,\"wings\":0}}");  // out of range: kept
+    EXPECT_EQ(ph.block, 3);
+    EXPECT_EQ(ph.groups, 4);
+    EXPECT_EQ(ph.wings, 0);
+    post(url, "{\"matricks\":[1,2,3]}");  // not an object: ignored
+    EXPECT_EQ(ph.block, 3);
     Json withph(get("/api/config").body);
     const cJSON* jph = cJSON_GetObjectItem(
         cJSON_GetArrayItem(withph["effects"], static_cast<int>(n)), "phaser");
     EXPECT_STREQ(cJSON_GetObjectItem(jph, "wave")->valuestring, "none");
     EXPECT_EQ(cJSON_GetObjectItem(jph, "spread")->valueint, 16);
     EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(jph, "reverse")));
+    const cJSON* jmx = cJSON_GetObjectItem(
+        cJSON_GetArrayItem(withph["effects"], static_cast<int>(n)), "matricks");
+    EXPECT_EQ(cJSON_GetObjectItem(jmx, "block")->valueint, 3);
+    EXPECT_EQ(cJSON_GetObjectItem(jmx, "groups")->valueint, 4);
+    EXPECT_EQ(cJSON_GetObjectItem(jmx, "wings")->valueint, 0);
 
     // Moved to the front: every scene keeps its look.
     EXPECT_EQ(post("/api/effects/move", "{\"from\":" + std::to_string(n) + ",\"to\":0}").status,
@@ -526,7 +543,8 @@ TEST(backup_then_restore_round_trips) {
     post("/api/channel/3", "{\"protocol\":\"APA102\",\"pixel_count\":77,\"gaps\":[[5,1]]}");
     post("/api/global", "{\"short_name\":\"before\"}");
     post("/api/effect/2", "{\"phaser\":{\"wave\":\"bump\",\"rate\":9,\"spread\":4,\"width\":200,"
-                          "\"low\":12,\"reverse\":true},\"invert\":true}");
+                          "\"low\":12,\"reverse\":true},\"invert\":true,"
+                          "\"matricks\":{\"block\":2,\"groups\":5,\"wings\":3}}");
     const auto backup = get("/api/backup");
     EXPECT_EQ(backup.status, 200);
     EXPECT_TRUE(backup.headers.at("Content-Disposition").find("attachment") != std::string::npos);
@@ -541,6 +559,9 @@ TEST(backup_then_restore_round_trips) {
     EXPECT_TRUE(cJSON_Compare(a["scenes"], b["scenes"], true));
     EXPECT_EQ(config::get_effect(2).ph_wave, config::kPhaserBump);  // the phaser came back
     EXPECT_EQ(config::get_effect(2).ph_width, 200);
+    EXPECT_EQ(config::get_effect(2).block, 2);
+    EXPECT_EQ(config::get_effect(2).groups, 5);
+    EXPECT_EQ(config::get_effect(2).wings, 3);
     EXPECT_EQ(config::get_effect(2).flags,
               config::kEffectPhaserReverse | config::kEffectDimmerInvert);
     EXPECT_STREQ(config::get_global().short_name, "before");

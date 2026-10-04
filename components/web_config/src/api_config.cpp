@@ -74,6 +74,10 @@ static cJSON* build_effects_json() {
         cJSON_AddNumberToObject(jp, "low", e.ph_low);
         cJSON_AddBoolToObject(jp, "reverse", (e.flags & config::kEffectPhaserReverse) != 0);
         cJSON_AddBoolToObject(je, "invert", (e.flags & config::kEffectDimmerInvert) != 0);
+        cJSON* jm = cJSON_AddObjectToObject(je, "matricks");
+        cJSON_AddNumberToObject(jm, "block", e.block);
+        cJSON_AddNumberToObject(jm, "groups", e.groups);
+        cJSON_AddNumberToObject(jm, "wings", e.wings);
         cJSON_AddItemToArray(jfx, je);
     }
     return jfx;
@@ -530,6 +534,12 @@ void apply_effect_json(const cJSON* je, config::Effect& e) {
             e.flags = static_cast<uint8_t>(cJSON_IsTrue(b) ? e.flags | bit : e.flags & ~bit);
     };
     flag(je, "invert", config::kEffectDimmerInvert);
+    const cJSON* jm = cJSON_GetObjectItemCaseSensitive(je, "matricks");
+    if (cJSON_IsObject(jm)) {
+        apply_u8_json(jm, "block", 255, &e.block);
+        apply_u8_json(jm, "groups", 255, &e.groups);
+        apply_u8_json(jm, "wings", 255, &e.wings);
+    }
     const cJSON* jp = cJSON_GetObjectItemCaseSensitive(je, "phaser");
     if (!cJSON_IsObject(jp)) return;
     const cJSON* jw = cJSON_GetObjectItemCaseSensitive(jp, "wave");

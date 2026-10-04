@@ -1332,6 +1332,149 @@ static void test_effect_dimmer_invert() {
     EXPECT_TRUE(kept);
 }
 
+// ── Block / Groups / Wings ──────────────────────────────────────────────────
+
+// The value index of pixel i, the plain way: wing, mirror, block, repeat.
+static uint32_t matricks_value(uint32_t i, uint32_t wing, uint32_t block, uint32_t virt) {
+    const uint32_t p = i / wing, j = i % wing;
+    const uint32_t at = (p & 1) ? wing - 1 - j : j;
+    return at / block % virt;
+}
+
+static void test_matricks_layout() {
+    using namespace pixfrog::config;
+    Effect e{};
+    Matricks m = matricks_for(e, 12);
+    EXPECT_TRUE(!m.active);            // all off: the run as is
+    e.block = e.groups = e.wings = 1;  // 1 is off too
+    EXPECT_TRUE(!matricks_for(e, 12).active);
+
+    e       = Effect{};
+    e.block = 3;
+    m       = matricks_for(e, 12);
+    EXPECT_TRUE(m.active);
+    EXPECT_EQ(m.virt, 4);                    // 12 pixels by blocks of 3
+    EXPECT_EQ(matricks_for(e, 13).virt, 5);  // a last, shorter block
+    e.block = 200;
+    EXPECT_EQ(matricks_for(e, 12).virt, 1);  // one value for the whole run
+
+    e        = Effect{};
+    e.groups = 4;
+    m        = matricks_for(e, 12);
+    EXPECT_EQ(m.virt, 4);  // the pattern repeats every 4 pixels
+    e.groups = 12;
+    EXPECT_TRUE(!matricks_for(e, 12).active);  // as long as the run: nothing to repeat
+    e.groups = 50;
+    EXPECT_TRUE(!matricks_for(e, 12).active);
+
+    e       = Effect{};
+    e.wings = 2;
+    m       = matricks_for(e, 12);
+    EXPECT_EQ(m.wing, 6);
+    EXPECT_EQ(m.virt, 6);
+    EXPECT_EQ(matricks_for(e, 13).wing, 7);  // an odd run: the last wing is one short
+    e.wings = 200;
+    EXPECT_EQ(matricks_for(e, 12).wing, 1);  // never more wings than pixels:
+    EXPECT_EQ(matricks_for(e, 12).virt, 1);  // one-pixel wings, all the same value
+
+    // All three: 24 pixels, 2 wings of 12, blocks of 2 → 6 values, repeating every 3.
+    e.wings  = 2;
+    e.block  = 2;
+    e.groups = 3;
+    m        = matricks_for(e, 24);
+    EXPECT_EQ(m.wing, 12);
+    EXPECT_EQ(m.virt, 3);
+    EXPECT_TRUE(!matricks_for(e, 0).active);  // an empty run
+}
+
+// The in-place expansion against the plain formula, for every run length and
+// a spread of settings, 3 and 4 bytes per pixel.
+static void test_matricks_expand_matches_reference() {
+    using namespace pixfrog::config;
+    constexpr int kMax = 64;
+    uint8_t buf[kMax * 4 + 4];
+    bool same = true;
+    for (uint8_t bpp : { uint8_t{ 3 }, uint8_t{ 4 } })
+        for (uint32_t n = 1; n <= kMax; ++n)
+            for (uint8_t wings : { 0, 2, 3, 5, 64 })
+                for (uint8_t block : { 0, 2, 3, 7 })
+                    for (uint8_t groups : { 0, 2, 3, 5 }) {
+                        Effect e{};
+                        e.wings          = wings;
+                        e.block          = block;
+                        e.groups         = groups;
+                        const Matricks m = matricks_for(e, n);
+                        // Each virtual pixel carries its own index; the tail is junk.
+                        std::memset(buf, 0xEE, sizeof(buf));
+                        for (uint32_t v = 0; v < (m.active ? m.virt : n); ++v)
+                            std::memset(buf + v * bpp, static_cast<int>(v + 1), bpp);
+                        expand_matricks(buf, n, bpp, m);
+                        for (uint32_t i = 0; i < n; ++i) {
+                            const uint32_t want = m.active
+                                                    ? matricks_value(i, m.wing, m.block, m.virt)
+                                                    : i;
+                            for (uint8_t k = 0; k < bpp; ++k)
+                                same = same && buf[i * bpp + k] == want + 1;
+                        }
+                        same = same && buf[n * bpp] == 0xEE;  // nothing past the run
+                    }
+    EXPECT_TRUE(same);
+}
+
+static void test_matricks_on_an_effect() {
+    using namespace pixfrog::config;
+    uint8_t b[24 * 3];
+    auto red = [&](int i) { return b[i * 3]; };
+
+    // Wings on a chase: the head runs in from both ends at once.
+    Effect e{};
+    e.generator    = kSceneFxChase;
+    e.num_colors   = 1;
+    e.colors[0][0] = 200;
+    e.speed        = 1;  // 2 px/s
+    e.wings        = 2;
+    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);  // head on virtual pixel 3
+    for (int i = 0; i < 24; ++i)
+        EXPECT_EQ(red(i), i == 3 || i == 20 ? 200 : 0);
+
+    // Block: the head is three pixels wide and moves by three.
+    e.wings = 0;
+    e.block = 3;
+    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);
+    for (int i = 0; i < 24; ++i)
+        EXPECT_EQ(red(i), i >= 9 && i < 12 ? 200 : 0);
+
+    // Groups: the head repeats every 6 pixels.
+    e.block  = 0;
+    e.groups = 6;
+    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);
+    for (int i = 0; i < 24; ++i)
+        EXPECT_EQ(red(i), i % 6 == 3 ? 200 : 0);
+
+    // The phaser spreads over the virtual run: with 2 wings a still ramp
+    // rises to the middle and falls back, symmetric.
+    Effect p    = solid_effect(255, 255, 255);
+    p.ph_wave   = kPhaserRampUp;
+    p.ph_spread = 16;
+    p.flags     = kEffectPhaserReverse;  // the ramp climbs along the run
+    p.wings     = 2;
+    fill_effect_run(b, sizeof(b), 24, 3, p, 0);
+    bool sym = true, climbs = true;
+    for (int i = 0; i < 12; ++i) {
+        sym = sym && red(i) == red(23 - i);
+        if (i) climbs = climbs && red(i) > red(i - 1);
+    }
+    EXPECT_TRUE(sym);
+    EXPECT_TRUE(climbs);
+
+    // A one-pixel run and a too-small buffer stay safe.
+    b[0] = b[3] = 0x55;
+    fill_effect_run(b, sizeof(b), 1, 3, p, 0);
+    EXPECT_EQ(b[3], 0x55);
+    fill_effect_run(b, 5, 24, 3, p, 0);
+    EXPECT_EQ(b[3], 0x55);
+}
+
 static void test_scene_all_effects_bounded() {
     using namespace pixfrog::config;
     constexpr int kN = 1024;
@@ -1790,6 +1933,9 @@ int main() {
     test_phaser_dimmer_rate_spread_and_floor();
     test_effect_dimmer_layers();
     test_effect_dimmer_invert();
+    test_matricks_layout();
+    test_matricks_expand_matches_reference();
+    test_matricks_on_an_effect();
     test_scene_all_effects_bounded();
     test_hue_wheel_endpoints();
     test_merge_single_source_passthrough();

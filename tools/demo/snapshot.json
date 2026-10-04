@@ -263,6 +263,11 @@
     ],
     "generator": 0,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Warm white",
     "param": 0,
     "phaser": {
@@ -282,6 +287,11 @@
     ],
     "generator": 1,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Chase",
     "param": 3,
     "phaser": {
@@ -300,6 +310,11 @@
     ],
     "generator": 2,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Rainbow",
     "param": 1,
     "phaser": {
@@ -320,6 +335,11 @@
     ],
     "generator": 3,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Blobs",
     "param": 4,
     "phaser": {
@@ -341,6 +361,11 @@
     ],
     "generator": 7,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Fire",
     "param": 0,
     "phaser": {
@@ -360,6 +385,11 @@
     ],
     "generator": 6,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Twinkle",
     "param": 60,
     "phaser": {
@@ -378,6 +408,11 @@
     ],
     "generator": 8,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Scanner",
     "param": 0,
     "phaser": {
@@ -397,6 +432,11 @@
     ],
     "generator": 0,
     "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
     "name": "Strobe",
     "param": 0,
     "phaser": {

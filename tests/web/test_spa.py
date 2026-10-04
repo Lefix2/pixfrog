@@ -276,6 +276,23 @@ def test_dimmer_phaser_and_invert(page, device):
     assert e["phaser"]["wave"] == "none" and e["invert"] is False
 
 
+def test_block_groups_wings(page, device):
+    nav(page, "effects")
+    expect(page.locator("[data-fx-mxblockval]")).to_have_text("off")
+    page.locator("[data-fx-mxblock]").fill("3")
+    expect(page.locator("[data-fx-mxblockval]")).to_have_text("3 px")
+    page.locator("[data-fx-mxgroups]").fill("4")
+    page.locator("[data-fx-mxwings]").fill("2")
+    expect(page.locator("[data-fx-mxwingsval]")).to_have_text("2 parts")
+    save(page)
+    assert device.get("/api/config")["effects"][0]["matricks"] == {"block": 3, "groups": 4, "wings": 2}
+    expect(page.locator("[data-fx-mxgroups]")).to_have_value("4")  # reloaded from the box
+    page.locator("[data-fx-mxwings]").fill("1")  # one part is no wings at all
+    expect(page.locator("[data-fx-mxwingsval]")).to_have_text("off")
+    save(page)
+    assert device.get("/api/config")["effects"][0]["matricks"]["wings"] == 0
+
+
 # ── channels ─────────────────────────────────────────────────────────────────
 
 def test_pixel_count_above_budget_warns_and_is_kept(page, device):

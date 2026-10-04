@@ -974,6 +974,8 @@ var FR={
   'RATE':'CADENCE','SPREAD':'ÉTALEMENT','WAVE WIDTH':'LARGEUR D’ONDE','LIT SHARE':'PART ALLUMÉE','FLOOR':'PLANCHER','still':'figé','cycle':'cycle','cycles':'cycles','in phase':'en phase',
   'Reverse':'Inverser le sens','The wave travels towards the start of the run':'L’onde se déplace vers le début du ruban',
   'Dimmer invert':'Dimmer inversé','Lit becomes dark, dark takes color 1':'L’allumé devient sombre, le sombre prend la couleur 1',
+  'BLOCK / GROUPS / WINGS':'BLOCK / GROUPS / WINGS','BLOCK':'BLOCK','GROUPS':'GROUPS','WINGS':'WINGS','px':'px','parts':'parties',
+  'Block: neighbouring pixels share a value. Groups: the pattern repeats every N. Wings: the run splits in N mirrored parts.':'Block : les pixels voisins partagent une valeur. Groups : le motif se répète tous les N. Wings : le ruban est coupé en N parties en miroir.',
   'PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
   'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
   'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
@@ -1109,6 +1111,17 @@ var PH_KEYS={phrate:['rate',function(e){ return e.ph.rate?(e.ph.rate/20).toFixed
   phspread:['spread',function(e){ return e.ph.spread?(+(e.ph.spread/16).toFixed(2))+' '+t(e.ph.spread===16?'cycle':'cycles'):t('in phase'); }],
   phwidth:['width',function(e){ return e.ph.width?Math.round(e.ph.width*100/255)+' %':t('auto'); }],
   phlow:['low',function(e){ return Math.round(e.ph.low*100/255)+' %'; }]};
+// Block / Groups / Wings, on the pixels of the run the effect is drawn on.
+function mxText(v,unit){ return v>1?v+' '+t(unit):t('off'); }
+var MX_KEYS={mxblock:['block','px'],mxgroups:['groups','px'],mxwings:['wings','parts']};
+function matricksHTML(e){
+  var one=function(kind,label){ var v=e.mx[MX_KEYS[kind][0]]; return slider(kind,e,label,Math.max(32,v),v,mxText(v,MX_KEYS[kind][1])); };
+  return '<div style="display:flex;flex-direction:column;gap:8px;padding-top:14px;border-top:1px solid var(--line)">'
+    +'<div class="eyebrow-sm" style="margin:0">'+t('BLOCK / GROUPS / WINGS')+'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px">'+one('mxblock','BLOCK')+one('mxgroups','GROUPS')+one('mxwings','WINGS')+'</div>'
+    +'<div class="hint">'+esc(t('Block: neighbouring pixels share a value. Groups: the pattern repeats every N. Wings: the run splits in N mirrored parts.'))+'</div>'
+    +'</div>';
+}
 function phText(e,kind){ return PH_KEYS[kind][1](e); }
 function toggleRow(attr,on,title,hint){
   return '<label style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:10px 12px;cursor:pointer"><div><div class="h-sm">'+esc(t(title))+'</div>'+(hint?'<div class="hint">'+esc(t(hint))+'</div>':'')+'</div><span class="sw"><input '+attr+' type="checkbox"'+(on?' checked':'')+'/><span></span></span></label>';
@@ -1207,6 +1220,7 @@ function effectCardHTML(e){
     +colsHtml
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'+sliders+'</div>'
     +phaserHTML(e)
+    +matricksHTML(e)
     +'<div class="hint" data-fx-users>'+esc(users.length?(t('Played by scene ')+users.join(', ')):t('No scene plays this effect yet'))+'</div>'
     +cardFooter('fx-dup','fx-del')
     +'</div>';
@@ -2094,7 +2108,7 @@ function reloadConfig(){
     setLive('side-ver',(d.version||'?')+' · esp32-p4 · '+(d.ota_partition||'?'));
     setLive('part-line',(d.version||'')+' · '+(d.ota_partition||''));
     CHANS=(d.channels||[]).map(buildChan);
-    EFFECTS=(d.effects||[]).map(function(e,i){ return {n:i+1,name:e.name||'',gen:e.generator||0,colors:(e.colors&&e.colors.length)?e.colors.slice(0,MAX_COLORS):['#000000'],speed:e.speed||0,param:e.param||0,ph:phaserOf(e.phaser),invert:!!e.invert}; });
+    EFFECTS=(d.effects||[]).map(function(e,i){ return {n:i+1,name:e.name||'',gen:e.generator||0,colors:(e.colors&&e.colors.length)?e.colors.slice(0,MAX_COLORS):['#000000'],speed:e.speed||0,param:e.param||0,ph:phaserOf(e.phaser),invert:!!e.invert,mx:matricksOf(e.matricks)}; });
     SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',parts:(sc.parts||[]).map(function(p){ return {mask:p.mask||0,effect:p.effect||0,mode:p.fixture_mode||'each'}; })}; });
     if(curEffect>=EFFECTS.length) curEffect=Math.max(0,EFFECTS.length-1);
     if(curScene>=SCENES.length) curScene=Math.max(0,SCENES.length-1);
@@ -2154,7 +2168,8 @@ function buildGlobalBody(){
 }
 function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:layToWire(c).pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:layToWire(c).gaps,fixtures:layToWire(c).fixtures,packing:c.pack||'continuous'}; }
 function phaserOf(p){ p=p||{}; return {wave:p.wave||'none',rate:p.rate||0,spread:p.spread||0,width:p.width||0,low:p.low||0,reverse:!!p.reverse}; }
-function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param,phaser:e.ph,invert:e.invert}; }
+function matricksOf(m){ m=m||{}; return {block:m.block||0,groups:m.groups||0,wings:m.wings||0}; }
+function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param,phaser:e.ph,invert:e.invert,matricks:e.mx}; }
 function sceneBody(s){ return {name:s.name,parts:s.parts.map(function(p){ return {mask:p.mask,effect:p.effect,fixture_mode:p.mode||'each'}; })}; }
 // How the effect spreads over a channel's fixtures (a channel without any is one strip).
 var FIX_MODES=[['each','Each fixture'],['strip','Whole strip'],['chain','Fixtures in a row'],['mirror','Mirrored']];
@@ -2567,6 +2582,7 @@ function onInput(e){
   if(t.hasAttribute&&t.hasAttribute('data-fx-wave')){ var wn=+t.getAttribute('data-fx-wave'); EFFECTS[wn-1].ph.wave=t.value; markDirty('fx'+(wn-1)); renderEffect(wn); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-phrev')){ var rn=+t.getAttribute('data-fx-phrev'); EFFECTS[rn-1].ph.reverse=t.checked; markDirty('fx'+(rn-1)); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-invert')){ var vn=+t.getAttribute('data-fx-invert'); EFFECTS[vn-1].invert=t.checked; markDirty('fx'+(vn-1)); return; }
+  for(var mk in MX_KEYS){ if(t.hasAttribute&&t.hasAttribute('data-fx-'+mk)){ var mn=+t.getAttribute('data-fx-'+mk), me=EFFECTS[mn-1], mv=parseInt(t.value,10)||0; me.mx[MX_KEYS[mk][0]]=mv===1?0:mv; var mo=document.querySelector('[data-fx-'+mk+'val="'+mn+'"]'); if(mo) mo.textContent=mxText(me.mx[MX_KEYS[mk][0]],MX_KEYS[mk][1]); markDirty('fx'+(mn-1)); return; } }
   for(var pk in PH_KEYS){ if(t.hasAttribute&&t.hasAttribute('data-fx-'+pk)){ var kn=+t.getAttribute('data-fx-'+pk), ke=EFFECTS[kn-1]; ke.ph[PH_KEYS[pk][0]]=parseInt(t.value,10)||0; var kv=document.querySelector('[data-fx-'+pk+'val="'+kn+'"]'); if(kv) kv.textContent=phText(ke,pk); markDirty('fx'+(kn-1)); return; } }
   if(t.hasAttribute&&t.hasAttribute('data-fx-gen')){ var fn=+t.getAttribute('data-fx-gen'); EFFECTS[fn-1].gen=parseInt(t.value,10)||0; markDirty('fx'+(fn-1)); renderEffect(fn); return; }
   if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }

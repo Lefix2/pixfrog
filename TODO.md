@@ -49,10 +49,7 @@ Feedback from a lighting operator (GrandMA): drive the box like a conventional
 fixture, not only as a pixel-mapped node. In landing order — each item builds
 on the one before.
 
-- [ ] ★ **Block / Groups / Wings on an effect** — MAtricks at pixel level, stored
-      in the effect: N neighbours share a value, the pattern repeats every N,
-      the run splits in N mirrored parts.
-- [ ] **Control universe: bank and phaser functions** — slots for the bank
+- [ ] ★ **Control universe: bank and phaser functions** — slots for the bank
       effect, the phaser (wave, rate, spread, width) and Block / Groups / Wings
       on the scene an output plays.
 - [ ] **Fixture DMX profiles** — a small library of composable profiles (ordered

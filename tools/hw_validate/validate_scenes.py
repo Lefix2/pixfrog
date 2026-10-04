@@ -95,6 +95,23 @@ def run(board: Board):
     c.check("invert: the halves swap", len(px) == n_px and px[0] == "000000" and
             px[-1] == "808080")
     board.cmd("fx invert 0 0")
+    # Wings 2: the pattern is drawn on half the strip and mirrored on the
+    # other half, so the strip reads the same from both ends.
+    board.cmd("fx matricks 0 0 0 2")
+    board.cmd("status")
+    d = board.get("pixr 0", "data", deadline=8) or ""
+    px = [d[i:i + 6] for i in range(0, len(d) - 5, 6)]
+    c.check("wings 2: the strip is its own mirror image",
+            len(px) == n_px and n_px % 2 == 0 and px == px[::-1] and "808080" in px and
+            "000000" in px)
+    # Block 4: values come four pixels at a time.
+    board.cmd("fx matricks 0 4 0 0")
+    board.cmd("status")
+    d = board.get("pixr 0", "data", deadline=8) or ""
+    px = [d[i:i + 6] for i in range(0, len(d) - 5, 6)]
+    c.check("block 4: pixels share a value four by four",
+            len(px) == n_px and all(len(set(px[i:i + 4])) == 1 for i in range(0, n_px, 4)))
+    board.cmd("fx matricks 0 0 0 0")
     board.cmd("fx phaser 0 none 0 0 0 0 forward")
     board.cmd("scene stop")
 

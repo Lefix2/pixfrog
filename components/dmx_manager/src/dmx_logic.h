@@ -798,16 +798,79 @@ inline void apply_effect_dimmer(uint8_t* d, uint16_t n, uint8_t bpp, const confi
     }
 }
 
+// ── Block / Groups / Wings ──────────────────────────────────────────────────
+// A desk's MAtricks, on the pixels of a run. The effect is drawn on a shorter
+// virtual run, then spread out:
+//   wings  — the run splits in that many parts, every other one mirrored;
+//   block  — that many neighbouring pixels share one value;
+//   groups — the pattern repeats every that many values.
+// 0 or 1 turns each off.
+struct Matricks {
+    uint32_t wing;   // pixels per wing
+    uint32_t block;  // pixels per value
+    uint32_t virt;   // values drawn: the virtual run
+    bool active;     // false: the run is drawn as is
+};
+
+inline Matricks matricks_for(const config::Effect& e, uint32_t n) {
+    Matricks m{};
+    const uint32_t wings = e.wings >= 2 ? (e.wings < n ? e.wings : n) : 1;
+    m.wing               = wings ? (n + wings - 1) / wings : n;
+    m.block              = e.block >= 2 ? e.block : 1;
+    const uint32_t cells = m.block ? (m.wing + m.block - 1) / m.block : m.wing;
+    m.virt               = e.groups >= 2 && e.groups < cells ? e.groups : cells;
+    m.active             = n > 0 && m.virt < n;
+    return m;
+}
+
+// Spreads the `m.virt` values at the head of `d` over the `n` pixels of the
+// run, in place. Last pixel first: a pixel's value sits at or before it, so
+// nothing still to be read is overwritten — no scratch buffer. The value
+// index is kept by counters, one division per wing rather than per pixel.
+inline void expand_matricks(uint8_t* d, uint32_t n, uint8_t bpp, const Matricks& m) {
+    if (!m.active) return;
+    const uint32_t wings = (n + m.wing - 1) / m.wing;
+    for (uint32_t p = wings; p-- > 0;) {
+        const uint32_t first = p * m.wing;
+        const uint32_t len   = n - first < m.wing ? n - first : m.wing;
+        const bool mirrored  = (p & 1) != 0;
+        // Position inside the wing of the pixel being written: counted down
+        // on a plain wing, up on a mirrored one.
+        const uint32_t at = mirrored ? m.wing - len : len - 1;
+        uint32_t in_block = at % m.block;
+        uint32_t value    = at / m.block % m.virt;
+        for (uint32_t j = len; j-- > 0;) {
+            const uint32_t i = first + j;
+            if (i != value)
+                std::memcpy(d + static_cast<size_t>(i) * bpp, d + static_cast<size_t>(value) * bpp,
+                            bpp);
+            if (mirrored) {
+                if (++in_block == m.block) {
+                    in_block = 0;
+                    value    = value + 1 == m.virt ? 0 : value + 1;
+                }
+            } else if (in_block-- == 0) {
+                in_block = m.block - 1;
+                value    = value == 0 ? m.virt - 1 : value - 1;
+            }
+        }
+    }
+}
+
 // Renders one frame of `effect` on a run of `pixel_count` pixels: the
-// generator, then the dimmer layers.
+// generator and the dimmer layers on the virtual run, then Block / Groups /
+// Wings spread it over the pixels.
 inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
                             uint8_t bytes_per_pixel, const config::Effect& effect,
                             uint64_t phase_ms) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
-    fill_generator(dst, dst_capacity, pixel_count, bytes_per_pixel, effect.generator,
+    const Matricks m = matricks_for(effect, pixel_count);
+    const auto drawn = static_cast<uint16_t>(m.active ? m.virt : pixel_count);
+    fill_generator(dst, dst_capacity, drawn, bytes_per_pixel, effect.generator,
                    effect_palette(effect), effect_rate(effect), effect.param, phase_ms);
-    apply_effect_dimmer(dst, pixel_count, bytes_per_pixel, effect, phase_ms);
+    apply_effect_dimmer(dst, drawn, bytes_per_pixel, effect, phase_ms);
+    expand_matricks(dst, pixel_count, bytes_per_pixel, m);
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────

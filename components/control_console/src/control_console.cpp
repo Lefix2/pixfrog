@@ -774,10 +774,13 @@ int cmd_fx(int argc, char** argv) {
                 printf("%s%02x%02x%02x", k ? "," : "", e.colors[k][0], e.colors[k][1],
                        e.colors[k][2]);
             // phaser: wave,rate,spread,width,low[,reverse]
-            printf(" speed=%u param=%u phaser=%s,%u,%u,%u,%u%s invert=%d used=%d\n", e.speed,
-                   e.param, config::phaser_wave_id(e.ph_wave), e.ph_rate, e.ph_spread, e.ph_width,
-                   e.ph_low, (e.flags & config::kEffectPhaserReverse) ? ",reverse" : "",
-                   (e.flags & config::kEffectDimmerInvert) != 0, config::effect_in_use(i));
+            // matricks: block,groups,wings
+            printf(" speed=%u param=%u phaser=%s,%u,%u,%u,%u%s invert=%d matricks=%u,%u,%u "
+                   "used=%d\n",
+                   e.speed, e.param, config::phaser_wave_id(e.ph_wave), e.ph_rate, e.ph_spread,
+                   e.ph_width, e.ph_low, (e.flags & config::kEffectPhaserReverse) ? ",reverse" : "",
+                   (e.flags & config::kEffectDimmerInvert) != 0, e.block, e.groups, e.wings,
+                   config::effect_in_use(i));
         }
         return ok();
     }
@@ -850,6 +853,22 @@ int cmd_fx(int argc, char** argv) {
         if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
         return ok();
     }
+    if (strcmp(argv[1], "matricks") == 0) {
+        // fx matricks <n> <block> <groups> <wings> — on the pixels of the run; 0 = off
+        uint32_t v[3] = {};
+        if (argc != 6 || !parse_effect_index(argv[2], n))
+            return err("usage: fx matricks <n> <block> <groups> <wings>");
+        for (int k = 0; k < 3; ++k)
+            if (!parse_u32_in(argv[3 + k], 0, 255, v[k]))
+                return err("block, groups, wings: 0..255 (0 = off)");
+        config::ScopedLock lock;
+        auto e   = config::get_effect(n);
+        e.block  = static_cast<uint8_t>(v[0]);
+        e.groups = static_cast<uint8_t>(v[1]);
+        e.wings  = static_cast<uint8_t>(v[2]);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
     if (strcmp(argv[1], "invert") == 0) {
         // fx invert <n> 0|1 — the intensity negative of the whole effect
         bool on = false;
@@ -886,7 +905,7 @@ int cmd_fx(int argc, char** argv) {
         return ok();
     }
     return err("usage: fx [name <n> <text> | set <n> ... | phaser <n> ... | invert <n> 0|1 | "
-               "add [name] | del <n> | move <from> <to>]");
+               "matricks <n> <block> <groups> <wings> | add [name] | del <n> | move <from> <to>]");
 }
 
 // ── standalone scenes ───────────────────────────────────────────────────────
@@ -1323,7 +1342,8 @@ void start() {
     register_cmd("identify", "identify <ch>|all [blinks] — blink strips white to locate them",
                  cmd_identify);
     register_cmd("audio", "audio test | audio tone <Hz> [ms] — the speaker", cmd_audio);
-    register_cmd("fx", "fx [name|set|phaser|invert|add|del|move] — the effect bank", cmd_fx);
+    register_cmd("fx", "fx [name|set|phaser|invert|matricks|add|del|move] — the effect bank",
+                 cmd_fx);
     register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|part|clear] — standalone scenes",
                  cmd_scene);
     register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",

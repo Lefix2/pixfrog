@@ -73,6 +73,23 @@ UART: `fx phaser <n> <wave> [<rate> <spread> [<width> <low> [reverse|forward]]]`
 `fx invert <n> 0|1`. REST: `"phaser": {"wave", "rate", "spread", "width", "low",
 "reverse"}` and `"invert"` in the effect.
 
+### Block, Groups, Wings
+
+A desk's MAtricks, applied to the **pixels** of the run an effect is drawn on
+(a fixture, the chained fixtures or the whole strip, as the part's fixture mode
+says). The generator and the phaser are drawn on a shorter virtual run, which
+is then spread over the pixels:
+
+| Setting | Effect on a 24-pixel run |
+|---|---|
+| Block *N* | *N* neighbouring pixels share one value — block 3: 8 values, each 3 pixels wide |
+| Groups *N* | the pattern repeats every *N* values — groups 6: the same 6 pixels four times |
+| Wings *N* | the run splits in *N* parts, every other one mirrored — wings 2: the effect runs in from both ends |
+
+0 or 1 turns a setting off; the three combine (wings first, then blocks, then
+the repeat). UART: `fx matricks <n> <block> <groups> <wings>`. REST:
+`"matricks": {"block", "groups", "wings"}` in the effect.
+
 | Edit | Effects | Scenes |
 |---|---|---|
 | Web UI | **Effects** screen | **Scenes** screen: the parts, their outputs, effect and fixture mode |
