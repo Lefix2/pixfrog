@@ -1256,9 +1256,11 @@ inline int effect_from_dmx(uint8_t v) {
 
 // Per-output scene overrides from the control universe (-1 = not overridden).
 struct SceneOverride {
-    int16_t speed  = -1;
-    int16_t param  = -1;
-    int16_t effect = -1;
+    int16_t speed   = -1;
+    int16_t param   = -1;
+    int16_t effect  = -1;
+    int8_t reverse  = -1;  // 0 forward, 1 from the far end
+    int8_t fix_mode = -1;  // config::kFixtureMode*
     int16_t color[config::kSceneColorsMax][3];
     SceneOverride() {
         for (auto& c : color)
@@ -1270,6 +1272,12 @@ inline void apply_scene_override(config::Scene& sc, const SceneOverride& o) {
     if (o.speed >= 0) sc.speed = static_cast<uint8_t>(o.speed);
     if (o.param >= 0) sc.param = static_cast<uint8_t>(o.param);
     if (o.effect >= 0) sc.effect = static_cast<uint8_t>(o.effect);
+    if (o.reverse >= 0 || o.fix_mode >= 0)
+        sc.fixture_mode = config::pack_scene_mode(
+            o.fix_mode >= 0 ? static_cast<uint8_t>(o.fix_mode)
+                            : config::scene_mode_of(sc.fixture_mode),
+            o.reverse >= 0 ? o.reverse == 1 : config::scene_reverse_of(sc.fixture_mode),
+            config::scene_group_of(sc.fixture_mode));
     for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
         const int16_t* c = o.color[k];
         if (c[0] < 0 && c[1] < 0 && c[2] < 0) continue;
@@ -1289,10 +1297,16 @@ struct ControlEval {
     SceneOverride ovr[config::kNumChannels];
     int32_t fade_ms;    // -1 = no Fade slot
     int16_t fseq_band;  // -1 = no Fseq slot
-    // Scene selectors in slot order: band (0 = none) + outputs.
+    // Scene selectors in slot order: band (0 = none) + outputs, or a group.
     uint8_t n_scene;
     uint8_t scene_band[config::kMaxControlSlots];
     uint8_t scene_mask[config::kMaxControlSlots];
+    int8_t scene_group[config::kMaxControlSlots];  // -1 = on scene_mask
+    // Group-targeted slots: what they ask of the scenes playing on each group,
+    // and a master / blackout over its fixtures.
+    SceneOverride govr[config::kMaxGroups];
+    uint16_t gmaster[config::kMaxGroups];
+    uint32_t gblackout;  // bit per group
 
     ControlEval() { reset(); }
     void reset() {
@@ -1305,8 +1319,64 @@ struct ControlEval {
         fade_ms   = -1;
         fseq_band = -1;
         n_scene   = 0;
+        for (auto& o : govr)
+            o = SceneOverride{};
+        for (auto& m : gmaster)
+            m = kMasterFull;
+        gblackout = 0;
     }
 };
+
+// A FixMode channel's value: 0 = the scene's own (-1), then four bands.
+inline int fix_mode_from_dmx(uint8_t v) {
+    if (v == 0) return -1;
+    if (v < 64) return config::kFixtureModeEach;
+    if (v < 128) return config::kFixtureModeChain;
+    if (v < 192) return config::kFixtureModeMirror;
+    return config::kFixtureModeStrip;
+}
+
+// One group-targeted slot (its value `v`, `v2` the next channel for a fine
+// Master) into the group's fields of `out`; colours gathered in `gcol`.
+inline void apply_group_slot(ControlEval& out, int16_t (*gcol)[config::kSceneColorsMax][3],
+                             int group, config::CtlFn fn, const config::ControlSlot& s, uint8_t v,
+                             uint8_t v2) {
+    if (group < 0 || group >= static_cast<int>(config::kMaxGroups)) return;
+    SceneOverride& o = out.govr[group];
+    switch (fn) {
+    case config::CtlFn::Master: {
+        const uint32_t lvl = (s.flags & config::kCtlFlagFine) ? (static_cast<uint32_t>(v) << 8) | v2
+                                                              : static_cast<uint32_t>(v) * 257u;
+        out.gmaster[group] = static_cast<uint16_t>(out.gmaster[group] * lvl / kMasterFull);
+        break;
+    }
+    case config::CtlFn::Blackout:
+        if (v >= 128) out.gblackout |= 1u << group;
+        break;
+    case config::CtlFn::Speed:
+        if (v) o.speed = v;
+        break;
+    case config::CtlFn::Param:
+        if (v) o.param = v;
+        break;
+    case config::CtlFn::Effect:
+        if (v) o.effect = static_cast<int16_t>(effect_from_dmx(v));
+        break;
+    case config::CtlFn::Direction:
+        if (v) o.reverse = v >= 128 ? 1 : 0;
+        break;
+    case config::CtlFn::FixMode:
+        if (v) o.fix_mode = static_cast<int8_t>(fix_mode_from_dmx(v));
+        break;
+    case config::CtlFn::Red:
+    case config::CtlFn::Green:
+    case config::CtlFn::Blue:
+        gcol[group][s.index % config::kSceneColorsMax]
+            [static_cast<size_t>(fn) - static_cast<size_t>(config::CtlFn::Red)] = v;
+        break;
+    default: break;
+    }
+}
 
 // `dmx` is the control universe from slot 1; `len` how many slots it holds
 // (a short packet leaves the rest at 0). Colour slots override a colour only
@@ -1319,11 +1389,15 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
     // Colour channels are gathered first, then applied per colour triple.
     int16_t col[config::kNumChannels][config::kSceneColorsMax][3];
     std::memset(col, 0xFF, sizeof(col));  // -1
+    int16_t gcol[config::kMaxGroups][config::kSceneColorsMax][3];
+    std::memset(gcol, 0xFF, sizeof(gcol));
     for (size_t i = 0; i < c.count && i < config::kMaxControlSlots; ++i) {
         const config::ControlSlot& s = c.slots[i];
         const uint8_t v              = slot(at);
-        const uint8_t mask           = s.mask ? s.mask : 0xFF;
+        const int group              = config::control_slot_group(s);
+        const uint8_t mask           = group >= 0 ? 0 : (s.mask ? s.mask : 0xFF);
         const auto fn                = static_cast<config::CtlFn>(s.fn);
+        if (group >= 0) apply_group_slot(out, gcol, group, fn, s, v, slot(at + 1));
         for (size_t o = 0; o < config::kNumChannels; ++o) {
             if (!((mask >> o) & 1)) continue;
             switch (fn) {
@@ -1351,6 +1425,12 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             case config::CtlFn::Effect:
                 if (v) out.ovr[o].effect = static_cast<int16_t>(effect_from_dmx(v));
                 break;
+            case config::CtlFn::Direction:
+                if (v) out.ovr[o].reverse = v >= 128 ? 1 : 0;
+                break;
+            case config::CtlFn::FixMode:
+                if (v) out.ovr[o].fix_mode = static_cast<int8_t>(fix_mode_from_dmx(v));
+                break;
             case config::CtlFn::Red:
             case config::CtlFn::Green:
             case config::CtlFn::Blue: {
@@ -1363,8 +1443,9 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             }
         }
         if (fn == config::CtlFn::Scene) {
-            out.scene_band[out.n_scene] = dmx_band(v);
-            out.scene_mask[out.n_scene] = mask;
+            out.scene_band[out.n_scene]  = dmx_band(v);
+            out.scene_mask[out.n_scene]  = mask;
+            out.scene_group[out.n_scene] = static_cast<int8_t>(group);
             ++out.n_scene;
         } else if (fn == config::CtlFn::Fade) {
             out.fade_ms = static_cast<int32_t>(v) * 100;
@@ -1379,6 +1460,13 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             if (c3[0] <= 0 && c3[1] <= 0 && c3[2] <= 0) continue;  // unpatched or all zero
             for (int j = 0; j < 3; ++j)
                 out.ovr[o].color[k][j] = c3[j] < 0 ? 0 : c3[j];
+        }
+    for (size_t g = 0; g < config::kMaxGroups; ++g)
+        for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
+            const int16_t* c3 = gcol[g][k];
+            if (c3[0] <= 0 && c3[1] <= 0 && c3[2] <= 0) continue;
+            for (int j = 0; j < 3; ++j)
+                out.govr[g].color[k][j] = c3[j] < 0 ? 0 : c3[j];
         }
 }
 

@@ -678,6 +678,30 @@ TEST(show_endpoint_sets_master_blackout_strobe) {
     post("/api/show", "{\"strobe_hz\":0}");
 }
 
+// A control slot can aim at a fixture group; the fixture profile names it.
+TEST(control_slots_target_groups) {
+    post("/api/groups", "{\"groups\":[{\"name\":\"Top\",\"members\":[[0,0]]}]}");
+    EXPECT_EQ(post("/api/control", "{\"slots\":[{\"fn\":\"scene\",\"group\":0},"
+                                   "{\"fn\":\"direction\",\"group\":0},{\"fn\":\"master\"}]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::control_slot_group(config::get_control().slots[0]), 0);
+    EXPECT_EQ(config::control_slot_group(config::get_control().slots[2]), -1);
+    Json cj(get("/api/config").body);
+    const cJSON* s0 = cJSON_GetArrayItem(cJSON_GetObjectItem(cj["control"], "slots"), 0);
+    EXPECT_EQ(cJSON_GetObjectItem(s0, "group")->valueint, 0);
+    EXPECT_EQ(post("/api/control", "{\"slots\":[{\"fn\":\"scene\",\"group\":20}]}").status, 400);
+    const std::string prof = get("/api/control/fixture").body;
+    EXPECT_TRUE(prof.find("Scene (Top)") != std::string::npos);
+    EXPECT_TRUE(prof.find("From the far end") != std::string::npos);
+    post("/api/control", "{\"slots\":[{\"fn\":\"fixmode\"}]}");  // on outputs
+    const std::string prof2 = get("/api/control/fixture").body;
+    EXPECT_TRUE(prof2.find("Fixture mode") != std::string::npos);
+    EXPECT_TRUE(prof2.find("Mirrored") != std::string::npos);
+    post("/api/control", "{\"preset\":\"simple\"}");
+    post("/api/groups", "{\"groups\":[]}");
+}
+
 TEST(control_endpoint_validates_and_applies) {
     Json full(post("/api/control", "{\"preset\":\"full\",\"enabled\":true,\"universe\":77}").body);
     EXPECT_EQ(static_cast<int>(full["footprint"]->valuedouble), 16);

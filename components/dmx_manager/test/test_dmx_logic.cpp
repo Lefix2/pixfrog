@@ -1396,6 +1396,81 @@ static void test_control_sanitize() {
     EXPECT_EQ(d.count, 3);
 }
 
+// Slots aimed at a fixture group: their values land on the group, not on
+// any output; Direction / FixMode bands; group 0 survives sanitize (mask 0).
+static void test_control_group_slots() {
+    config::ControlConfig c{};
+    c.enabled  = 1;
+    c.address  = 1;
+    c.count    = 6;
+    c.slots[0] = config::control_slot(config::CtlFn::Master, 1, 0, config::kCtlFlagGroup);
+    c.slots[1] = config::control_slot(config::CtlFn::Scene, 0, 0, config::kCtlFlagGroup);
+    c.slots[2] = config::control_slot(config::CtlFn::Direction, 1, 0, config::kCtlFlagGroup);
+    c.slots[3] = config::control_slot(config::CtlFn::FixMode, 1, 0, config::kCtlFlagGroup);
+    c.slots[4] = config::control_slot(config::CtlFn::Red, 1, 2, config::kCtlFlagGroup);
+    c.slots[5] = config::control_slot(config::CtlFn::Blackout, 0, 0, config::kCtlFlagGroup);
+    config::sanitize_control(c);
+    EXPECT_EQ(config::control_slot_group(c.slots[1]), 0);  // group 0 kept
+    uint8_t u[16]{};
+    u[0] = 0x80;  // group 1 master half
+    u[1] = 24;    // group 0: scene band 3
+    u[2] = 200;   // group 1: from the far end
+    u[3] = 150;   // group 1: mirror
+    u[4] = 90;    // group 1: colour 3 red
+    u[5] = 255;   // group 0 blackout
+    ControlEval ev;
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_EQ(ev.gmaster[1], 0x8080);
+    EXPECT_EQ(ev.master[0], kMasterFull);  // no output dimmed
+    EXPECT_EQ(ev.n_scene, 1);
+    EXPECT_EQ(ev.scene_group[0], 0);
+    EXPECT_EQ(ev.scene_band[0], 3);
+    EXPECT_EQ(ev.govr[1].reverse, 1);
+    EXPECT_EQ(ev.govr[1].fix_mode, config::kFixtureModeMirror);
+    EXPECT_EQ(ev.govr[1].color[2][0], 90);
+    EXPECT_EQ(ev.gblackout, 1u);
+    EXPECT_EQ(fix_mode_from_dmx(0), -1);
+    EXPECT_EQ(fix_mode_from_dmx(10), config::kFixtureModeEach);
+    EXPECT_EQ(fix_mode_from_dmx(100), config::kFixtureModeChain);
+    EXPECT_EQ(fix_mode_from_dmx(250), config::kFixtureModeStrip);
+    // Applied to a scene: mode and direction land in its packed byte.
+    config::Scene sc{};
+    sc.fixture_mode = config::pack_scene_mode(config::kFixtureModeEach, false, 4);
+    apply_scene_override(sc, ev.govr[1]);
+    EXPECT_EQ(config::scene_mode_of(sc.fixture_mode), config::kFixtureModeMirror);
+    EXPECT_TRUE(config::scene_reverse_of(sc.fixture_mode));
+    EXPECT_EQ(config::scene_group_of(sc.fixture_mode), 4);  // its group kept
+    // Speed / Param / Effect on a group; Direction / FixMode on outputs.
+    config::ControlConfig d{};
+    d.enabled          = 1;
+    d.address          = 1;
+    d.count            = 5;
+    d.slots[0]         = config::control_slot(config::CtlFn::Speed, 2, 0, config::kCtlFlagGroup);
+    d.slots[1]         = config::control_slot(config::CtlFn::Param, 2, 0, config::kCtlFlagGroup);
+    d.slots[2]         = config::control_slot(config::CtlFn::Effect, 2, 0, config::kCtlFlagGroup);
+    d.slots[3]         = config::control_slot(config::CtlFn::Direction, 0x01);
+    d.slots[4]         = config::control_slot(config::CtlFn::FixMode, 0x01);
+    const uint8_t w[5] = { 40, 50, 255, 10, 70 };
+    evaluate_control(d, w, sizeof(w), ev);
+    EXPECT_EQ(ev.govr[2].speed, 40);
+    EXPECT_EQ(ev.govr[2].param, 50);
+    EXPECT_TRUE(ev.govr[2].effect >= 0);
+    EXPECT_EQ(ev.ovr[0].reverse, 0);  // 10: forward
+    EXPECT_EQ(ev.ovr[0].fix_mode, config::kFixtureModeChain);
+    EXPECT_EQ(ev.ovr[1].reverse, -1);  // output 2 not in the mask
+    config::Scene sc2{};
+    sc2.fixture_mode = config::pack_scene_mode(config::kFixtureModeMirror, true, -1);
+    SceneOverride only_dir;
+    only_dir.reverse = 0;  // the mode stays the scene's own
+    apply_scene_override(sc2, only_dir);
+    EXPECT_EQ(config::scene_mode_of(sc2.fixture_mode), config::kFixtureModeMirror);
+    EXPECT_TRUE(!config::scene_reverse_of(sc2.fixture_mode));
+    // A group target on a function that has none is dropped.
+    c.slots[0] = config::control_slot(config::CtlFn::Strobe, 3, 0, config::kCtlFlagGroup);
+    config::sanitize_control(c);
+    EXPECT_EQ(config::control_slot_group(c.slots[0]), -1);
+}
+
 static void test_control_evaluate() {
     config::ControlConfig c{};
     c.enabled  = 1;
@@ -1591,6 +1666,7 @@ int main() {
     test_control_presets_and_footprint();
     test_control_sanitize();
     test_control_evaluate();
+    test_control_group_slots();
     test_scene_override_applies();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);

@@ -1060,8 +1060,14 @@ void print_control(const config::ControlConfig& c) {
     for (size_t i = 0; i < c.count; ++i) {
         const auto& s    = c.slots[i];
         const unsigned w = config::control_slot_width(s);
-        printf("slot%u dmx=%u%s fn=%s mask=%02x index=%u fine=%u\n", static_cast<unsigned>(i), at,
-               w == 2 ? "+1" : "", config::ctl_fn_id(s.fn), s.mask, s.index,
+        const int g      = config::control_slot_group(s);
+        char target[12];
+        if (g >= 0)
+            snprintf(target, sizeof(target), "group=%d", g);  // a fixture group
+        else
+            snprintf(target, sizeof(target), "mask=%02x", s.mask);
+        printf("slot%u dmx=%u%s fn=%s %s index=%u fine=%u\n", static_cast<unsigned>(i), at,
+               w == 2 ? "+1" : "", config::ctl_fn_id(s.fn), target, s.index,
                (s.flags & config::kCtlFlagFine) ? 1u : 0u);
         at += w;
     }
@@ -1074,7 +1080,15 @@ bool parse_ctl_slot(int argc, char** argv, int at, config::ControlSlot& out) {
     if (fn < 0) return false;
     out        = config::control_slot(static_cast<config::CtlFn>(fn));
     uint32_t v = 0;
-    if (argc > at + 1 && parse_hex(argv[at + 1], &out.mask, 1) != 1) return false;
+    // The target: outputs as a hex mask, or g<n> for fixture group n (0-based).
+    bool group = false;
+    if (argc > at + 1 && argv[at + 1][0] == 'g') {
+        if (!parse_u32_in(argv[at + 1] + 1, 0, config::kMaxGroups - 1, v)) return false;
+        out.mask = static_cast<uint8_t>(v);
+        group    = true;
+    } else if (argc > at + 1 && parse_hex(argv[at + 1], &out.mask, 1) != 1) {
+        return false;
+    }
     if (argc > at + 2) {
         if (!parse_u32_in(argv[at + 2], 0, config::kSceneColorsMax - 1, v)) return false;
         out.index = static_cast<uint8_t>(v);
@@ -1083,6 +1097,7 @@ bool parse_ctl_slot(int argc, char** argv, int at, config::ControlSlot& out) {
         if (!parse_u32_in(argv[at + 3], 0, 1, v)) return false;
         out.flags = v ? config::kCtlFlagFine : 0;
     }
+    if (group) out.flags |= config::kCtlFlagGroup;
     return argc <= at + 4;
 }
 
@@ -1125,14 +1140,14 @@ int cmd_ctrl(int argc, char** argv) {
     } else if (strcmp(sub, "add") == 0) {
         config::ControlSlot s{};
         if (!parse_ctl_slot(argc, argv, 2, s))
-            return err("usage: ctrl add <fn> [mask-hex] [colour 0..3] [fine 0|1]");
+            return err("usage: ctrl add <fn> [mask-hex|g<group>] [colour 0..3] [fine 0|1]");
         if (c.count >= config::kMaxControlSlots) return err("control mode full (32 slots)");
         c.slots[c.count++] = s;
     } else if (strcmp(sub, "set") == 0) {
         config::ControlSlot s{};
         if (argc < 4 || !parse_u32_in(argv[2], 0, c.count ? c.count - 1u : 0u, v) || !c.count ||
             !parse_ctl_slot(argc, argv, 3, s))
-            return err("usage: ctrl set <slot> <fn> [mask-hex] [colour 0..3] [fine 0|1]");
+            return err("usage: ctrl set <slot> <fn> [mask-hex|g<group>] [colour 0..3] [fine 0|1]");
         c.slots[v] = s;
     } else if (strcmp(sub, "del") == 0) {
         if (argc != 3 || !c.count || !parse_u32_in(argv[2], 0, c.count - 1u, v))

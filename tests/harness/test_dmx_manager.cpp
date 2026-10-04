@@ -861,6 +861,43 @@ TEST(a_chained_scene_runs_along_the_group_order) {
     dmx::scene_stop();
 }
 
+// The desk on a group: a Scene channel plays on "Top", a Master channel dims
+// only "Centre"'s bars; the selector at 0 stops the group.
+TEST(the_control_universe_drives_scenes_and_masters_on_groups) {
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
+    auto gl          = config::get_global();
+    gl.failsafe_mode = config::kFailsafeHold;
+    config::set_global(gl);
+    two_outputs_of_bars();
+    solid_scene(0, 200, 0, 0);
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = kCtrlUni;
+    c.address  = 1;
+    c.count    = 2;
+    c.slots[0] = config::control_slot(config::CtlFn::Scene, 0, 0, config::kCtlFlagGroup);  // Top
+    c.slots[1] = config::control_slot(config::CtlFn::Master, 1, 0,
+                                      config::kCtlFlagGroup);  // Centre
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    uint8_t u[2] = { 8, 0 };  // scene 1 on Top, Centre's master at 0
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::fixture_scene(0, 3), 0);
+    const uint8_t* o1 = frame(0);
+    EXPECT_EQ(o1[4 * 3], 200);  // a Top bar: red
+    EXPECT_EQ(o1[0], 0);        // a Centre bar: mastered to 0
+    u[1] = 255;
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(frame(0)[0], 200);  // Centre back up
+    u[0] = 0;                     // selector to 0: Top stops
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(dmx::fixture_scene(0, 3), -1);
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
+}
+
 // ── Accessors and corners ───────────────────────────────────────────────────
 
 TEST(accessors_report_the_current_state) {

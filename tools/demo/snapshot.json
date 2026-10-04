@@ -166,90 +166,105 @@
     {
      "fine": true,
      "fn": "master",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "blackout",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "strobe",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "scene",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "speed",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "param",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "effect",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "red",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "green",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "blue",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "red",
+     "group": -1,
      "index": 1,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "green",
+     "group": -1,
      "index": 1,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "blue",
+     "group": -1,
      "index": 1,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "fade",
+     "group": -1,
      "index": 0,
      "mask": 255
     },
     {
      "fine": false,
      "fn": "fseq",
+     "group": -1,
      "index": 0,
      "mask": 255
     }
@@ -501,7 +516,7 @@
   },
   "rx": {
    "artnet_ctrl_rx": 0,
-   "artnet_rx": 375,
+   "artnet_rx": 400,
    "bad_rx": 0,
    "sacn_rx": 0
   },
@@ -917,7 +932,7 @@
  "status": {
   "active_scene": 2,
   "alias": true,
-  "artnet_rx": 375,
+  "artnet_rx": 400,
   "audio": true,
   "bad_rx": 0,
   "channels": [
