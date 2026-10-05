@@ -242,7 +242,7 @@ The bus never clocks out more than fits in time, but the configured
   back. Nothing is rewritten in NVS.
 - `dmx::validate_capacity` flags a channel whose stored count is above its
   budget (`is_channel_capacity_ok(ch) = false`): `!` and a red count on HOME,
-  `stored→emitted px` plus a warning in the web channel editor, a log line.
+  `stored→emitted px` plus a warning in the web Outputs screen, a log line.
 - The TFT pixel-count editor stays bounded to `channel_max_pixels(ch)` (the
   live ruler maps 1:1 to LEDs); the web UI and the console accept up to 1024
   (512 DMX slots) at any rate.
@@ -268,7 +268,7 @@ so they are indexed in physical order from the controller and never move with
   but costs nothing.
 - The pixel-count ruler paints dead pixels dim red in place; while a gap is
   being edited on the TFT the ruler follows the pending value.
-- Edit: web channel editor ("Dead pixels"), console
+- Edit: web Outputs screen ("Fixtures & dead LEDs"), console
   `ch N gaps 1:1,301:2` (first dead LED, 1-based : count; `-` clears), TFT
   channel menu → "Dead px". API/backup: `"gaps": [[first_led, count], ...]`.
 
@@ -300,7 +300,7 @@ fixtures, the dead LEDs and any overlap.
 - Rendering: `logic::fixture_spans` maps each fixture to its run of the source
   buffer (dead LEDs skipped, then invert and grouping, as the encoder does);
   `logic::fill_effect_on_channel` draws the effect per span.
-- Edit: web channel editor ("Fixtures & dead LEDs"): the strip as an ordered
+- Edit: web Outputs screen ("Fixtures & dead LEDs"): the strip as an ordered
   list of sizes — fixture, dead LEDs, LEDs without fixture — positions follow
   from the order (drag to reorder), the pixel count from the list; a "N × L +
   K dead" fill. API/backup: `"fixtures": [[first_led, count], ...]`.
@@ -367,7 +367,9 @@ console), from `(universe_start, dmx_start)`:
 | `colour` | one colour per fixture: 3 channels a bar (4 RGBW), bars in strip order, the bar lit with it — patch each bar as a plain RGB fixture; no fixtures = one colour for all | a few slots |
 | `control` | **DMX control mode**: no pixel data. Each fixture takes the channels of its DMX profile, one after the other | 3 channels with one RGB fixture |
 
-**DMX control mode** turns pixel mapping off for an output and drives its
+**DMX control mode** turns pixel mapping off for an output — the "Pixel by
+pixel control" switch of the web Output patch screen, "Pixel map" in the
+device's DMX menu, on by default — and drives its
 fixtures like conventional luminaires (the profiles, their functions and
 presets: SHOW_CONTROL "Fixture DMX profiles"):
 
@@ -387,7 +389,7 @@ presets: SHOW_CONTROL "Fixture DMX profiles"):
   grand master, blackout and strobe apply after.
 - The patch sheet — universe, address and channel count per fixture — is
   `"patch"` on the channel in `GET /api/config`, `patch=` in `ch N` on the
-  console, and shown next to each fixture in the web channel editor.
+  console, and shown next to each fixture in the web Output patch screen.
 
 ![A channel in DMX control mode in the web UI: each fixture with its profile and its address](img/web-channel-control.png)
 

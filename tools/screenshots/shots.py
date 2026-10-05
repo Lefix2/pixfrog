@@ -43,13 +43,15 @@ WEB = [
     ("effects", "effects", '[data-fx-row="8"]'),
     ("fseq", "fseq", None),
     ("channels", "channels", None),
-    ("channel-control", "channels", '[data-chan="6"]'),  # an output in DMX control mode
+    # An output in DMX control mode, in the output patch.
+    ("channel-control", "dmxpatch", '#patch-list-mount [data-chan="6"]'),
+    ("auto", "auto", None),
+    ("maint", "maint", None),
     ("profiles", "profiles", '[data-pf-row="2"]'),
     ("control", "control", None),
     ("network", "network", None),
     ("artnet", "artnet", None),
     ("system", "system", None),
-    ("diag", "diag", None),
 ]
 
 # Device screens: (file stem, menu path from HOME — one cursor per level).
