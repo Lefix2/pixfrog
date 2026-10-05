@@ -974,7 +974,7 @@ TEST(status_is_pushed_to_websocket_clients) {
     const int fd = shim::ws_open("/api/ws");
     EXPECT_TRUE(fd >= 0);
     EXPECT_TRUE(shim::ws_frames(fd).empty());
-    shim::run_task_for("web_push", 11, [] {});  // ten 200 ms ticks
+    shim::run_task_for("web_push", 11, [] {}, true);  // ten 200 ms ticks; kept for the next cases
     std::vector<std::string> status, preview;
     for (const auto& f : shim::ws_frames(fd))
         (f[0] == '{' ? status : preview).push_back(f);
@@ -997,6 +997,36 @@ TEST(status_is_pushed_to_websocket_clients) {
             len += 1 + static_cast<uint8_t>(p[len]) * 3;
         EXPECT_EQ(len, p.size());
     }
+    shim::ws_close(fd);
+}
+
+// Bench, 2026-10-05: a browser that stopped reading held the httpd task in
+// send(), the frames queued behind it ate the PSRAM and the web server went
+// silent. A client whose send fails is closed; the others keep their frames.
+TEST(a_websocket_client_that_reads_no_more_is_closed) {
+    const int good = shim::ws_open("/api/ws"), dead = shim::ws_open("/api/ws");
+    shim::ws_stall(dead);
+    shim::run_task_for("web_push", 2, [] {}, true);  // one tick
+    EXPECT_FALSE(shim::ws_is_open(dead));
+    EXPECT_TRUE(shim::ws_is_open(good));
+    EXPECT_EQ(shim::ws_frames(good).size(), 1u);
+    shim::run_task_for("web_push", 6, [] {}, true);  // five more
+    EXPECT_EQ(shim::ws_frames(good).size(), 7u);     // 6 previews + a status
+    shim::ws_close(good);
+}
+
+// ... and while the httpd task is busy, at most two frames wait for it: the
+// rest are not built at all, and the push picks up when the task is back.
+TEST(the_websocket_backlog_is_bounded) {
+    const int fd = shim::ws_open("/api/ws");
+    shim::http_hold_work(true);
+    shim::run_task_for("web_push", 51, [] {}, true);  // ten seconds of ticks
+    EXPECT_EQ(shim::http_pending_work(), 2u);
+    EXPECT_TRUE(shim::ws_frames(fd).empty());
+    shim::http_hold_work(false);  // the task is back: the two held frames go out
+    EXPECT_EQ(shim::ws_frames(fd).size(), 2u);
+    shim::run_task_for("web_push", 6, [] {}, true);
+    EXPECT_EQ(shim::ws_frames(fd).size(), 8u);  // and the push runs again: 5 previews, a status
     shim::ws_close(fd);
 }
 

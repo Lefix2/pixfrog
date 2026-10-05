@@ -34,7 +34,10 @@ struct Route {
 struct WsClient {
     int sock = -1;
     std::vector<std::string> frames;
+    bool stalled = false;  // shim::ws_stall: every send to it fails
 };
+bool g_hold_work = false;
+std::vector<std::pair<httpd_work_fn_t, void*>> g_held_work;
 std::map<int, WsClient> g_ws;
 int g_next_ws_fd = 100;
 // httpd_queue_work runs on the caller's thread; in serve mode that is another
@@ -310,7 +313,7 @@ esp_err_t httpd_ws_recv_frame(httpd_req_t*, httpd_ws_frame_t* pkt, size_t) {
 esp_err_t httpd_ws_send_frame_async(httpd_handle_t, int fd, httpd_ws_frame_t* frame) {
     std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
     auto it = g_ws.find(fd);
-    if (it == g_ws.end()) return ESP_FAIL;
+    if (it == g_ws.end() || it->second.stalled) return ESP_FAIL;
     const std::string payload(reinterpret_cast<const char*>(frame->payload), frame->len);
     if (it->second.sock < 0) {
         it->second.frames.push_back(payload);
@@ -339,7 +342,18 @@ esp_err_t httpd_get_client_list(httpd_handle_t, size_t* fds, int* client_fds) {
 esp_err_t httpd_queue_work(httpd_handle_t, httpd_work_fn_t work, void* arg) {
     if (!g_running) return ESP_FAIL;
     std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
-    work(arg);
+    if (g_hold_work)
+        g_held_work.emplace_back(work, arg);
+    else
+        work(arg);
+    return ESP_OK;
+}
+esp_err_t httpd_sess_trigger_close(httpd_handle_t, int sockfd) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    auto it = g_ws.find(sockfd);
+    if (it == g_ws.end()) return ESP_FAIL;
+    if (it->second.sock >= 0) ::close(it->second.sock);
+    g_ws.erase(it);
     return ESP_OK;
 }
 
@@ -358,6 +372,28 @@ std::vector<std::string> ws_frames(int fd) {
 void ws_close(int fd) {
     std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
     g_ws.erase(fd);
+}
+void ws_stall(int fd) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    auto it = g_ws.find(fd);
+    if (it != g_ws.end()) it->second.stalled = true;
+}
+bool ws_is_open(int fd) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    return g_ws.count(fd) != 0;
+}
+void http_hold_work(bool hold) {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    g_hold_work = hold;
+    if (hold) return;
+    const auto pending = std::move(g_held_work);
+    g_held_work.clear();
+    for (const auto& w : pending)
+        w.first(w.second);
+}
+size_t http_pending_work() {
+    std::lock_guard<std::recursive_mutex> lock(g_serve_mux);
+    return g_held_work.size();
 }
 
 size_t http_routes() {
