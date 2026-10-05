@@ -2686,9 +2686,12 @@ function onClick(e){
   var gall=e.target.closest('[data-gm-all]'); if(gall){ var oo=+gall.getAttribute('data-gm-all'), ga=GROUPS[curGroup].members;
       for(var ff=0;ff<fixtureCount(oo)&&ga.length<MAX_MEMBERS;ff++) if(!ga.some(function(m){ return m[0]===oo&&m[1]===ff; })) ga.push([oo,ff]); groupsChanged(); return; }
   var ladd=e.target.closest('[data-lay-add]'); if(ladd){ var ca=CHANS[curChan]; if(ca){ var kind=ladd.getAttribute('data-lay-add'); ca.lay=ca.lay||[];
-      if(!ca.lay.length && ca.pixels>0 && kind!=='s') ca.lay.push({t:'s',n:ca.pixels});  // the strip as it was, then the new entry
+      // An empty list is the strip as it is: its first fixture takes it whole
+      // (nothing else is added, the LED count stays); dead LEDs come after it.
+      var first=!ca.lay.length && ca.pixels>0;
+      if(first && kind==='d') ca.lay.push({t:'s',n:ca.pixels});
       var last=ca.lay.filter(function(it){ return it.t==='f'; }).pop();
-      ca.lay.push({t:kind,n:kind==='d'?1:(kind==='f'&&last?last.n:10)}); markDirty('ch'+curChan); readChanEditor(); renderGaps(); } return; }
+      ca.lay.push({t:kind,n:kind==='d'?1:(first?ca.pixels:(kind==='f'&&last?last.n:10))}); markDirty('ch'+curChan); readChanEditor(); renderGaps(); } return; }
   var lrev=e.target.closest('[data-lay-rev]'); if(lrev){ var cr=CHANS[curChan], kr=+lrev.getAttribute('data-lay-rev'); if(cr&&cr.lay&&cr.lay[kr]){ cr.lay[kr].rev=!cr.lay[kr].rev; markDirty('ch'+curChan); renderGaps(); } return; }
   var ldel=e.target.closest('[data-lay-del]'); if(ldel){ var cd=CHANS[curChan]; if(cd&&cd.lay){ cd.lay.splice(+ldel.getAttribute('data-lay-del'),1); if(cd.lay.length) cd.pixels=layLive(cd.lay); markDirty('ch'+curChan); renderGaps(); } return; }
   var lfill=e.target.closest('[data-lay-fill]'); if(lfill){ var cf=CHANS[curChan]; if(cf){ var iv=function(id){ return parseInt((el(id)||{}).value,10)||0; }; if(layFill(cf,iv('lay-rep-n'),Math.max(1,iv('lay-rep-l')),iv('lay-rep-k'))){ markDirty('ch'+curChan); renderGaps(); readChanEditor(); } } return; }
