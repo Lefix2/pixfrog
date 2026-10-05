@@ -2484,6 +2484,11 @@ static void test_control_effect_functions() {
     soft.ph_attack = 9;
     apply_effect_override(soft, ee.ovr[0]);
     EXPECT_EQ(soft.ph_attack, 80);
+    const uint8_t y[4] = { 0, 0, 90, 0 };  // the other way round
+    evaluate_control(env, y, sizeof(y), ee);
+    EXPECT_EQ(ee.ovr[0].ph_attack + ee.ovr[0].ph_decay, -2);
+    EXPECT_EQ(ee.govr[2].ph_attack, 90);
+    EXPECT_EQ(ee.govr[2].ph_decay, -1);
     u[5] = 1;  // 1 switches a count off, which is not "the effect's own"
     evaluate_control(c, u, sizeof(u), ev);
     EXPECT_EQ(o.block, 1);

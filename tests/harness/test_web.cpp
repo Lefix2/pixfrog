@@ -638,6 +638,7 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
              "{\"fn\":\"green\"},{\"fn\":\"blue\"},{\"fn\":\"white\"},{\"fn\":\"shutter\"},"
              "{\"fn\":\"bank\"},{\"fn\":\"speed\"},{\"fn\":\"param\"},{\"fn\":\"ph_wave\"},"
              "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"ph_attack\"},{\"fn\":\"ph_decay\"},"
              "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"red\"}]}]}")
             .status,
         200);
@@ -655,7 +656,9 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
         }
         EXPECT_EQ(next, 256);
     }
-    EXPECT_EQ(channels, 17);
+    EXPECT_EQ(channels, 19);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Phaser attack") !=
+                nullptr);
     EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Red 2") != nullptr);
     const cJSON* bankch = cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Effect");
     EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(bankch, "capabilities")),
@@ -1215,6 +1218,7 @@ TEST(fixture_profile_covers_every_control_function) {
         post("/api/control",
              "{\"slots\":[{\"fn\":\"bank\",\"mask\":15},{\"fn\":\"ph_wave\"},"
              "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"ph_attack\"},{\"fn\":\"ph_decay\"},"
              "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"effect\"}]}")
             .status,
         200);
@@ -1231,7 +1235,9 @@ TEST(fixture_profile_covers_every_control_function) {
         EXPECT_EQ(next, 256);
         ++listed;
     }
-    EXPECT_EQ(listed, 9);
+    EXPECT_EQ(listed, 11);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(fx["availableChannels"], "Phaser decay") !=
+                nullptr);
     // The bank channel names the effects, band by band; the generator channel
     // is no longer called "Effect".
     const cJSON* bank = cJSON_GetObjectItemCaseSensitive(fx["availableChannels"],

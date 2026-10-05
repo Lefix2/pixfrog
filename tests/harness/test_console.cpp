@@ -194,6 +194,7 @@ TEST(fx_commands_manage_the_bank) {
     EXPECT_TRUE(has("used=0 envelope=64,128"));
     EXPECT_FALSE(run("fx envelope 8 64"));
     EXPECT_FALSE(run("fx envelope 8 64 300"));
+    EXPECT_FALSE(run("fx envelope 8 300 64"));
     EXPECT_FALSE(run("fx envelope 99 1 1"));
     EXPECT_TRUE(run("fx envelope 8 0 0"));
     EXPECT_TRUE(run("fx phaser 8 none"));  // the wave alone
