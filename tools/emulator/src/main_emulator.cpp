@@ -222,6 +222,35 @@ bool exec_cmd(const std::string& line) {
             std::printf("error: usage: set gaps <idx> [<pos0>:<len> ...]\n");
             std::fflush(stdout);
         }
+    } else if (line.rfind("set fixtures ", 0) == 0) {
+        // set fixtures <idx> [<pos0>:<len>[:r][:p<n>] ...] — replace a channel's
+        // fixtures (0-based physical positions, r = mounted the other way
+        // round, p<n> = DMX profile n).
+        char* p  = nullptr;
+        long idx = std::strtol(line.c_str() + 13, &p, 10);
+        if (idx >= 0 && idx < static_cast<long>(pixfrog::config::kNumChannels)) {
+            auto cc = pixfrog::config::get_channel(static_cast<size_t>(idx));
+            for (auto& f : cc.fixtures)
+                f = {};
+            unsigned pos = 0, len = 0;
+            int used = 0;
+            for (size_t k = 0; k < pixfrog::config::kMaxFixtures &&
+                               std::sscanf(p, " %u:%u%n", &pos, &len, &used) == 2;
+                 ++k) {
+                p              += used;
+                const bool rev  = p[0] == ':' && p[1] == 'r';
+                if (rev) p += 2;
+                unsigned profile = 0;
+                if (p[0] == ':' && p[1] == 'p') profile = std::strtoul(p + 2, &p, 10);
+                cc.fixtures[k] = pixfrog::config::make_fixture(static_cast<uint16_t>(pos),
+                                                               static_cast<uint16_t>(len), rev,
+                                                               static_cast<uint8_t>(profile));
+            }
+            pixfrog::config::set_channel(static_cast<size_t>(idx), cc);
+        } else {
+            std::printf("error: usage: set fixtures <idx> [<pos0>:<len>[:r][:p<n>] ...]\n");
+            std::fflush(stdout);
+        }
     } else if (line.rfind("set speaker ", 0) == 0) {
         // set speaker <0|1> — a board with the speaker mod (Settings → Volume)
         ui::set_speaker_present(std::atoi(line.c_str() + 12) != 0);
@@ -260,6 +289,41 @@ bool exec_cmd(const std::string& line) {
         } else {
             std::printf("error: usage: set global <web|sacn|cap> <value>\n");
         }
+        std::fflush(stdout);
+    } else if (line.rfind("set scenes ", 0) == 0) {
+        // set scenes <n> — cut the scene list down to n (as a delete from the
+        // web would, under a menu that has a later scene open).
+        const size_t keep = static_cast<size_t>(std::atoi(line.c_str() + 11));
+        while (pixfrog::config::num_scenes() > keep)
+            pixfrog::config::delete_scene(pixfrog::config::num_scenes() - 1);
+    } else if (line.rfind("dump chan ", 0) == 0) {
+        // dump chan <idx> — what the menu stored: pixels, layout, fixtures
+        // as [pos0, len, reversed, profile].
+        const auto& cc = pixfrog::config::get_channel(
+            static_cast<size_t>(std::atoi(line.c_str() + 10)));
+        std::printf("{\"pixels\":%u,\"packing\":%u,\"fixtures\":[", cc.pixel_count, cc.packing);
+        const size_t nf = pixfrog::config::fixture_count(cc.fixtures,
+                                                         pixfrog::config::kMaxFixtures);
+        for (size_t k = 0; k < nf; ++k)
+            std::printf("%s[%u,%u,%d,%u]", k ? "," : "", cc.fixtures[k].pos,
+                        static_cast<unsigned>(pixfrog::config::fixture_len(cc.fixtures[k])),
+                        pixfrog::config::fixture_reversed(cc.fixtures[k]) ? 1 : 0,
+                        static_cast<unsigned>(pixfrog::config::fixture_profile(cc.fixtures[k])));
+        std::printf("]}\n");
+        std::fflush(stdout);
+    } else if (line.rfind("dump scene ", 0) == 0) {
+        // dump scene <idx> — the list's length, then that scene: name, default
+        // group (-1 = its outputs), parts as [mask, effect, mode, reversed].
+        const auto& sc = pixfrog::config::get_scene(
+            static_cast<size_t>(std::atoi(line.c_str() + 11)));
+        std::printf("{\"count\":%u,\"name\":\"%s\",\"group\":%d,\"parts\":[",
+                    static_cast<unsigned>(pixfrog::config::num_scenes()), sc.name,
+                    pixfrog::config::scene_group(sc));
+        for (size_t k = 0; k < sc.num_parts; ++k)
+            std::printf("%s[%u,%u,%u,%d]", k ? "," : "", sc.parts[k].mask, sc.parts[k].effect,
+                        pixfrog::config::scene_mode_of(sc.parts[k].fixture_mode),
+                        pixfrog::config::scene_reverse_of(sc.parts[k].fixture_mode) ? 1 : 0);
+        std::printf("]}\n");
         std::fflush(stdout);
     } else if (line == "quit") {
         return false;

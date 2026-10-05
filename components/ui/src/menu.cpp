@@ -37,6 +37,12 @@ const Node kNodes[static_cast<uint8_t>(NodeId::Count)] = {
     { "DEAD PIXELS", NodeId::Channel, build_gaps },
     { "DMX CONTROL", NodeId::Inputs, build_control },
     { g_ctl_slot_title, NodeId::Control, build_control_slot },
+    { "FIXTURES", NodeId::Channel, build_fixtures },
+    { g_fix_title, NodeId::Fixtures, build_fixture },
+    { "EDIT SCENES", NodeId::Playback, build_scene_list },
+    { g_scene_title, NodeId::SceneList, build_scene_edit },
+    { g_part_title, NodeId::SceneEdit, build_scene_part },
+    { "OUTPUTS", NodeId::ScenePart, build_part_outputs },
 };
 
 const Node& cur_node() {
@@ -235,10 +241,11 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     // Node names mirror the old per-screen names so the emulator agent API and
     // existing navigation scripts keep matching.
     static const char* const kNodeNames[] = {
-        "MainMenu",     "InputsMenu",      "NetworkMenu", "OutputMenu",      "PlaybackMenu",
+        "MainMenu",      "InputsMenu",      "NetworkMenu",     "OutputMenu",      "PlaybackMenu",
         "SettingsMenu",  // keep aligned with NodeId — a missing entry reads as nullptr
-        "ChannelMenu",  "ScenesMenu",      "FSeqMenu",    "TestPatternMenu", "GapsMenu",
-        "ControlMenu",  "ControlSlotMenu",
+        "ChannelMenu",   "ScenesMenu",      "FSeqMenu",        "TestPatternMenu", "GapsMenu",
+        "ControlMenu",   "ControlSlotMenu", "FixturesMenu",    "FixtureMenu",     "SceneListMenu",
+        "SceneEditMenu", "ScenePartMenu",   "PartOutputsMenu",
     };
     static_assert(sizeof(kNodeNames) / sizeof(kNodeNames[0]) == static_cast<size_t>(NodeId::Count),
                   "one emulator name per menu node");

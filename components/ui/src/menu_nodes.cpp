@@ -78,8 +78,8 @@ uint8_t build_testpattern(ListItem* items, OnClick* fns) {
 }
 
 // ── SCENES NODE ──────────────────────────────────────────────────────────────
-// Play/stop only — editing colours and masks on a rotary encoder is web/UART
-// territory. Every playing scene is starred: several play at once when their
+// Play/stop only: one click starts a scene (they are edited under "Edit
+// scenes"). Every playing scene is starred: several play at once when their
 // output masks differ (a scene claims only its own outputs).
 
 uint8_t build_scenes(ListItem* items, OnClick* fns) {
@@ -473,17 +473,19 @@ uint8_t build_settings(ListItem* items, OnClick* fns) {
 uint8_t build_playback(ListItem* items, OnClick* fns) {
     items[0] = { "Scenes", "" };
     fns[0]   = [](uint8_t) { go(NodeId::Scenes); };
-    items[1] = { "FSEQ", "" };
-    fns[1]   = [](uint8_t) {
+    items[1] = { "Edit scenes", "" };
+    fns[1]   = [](uint8_t) { go(NodeId::SceneList); };
+    items[2] = { "FSEQ", "" };
+    fns[2]   = [](uint8_t) {
         // Refresh the SD listing as we open the file browser.
         g_fseq_file_count = static_cast<uint8_t>(fseq::list_files(g_fseq_names, kFseqMenuMaxFiles));
         go(NodeId::Fseq);
     };
-    items[2] = { "Test pattern", "" };
-    fns[2]   = [](uint8_t) { go(NodeId::TestPattern); };
-    items[3] = back_item();
-    fns[3]   = [](uint8_t) { go_back(); };
-    return 4;
+    items[3] = { "Test pattern", "" };
+    fns[3]   = [](uint8_t) { go(NodeId::TestPattern); };
+    items[4] = back_item();
+    fns[4]   = [](uint8_t) { go_back(); };
+    return 5;
 }
 
 // ── NETWORK NODE ─────────────────────────────────────────────────────────────
@@ -564,8 +566,10 @@ enum class ChItem : uint8_t {
     Proto,
     Uni,
     Dmx,
+    Layout,  // how its pixels (or its fixtures) fill the universes
     Pixels,
-    Gaps,  // dead pixels submenu
+    Gaps,      // dead pixels submenu
+    Fixtures,  // fixtures submenu
     Order,
     Bright,
     Gamma,
@@ -576,7 +580,7 @@ enum class ChItem : uint8_t {
     Back,
 };
 
-// Fills `out` (capacity ≥ 13) with the ordered items for `cc` and returns count.
+// Fills `out` (capacity ≥ 15) with the ordered items for `cc` and returns count.
 uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     uint8_t n = 0;
     out[n++]  = ChItem::Proto;
@@ -588,8 +592,10 @@ uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     }
     out[n++] = ChItem::Uni;
     out[n++] = ChItem::Dmx;
+    out[n++] = ChItem::Layout;
     out[n++] = ChItem::Pixels;
     out[n++] = ChItem::Gaps;
+    out[n++] = ChItem::Fixtures;
     out[n++] = ChItem::Order;
     out[n++] = ChItem::Bright;
     out[n++] = ChItem::Gamma;
@@ -626,6 +632,12 @@ OnClick channel_action(ChItem it) {
             const auto& cc = config::get_channel(s.channel_index);
             enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", Screen::Menu,
                        s.channel_index);
+        };
+    case ChItem::Layout:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChPacking, ValueKind::Packing, cc.packing, 0, config::kPackCount - 1,
+                       1, "DMX layout", Screen::Menu, s.channel_index);
         };
     case ChItem::Pixels:
         return [](uint8_t) {
@@ -692,6 +704,7 @@ OnClick channel_action(ChItem it) {
                        s.channel_index);
         };
     case ChItem::Gaps: return [](uint8_t) { go(NodeId::Gaps); };
+    case ChItem::Fixtures: return [](uint8_t) { go(NodeId::Fixtures); };
     case ChItem::Identify:
         return [](uint8_t) { dmx::identify_start(s.channel_index); };  // 3 blinks; stay
     case ChItem::Back: return [](uint8_t) { go_back(); };
@@ -704,7 +717,7 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     std::snprintf(g_channel_title, sizeof(g_channel_title), "CHANNEL %u", s.channel_index + 1);
 
     static char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8],
-        vclk[12], vgam[8], vgaps[8];
+        vclk[12], vgam[8], vgaps[8], vfix[8];
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
     format_uni(vuni, sizeof(vuni), cc.universe_start);
     std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
@@ -721,15 +734,23 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     else
         std::snprintf(vgaps, sizeof(vgaps), "-");
 
-    ChItem order[13];
+    const size_t nfix = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+    if (nfix)
+        std::snprintf(vfix, sizeof(vfix), "%u", static_cast<unsigned>(nfix));
+    else
+        std::snprintf(vfix, sizeof(vfix), "-");
+
+    ChItem order[15];
     const uint8_t count = channel_items(cc, order);
     for (uint8_t i = 0; i < count; ++i) {
         switch (order[i]) {
         case ChItem::Proto: items[i] = { "Proto", vproto }; break;
         case ChItem::Uni: items[i] = { "Uni", vuni }; break;
         case ChItem::Dmx: items[i] = { "DMX", vdmx }; break;
+        case ChItem::Layout: items[i] = { "Layout", packing_label(cc.packing) }; break;
         case ChItem::Pixels: items[i] = { "Pixels", vpix }; break;
         case ChItem::Gaps: items[i] = { "Dead px", vgaps }; break;
+        case ChItem::Fixtures: items[i] = { "Fixtures", vfix }; break;
         case ChItem::Order: items[i] = { "Order", vorder }; break;
         case ChItem::Bright: items[i] = { "Bright", vbri }; break;
         case ChItem::Gamma: items[i] = { "Gamma", vgam }; break;
@@ -800,6 +821,398 @@ uint8_t build_gaps(ListItem* items, OnClick* fns) {
             const auto& c = config::get_channel(s.channel_index);
             enter_gap_pos_edit(static_cast<uint8_t>(led::gap_count(c.gaps, led::kMaxPixelGaps)));
         };
+    }
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── FIXTURES NODE ────────────────────────────────────────────────────────────
+// The open channel's fixtures ("F2 60-118  x59", R = mounted the other way
+// round), click to edit one. [Add] puts one after the last, as long as it —
+// the first one takes the strip as it is, and the strip grows when the new
+// fixture passes its end. "Split in" replaces the list with N equal fixtures.
+
+namespace {
+
+void open_fixture(uint8_t k) {
+    g_fix_index                                  = k;
+    s.cur[static_cast<uint8_t>(NodeId::Fixture)] = 0;
+    s.scr[static_cast<uint8_t>(NodeId::Fixture)] = 0;
+    go(NodeId::Fixture);
+}
+
+void add_fixture() {
+    auto c            = config::get_channel(s.channel_index);
+    const size_t nf   = config::fixture_count(c.fixtures, config::kMaxFixtures);  // < max: the row
+    const int32_t end = strip_end(c);
+    int32_t pos = 0, len = end;
+    if (nf) {
+        const config::Fixture& last = c.fixtures[nf - 1];
+        len                         = config::fixture_len(last);
+        pos                         = last.pos + len;
+        if (pos + len > end) {  // past the strip: it grows, as far as the output can be driven
+            const int32_t room = static_cast<int32_t>(dmx::channel_max_pixels(s.channel_index)) -
+                                 c.pixel_count;
+            int32_t grow = pos + len - end;
+            if (grow > room) grow = room > 0 ? room : 0;
+            len           = end + grow - pos;
+            c.pixel_count = static_cast<uint16_t>(c.pixel_count + grow);
+        }
+    }
+    if (len <= 0) return;  // no LED left for it
+    c.fixtures[nf] = config::make_fixture(static_cast<uint16_t>(pos), static_cast<uint16_t>(len));
+    config::set_channel(s.channel_index, c);
+    dmx::mark_channel_dirty(s.channel_index);
+    open_fixture(static_cast<uint8_t>(nf));
+}
+
+// The room fixture `k` of `cc` may move in: from the end of the one before it
+// to the start of the next (the strip's end for the last), physical, 0-based.
+void fixture_room(const config::ChannelConfig& cc, size_t k, uint16_t& lo, uint16_t& hi) {
+    const size_t nf   = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+    const uint16_t at = static_cast<uint16_t>(cc.fixtures[k].pos +
+                                              config::fixture_len(cc.fixtures[k]));
+    lo = k ? static_cast<uint16_t>(cc.fixtures[k - 1].pos + config::fixture_len(cc.fixtures[k - 1]))
+           : 0;
+    hi = k + 1 < nf ? cc.fixtures[k + 1].pos : strip_end(cc);
+    if (hi < at) hi = at;  // one that already passes the strip's end keeps its length
+}
+
+}  // namespace
+
+uint8_t build_fixtures(ListItem* items, OnClick* fns) {
+    static char labels[config::kMaxFixtures][16], values[config::kMaxFixtures][8], vsplit[4];
+    const auto& cc  = config::get_channel(s.channel_index);
+    const size_t nf = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+    uint8_t n       = 0;
+    for (size_t k = 0; k < nf; ++k) {
+        const unsigned len = config::fixture_len(cc.fixtures[k]);
+        std::snprintf(labels[k], sizeof(labels[k]), "F%u %u-%u", static_cast<unsigned>(k + 1),
+                      cc.fixtures[k].pos + 1u, cc.fixtures[k].pos + len);
+        std::snprintf(values[k], sizeof(values[k]), "x%u%s", len,
+                      config::fixture_reversed(cc.fixtures[k]) ? "R" : "");
+        items[n] = { labels[k], values[k] };
+        fns[n++] = [](uint8_t idx) { open_fixture(idx); };
+    }
+    if (nf < config::kMaxFixtures) {
+        items[n] = { "[Add]", "" };
+        fns[n++] = [](uint8_t) { add_fixture(); };
+    }
+    std::snprintf(vsplit, sizeof(vsplit), "%u", static_cast<unsigned>(nf));
+    items[n] = { "Split in", vsplit };
+    fns[n++] = [](uint8_t) {
+        const auto& c     = config::get_channel(s.channel_index);
+        const int32_t cur = static_cast<int32_t>(
+            config::fixture_count(c.fixtures, config::kMaxFixtures));
+        const int32_t end = strip_end(c);
+        const int32_t max = end < static_cast<int32_t>(config::kMaxFixtures)
+                              ? end
+                              : static_cast<int32_t>(config::kMaxFixtures);  // a strip has an LED
+        enter_edit(Field::FixSplit, ValueKind::Int, cur ? cur : 1, 1, max, 1, "Fixtures",
+                   Screen::Menu, s.channel_index);
+    };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── FIXTURE NODE ─────────────────────────────────────────────────────────────
+// One fixture: where it starts, how long it is, which way round it is mounted
+// and — on an output in DMX control mode — its DMX profile. The ranges stop at
+// its neighbours, so two fixtures never overlap.
+
+uint8_t build_fixture(ListItem* items, OnClick* fns) {
+    const auto& cc  = config::get_channel(s.channel_index);
+    const size_t nf = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+    uint8_t n       = 0;
+    std::snprintf(g_fix_title, sizeof(g_fix_title), "FIXTURE %u", g_fix_index + 1u);
+    if (g_fix_index >= nf) {  // it was removed (here or from the web)
+        items[n] = back_item();
+        fns[n++] = [](uint8_t) { go_back(); };
+        return n;
+    }
+    const config::Fixture& f = cc.fixtures[g_fix_index];
+    static char vfirst[8], vlen[8], vprof[10];
+    std::snprintf(vfirst, sizeof(vfirst), "%u", f.pos + 1u);
+    std::snprintf(vlen, sizeof(vlen), "%u", static_cast<unsigned>(config::fixture_len(f)));
+    items[n] = { "First LED", vfirst };
+    fns[n++] = [](uint8_t) {
+        const auto& c = config::get_channel(s.channel_index);
+        uint16_t lo, hi;
+        fixture_room(c, g_fix_index, lo, hi);
+        const config::Fixture& fx = c.fixtures[g_fix_index];
+        enter_edit(Field::FixFirst, ValueKind::Int, fx.pos + 1, lo + 1,
+                   hi - config::fixture_len(fx) + 1, 1, "First LED", Screen::Menu, s.channel_index);
+    };
+    items[n] = { "LEDs", vlen };
+    fns[n++] = [](uint8_t) {
+        const auto& c = config::get_channel(s.channel_index);
+        uint16_t lo, hi;
+        fixture_room(c, g_fix_index, lo, hi);
+        const config::Fixture& fx = c.fixtures[g_fix_index];
+        enter_edit(Field::FixLen, ValueKind::Int, config::fixture_len(fx), 1, hi - fx.pos, 1,
+                   "LEDs", Screen::Menu, s.channel_index);
+    };
+    items[n] = { "Reversed", config::fixture_reversed(f) ? "ON" : "OFF" };
+    fns[n++] = [](uint8_t) {
+        const auto& c = config::get_channel(s.channel_index);
+        enter_edit(Field::FixReversed, ValueKind::Bool,
+                   config::fixture_reversed(c.fixtures[g_fix_index]) ? 1 : 0, 0, 1, 1, "Reversed",
+                   Screen::Menu, s.channel_index);
+    };
+    if (cc.packing == config::kPackControl) {
+        EditCtx as{};
+        as.kind = ValueKind::Profile;
+        format_value(as, config::fixture_profile(f), vprof, sizeof(vprof));
+        items[n] = { "Profile", vprof };
+        fns[n++] = [](uint8_t) {
+            const auto& c    = config::get_channel(s.channel_index);
+            const int32_t hi = config::get_profiles().count ? config::get_profiles().count - 1 : 0;
+            int32_t cur      = config::fixture_profile(c.fixtures[g_fix_index]);
+            if (cur > hi) cur = 0;  // its profile left the bank: the first, as the box plays it
+            enter_edit(Field::FixProfile, ValueKind::Profile, cur, 0, hi, 1, "DMX profile",
+                       Screen::Menu, s.channel_index);
+        };
+    }
+    items[n] = { "[Delete]", "" };
+    fns[n++] = [](uint8_t) {
+        auto c = config::get_channel(s.channel_index);
+        if (g_fix_index < config::kMaxFixtures) c.fixtures[g_fix_index] = config::Fixture{};
+        config::set_channel(s.channel_index, c);  // normalize closes the list up
+        dmx::mark_channel_dirty(s.channel_index);
+        go_back();
+    };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── EDIT SCENES NODE ─────────────────────────────────────────────────────────
+// The scenes as things to edit (the SCENES node plays them): one row a scene,
+// with the group it plays on or its number of parts, and [New].
+
+namespace {
+
+void open_scene(uint8_t i) {
+    g_scene_index                                  = i;
+    s.cur[static_cast<uint8_t>(NodeId::SceneEdit)] = 0;
+    s.scr[static_cast<uint8_t>(NodeId::SceneEdit)] = 0;
+    go(NodeId::SceneEdit);
+}
+
+void open_part(uint8_t k) {
+    g_part_index                                   = k;
+    s.cur[static_cast<uint8_t>(NodeId::ScenePart)] = 0;
+    s.scr[static_cast<uint8_t>(NodeId::ScenePart)] = 0;
+    go(NodeId::ScenePart);
+}
+
+// Output `o` joins the open part (leaving the part it was in) or leaves it. A
+// part keeps its last output: it has to play somewhere.
+void toggle_part_output(uint8_t o) {
+    if (g_scene_index >= config::num_scenes()) return;
+    auto sc = config::get_scene(g_scene_index);
+    if (g_part_index >= sc.num_parts) return;
+    const auto bit = static_cast<uint8_t>(1u << o);
+    uint8_t& mine  = sc.parts[g_part_index].mask;
+    if (mine & bit) {
+        if (mine == bit) return;
+        mine = static_cast<uint8_t>(mine & ~bit);
+    } else {
+        for (size_t k = 0; k < sc.num_parts; ++k)
+            sc.parts[k].mask = static_cast<uint8_t>(sc.parts[k].mask & ~bit);
+        mine = static_cast<uint8_t>(mine | bit);
+    }
+    const uint8_t keep = mine;
+    config::set_scene(g_scene_index, sc);
+    // A part left without an output is gone: follow ours to where it sits now.
+    const auto& stored = config::get_scene(g_scene_index);
+    for (size_t k = 0; k < stored.num_parts; ++k)
+        if (stored.parts[k].mask == keep) g_part_index = static_cast<uint8_t>(k);
+}
+
+}  // namespace
+
+uint8_t build_scene_list(ListItem* items, OnClick* fns) {
+    static char values[config::kMaxScenes][10];
+    const auto count = static_cast<uint8_t>(config::num_scenes());
+    for (uint8_t i = 0; i < count; ++i) {
+        const auto& sc = config::get_scene(i);
+        if (config::scene_group(sc) >= 0)
+            group_label(sc.group, values[i], sizeof(values[i]));
+        else
+            std::snprintf(values[i], sizeof(values[i]), "%up", sc.num_parts);
+        items[i] = { sc.name[0] ? sc.name : "(no name)", values[i] };
+        fns[i]   = open_scene;
+    }
+    uint8_t n = count;
+    if (count < config::kMaxScenes) {
+        items[n] = { "[New]", "" };
+        fns[n++] = [](uint8_t) {
+            // The first effect on every output, as from the web and the console.
+            const int idx = config::add_scene(config::make_scene("New scene", 0xFF, 0));
+            if (idx >= 0) open_scene(static_cast<uint8_t>(idx));
+        };
+    }
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── SCENE NODE ───────────────────────────────────────────────────────────────
+// One scene: its name, where it plays by default (its outputs or a fixture
+// group), one row per part ("1234----  Chase") and [Add part], then play /
+// stop to see the result, and delete.
+
+uint8_t build_scene_edit(ListItem* items, OnClick* fns) {
+    uint8_t n = 0;
+    std::snprintf(g_scene_title, sizeof(g_scene_title), "SCENE %u", g_scene_index + 1u);
+    if (g_scene_index >= config::num_scenes()) {  // deleted meanwhile
+        items[n] = back_item();
+        fns[n++] = [](uint8_t) { go_back(); };
+        return n;
+    }
+    const auto& sc = config::get_scene(g_scene_index);
+    static char vname[10], vgroup[10];
+    static char plabel[config::kMaxSceneParts][10], pvalue[config::kMaxSceneParts][10];
+    truncate(vname, sizeof(vname), sc.name);
+    group_label(sc.group, vgroup, sizeof(vgroup));
+    items[n] = { "Name", vname };
+    fns[n++] = [](uint8_t) {
+        enter_edit_string(StringField::SceneName, config::get_scene(g_scene_index).name,
+                          config::kSceneNameMax - 1, "Name", Screen::Menu);
+    };
+    items[n] = { "Plays on", vgroup };
+    fns[n++] = [](uint8_t) {
+        const int32_t hi = config::get_groups().count;
+        int32_t cur      = config::get_scene(g_scene_index).group;
+        if (cur > hi) cur = 0;
+        enter_edit(Field::SceneGroup, ValueKind::Group, cur, 0, hi, 1, "Plays on", Screen::Menu);
+    };
+    constexpr uint8_t kFirstPartRow = 2;
+    for (uint8_t k = 0; k < sc.num_parts; ++k) {
+        format_mask(sc.parts[k].mask, plabel[k], sizeof(plabel[k]));
+        effect_label(sc.parts[k].effect, pvalue[k], sizeof(pvalue[k]));
+        items[n] = { plabel[k], pvalue[k] };
+        fns[n++] = [](uint8_t row) { open_part(static_cast<uint8_t>(row - kFirstPartRow)); };
+    }
+    if (sc.num_parts < config::kMaxSceneParts && config::scene_mask(sc) != 0xFF &&
+        config::num_effects() > 0) {
+        items[n] = { "[Add part]", "" };
+        fns[n++] = [](uint8_t) {
+            // The outputs no part holds yet, on the first effect.
+            auto e = config::get_scene(g_scene_index);
+            if (e.num_parts >= config::kMaxSceneParts) return;
+            const auto free = static_cast<uint8_t>(~config::scene_mask(e));
+            if (!free) return;
+            e.parts[e.num_parts++] = config::ScenePart{ free, 0, config::kFixtureModeEach, 0 };
+            config::set_scene(g_scene_index, e);
+            const uint8_t parts = config::get_scene(g_scene_index).num_parts;
+            if (parts) open_part(static_cast<uint8_t>(parts - 1));
+        };
+    }
+    items[n] = { "[Play]", "" };
+    fns[n++] = [](uint8_t) { dmx::scene_start(g_scene_index); };
+    items[n] = { "[Stop]", "" };
+    fns[n++] = [](uint8_t) { dmx::scene_stop_scene(g_scene_index); };
+    items[n] = { "[Delete]", "" };
+    fns[n++] = [](uint8_t) {
+        dmx::scene_stop_scene(g_scene_index);
+        if (config::delete_scene(g_scene_index))
+            dmx::scene_list_edited(config::SceneEdit::Delete, g_scene_index);
+        go_back();
+    };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── PART NODE ────────────────────────────────────────────────────────────────
+// One part of the open scene: its outputs, the effect of the bank it plays
+// there, how the effect spreads over the fixtures, and its direction.
+
+uint8_t build_scene_part(ListItem* items, OnClick* fns) {
+    uint8_t n = 0;
+    std::snprintf(g_part_title, sizeof(g_part_title), "PART %u", g_part_index + 1u);
+    const bool gone = g_scene_index >= config::num_scenes() ||
+                      g_part_index >= config::get_scene(g_scene_index).num_parts;
+    if (gone) {
+        items[n] = back_item();
+        fns[n++] = [](uint8_t) { go_back(); };
+        return n;
+    }
+    const config::ScenePart& p = config::get_scene(g_scene_index).parts[g_part_index];
+    static char vmask[10], veffect[10];
+    format_mask(p.mask, vmask, sizeof(vmask));
+    effect_label(p.effect, veffect, sizeof(veffect));
+    items[n] = { "Outputs", vmask };
+    fns[n++] = [](uint8_t) {
+        s.cur[static_cast<uint8_t>(NodeId::PartOutputs)] = 0;
+        s.scr[static_cast<uint8_t>(NodeId::PartOutputs)] = 0;
+        go(NodeId::PartOutputs);
+    };
+    if (config::num_effects() > 0) {
+        items[n] = { "Effect", veffect };
+        fns[n++] = [](uint8_t) {
+            const int32_t hi = static_cast<int32_t>(config::num_effects()) - 1;
+            int32_t cur      = config::get_scene(g_scene_index).parts[g_part_index].effect;
+            if (cur > hi) cur = 0;
+            enter_edit(Field::PartEffect, ValueKind::Effect, cur, 0, hi, 1, "Effect", Screen::Menu);
+        };
+    }
+    items[n] = { "Fixtures", fix_mode_label(config::scene_mode_of(p.fixture_mode)) };
+    fns[n++] = [](uint8_t) {
+        const auto& part = config::get_scene(g_scene_index).parts[g_part_index];
+        enter_edit(Field::PartMode, ValueKind::FixMode, config::scene_mode_of(part.fixture_mode), 0,
+                   config::kFixtureModeCount - 1, 1, "Fixtures", Screen::Menu);
+    };
+    items[n] = { "Reverse", config::scene_reverse_of(p.fixture_mode) ? "ON" : "OFF" };
+    fns[n++] = [](uint8_t) {
+        const auto& part = config::get_scene(g_scene_index).parts[g_part_index];
+        enter_edit(Field::PartReverse, ValueKind::Bool,
+                   config::scene_reverse_of(part.fixture_mode) ? 1 : 0, 0, 1, 1, "Reverse",
+                   Screen::Menu);
+    };
+    items[n] = { "[Delete]", "" };
+    fns[n++] = [](uint8_t) {
+        auto e = config::get_scene(g_scene_index);
+        if (g_part_index >= e.num_parts) return;
+        for (size_t k = g_part_index; k + 1 < e.num_parts; ++k)
+            e.parts[k] = e.parts[k + 1];
+        e.parts[--e.num_parts] = config::ScenePart{};
+        config::set_scene(g_scene_index, e);
+        go_back();
+    };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── PART OUTPUTS NODE ────────────────────────────────────────────────────────
+// The eight outputs, one click each: ON in this part, "part N" when another
+// part of the scene holds it (a click takes it over), OFF when none does.
+
+uint8_t build_part_outputs(ListItem* items, OnClick* fns) {
+    static char labels[config::kNumChannels][10], values[config::kNumChannels][12];
+    uint8_t n       = 0;
+    const bool gone = g_scene_index >= config::num_scenes() ||
+                      g_part_index >= config::get_scene(g_scene_index).num_parts;
+    if (!gone) {
+        const auto& sc = config::get_scene(g_scene_index);
+        for (uint8_t o = 0; o < config::kNumChannels; ++o) {
+            std::snprintf(labels[o], sizeof(labels[o]), "Output %u", o + 1u);
+            std::snprintf(values[o], sizeof(values[o]), "OFF");
+            for (uint8_t k = 0; k < sc.num_parts; ++k) {
+                if (!((sc.parts[k].mask >> o) & 1)) continue;
+                if (k == g_part_index)
+                    std::snprintf(values[o], sizeof(values[o]), "ON");
+                else
+                    std::snprintf(values[o], sizeof(values[o]), "part %u", k + 1u);
+            }
+            items[n] = { labels[o], values[o] };
+            fns[n++] = toggle_part_output;
+        }
     }
     items[n] = back_item();
     fns[n++] = [](uint8_t) { go_back(); };

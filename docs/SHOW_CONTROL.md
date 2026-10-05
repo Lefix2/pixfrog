@@ -115,6 +115,7 @@ Groups / Wings — as the same space-time strips:
 | Web UI | **Effects** screen | **Scenes** screen: the parts — their outputs, effect, fixture mode and direction — and the group the scene plays on |
 | UART | `fx`, `fx add [name]`, `fx set <n> <generator> <rrggbb[,…]> <speed> <param>`, `fx name`, `fx move`, `fx del` (refused while a scene plays it) | `scene`, `scene add [name]`, `scene part <n> <outputs-hex> <effect> [each\|strip\|chain\|mirror] [rev]`, `scene group <n> <group\|none>`, `scene clear <n>`, `scene name`, `scene move`, `scene del` |
 | REST | `POST /api/effect/<n>`, `/api/effects/add\|move` | `POST /api/scene/<n>`, `/api/scenes/add\|move` |
+| TFT / OLED | — (the bank is edited from the web or the console) | PLAYBACK → **Edit scenes**: name, the group it plays on, its parts — outputs (one toggle each; an output taken by a part leaves the other), effect of the bank, fixture mode, direction — `[Add part]`, `[New]`, `[Delete]`, and `[Play]` / `[Stop]` to see the result |
 
 Scenes stored by an older firmware are converted at the first boot: each
 becomes one effect and one single-part scene, at the same position and the
@@ -134,7 +135,7 @@ side, and a scene started on an overlapping group takes those outputs over.
 | UART | `scene play <n> <outputs-hex>` (e.g. `scene play 0 01`, `scene play 1 02`), `scene stop <n>` |
 | REST | `POST /api/scene/<n>/play {"outputs":1}`, `POST /api/scene/<n>/stop` |
 | Desk | two Scene slots with different output groups in the control universe |
-| TFT, ArtTrigger | play on the outputs of the scene's parts — set the parts first |
+| TFT, ArtTrigger | play on the outputs of the scene's parts (PLAYBACK → Scenes: one click a scene) |
 
 Every change of source crossfades over the scene fade time (`scene_fade_ms`,
 0–25.5 s, eased). This covers live → scene, scene → scene and scene → live.

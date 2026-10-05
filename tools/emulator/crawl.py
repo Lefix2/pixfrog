@@ -21,6 +21,8 @@ REQUIRED = {
     "MainMenu", "InputsMenu", "NetworkMenu", "OutputMenu", "PlaybackMenu", "ChannelMenu",
     "ScenesMenu", "FSeqMenu", "TestPatternMenu", "GapsMenu", "Stats", "About", "EditValue",
     "EditString", "EditIp", "EditUni", "ControlMenu", "ControlSlotMenu", "SettingsMenu",
+    "FixturesMenu", "FixtureMenu", "SceneListMenu", "SceneEditMenu", "ScenePartMenu",
+    "PartOutputsMenu",
 }
 TFT_ONLY = set()
 
@@ -29,9 +31,13 @@ TFT_ONLY = set()
 GOLDEN = {
     "main_menu": [0],
     "channel1": [0, 0],
-    "channel1_dead_px": [0, 0, 4],
+    "channel1_dead_px": [0, 0, 5],
+    "channel1_fixtures": [0, 0, 6],
+    "channel1_fixture2": [0, 0, 6, 1],
     "output_menu": [0, 10],
     "scenes_menu": [0, 11, 0],
+    "scene_edit": [0, 11, 1, 1],
+    "scene_part": [0, 11, 1, 1, 2],
     "control_menu": [0, 8, 6],
 }
 
@@ -45,6 +51,7 @@ SEED = [
     "set chan 6 5 15 80",    # WS2814
     "set chan 7 0 17 10",    # Off
     "set gaps 0 10:2 40:1",
+    "set fixtures 0 0:100 100:100:r 200:100",
     "set net connected",
     "set ip 192.168.2.50",
 ]
@@ -124,11 +131,16 @@ def count_rows(emu):
 def crawl(emu, seen):
     menus = [("MainMenu", [0])]  # (name, path) queue
     explored = set()
+    # A menu is walked once — its rows are the same wherever it is opened
+    # from — but for the channel menus, whose rows follow the protocol, and the
+    # control slots, whose rows follow the function.
+    every_time = ("ChannelMenu", "GapsMenu", "ControlSlotMenu")
     while menus:
         name, path = menus.pop(0)
         key = (name, tuple(path))
         st = goto(emu, path)
-        if st["screen"] != name or key in explored or len(path) > 5:
+        again = name not in every_time and name in {n for n, _ in explored}
+        if st["screen"] != name or key in explored or again or len(path) > 6:
             continue
         explored.add(key)
         seen.add(name)
@@ -150,8 +162,7 @@ def crawl(emu, seen):
                     emu.cmd("longclick")  # cancel
             elif scr.endswith("Menu") and scr != name and scr != "MainMenu":
                 # Only descend: a Back row lands on the parent (already queued).
-                if len(path) < 4 and scr not in {n for n, _ in explored} or \
-                        scr in ("ChannelMenu", "GapsMenu"):
+                if scr in every_time or scr not in {n for n, _ in explored}:
                     menus.append((scr, path + [i]))
             elif scr in ("Stats", "About", "PixelRefresh"):
                 emu.cmd("longclick")

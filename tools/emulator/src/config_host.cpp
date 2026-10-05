@@ -135,6 +135,7 @@ bool set_scene(size_t i, const Scene& scene) {
     ensure_init();
     if (i >= g_bank.count) return false;
     g_bank.scenes[i] = scene;
+    sanitize_scene(g_bank.scenes[i]);  // as the NVS store: disjoint parts, empty ones dropped
     return true;
 }
 
@@ -142,7 +143,46 @@ int add_scene(const Scene& scene) {
     ensure_init();
     if (g_bank.count >= kMaxScenes) return -1;
     g_bank.scenes[g_bank.count] = scene;
+    sanitize_scene(g_bank.scenes[g_bank.count]);
     return g_bank.count++;
+}
+
+// The effect bank the scene editor picks from (the menu only shows the
+// names). One effect short of the scenes, and the last without a name: the
+// last scene's effect is missing, as after a delete from the web.
+constexpr size_t kEmuEffects = kLegacyNumScenes - 1;
+
+size_t num_effects() {
+    return kEmuEffects;
+}
+
+const Effect& get_effect(size_t i) {
+    static Effect bank[kEmuEffects];
+    static const Effect kBlank{};
+    static bool filled = false;
+    if (!filled) {
+        static const char* const kNames[kEmuEffects] = {
+            "Warm white", "Chase", "Rainbow", "Blobs", "Fire", "Twinkle", ""
+        };
+        for (size_t k = 0; k < kEmuEffects; ++k) {
+            std::snprintf(bank[k].name, sizeof(bank[k].name), "%s", kNames[k]);
+            bank[k].generator  = static_cast<uint8_t>(k % kSceneFxCount);
+            bank[k].num_colors = 1;
+        }
+        filled = true;
+    }
+    return i < kEmuEffects ? bank[i] : kBlank;
+}
+
+// Three fixture groups for the "Plays on" picker, the last one unnamed.
+const GroupsConfig& get_groups() {
+    static GroupsConfig groups{};
+    if (!groups.count) {
+        groups.count = 3;
+        std::snprintf(groups.groups[0].name, sizeof(groups.groups[0].name), "Top");
+        std::snprintf(groups.groups[1].name, sizeof(groups.groups[1].name), "Centre");
+    }
+    return groups;
 }
 
 bool delete_scene(size_t i) {

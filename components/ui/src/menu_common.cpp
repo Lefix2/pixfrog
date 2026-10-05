@@ -226,10 +226,58 @@ void save_control(const config::ControlConfig& c) {
 
 uint8_t g_gap_index = 0;
 
+uint8_t g_fix_index   = 0;
+uint8_t g_scene_index = 0;
+uint8_t g_part_index  = 0;
+char g_fix_title[12];
+char g_scene_title[12];
+char g_part_title[12];
+
+uint16_t strip_end(const config::ChannelConfig& cc) {
+    const uint32_t end = led::physical_count(cc.pixel_count, cc.gaps,
+                                             led::gap_count(cc.gaps, led::kMaxPixelGaps));
+    return static_cast<uint16_t>(end < led::kMaxPixelsPerChannel ? end : led::kMaxPixelsPerChannel);
+}
+
+const char* packing_label(uint8_t packing) {
+    static const char* const kLabels[] = { "Contin.", "Whole px", "Per fix.", "Colour", "DMX ctl" };
+    static_assert(sizeof(kLabels) / sizeof(kLabels[0]) == config::kPackCount,
+                  "one label per DMX layout");
+    return kLabels[packing < config::kPackCount ? packing : 0];
+}
+
+const char* fix_mode_label(uint8_t mode) {
+    static const char* const kLabels[] = { "Each", "Strip", "Chain", "Mirror" };
+    static_assert(sizeof(kLabels) / sizeof(kLabels[0]) == config::kFixtureModeCount,
+                  "one label per fixture mode");
+    return kLabels[mode < config::kFixtureModeCount ? mode : 0];
+}
+
+void effect_label(size_t index, char* out, size_t cap) {
+    if (index >= config::num_effects())
+        std::snprintf(out, cap, "?");
+    else if (config::get_effect(index).name[0])
+        truncate(out, cap, config::get_effect(index).name);
+    else
+        std::snprintf(out, cap, "Effect %u", static_cast<unsigned>(index + 1));
+}
+
+void group_label(int32_t v, char* out, size_t cap) {
+    const auto& groups = config::get_groups();
+    if (v <= 0 || v > groups.count)
+        std::snprintf(out, cap, "Outputs");
+    else if (groups.groups[v - 1].name[0])
+        truncate(out, cap, groups.groups[v - 1].name);
+    else
+        std::snprintf(out, cap, "Group %ld", static_cast<long>(v));
+}
+
 // Pick-from-a-list kinds (wheel) vs numeric ones (gauge).
 bool is_enum_kind(ValueKind k) {
     return k == ValueKind::Protocol || k == ValueKind::ColorOrder || k == ValueKind::Failsafe ||
-           k == ValueKind::CtlFn || k == ValueKind::Preset || k == ValueKind::IpFallback;
+           k == ValueKind::CtlFn || k == ValueKind::Preset || k == ValueKind::IpFallback ||
+           k == ValueKind::Packing || k == ValueKind::FixMode || k == ValueKind::Effect ||
+           k == ValueKind::Group || k == ValueKind::Profile;
 }
 
 bool is_gauge_kind(ValueKind k) {
@@ -388,6 +436,22 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
     case ValueKind::Tenths:
         std::snprintf(out, cap, "%ld.%lds", static_cast<long>(v / 10), static_cast<long>(v % 10));
         return;
+    case ValueKind::Packing:
+        std::snprintf(out, cap, "%s", packing_label(static_cast<uint8_t>(v)));
+        return;
+    case ValueKind::FixMode:
+        std::snprintf(out, cap, "%s", fix_mode_label(static_cast<uint8_t>(v)));
+        return;
+    case ValueKind::Effect: effect_label(static_cast<size_t>(v), out, cap); return;
+    case ValueKind::Group: group_label(v, out, cap); return;
+    case ValueKind::Profile: {
+        const auto& bank = config::get_profiles();
+        if (v >= 0 && v < bank.count && bank.profiles[v].name[0])
+            truncate(out, cap, bank.profiles[v].name);
+        else
+            std::snprintf(out, cap, "Profile %ld", static_cast<long>(v + 1));
+        return;
+    }
     }
 }
 
