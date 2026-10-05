@@ -218,7 +218,7 @@ void task_main(void*) {
     ESP_LOGI(TAG, "listening on UDP %d, %u multicast groups joined", parser::kSacnPort,
              static_cast<unsigned>(g_joined_count));
 
-    uint8_t buf[700];  // E1.31 data packet max = 638 bytes
+    static uint8_t buf[700];  // E1.31 data packet max = 638 bytes; off the 4 kB stack
     for (;;) {
         while (running()) {
             sockaddr_in from{};
