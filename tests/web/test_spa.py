@@ -315,6 +315,21 @@ def test_dead_pixel_gaps_editor(page, device):
     assert ch["gaps"] == [[ch["pixel_count"] + 1, 2]]
 
 
+def test_the_first_fixture_takes_the_strip_as_it_is(page, device):
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 60, "fixtures": [], "gaps": []})
+    page.reload()
+    nav(page, "channels")
+    page.locator('[data-lay-add="f"]').click()
+    expect(page.locator("[data-lay-row]")).to_have_count(1)  # the fixture, and nothing with it
+    expect(page.locator("#cd-lay-n-0")).to_have_value("60")
+    expect(page.locator("#cd-pix")).to_have_value("60")  # the strip is no longer
+    page.locator('[data-lay-add="f"]').click()  # the next one: as long as the last
+    expect(page.locator("#cd-lay-n-1")).to_have_value("60")
+    save(page)
+    ch = device.get("/api/config")["channels"][0]
+    assert ch["fixtures"] == [[1, 60], [61, 60]] and ch["gaps"] == [] and ch["pixel_count"] == 120
+
+
 def test_fixtures_by_size_in_order_and_reordered_by_drag(page, device):
     nav(page, "channels")
     # 5 bars of 59 LEDs, one dead LED between two bars.
