@@ -122,18 +122,67 @@
     "clock_hz": 4000000,
     "color_order": "GRB",
     "dmx_start": 1,
-    "fixtures": [],
+    "fixtures": [
+     [
+      1,
+      30,
+      0,
+      2
+     ],
+     [
+      31,
+      30,
+      0,
+      2
+     ],
+     [
+      61,
+      30,
+      1,
+      3
+     ],
+     [
+      91,
+      30
+     ]
+    ],
     "gamma_x10": 10,
     "gaps": [],
     "grouping": 1,
     "id": 6,
     "invert": false,
     "max_pixels": 512,
-    "packing": "continuous",
-    "pixel_count": 512,
+    "packing": "control",
+    "patch": [
+     [
+      37,
+      1,
+      6,
+      2
+     ],
+     [
+      37,
+      7,
+      6,
+      2
+     ],
+     [
+      37,
+      13,
+      16,
+      3
+     ],
+     [
+      37,
+      29,
+      3,
+      0
+     ]
+    ],
+    "pixel_count": 120,
     "protocol": "WS2815",
     "universe_start": 37,
-    "universes": 3,
+    "universes": 1,
     "wb": "#ffffff"
    },
    {
@@ -271,6 +320,223 @@
    ],
    "universe": 100
   },
+  "effects": [
+   {
+    "colors": [
+     "#ffb46e"
+    ],
+    "generator": 0,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Warm white",
+    "param": 0,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 0
+   },
+   {
+    "colors": [
+     "#ffffff",
+     "#ff7800"
+    ],
+    "generator": 1,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Chase",
+    "param": 3,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 30
+   },
+   {
+    "colors": [
+     "#ffffff"
+    ],
+    "generator": 2,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Rainbow",
+    "param": 1,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 25
+   },
+   {
+    "colors": [
+     "#005aff",
+     "#ff008c",
+     "#00ffa0"
+    ],
+    "generator": 3,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Blobs",
+    "param": 4,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 20
+   },
+   {
+    "colors": [
+     "#b41000",
+     "#ff5000",
+     "#ffaa14",
+     "#fff096"
+    ],
+    "generator": 7,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Fire",
+    "param": 0,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 30
+   },
+   {
+    "colors": [
+     "#ffc878",
+     "#a0c8ff"
+    ],
+    "generator": 6,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Twinkle",
+    "param": 60,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 30
+   },
+   {
+    "colors": [
+     "#ff0000"
+    ],
+    "generator": 8,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Scanner",
+    "param": 0,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 40
+   },
+   {
+    "colors": [
+     "#000000",
+     "#ffffff"
+    ],
+    "generator": 0,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 0
+    },
+    "name": "Strobe",
+    "param": 0,
+    "phaser": {
+     "low": 0,
+     "rate": 0,
+     "reverse": false,
+     "spread": 0,
+     "wave": "none",
+     "width": 0
+    },
+    "speed": 0
+   },
+   {
+    "colors": [
+     "#005aff"
+    ],
+    "generator": 0,
+    "invert": false,
+    "matricks": {
+     "block": 0,
+     "groups": 0,
+     "wings": 2
+    },
+    "name": "Breathe",
+    "param": 0,
+    "phaser": {
+     "low": 0,
+     "rate": 10,
+     "reverse": false,
+     "spread": 16,
+     "wave": "sin",
+     "width": 0
+    },
+    "speed": 0
+   }
+  ],
   "fps": 60,
   "global": {
    "auth_enabled": false,
@@ -326,126 +592,282 @@
    ],
    "loop": true
   },
-  "scenes": [
+  "profiles": [
    {
-    "color": "#ffb46e",
-    "colors": [
-     "#ffb46e"
-    ],
-    "effect": 0,
-    "fixture_mode": "each",
-    "group": -1,
-    "mask": 255,
-    "name": "Warm white",
-    "param": 0,
-    "reverse": false,
-    "speed": 0
+    "footprint": 3,
+    "name": "RGB",
+    "slots": [
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     }
+    ]
    },
    {
-    "color": "#ffffff",
-    "colors": [
-     "#ffffff",
-     "#ff7800"
-    ],
-    "effect": 1,
-    "fixture_mode": "each",
+    "footprint": 4,
+    "name": "Dim RGB",
+    "slots": [
+     {
+      "fine": false,
+      "fn": "dimmer",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     }
+    ]
+   },
+   {
+    "footprint": 6,
+    "name": "RGB FX",
+    "slots": [
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "bank",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "speed",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "shutter",
+      "index": 0
+     }
+    ]
+   },
+   {
+    "footprint": 16,
+    "name": "Full",
+    "slots": [
+     {
+      "fine": true,
+      "fn": "dimmer",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "shutter",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "red",
+      "index": 1
+     },
+     {
+      "fine": false,
+      "fn": "green",
+      "index": 1
+     },
+     {
+      "fine": false,
+      "fn": "blue",
+      "index": 1
+     },
+     {
+      "fine": false,
+      "fn": "bank",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "speed",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "param",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_wave",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_rate",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_spread",
+      "index": 0
+     },
+     {
+      "fine": false,
+      "fn": "ph_width",
+      "index": 0
+     }
+    ]
+   }
+  ],
+  "scenes": [
+   {
+    "group": -1,
+    "mask": 127,
+    "name": "Wash",
+    "parts": [
+     {
+      "effect": 0,
+      "fixture_mode": "each",
+      "mask": 15,
+      "reverse": false
+     },
+     {
+      "effect": 8,
+      "fixture_mode": "each",
+      "mask": 112,
+      "reverse": false
+     }
+    ]
+   },
+   {
     "group": -1,
     "mask": 255,
     "name": "Chase",
-    "param": 3,
-    "reverse": false,
-    "speed": 60
+    "parts": [
+     {
+      "effect": 1,
+      "fixture_mode": "each",
+      "mask": 255,
+      "reverse": false
+     }
+    ]
    },
    {
-    "color": "#ffffff",
-    "colors": [
-     "#ffffff"
-    ],
-    "effect": 2,
-    "fixture_mode": "each",
     "group": -1,
     "mask": 255,
     "name": "Rainbow",
-    "param": 1,
-    "reverse": false,
-    "speed": 50
+    "parts": [
+     {
+      "effect": 2,
+      "fixture_mode": "each",
+      "mask": 255,
+      "reverse": false
+     }
+    ]
    },
    {
-    "color": "#005aff",
-    "colors": [
-     "#005aff",
-     "#ff008c",
-     "#00ffa0"
-    ],
-    "effect": 3,
-    "fixture_mode": "each",
     "group": -1,
     "mask": 255,
     "name": "Blobs",
-    "param": 4,
-    "reverse": false,
-    "speed": 40
+    "parts": [
+     {
+      "effect": 3,
+      "fixture_mode": "each",
+      "mask": 255,
+      "reverse": false
+     }
+    ]
    },
    {
-    "color": "#b41000",
-    "colors": [
-     "#b41000",
-     "#ff5000",
-     "#ffaa14",
-     "#fff096"
-    ],
-    "effect": 7,
-    "fixture_mode": "each",
     "group": -1,
     "mask": 255,
     "name": "Fire",
-    "param": 0,
-    "reverse": false,
-    "speed": 60
+    "parts": [
+     {
+      "effect": 4,
+      "fixture_mode": "each",
+      "mask": 255,
+      "reverse": false
+     }
+    ]
    },
    {
-    "color": "#ffc878",
-    "colors": [
-     "#ffc878",
-     "#a0c8ff"
-    ],
-    "effect": 6,
-    "fixture_mode": "each",
     "group": -1,
     "mask": 255,
     "name": "Twinkle",
-    "param": 60,
-    "reverse": false,
-    "speed": 60
+    "parts": [
+     {
+      "effect": 5,
+      "fixture_mode": "each",
+      "mask": 255,
+      "reverse": false
+     }
+    ]
    },
    {
-    "color": "#ff0000",
-    "colors": [
-     "#ff0000"
-    ],
-    "effect": 8,
-    "fixture_mode": "each",
     "group": -1,
     "mask": 255,
     "name": "Scanner",
-    "param": 0,
-    "reverse": false,
-    "speed": 80
+    "parts": [
+     {
+      "effect": 6,
+      "fixture_mode": "each",
+      "mask": 255,
+      "reverse": false
+     }
+    ]
    },
    {
-    "color": "#000000",
-    "colors": [
-     "#000000",
-     "#ffffff"
-    ],
-    "effect": 0,
-    "fixture_mode": "each",
     "group": -1,
     "mask": 255,
     "name": "Strobe",
-    "param": 0,
-    "reverse": false,
-    "speed": 0
+    "parts": [
+     {
+      "effect": 7,
+      "fixture_mode": "each",
+      "mask": 255,
+      "reverse": false
+     }
+    ]
    }
   ],
   "version": "v0.0.0-host"
@@ -507,7 +929,7 @@
    "dma_underruns": 0,
    "encode_us": 1000,
    "fps": 60,
-   "frame_emit_us": 15640,
+   "frame_emit_us": 9280,
    "frames_emitted": 0,
    "msync_err": 0,
    "submit_us": 0,
@@ -590,7 +1012,53 @@
      "type": "ColorIntensity"
     }
    },
-   "Effect": {
+   "Effect parameter": {
+    "capabilities": [
+     {
+      "dmxRange": [
+       0,
+       0
+      ],
+      "type": "NoFunction"
+     },
+     {
+      "dmxRange": [
+       1,
+       255
+      ],
+      "parameterEnd": "high",
+      "parameterStart": "low",
+      "type": "EffectParameter"
+     }
+    ]
+   },
+   "Effect speed": {
+    "capabilities": [
+     {
+      "dmxRange": [
+       0,
+       0
+      ],
+      "type": "NoFunction"
+     },
+     {
+      "dmxRange": [
+       1,
+       255
+      ],
+      "speedEnd": "fast",
+      "speedStart": "slow",
+      "type": "EffectSpeed"
+     }
+    ]
+   },
+   "Fade time": {
+    "capability": {
+     "comment": "Scene fade time, value x 0.1 s",
+     "type": "Generic"
+    }
+   },
+   "Generator": {
     "capabilities": [
      {
       "dmxRange": [
@@ -689,12 +1157,6 @@
      }
     ]
    },
-   "Fade time": {
-    "capability": {
-     "comment": "Scene fade time, value x 0.1 s",
-     "type": "Generic"
-    }
-   },
    "Master": {
     "capability": {
      "type": "Intensity"
@@ -717,7 +1179,7 @@
        8,
        15
       ],
-      "effectName": "Warm white",
+      "effectName": "Wash",
       "type": "Effect"
      },
      {
@@ -785,46 +1247,6 @@
      }
     ]
    },
-   "Scene parameter": {
-    "capabilities": [
-     {
-      "dmxRange": [
-       0,
-       0
-      ],
-      "type": "NoFunction"
-     },
-     {
-      "dmxRange": [
-       1,
-       255
-      ],
-      "parameterEnd": "high",
-      "parameterStart": "low",
-      "type": "EffectParameter"
-     }
-    ]
-   },
-   "Scene speed": {
-    "capabilities": [
-     {
-      "dmxRange": [
-       0,
-       0
-      ],
-      "type": "NoFunction"
-     },
-     {
-      "dmxRange": [
-       1,
-       255
-      ],
-      "speedEnd": "fast",
-      "speedStart": "slow",
-      "type": "EffectSpeed"
-     }
-    ]
-   },
    "Show file": {
     "capabilities": [
      {
@@ -886,9 +1308,9 @@
      "Blackout",
      "Strobe",
      "Scene",
-     "Scene speed",
-     "Scene parameter",
-     "Effect",
+     "Effect speed",
+     "Effect parameter",
+     "Generator",
      "Colour 1 red",
      "Colour 1 green",
      "Colour 1 blue",

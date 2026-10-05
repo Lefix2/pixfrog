@@ -29,7 +29,8 @@ a password protects once set; none of them may make it mandatory.
       DMX arrives on its outputs, resumes on failsafe). Surface it in the
       ArtPollReply NodeReport and on HOME.
 - [ ] **Per-scene fade time** — the fade is global (`scene_fade_ms`, desk
-      overridable); a per-scene value needs a v4 Scene layout.
+      overridable); a per-scene value takes the bytes reserved for it in
+      `config::Scene`.
 - [ ] **Shared scene clock across boxes** — each box animates from its own
       `esp_timer` phase, so neighbours drift. Share a phase origin (FPP
       MultiSync, ArtTrigger timestamp, or a small broadcast).
@@ -41,6 +42,21 @@ a password protects once set; none of them may make it mandatory.
       staple.
 - [ ] **Time-of-day scheduling** — start/stop scenes or playlists on a
       schedule; needs opt-in SNTP and/or an RTC on the shield.
+
+## Pro lighting control
+
+Feedback from a lighting operator (GrandMA): drive the box like a conventional
+fixture, not only as a pixel-mapped node. In landing order — each item builds
+on the one before.
+
+- [ ] ★ **GDTF export of a profile** — a native fixture file for GrandMA3, next
+      to the OFL one.
+- [ ] **Scene parts aimed at fixture groups** — on a group a scene plays its
+      first part only; let each part target a group (across outputs, in the
+      group's order) next to the parts on outputs, so one scene holds several
+      effects on several groups.
+- [ ] **Smooth live speed changes** — the phase is `time × speed`, so riding a
+      speed fader makes the pattern jump; accumulate the phase per fixture.
 
 ## FSEQ / standalone playback
 
@@ -57,6 +73,11 @@ a password protects once set; none of them may make it mandatory.
 
 ## Network & protocols
 
+- [ ] **Network settings applied without a reboot** — DHCP / static IP, mask and
+      gateway only take effect at the next boot (the UI and the console say
+      so); switching to DHCP on site should not need a power cycle. Re-run the
+      netif setup on a change, from the menu, the console, the web and
+      ArtIpProg.
 - [ ] **ArtPollReply: one bind per universe** — it advertises 8 ports with the
       global net/subnet and each channel's first universe only; desks (MADRIX,
       xLights) should see every mapped universe with its own Net/SubNet (and
@@ -113,7 +134,7 @@ a password protects once set; none of them may make it mandatory.
 
 ## Documentation & website
 
-UI captures and the effects sheet are generated (`tools/screenshots`,
+UI captures and the effect sheets are generated (`tools/screenshots`,
 `tools/effects_gallery`): re-run them after a UI or effect change. *(owner)*
 items need the hardware or CAD.
 

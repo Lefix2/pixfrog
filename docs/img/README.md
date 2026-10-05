@@ -28,7 +28,11 @@ docs viewer hide any image that fails to load, so adding/replacing one is safe.
 | `web-dashboard[-fr].png`    | PNG  | Web UI dashboard, EN / FR — `tools/screenshots`                | Landing page §02 |
 | `web-scenes[-fr].png`       | PNG  | Web UI scene editor, EN / FR — `tools/screenshots`             | Landing page §02 |
 | `web-control.png`           | PNG  | Web UI DMX control editor — `tools/screenshots`                | SHOW_CONTROL |
-| `effects/effects-gallery.png` | PNG | The 11 scene effects, time → x, pixel → y — `tools/effects_gallery` | SHOW_CONTROL |
+| `web-effects.png`           | PNG  | Web UI effect editor (phaser, Block / Groups / Wings) — `tools/screenshots` | SHOW_CONTROL |
+| `web-profiles.png`          | PNG  | Web UI DMX profiles editor — `tools/screenshots`               | SHOW_CONTROL |
+| `web-channel-control.png`   | PNG  | Web UI channel editor, an output in DMX control mode — `tools/screenshots` | PROTOCOLS §5.6 |
+| `effects/effects-gallery.png` | PNG | The 11 generators, time → x, pixel → y — `tools/effects_gallery` | SHOW_CONTROL |
+| `effects/layers-gallery.png` | PNG | Dimmer phaser waveforms, invert, Block / Groups / Wings — `tools/effects_gallery` | SHOW_CONTROL |
 | `og-cover.png`              | PNG  | Social / link-preview cover (rendered from `og-cover.svg`)    | `og:image` |
 | `logo.svg`                  | SVG  | Frog mark — nav brand + favicon                               | Site |
 | `frog-anim.svg`             | SVG  | Animated frog logo (self-contained CSS); baked into the splash | About page + `tools/splashgen` |

@@ -104,16 +104,25 @@ void ctrl_frame(const uint8_t* d, size_t len, uint16_t universe = kCtrlUni) {
     dmx::update_show_control();
 }
 
-// Scene `idx` becomes a static solid colour on every output (tests own their
-// scenes: earlier cases edit the defaults).
-void solid_scene(size_t idx, uint8_t r, uint8_t g, uint8_t b) {
-    config::Scene sc{};
-    std::snprintf(sc.name, sizeof(sc.name), "Solid %u", static_cast<unsigned>(idx));
-    sc.channel_mask = 0xFF;
-    sc.effect       = config::kSceneFxSolid;
-    sc.num_colors   = 1;
-    config::set_scene_color(sc, 0, r, g, b);
-    config::set_scene(idx, sc);
+// Scene `idx` becomes a static solid colour — effect `idx` of the bank — on
+// the outputs of `mask` (tests own their scenes: earlier cases edit the
+// defaults).
+void solid_scene(size_t idx, uint8_t r, uint8_t g, uint8_t b, uint8_t mask = 0xFF) {
+    config::Effect e{};
+    std::snprintf(e.name, sizeof(e.name), "Solid %u", static_cast<unsigned>(idx));
+    e.generator    = config::kSceneFxSolid;
+    e.num_colors   = 1;
+    e.colors[0][0] = r;
+    e.colors[0][1] = g;
+    e.colors[0][2] = b;
+    config::set_effect(idx, e);
+    config::set_scene(idx, config::make_scene(e.name, mask, static_cast<uint8_t>(idx)));
+}
+
+// Scene `idx` keeps its effect but plays on the outputs of `mask` only.
+void scene_outputs_are(size_t idx, uint8_t mask) {
+    auto sc = config::get_scene(idx);
+    config::set_scene(idx, config::make_scene(sc.name, mask, sc.parts[0].effect));
 }
 
 // Fake clock to the start of the next `period_ms` window.
@@ -224,12 +233,7 @@ TEST(failsafe_colour_fill) {
 }
 
 TEST(failsafe_scene_honours_the_scene_mask) {
-    config::Scene s{};
-    s.effect       = config::kSceneFxSolid;
-    s.r            = 33;
-    s.num_colors   = 1;
-    s.channel_mask = 0x02;  // not channel 0
-    config::set_scene(0, s);
+    solid_scene(0, 33, 0, 0, 0x02);  // not channel 0
     auto g           = config::get_global();
     g.failsafe_scene = 0;
     config::set_global(g);
@@ -238,18 +242,12 @@ TEST(failsafe_scene_honours_the_scene_mask) {
     frame(1, d, 3);
     shim::advance_ms(1500);
     EXPECT_EQ(decode0()[0], 0);  // outside the mask: blackout
-    s.channel_mask = 0x01;
-    config::set_scene(0, s);
+    scene_outputs_are(0, 0x01);
     EXPECT_EQ(decode0()[0], 33);
 }
 
 TEST(scene_overrides_the_network_until_stopped) {
-    config::Scene s{};
-    s.effect       = config::kSceneFxSolid;
-    s.g            = 77;
-    s.num_colors   = 1;
-    s.channel_mask = 0xFF;
-    config::set_scene(1, s);
+    solid_scene(1, 0, 77, 0);
     const uint8_t d[3] = { 5, 5, 5 };
     frame(1, d, 3);
     dmx::scene_start(1);
@@ -500,11 +498,8 @@ int main(int argc, char** argv) {
 
 TEST(scenes_play_on_their_own_outputs_at_once) {
     const config::Scene s0 = config::get_scene(0), s1 = config::get_scene(1);
-    auto a = s0, b = s1;
-    a.channel_mask = 0x0F;
-    b.channel_mask = 0xF0;
-    config::set_scene(0, a);
-    config::set_scene(1, b);
+    scene_outputs_are(0, 0x0F);
+    scene_outputs_are(1, 0xF0);
     dmx::scene_start(0);
     dmx::scene_start(1);  // a disjoint group: scene 0 keeps outputs 1-4
     EXPECT_EQ(dmx::scene_on_output(0), 0);
@@ -523,6 +518,52 @@ TEST(scenes_play_on_their_own_outputs_at_once) {
     EXPECT_EQ(dmx::active_scene(), -1);
     config::set_scene(0, s0);
     config::set_scene(1, s1);
+}
+
+// One scene, several looks: each part sends its own effect to its outputs,
+// and an output the scene leaves out keeps the live input.
+TEST(a_scene_of_parts_plays_an_effect_per_output_group) {
+    for (size_t ch = 0; ch < 3; ++ch) {
+        auto c     = config::get_channel(ch);
+        c.protocol = led::Protocol::WS2815;
+        config::set_channel(ch, c);
+    }
+    apply_channels();
+    const config::Scene s5 = config::get_scene(5);
+    solid_scene(3, 200, 0, 0);
+    solid_scene(4, 0, 150, 0);
+    config::Scene sc = config::make_scene("Two looks", 0x01, 3);
+    sc.num_parts     = 2;
+    sc.parts[1]      = { 0x02, 4, config::kFixtureModeEach, 0 };
+    config::set_scene(5, sc);
+
+    const uint8_t live[3] = { 5, 5, 5 };
+    dmx::write_universe_from_source(17, live, 3, kSrcA, dmx::kArtnetMergeTimeoutUs);  // output 3
+    dmx::scene_start(5);
+    EXPECT_EQ(dmx::scene_outputs(5), 0x03);  // the outputs of its parts, no more
+    auto px = [](size_t ch) {
+        dmx::swap_universes();
+        dmx::decode_pixels_for_channel(ch);
+        return dmx::pixel_back_buffer(ch);
+    };
+    EXPECT_EQ(px(0)[0], 200);
+    EXPECT_EQ(px(0)[1], 0);
+    EXPECT_EQ(px(1)[0], 0);
+    EXPECT_EQ(px(1)[1], 150);
+    EXPECT_EQ(px(2)[0], 5);  // not in the scene: live
+
+    // A part whose effect left the bank plays black rather than another look.
+    sc.parts[1].effect = 30;
+    config::set_scene(5, sc);
+    EXPECT_EQ(px(1)[1], 0);
+    // An output dropped from the scene while it plays goes back to live.
+    sc.num_parts = 1;
+    config::set_scene(5, sc);
+    dmx::write_universe_from_source(9, live, 3, kSrcA, dmx::kArtnetMergeTimeoutUs);  // output 2
+    EXPECT_EQ(px(1)[2], 5);
+
+    dmx::scene_stop();
+    config::set_scene(5, s5);
 }
 
 TEST(zones_follow_their_scene_through_list_edits) {
@@ -702,6 +743,202 @@ TEST(control_fade_fseq_and_scene_overrides) {
     EXPECT_EQ(dmx::scene_fade_ms(), 0u);
 }
 
+// The desk's Bank channel plays another effect of the bank on the outputs of
+// its group, whatever the scene's part says; the phaser channels dim it.
+TEST(control_bank_and_phaser_act_on_the_playing_scene) {
+    solid_scene(0, 200, 0, 0);
+    solid_scene(1, 0, 0, 90);  // effect 1: what the Bank channel will pick
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = kCtrlUni;
+    c.count    = 0;
+    for (auto fn : { config::CtlFn::Scene, config::CtlFn::Bank, config::CtlFn::PhWave,
+                     config::CtlFn::PhWidth })
+        c.slots[c.count++] = config::control_slot(fn);
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+
+    uint8_t u[4] = { 8, 0, 0, 0 };  // scene 1, everything else the effect's own
+    ctrl_frame(u, sizeof(u));
+    const uint8_t* px = decode0();
+    EXPECT_EQ(px[0], 200);
+    u[1] = 16;  // bank: effect 2
+    ctrl_frame(u, sizeof(u));
+    px = decode0();
+    EXPECT_EQ(px[0], 0);
+    EXPECT_EQ(px[2], 90);
+    EXPECT_EQ(dmx::scene_on_output(0), 0);  // still the same scene playing
+    u[1] = 248;                             // a band past the bank: the scene's own effect
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(decode0()[0], 200);
+
+    // PWM with no lit share to speak of: the still wave leaves pixel 0 lit
+    // and the rest of the strip dark.
+    u[1] = 0;
+    u[2] = 8 * (config::kPhaserPwm + 1);
+    u[3] = 1;
+    ctrl_frame(u, sizeof(u));
+    px = decode0();
+    EXPECT_EQ(px[0], 200);
+    u[2] = 8 * (config::kPhaserRampUp + 1);  // a still ramp at its foot: dark
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(decode0()[0], 0);
+    u[2] = 8;  // "no phaser" from the desk
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(decode0()[0], 200);
+}
+
+// ── DMX control mode ────────────────────────────────────────────────────────
+
+// Output 1 in control mode: 60 pixels, three 20-pixel fixtures on the
+// profiles RGB (3 ch), RGB FX (6 ch) and Dim RGB (4 ch), from universe 1.
+void control_output() {
+    config::set_profiles(config::ProfileBank{});  // the presets
+    auto c           = config::get_channel(0);
+    c.pixel_count    = 60;
+    c.packing        = config::kPackControl;
+    c.universe_start = 1;
+    c.dmx_start      = 1;
+    std::memset(c.fixtures, 0, sizeof(c.fixtures));
+    c.fixtures[0] = config::make_fixture(0, 20, false, 0);
+    c.fixtures[1] = config::make_fixture(20, 20, false, 2);
+    c.fixtures[2] = config::make_fixture(40, 20, false, 1);
+    config::set_channel(0, c);
+    apply_channels();
+}
+
+void pixel_output() {
+    auto c    = config::get_channel(0);
+    c.packing = config::kPackContinuous;
+    std::memset(c.fixtures, 0, sizeof(c.fixtures));
+    config::set_channel(0, c);
+    apply_channels();
+}
+
+TEST(control_mode_drives_each_fixture_from_its_profile) {
+    control_output();
+    // 13 channels in all: one universe, where 60 RGB pixels took 180 channels.
+    EXPECT_EQ(dmx::channel_universe_span(config::get_channel(0)), 1u);
+    dmx::FixtureAddress at[8];
+    EXPECT_EQ(dmx::fixture_patch(config::get_channel(0), at, 8), 3u);
+    EXPECT_EQ(at[1].universe, 1);
+    EXPECT_EQ(at[1].address, 4);
+    EXPECT_EQ(at[1].footprint, 6);
+    EXPECT_EQ(at[2].address, 10);
+    EXPECT_EQ(at[2].profile, 1);
+    EXPECT_EQ(dmx::fixture_patch(config::get_channel(0), at, 2), 2u);  // no more than asked
+
+    //                 RGB          R  G  B  bank spd shut  dim  R   G  B
+    uint8_t u[13]     = { 10, 20, 30, 0, 0, 90, 0, 0, 0, 255, 40, 0, 0 };
+    const uint8_t* px = frame(1, u, sizeof(u));
+    EXPECT_EQ(px[0], 10);
+    EXPECT_EQ(px[19 * 3 + 2], 30);
+    EXPECT_EQ(px[20 * 3 + 2], 90);  // fixture 2: plain blue, no effect
+    EXPECT_EQ(px[40 * 3], 40);      // fixture 3 at full
+
+    // The effect channel: effect 1 of the bank ("Warm white", a steady colour)
+    // in its own colours while the desk's stay at 0 — and in the desk's else.
+    solid_scene(0, 200, 100, 50);  // sets effect 0 of the bank too
+    u[3] = u[4] = u[5] = 0;
+    u[6]               = 8;
+    px                 = frame(1, u, sizeof(u));
+    EXPECT_EQ(px[20 * 3], 200);
+    EXPECT_EQ(px[20 * 3 + 1], 100);
+    u[4] = 70;
+    px   = frame(1, u, sizeof(u));
+    EXPECT_EQ(px[20 * 3], 0);
+    EXPECT_EQ(px[20 * 3 + 1], 70);
+    // The dimmer of fixture 3; the shutter of fixture 2 (dark past its flash).
+    u[9] = 128;
+    px   = frame(1, u, sizeof(u));
+    EXPECT_TRUE(px[40 * 3] >= 19 && px[40 * 3] <= 21);
+    u[8] = 1;  // 1 Hz
+    align_ms(1000);
+    shim::advance_ms(500);
+    px = frame(1, u, sizeof(u));
+    EXPECT_EQ(px[20 * 3 + 1], 0);
+    EXPECT_EQ(px[0], 10);  // the other fixtures are not strobed
+
+    // A scene started on the output overrides the desk, as it does pixels.
+    u[8] = 0;
+    solid_scene(1, 0, 0, 77);
+    dmx::scene_start(1);
+    px = frame(1, u, sizeof(u));
+    EXPECT_EQ(px[2], 77);
+    EXPECT_EQ(px[59 * 3 + 2], 77);
+    dmx::scene_stop();
+    EXPECT_EQ(frame(1, u, sizeof(u))[0], 10);
+
+    // Signal loss: the failsafe takes the whole output, like any other.
+    set_failsafe(config::kFailsafeColor, 1);
+    frame(1, u, sizeof(u));
+    shim::advance_ms(1500);
+    px = decode0();
+    EXPECT_EQ(px[0], 9);
+    EXPECT_EQ(px[40 * 3 + 2], 7);
+    set_failsafe(config::kFailsafeHold, 0);
+
+    // A profile edit moves the addresses: the map follows on the next remap.
+    auto bank              = config::get_profiles();
+    bank.profiles[0].count = 0;  // the first profile becomes plain RGB again…
+    config::profile_apply_preset(bank.profiles[0], config::ProfilePreset::Full);  // …then 16 ch
+    config::set_profiles(bank);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    EXPECT_EQ(dmx::fixture_patch(config::get_channel(0), at, 8), 3u);
+    EXPECT_EQ(at[1].address, 17);
+    config::set_profiles(config::ProfileBank{});
+    pixel_output();
+    EXPECT_EQ(dmx::fixture_patch(config::get_channel(0), at, 8), 0u);  // a pixel layout has none
+}
+
+TEST(control_mode_frees_the_universes_pixels_would_take) {
+    // Eight outputs of 300 RGBW pixels need 8 × 3 universes; in control mode,
+    // one fixture each on the 16-channel profile, they share a single one.
+    config::set_profiles(config::ProfileBank{});
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        auto c        = config::get_channel(ch);
+        c.protocol    = led::Protocol::SK6812;
+        c.pixel_count = 300;
+        c.packing     = config::kPackControl;
+        std::memset(c.fixtures, 0, sizeof(c.fixtures));
+        c.fixtures[0] = config::make_fixture(0, 300, false, 3);
+        config::set_channel(ch, c);
+    }
+    dmx::AutoPatch o;
+    o.base        = 1;
+    o.compact     = true;
+    uint16_t next = 0;
+    size_t used   = 0;
+    EXPECT_TRUE(dmx::auto_patch(o, &next, &used));
+    dmx::handle_pending_remaps();
+    EXPECT_EQ(used, 1u);
+    EXPECT_EQ(next, 2);
+    EXPECT_EQ(config::get_channel(7).universe_start, 1);
+    EXPECT_EQ(config::get_channel(7).dmx_start, 7 * 16 + 1);
+    EXPECT_EQ(config::get_channel(3).packing, config::kPackControl);
+
+    // One frame drives the eight outputs: output 8's fixture in red at half.
+    static uint8_t u[512];
+    std::memset(u, 0, sizeof(u));
+    u[7 * 16]     = 0x80;  // dimmer coarse
+    u[7 * 16 + 3] = 200;   // colour 1 red
+    dmx::write_universe_from_source(1, u, sizeof(u), kSrcA, dmx::kArtnetMergeTimeoutUs);
+    dmx::swap_universes();
+    dmx::decode_pixels_for_channel(7);
+    const uint8_t* px = dmx::pixel_back_buffer(7);
+    EXPECT_TRUE(px[0] >= 99 && px[0] <= 101);
+    EXPECT_EQ(px[299 * 4], px[0]);
+    EXPECT_EQ(px[3], 0);
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        auto c    = config::get_channel(ch);
+        c.packing = config::kPackContinuous;
+        std::memset(c.fixtures, 0, sizeof(c.fixtures));
+        config::set_channel(ch, c);
+    }
+}
+
 TEST(control_can_share_an_output_universe) {
     enable_control(config::ControlPreset::Simple, 1, 100);  // channel 0's universe, from slot 100
     EXPECT_EQ(dmx::channel_for_universe(1), 0);
@@ -837,15 +1074,14 @@ TEST(a_scene_on_a_group_spans_outputs_and_yields_to_a_smaller_one) {
 TEST(a_chained_scene_runs_along_the_group_order) {
     reset_show();
     two_outputs_of_bars();
-    config::Scene sc{};
-    sc.effect       = config::kSceneFxGradient;
-    sc.num_colors   = 2;
-    sc.channel_mask = 0xFF;
-    config::set_scene_color(sc, 0, 255, 0, 0);
-    config::set_scene_color(sc, 1, 0, 0, 255);
-    sc.param        = 1;
-    sc.fixture_mode = config::pack_scene_mode(config::kFixtureModeChain, false, 0);
-    config::set_scene(2, sc);
+    config::Effect e{};
+    e.generator    = config::kSceneFxGradient;
+    e.num_colors   = 2;
+    e.colors[0][0] = 255;
+    e.colors[1][2] = 255;
+    e.param        = 1;
+    config::set_effect(2, e);
+    config::set_scene(2, config::make_scene("Along Top", 0xFF, 2, config::kFixtureModeChain, 0));
     uint8_t ref[40 * 3];
     dmx::scene_start(2);  // its default group: Top
     EXPECT_EQ(dmx::fixture_scene(1, 4), 2);
@@ -859,6 +1095,60 @@ TEST(a_chained_scene_runs_along_the_group_order) {
     EXPECT_TRUE(std::memcmp(out1 + 16 * 3, b + 16 * 3, 3) != 0);
     (void)ref;
     dmx::scene_stop();
+}
+
+// On a group a scene plays its first part, whatever outputs that part has —
+// none here — and the desk's Effect and Direction channels aimed at the group
+// act on that play alone.
+TEST(a_group_plays_the_first_part_and_follows_its_desk_channels) {
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
+    auto gl          = config::get_global();
+    gl.failsafe_mode = config::kFailsafeHold;
+    config::set_global(gl);
+    two_outputs_of_bars();
+    solid_scene(0, 200, 0, 0);
+    solid_scene(1, 0, 0, 90);  // effect 1: what the group's Effect channel picks
+    config::set_scene(0, config::make_scene("Look", 0, 0));  // a look, on no output
+    EXPECT_EQ(config::get_scene(0).num_parts, 1);
+    EXPECT_EQ(config::scene_mask(config::get_scene(0)), 0);
+    const uint8_t live0 = frame(0)[0], live4 = frame(0)[4 * 3];  // whatever the banks hold
+    dmx::scene_start(0);  // no output, no default group: nothing plays
+    EXPECT_EQ(frame(0)[0], live0);
+    dmx::group_play(0, 1, 0);  // Centre
+    EXPECT_EQ(frame(0)[0], 200);
+    EXPECT_EQ(frame(0)[4 * 3], live4);  // a bar outside Centre
+
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = kCtrlUni;
+    c.address  = 1;
+    c.count    = 3;
+    c.slots[0] = config::control_slot(config::CtlFn::Bank, 1, 0, config::kCtlFlagGroup);
+    c.slots[1] = config::control_slot(config::CtlFn::Direction, 1, 0, config::kCtlFlagGroup);
+    c.slots[2] = config::control_slot(config::CtlFn::Bank, 0, 0, config::kCtlFlagGroup);  // Top
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    uint8_t u[3] = { 16, 200, 0 };  // Centre: effect 2, from the far end
+    ctrl_frame(u, sizeof(u));
+    const uint8_t* px = frame(0);
+    EXPECT_EQ(px[0], 0);
+    EXPECT_EQ(px[2], 90);
+    EXPECT_EQ(dmx::fixture_scene(0, 0), 0);  // still the same scene playing
+    u[0] = 0;
+    u[2] = 16;  // Top's channel: not Centre's play
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(frame(0)[0], 200);
+
+    // A scene with a default group plays there when started whole.
+    config::set_scene(0, config::make_scene("Look", 0, 0, config::kFixtureModeChain, 0));
+    dmx::group_stop(1, 0);
+    dmx::scene_start(0);
+    EXPECT_EQ(dmx::fixture_scene(1, 4), 0);  // Top's last bar
+    EXPECT_EQ(frame(1)[19 * 3 + 2], 90);     // ... on Top's Effect channel
+    reset_show();
+    dmx::scene_stop_on(dmx::kAllOutputs, 0);
 }
 
 // The desk on a group: a Scene channel plays on "Top", a Master channel dims

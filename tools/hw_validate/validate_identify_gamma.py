@@ -40,7 +40,7 @@ def run(board: Board):
         code, bk = http("/api/backup")
     try:
         j = json.loads(bk)
-        ok = (j.get("backup_version") == 1 and len(j["channels"]) == 8
+        ok = (j.get("backup_version") == 2 and "effects" in j and len(j["channels"]) == 8
               and j["channels"][0]["gamma_x10"] == 22 and "hash" not in bk)
     except Exception:
         ok = False

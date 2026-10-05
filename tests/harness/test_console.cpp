@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "config_store.h"
 #include "control_console.h"
@@ -138,14 +139,227 @@ TEST(dmx_inject_read_and_pixel_readback) {
     EXPECT_FALSE(run("dmxw 1 1 abc"));     // odd hex
 }
 
+TEST(fx_commands_manage_the_bank) {
+    std::vector<config::Effect> saved;  // the bank is shared with the cases below
+    for (size_t i = 0; i < config::num_effects(); ++i)
+        saved.push_back(config::get_effect(i));
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("fx1 name=Chase generator=chase color=ffffff,ff7800 speed=30 param=3 "
+                    "phaser=none,0,0,0,0 invert=0 matricks=0,0,0 used=1"));
+    EXPECT_TRUE(run("fx add Extra"));
+    EXPECT_TRUE(has("index=8"));
+    EXPECT_EQ(config::num_effects(), 9);
+    EXPECT_EQ(config::get_effect(8).colors[0][1], 255);  // solid white
+    EXPECT_TRUE(run("fx set 8 blobs 005aff,ff008c 40 4"));
+    EXPECT_EQ(config::get_effect(8).generator, config::kSceneFxBlobs);
+    EXPECT_EQ(config::effect_num_colors(config::get_effect(8)), 2);
+    EXPECT_EQ(config::get_effect(8).colors[1][2], 0x8c);
+    EXPECT_EQ(config::get_effect(8).speed, 40);
+    EXPECT_EQ(config::get_effect(8).param, 4);
+    EXPECT_TRUE(run("fx set 8 2 ffffff 0 0"));  // a generator by number
+    EXPECT_EQ(config::get_effect(8).generator, config::kSceneFxRainbow);
+    EXPECT_TRUE(run("fx name 8 Renamed"));
+    EXPECT_STREQ(config::get_effect(8).name, "Renamed");
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("fx8 name=Renamed generator=rainbow color=ffffff speed=0 param=0 "
+                    "phaser=none,0,0,0,0 invert=0 matricks=0,0,0 used=0"));
+
+    // The dimmer phaser: what is left out keeps its value.
+    EXPECT_TRUE(run("fx phaser 8 sin 20 16 128 30 reverse"));
+    const auto& ph = config::get_effect(8);
+    EXPECT_EQ(ph.ph_wave, config::kPhaserSin);
+    EXPECT_EQ(ph.ph_rate, 20);
+    EXPECT_EQ(ph.ph_spread, 16);
+    EXPECT_EQ(ph.ph_width, 128);
+    EXPECT_EQ(ph.ph_low, 30);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse);
+    EXPECT_TRUE(run("fx phaser 8 bump 40 8"));  // width, floor and direction kept
+    EXPECT_EQ(ph.ph_wave, config::kPhaserBump);
+    EXPECT_EQ(ph.ph_rate, 40);
+    EXPECT_EQ(ph.ph_width, 128);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse);
+    EXPECT_TRUE(run("fx phaser 8 pwm 40 8 0 0 forward"));
+    EXPECT_EQ(ph.flags, 0);
+    EXPECT_TRUE(run("fx invert 8 1"));
+    EXPECT_EQ(ph.flags, config::kEffectDimmerInvert);
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("phaser=pwm,40,8,0,0 invert=1 matricks=0,0,0 used=0"));
+    EXPECT_TRUE(run("fx phaser 8 ramp_down 1 2 3 4 reverse"));
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("phaser=ramp_down,1,2,3,4,reverse invert=1"));
+    EXPECT_TRUE(run("fx phaser 8 none"));  // the wave alone
+    EXPECT_EQ(ph.ph_wave, config::kPhaserNone);
+    EXPECT_EQ(ph.ph_rate, 1);
+    EXPECT_TRUE(run("fx invert 8 0"));
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse);
+    for (const char* bad :
+         { "fx phaser 8", "fx phaser 8 wobble", "fx phaser 8 sin 1", "fx phaser 8 sin 1 2 3",
+           "fx phaser 8 sin 256 0", "fx phaser 8 sin 1 2 3 4 sideways", "fx phaser 99 sin",
+           "fx phaser 8 sin 1 2 3 4 reverse x", "fx invert 8", "fx invert 8 maybe",
+           "fx invert 99 1" })
+        EXPECT_FALSE(run(bad));
+
+    // Block / Groups / Wings.
+    EXPECT_TRUE(run("fx matricks 8 3 4 2"));
+    EXPECT_EQ(ph.block, 3);
+    EXPECT_EQ(ph.groups, 4);
+    EXPECT_EQ(ph.wings, 2);
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("matricks=3,4,2 used=0"));
+    EXPECT_TRUE(run("fx matricks 8 0 0 0"));
+    EXPECT_EQ(ph.block + ph.groups + ph.wings, 0);
+    for (const char* bad : { "fx matricks 8", "fx matricks 8 1 2", "fx matricks 8 1 2 256",
+                             "fx matricks 8 x 2 3", "fx matricks 99 1 2 3" })
+        EXPECT_FALSE(run(bad));
+
+    EXPECT_TRUE(run("fx move 8 0"));  // the scenes follow their effect
+    EXPECT_STREQ(config::get_effect(0).name, "Renamed");
+    EXPECT_EQ(config::get_scene(0).parts[0].effect, 1);
+    EXPECT_FALSE(run("fx del 1"));  // "Warm white": scene 0 plays it
+    EXPECT_TRUE(has("ERR"));
+    EXPECT_TRUE(run("fx del 0"));
+    EXPECT_EQ(config::num_effects(), 8);
+    EXPECT_EQ(config::get_scene(0).parts[0].effect, 0);
+
+    for (const char* bad :
+         { "fx set 0 nope ff0000 0 0", "fx set 0 solid ff0000,00ff00,0000ff,ffffff,000000 0 0",
+           "fx set 0 solid zz 0 0", "fx set 0 solid ff0000 256 0", "fx set 0 solid ff0000 0 256",
+           "fx set 99 solid ff0000 0 0", "fx set 0 solid", "fx name 0", "fx name 99 x", "fx del",
+           "fx del 99", "fx move 0", "fx move 0 99", "fx frobnicate" })
+        EXPECT_FALSE(run(bad));
+    while (config::num_effects() < config::kMaxEffects)
+        EXPECT_TRUE(run("fx add"));
+    EXPECT_FALSE(run("fx add"));  // full
+    config::replace_effects(saved.data(), saved.size());
+}
+
+TEST(channel_fixtures_and_control_mode) {
+    const auto before = config::get_channel(5);
+    EXPECT_TRUE(run("ch 5 protocol WS2815"));
+    EXPECT_TRUE(run("ch 5 pixels 60"));
+    EXPECT_TRUE(run("ch 5 universe 30"));
+    EXPECT_TRUE(run("ch 5 dmx_start 1"));
+    EXPECT_TRUE(run("ch 5 fixtures 41:20:r:p1,1:20,21:20:p2"));  // any order: sorted by position
+    const auto& c = config::get_channel(5);
+    EXPECT_EQ(config::fixture_count(c.fixtures, config::kMaxFixtures), 3);
+    EXPECT_EQ(config::fixture_profile(c.fixtures[1]), 2);
+    EXPECT_TRUE(config::fixture_reversed(c.fixtures[2]));
+    EXPECT_EQ(config::fixture_profile(c.fixtures[2]), 1);
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("fixtures=1:20,21:20:p2,41:20:r:p1"));
+    EXPECT_FALSE(has("patch="));  // a pixel layout has no patch sheet
+    EXPECT_TRUE(has("universes=1"));
+
+    EXPECT_TRUE(run("ch 5 packing control"));
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("packing=control"));
+    EXPECT_TRUE(has("patch=30.1+3,30.4+6,30.10+4"));
+    EXPECT_TRUE(run("ch 5 fixtures -"));  // none: one fixture, the whole strip
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("fixtures=-"));
+    EXPECT_TRUE(has("patch=30.1+3"));
+    for (const char* bad :
+         { "ch 5 fixtures 1", "ch 5 fixtures 0:10", "ch 5 fixtures 1:0", "ch 5 fixtures 1:10:x",
+           "ch 5 fixtures 1:10:p8", "ch 5 fixtures 1:10,5:10", "ch 5 fixtures 1020:10",
+           "ch 5 packing sideways", "autopatch 0 control" })
+        EXPECT_FALSE(run(bad));
+    EXPECT_TRUE(run("autopatch 0 compact whole"));  // control outputs keep their mode
+    EXPECT_EQ(config::get_channel(5).packing, config::kPackControl);
+    config::set_channel(5, before);
+    dmx::mark_channel_dirty(5);
+    dmx::handle_pending_remaps();
+}
+
+TEST(profile_commands_edit_the_bank) {
+    EXPECT_TRUE(run("profile"));
+    EXPECT_TRUE(has("profiles=4"));
+    EXPECT_TRUE(has("profile2 name=RGB FX footprint=6 slots=red,green,blue,bank,speed,shutter"));
+    EXPECT_TRUE(has("profile3 name=Full footprint=16 slots=dimmer+fine,shutter,red,green,blue,"
+                    "red:1,green:1,blue:1,bank,speed,param,ph_wave,ph_rate,ph_spread,ph_width"));
+    EXPECT_TRUE(run("profile add Bars"));
+    EXPECT_TRUE(has("index=4"));
+    EXPECT_TRUE(has("profile4 name=Bars footprint=3 slots=red,green,blue"));
+    EXPECT_TRUE(run("profile slots 4 dimmer+fine,red:1,none,bank,wings"));
+    const auto& p = config::get_profiles().profiles[4];
+    EXPECT_EQ(p.count, 5);
+    EXPECT_EQ(p.slots[0].arg, config::kProfileArgFine);
+    EXPECT_EQ(p.slots[1].arg, 1);
+    EXPECT_EQ(p.slots[4].fn, static_cast<uint8_t>(config::FixFn::Wings));
+    EXPECT_EQ(config::profile_footprint(p), 6);
+    EXPECT_TRUE(run("profile name 4 Renamed"));
+    EXPECT_STREQ(p.name, "Renamed");
+    EXPECT_TRUE(run("profile preset 4 dim_rgb"));
+    EXPECT_EQ(config::profile_footprint(p), 4);
+    EXPECT_TRUE(run("profile del 0"));  // the others move up
+    EXPECT_EQ(config::get_profiles().count, 4);
+    EXPECT_STREQ(config::get_profiles().profiles[0].name, "Dim RGB");
+    for (const char* bad :
+         { "profile slots 0", "profile slots 0 wobble", "profile slots 0 red:4",
+           "profile slots 0 dimmer+coarse", "profile slots 9 red", "profile preset 0 huge",
+           "profile preset 0", "profile name 0", "profile del", "profile del 9",
+           "profile frobnicate 0", "profile frobnicate" })
+        EXPECT_FALSE(run(bad));
+    while (config::get_profiles().count < config::kMaxProfiles)
+        EXPECT_TRUE(run("profile add"));
+    EXPECT_FALSE(run("profile add"));             // full
+    config::set_profiles(config::ProfileBank{});  // back to the presets
+    EXPECT_TRUE(run("profile del 3"));
+    EXPECT_TRUE(run("profile del 2"));
+    EXPECT_TRUE(run("profile del 1"));
+    EXPECT_FALSE(run("profile del 0"));  // one profile must stay
+    config::set_profiles(config::ProfileBank{});
+}
+
 TEST(scene_commands_manage_the_list) {
     EXPECT_TRUE(run("scene"));
+    EXPECT_TRUE(has("scene1 name=Chase mask=ff group=-1 parts=ff:1:each"));
     EXPECT_TRUE(run("scene add Extra"));
     EXPECT_TRUE(has("index="));
     const size_t n = config::num_scenes();
-    EXPECT_TRUE(run("scene set 0 blobs 005aff,ff008c 40 4 ff"));
-    EXPECT_EQ(config::get_scene(0).effect, config::kSceneFxBlobs);
-    EXPECT_EQ(config::scene_num_colors(config::get_scene(0)), 2);
+    EXPECT_EQ(config::scene_mask(config::get_scene(n - 1)), 0xFF);  // first effect, everywhere
+
+    // Parts: outputs 5-8 take the rainbow chained; they leave the first part.
+    EXPECT_TRUE(run("scene part 0 f0 2 chain"));
+    EXPECT_EQ(config::get_scene(0).num_parts, 2);
+    EXPECT_EQ(config::get_scene(0).parts[0].mask, 0x0F);
+    EXPECT_EQ(config::get_scene(0).parts[1].mask, 0xF0);
+    EXPECT_EQ(config::get_scene(0).parts[1].effect, 2);
+    EXPECT_EQ(config::get_scene(0).parts[1].fixture_mode, config::kFixtureModeChain);
+    EXPECT_TRUE(run("scene part 0 ff 3"));  // every output: the other parts go
+    EXPECT_EQ(config::get_scene(0).num_parts, 1);
+    EXPECT_EQ(config::get_scene(0).parts[0].effect, 3);
+    EXPECT_EQ(config::get_scene(0).parts[0].fixture_mode, config::kFixtureModeEach);
+    EXPECT_TRUE(run("scene"));
+    EXPECT_TRUE(has("scene0 name=Warm white mask=ff group=-1 parts=ff:3:each"));
+    // From the far end, and a default group.
+    EXPECT_TRUE(run("scene part 0 ff 3 mirror rev"));
+    EXPECT_TRUE(config::scene_reverse_of(config::get_scene(0).parts[0].fixture_mode));
+    EXPECT_TRUE(run("scene group 0 4"));
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), 4);
+    EXPECT_TRUE(run("scene"));
+    EXPECT_TRUE(has("scene0 name=Warm white mask=ff group=4 parts=ff:3:mirror:rev"));
+    EXPECT_TRUE(run("scene group 0 none"));
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), -1);
+    EXPECT_FALSE(run("scene group 0 16"));
+    EXPECT_FALSE(run("scene group 0"));
+    EXPECT_TRUE(run("scene part 0 ff 3 rev"));  // the mode left out: each
+    EXPECT_EQ(config::get_scene(0).parts[0].fixture_mode, config::kSceneReverseBit);
+    EXPECT_TRUE(run("scene part 0 ff 3"));
+    for (int o = 0; o < 8; ++o) {  // one part per output: the eight are taken
+        char line[40];
+        std::snprintf(line, sizeof(line), "scene part 0 %02x %d strip", 1 << o, o);
+        EXPECT_TRUE(run(line));
+    }
+    EXPECT_EQ(config::get_scene(0).num_parts, 8);
+    EXPECT_EQ(config::get_scene(0).parts[7].fixture_mode, config::kFixtureModeStrip);
+    EXPECT_TRUE(run("scene clear 0"));
+    EXPECT_EQ(config::get_scene(0).num_parts, 0);
+    EXPECT_TRUE(run("scene part 0 ff 0"));
+    for (const char* bad :
+         { "scene part 0 ff", "scene part 0 00 1", "scene part 0 zz 1", "scene part 0 ff 99",
+           "scene part 99 ff 0", "scene part 0 ff 0 sideways", "scene clear", "scene clear 99" })
+        EXPECT_FALSE(run(bad));
+
     EXPECT_TRUE(run("scene play 0"));
     EXPECT_EQ(dmx::active_scene(), 0);
     {  // on a fixture group
@@ -168,8 +382,6 @@ TEST(scene_commands_manage_the_list) {
     EXPECT_EQ(config::num_scenes(), n - 1);
     EXPECT_TRUE(run("scene name 0 Renamed"));
     EXPECT_STREQ(config::get_scene(0).name, "Renamed");
-    EXPECT_FALSE(run("scene set 0 nope ff0000 0 0 ff"));
-    EXPECT_FALSE(run("scene set 0 solid ff0000,00ff00,0000ff,ffffff,000000 0 0 ff"));
     EXPECT_FALSE(run("scene play 99"));
     EXPECT_TRUE(run("scene stop"));
 }
@@ -387,6 +599,14 @@ TEST(ctrl_composes_the_control_mode) {
     EXPECT_EQ(dmx::control_universe(), 42);
     EXPECT_TRUE(run("ctrl clear"));
     EXPECT_TRUE(run("ctrl address 500"));
+    EXPECT_TRUE(run("ctrl add bank 0f"));  // the functions on the effect a scene plays
+    EXPECT_TRUE(run("ctrl add ph_wave"));
+    EXPECT_TRUE(run("ctrl add wings"));
+    EXPECT_TRUE(run("ctrl"));
+    EXPECT_TRUE(has("bank"));
+    EXPECT_TRUE(has("ph_wave"));
+    EXPECT_TRUE(has("wings"));
+    EXPECT_TRUE(run("ctrl clear"));
     EXPECT_TRUE(run("ctrl add scene 0f"));
     EXPECT_TRUE(run("ctrl add scene f0"));  // two zones from one desk
     EXPECT_TRUE(run("ctrl add red ff 2"));
@@ -524,10 +744,10 @@ TEST(cal_loglevel_identify_and_usage_errors) {
     EXPECT_TRUE(run("identify 1 2"));
     EXPECT_TRUE(run("identify stop"));
     EXPECT_EQ(dmx::identify_channel(), -1);
-    const char* bad[] = { "identify",      "identify 9",        "crash",
-                          "scene name 0",  "scene set 0 solid", "scene move 0",
-                          "fseq bogus",    "show blackout",     "show sparkle",
-                          "ctrl universe", "ctrl preset huge",  "ctrl del",
+    const char* bad[] = { "identify",      "identify 9",       "crash",
+                          "scene name 0",  "scene part 0 ff",  "scene move 0",
+                          "fseq bogus",    "show blackout",    "show sparkle",
+                          "ctrl universe", "ctrl preset huge", "ctrl del",
                           "ctrl sparkle" };
     for (const char* l : bad)
         EXPECT_FALSE(run(l));

@@ -45,6 +45,13 @@ const Route kRoutes[] = {
     { "POST", "/api/show", false },
     { "POST", "/api/control", false },
     { "GET", "/api/control/fixture", false },
+    // Appended: the index of a route is byte 0 of every corpus entry.
+    { "POST", "/api/effect", true },
+    { "POST", "/api/effects/add", false },
+    { "POST", "/api/effects/move", false },
+    { "POST", "/api/groups", false },
+    { "POST", "/api/profiles", false },
+    { "GET", "/api/profile/2/fixture", false },
 };
 constexpr size_t kRouteCount = sizeof(kRoutes) / sizeof(kRoutes[0]);
 

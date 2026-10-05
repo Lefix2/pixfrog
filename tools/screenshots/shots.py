@@ -32,15 +32,19 @@ EMULATORS = {
 
 # What the site and the docs show, per UI language (index-{en,fr}.html,
 # docs/SHOW_CONTROL.md); --all takes every screen below.
-SITE_WEB    = {"en": {"dashboard", "scenes", "control"}, "fr": {"dashboard", "scenes"}}
+SITE_WEB    = {"en": {"dashboard", "scenes", "effects", "profiles", "channel-control", "control"},
+               "fr": {"dashboard", "scenes"}}
 SITE_DEVICE = {("nv3007", "home")}
 
-# Web screens: (file stem, nav target, optional action before the shot).
+# Web screens: (file stem, nav target, optional element to click before the shot).
 WEB = [
     ("dashboard", "dashboard", None),
-    ("scenes", "scenes", "open_scene"),
+    ("scenes", "scenes", '[data-scene-row="0"]'),
+    ("effects", "effects", '[data-fx-row="8"]'),
     ("fseq", "fseq", None),
     ("channels", "channels", None),
+    ("channel-control", "channels", '[data-chan="6"]'),  # an output in DMX control mode
+    ("profiles", "profiles", '[data-pf-row="2"]'),
     ("control", "control", None),
     ("network", "network", None),
     ("artnet", "artnet", None),
@@ -103,8 +107,8 @@ def shoot_web(out, langs, every):
                     if not every and stem not in SITE_WEB[lang]:
                         continue
                     page.locator(f'div[data-nav="{nav}"]').click()
-                    if action == "open_scene":
-                        page.locator('[data-scene-row="2"]').click()
+                    if action:
+                        page.locator(action).first.click()
                     time.sleep(0.6)  # transitions settle
                     suffix = "" if lang == "en" else "-fr"
                     path = os.path.join(out, f"web-{stem}{suffix}.png")

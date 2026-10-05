@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "esp_log.h"
@@ -22,18 +23,21 @@ constexpr const char* kKeyGlobal = "global";
 
 GlobalConfig g_global{};
 ChannelConfig g_channels[kNumChannels]{};
+EffectBank g_fx{};
 SceneBank g_bank{};
 ControlConfig g_control{};
 FseqPlaylist g_playlist{};
 GroupsConfig g_groups{};
+ProfileBank g_profiles{};
 bool g_nvs_ok = false;
 
 // The config lock (see ScopedLock). Created by init(); before that (and if
 // creation failed) locking is a no-op — boot is single-threaded until then.
 SemaphoreHandle_t g_mux = nullptr;
 
-// Seqlock over the scene bank's RAM image, for copy_scene(): odd while an edit
-// is in flight. Writers already hold the config lock; 32-bit for the P4.
+// Seqlock over the effect and scene banks' RAM images, for copy_effect() /
+// copy_scene() / copy_scene_part(): odd while an edit of either is in flight. Writers already hold
+// the config lock; 32-bit for the P4.
 std::atomic<uint32_t> g_bank_seq{ 0 };
 struct BankEdit {
     BankEdit() { g_bank_seq.fetch_add(1, std::memory_order_acq_rel); }
@@ -42,11 +46,14 @@ struct BankEdit {
     BankEdit& operator=(const BankEdit&) = delete;
 };
 
-constexpr const char* kKeyScenes   = "scenes";
+constexpr const char* kKeyScenesV3 = "scenes";  // layouts v1..v3, read once to migrate
+constexpr const char* kKeyEffects  = "effects";
+constexpr const char* kKeyScenes   = "scenes4";
 constexpr const char* kKeyRollback = "rollback";
 constexpr const char* kKeyControl  = "control";
 constexpr const char* kKeyPlaylist = "playlist";
 constexpr const char* kKeyGroups   = "groups";
+constexpr const char* kKeyProfiles = "profiles";
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
@@ -86,43 +93,46 @@ ChannelConfig make_default_channel(size_t idx) {
     return c;
 }
 
-// Usable starter set: one slot per showcase effect.
+// Usable starter set: one effect per showcase generator, and a scene that
+// plays each on every output.
 void fill_default_scenes() {
     BankEdit edit;
+    std::memset(&g_fx, 0, sizeof(g_fx));
     std::memset(&g_bank, 0, sizeof(g_bank));
     struct Def {
         const char* name;
-        uint8_t effect, speed, param, n;
+        uint8_t generator, speed, param, n;
         uint8_t rgb[kSceneColorsMax][3];
     };
-    static const Def kDefs[kLegacyNumScenes] = {
+    static const Def kDefs[] = {
         { "Warm white", kSceneFxSolid, 0, 0, 1, { { 255, 180, 110 } } },
-        { "Chase", kSceneFxChase, 60, 3, 2, { { 255, 255, 255 }, { 255, 120, 0 } } },
-        { "Rainbow", kSceneFxRainbow, 50, 1, 1, { { 255, 255, 255 } } },
-        { "Blobs", kSceneFxBlobs, 40, 4, 3, { { 0, 90, 255 }, { 255, 0, 140 }, { 0, 255, 160 } } },
+        { "Chase", kSceneFxChase, 30, 3, 2, { { 255, 255, 255 }, { 255, 120, 0 } } },
+        { "Rainbow", kSceneFxRainbow, 25, 1, 1, { { 255, 255, 255 } } },
+        { "Blobs", kSceneFxBlobs, 20, 4, 3, { { 0, 90, 255 }, { 255, 0, 140 }, { 0, 255, 160 } } },
         { "Fire",
           kSceneFxFire,
-          60,
+          30,
           0,
           4,
           { { 180, 16, 0 }, { 255, 80, 0 }, { 255, 170, 20 }, { 255, 240, 150 } } },
-        { "Twinkle", kSceneFxTwinkle, 60, 60, 2, { { 255, 200, 120 }, { 160, 200, 255 } } },
-        { "Scanner", kSceneFxScanner, 80, 0, 1, { { 255, 0, 0 } } },
+        { "Twinkle", kSceneFxTwinkle, 30, 60, 2, { { 255, 200, 120 }, { 160, 200, 255 } } },
+        { "Scanner", kSceneFxScanner, 40, 0, 1, { { 255, 0, 0 } } },
         { "Strobe", kSceneFxSolid, 0, 0, 2, { { 0, 0, 0 }, { 255, 255, 255 } } },
     };
-    g_bank.count = kLegacyNumScenes;
-    for (size_t i = 0; i < kLegacyNumScenes; ++i) {
-        Scene& sc    = g_bank.scenes[i];
+    constexpr size_t kCount = sizeof(kDefs) / sizeof(kDefs[0]);
+    for (size_t i = 0; i < kCount; ++i) {
         const Def& d = kDefs[i];
-        std::strncpy(sc.name, d.name, kSceneNameMax - 1);
-        sc.channel_mask = 0xFF;
-        sc.effect       = d.effect;
-        sc.speed        = d.speed;
-        sc.param        = d.param;
-        sc.num_colors   = d.n;
-        for (size_t k = 0; k < d.n; ++k)
-            set_scene_color(sc, k, d.rgb[k][0], d.rgb[k][1], d.rgb[k][2]);
+        Effect& e    = g_fx.effects[i];
+        std::strncpy(e.name, d.name, kEffectNameMax - 1);
+        e.generator  = d.generator;
+        e.speed      = d.speed;
+        e.param      = d.param;
+        e.num_colors = d.n;
+        std::memcpy(e.colors, d.rgb, sizeof(e.colors));
+        g_bank.scenes[i] = make_scene(d.name, 0xFF, static_cast<uint8_t>(i));
     }
+    g_fx.count   = static_cast<uint8_t>(kCount);
+    g_bank.count = static_cast<uint8_t>(kCount);
 }
 
 // Loads a blob from NVS into dst (size bytes). Handles forward migration: if
@@ -137,8 +147,8 @@ void fill_default_scenes() {
 // versioning has no "v_" key: its layout is inferred from its size, as
 // before, and the next save records the version.
 uint8_t layout_version(const char* key) {
-    if (std::strcmp(key, kKeyScenes) == 0) return 3;  // v1 8×25 B, v2 8×34 B, v3 count+N×34 B
-    return 1;                                         // global, ch*, control, playlist, rollback
+    if (std::strcmp(key, kKeyScenesV3) == 0) return 3;  // v1 8×25 B, v2 8×34 B, v3 count+N×34 B
+    return 1;  // global, ch*, effects, scenes4, control, playlist, groups, rollback
 }
 
 void version_key(const char* key, char out[16]) {
@@ -181,6 +191,10 @@ void nvs_save_blob(nvs_handle_t handle, const char* key, const void* src, size_t
     if (stored_version(handle, key) != ver) nvs_set_blob(handle, vk, &ver, 1);
 }
 
+void save_effects(nvs_handle_t h) {
+    nvs_save_blob(h, kKeyEffects, &g_fx, effect_bank_bytes(g_fx.count));
+}
+
 void save_scenes(nvs_handle_t h) {
     nvs_save_blob(h, kKeyScenes, &g_bank, scene_bank_bytes(g_bank.count));
 }
@@ -198,10 +212,58 @@ bool persist_scenes(bool with_global) {
     return true;
 }
 
-void sanitize_scene(Scene& sc) {
-    sc.name[kSceneNameMax - 1] = '\0';
-    sc.num_colors              = scene_num_colors(sc);
-    if (sc.effect >= kSceneFxCount) sc.effect = kSceneFxSolid;
+// Persists the effect bank (and the scene list when a structural edit moved
+// the parts' effect references).
+bool persist_effects(bool with_scenes) {
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    save_effects(h);
+    if (with_scenes) save_scenes(h);
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
+}
+
+// A stored bank image: the 4-byte header, then exactly `count` records.
+template <typename Bank>
+bool load_bank(nvs_handle_t h, const char* key, Bank& bank, size_t max_count, size_t record) {
+    size_t size = 0;
+    if (nvs_get_blob(h, key, nullptr, &size) != ESP_OK) return false;
+    if (!nvs_load_blob(h, key, &bank, sizeof(bank))) return false;
+    return size >= 4 && bank.count <= max_count && size == 4 + bank.count * record;
+}
+
+void sanitize_banks() {
+    std::memset(g_fx.reserved, 0, sizeof(g_fx.reserved));
+    for (size_t i = 0; i < kMaxEffects; ++i) {
+        if (i < g_fx.count)
+            sanitize_effect(g_fx.effects[i]);
+        else
+            g_fx.effects[i] = Effect{};
+    }
+    std::memset(g_bank.reserved, 0, sizeof(g_bank.reserved));
+    for (size_t i = 0; i < kMaxScenes; ++i) {
+        if (i < g_bank.count)
+            sanitize_scene(g_bank.scenes[i]);
+        else
+            g_bank.scenes[i] = Scene{};
+    }
+}
+
+// Follows the parts' effect references through an edit of the bank. Returns
+// true when a scene changed (the scene list then needs persisting too).
+bool remap_part_effects(SceneEdit op, size_t a, size_t b) {
+    bool changed = false;
+    for (size_t i = 0; i < g_bank.count; ++i)
+        for (size_t k = 0; k < g_bank.scenes[i].num_parts; ++k) {
+            ScenePart& p = g_bank.scenes[i].parts[k];
+            const int to = remap_scene_index(p.effect, op, a, b);
+            if (to < 0 || to == p.effect) continue;
+            p.effect = static_cast<uint8_t>(to);
+            changed  = true;
+        }
+    return changed;
 }
 
 // Follows boot/failsafe references through a list edit. Returns true when
@@ -256,6 +318,7 @@ void fill_ram_defaults() {
     g_control  = default_control();
     g_playlist = FseqPlaylist{};
     g_groups   = GroupsConfig{};
+    g_profiles = default_profiles();
     g_global   = make_default_global();
     for (size_t i = 0; i < kNumChannels; ++i)
         g_channels[i] = make_default_channel(i);
@@ -331,30 +394,41 @@ void init() {
         sanitize_channel(g_channels[i]);
     }
 
-    {
+    // Effect bank and scenes. Scenes of an older firmware (the "scenes" key,
+    // layouts v1..v3) are converted once and left in place: a rolled-back
+    // firmware finds its list as it left it. The v4 scene list is written
+    // last, so its presence means the conversion completed.
+    if (load_bank(h, kKeyScenes, g_bank, kMaxScenes, sizeof(Scene))) {
+        if (!load_bank(h, kKeyEffects, g_fx, kMaxEffects, sizeof(Effect))) {
+            ESP_LOGW(TAG, "effect bank unreadable — the scenes play black until it is rebuilt");
+            std::memset(&g_fx, 0, sizeof(g_fx));
+        }
+    } else {
+        // v1/v2 images are smaller than the v3 bank; anything larger is unknown.
+        // 2 kB of work area, on the heap for the time of the conversion: boot
+        // runs on a 4 kB stack, and the old list is read once in a lifetime.
+        struct Work {
+            uint8_t raw[sizeof(SceneBankV3)];
+            SceneBankV3 old;
+        };
+        auto* w          = static_cast<Work*>(std::malloc(sizeof(Work)));
         size_t size      = 0;
-        const bool exist = nvs_get_blob(h, kKeyScenes, nullptr, &size) == ESP_OK;
-        // v1/v2 images are smaller than the bank; anything larger is unknown.
-        static uint8_t raw[sizeof(SceneBank)];
-        size_t n = sizeof(raw);
-        // A layout newer than this firmware (a downgrade) is not read. An
-        // older or unrecorded one goes through the size-based migration: a
-        // downgrade to a pre-versioning firmware rewrites the blob but not
-        // its "v_" entry, so the recorded version alone cannot be trusted.
-        const int ver    = stored_version(h, kKeyScenes);
-        const bool known = ver <= static_cast<int>(layout_version(kKeyScenes));
-        if (exist && known && size <= sizeof(raw) &&
-            nvs_get_blob(h, kKeyScenes, raw, &n) == ESP_OK && load_scene_bank(raw, n, g_bank)) {
-            if (n != scene_bank_bytes(g_bank.count)) {
-                save_scenes(h);
-                ESP_LOGI(TAG, "scene list migrated (%u→%u bytes)", static_cast<unsigned>(n),
-                         static_cast<unsigned>(scene_bank_bytes(g_bank.count)));
-            }
+        size_t n         = sizeof(w->raw);
+        const bool exist = w && nvs_get_blob(h, kKeyScenesV3, nullptr, &size) == ESP_OK;
+        if (exist && size <= sizeof(w->raw) &&
+            nvs_get_blob(h, kKeyScenesV3, w->raw, &n) == ESP_OK &&
+            load_scene_bank_v3(w->raw, n, w->old)) {
+            BankEdit edit;
+            migrate_scenes_v3(w->old, g_fx, g_bank);
+            ESP_LOGI(TAG, "%u scenes converted to effects + scenes", g_bank.count);
         } else {
             fill_default_scenes();
-            save_scenes(h);
         }
+        std::free(w);
+        save_effects(h);
+        save_scenes(h);
     }
+    sanitize_banks();
 
     // Control universe: absent on a first boot or an upgrade — the default is
     // disabled, so nothing changes until the user turns it on.
@@ -374,6 +448,12 @@ void init() {
     // Fixture groups: absent before they existed — none.
     if (!nvs_load_blob(h, kKeyGroups, &g_groups, sizeof(g_groups))) g_groups = GroupsConfig{};
     sanitize_groups(g_groups);
+
+    // Fixture DMX profiles: absent before they existed — the presets (an empty
+    // bank reads as the presets too, see sanitize_profiles).
+    if (!nvs_load_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles)))
+        g_profiles = ProfileBank{};
+    sanitize_profiles(g_profiles);
 
     nvs_commit(h);
     nvs_close(h);
@@ -585,6 +665,128 @@ bool check_web_password(const char* password) {
     return true;
 }
 
+namespace {
+
+// Lock-free read of the banks for the render path: a config write (NVS
+// included) can take tens of ms, a frame cannot wait for it. Retry while an
+// edit is in flight; if a writer keeps getting in the way, wait on the lock
+// (priority inheritance). `read` must be a plain copy out of the RAM images.
+template <typename Read> void read_banks(Read read) {
+    for (int tries = 0; tries < 64; ++tries) {
+        const uint32_t before = g_bank_seq.load(std::memory_order_acquire);
+        if (before & 1) continue;
+        read();
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (g_bank_seq.load(std::memory_order_relaxed) == before) return;
+    }
+    ScopedLock lock;
+    read();
+}
+
+}  // namespace
+
+size_t num_effects() {
+    return g_fx.count;
+}
+
+const Effect& get_effect(size_t i) {
+    static const Effect kBlank{};
+    return i < g_fx.count ? g_fx.effects[i] : kBlank;
+}
+
+bool copy_effect(size_t i, Effect& out) {
+    bool ok = false;
+    read_banks([&] {
+        ok  = i < g_fx.count;
+        out = ok ? g_fx.effects[i] : Effect{};
+    });
+    return ok;
+}
+
+bool set_effect(size_t i, const Effect& effect) {
+    ScopedLock lock;
+    if (i >= g_fx.count) return false;
+    {
+        BankEdit edit;
+        g_fx.effects[i] = effect;
+        sanitize_effect(g_fx.effects[i]);
+    }
+    return persist_effects(false);
+}
+
+int add_effect(const Effect& effect) {
+    ScopedLock lock;
+    if (g_fx.count >= kMaxEffects) return -1;
+    int idx;
+    {
+        BankEdit edit;
+        Effect& e = g_fx.effects[g_fx.count];
+        e         = effect;
+        sanitize_effect(e);
+        idx = g_fx.count++;
+    }
+    persist_effects(false);
+    return idx;
+}
+
+bool effect_in_use(size_t i) {
+    ScopedLock lock;
+    for (size_t s = 0; s < g_bank.count; ++s)
+        for (size_t k = 0; k < g_bank.scenes[s].num_parts; ++k)
+            if (g_bank.scenes[s].parts[k].effect == i) return true;
+    return false;
+}
+
+bool delete_effect(size_t i) {
+    ScopedLock lock;
+    if (i >= g_fx.count || effect_in_use(i)) return false;
+    bool scenes_changed;
+    {
+        BankEdit edit;
+        std::memmove(&g_fx.effects[i], &g_fx.effects[i + 1], (g_fx.count - i - 1) * sizeof(Effect));
+        --g_fx.count;
+        g_fx.effects[g_fx.count] = Effect{};
+        scenes_changed           = remap_part_effects(SceneEdit::Delete, i, 0);
+    }
+    persist_effects(scenes_changed);
+    return true;
+}
+
+bool move_effect(size_t from, size_t to) {
+    ScopedLock lock;
+    if (from >= g_fx.count || to >= g_fx.count) return false;
+    if (from == to) return true;
+    bool scenes_changed;
+    {
+        BankEdit edit;
+        const Effect moved = g_fx.effects[from];
+        if (from < to)
+            std::memmove(&g_fx.effects[from], &g_fx.effects[from + 1],
+                         (to - from) * sizeof(Effect));
+        else
+            std::memmove(&g_fx.effects[to + 1], &g_fx.effects[to], (from - to) * sizeof(Effect));
+        g_fx.effects[to] = moved;
+        scenes_changed   = remap_part_effects(SceneEdit::Move, from, to);
+    }
+    persist_effects(scenes_changed);
+    return true;
+}
+
+bool replace_effects(const Effect* effects, size_t count) {
+    ScopedLock lock;
+    if (count > kMaxEffects) count = kMaxEffects;
+    {
+        BankEdit edit;
+        std::memset(&g_fx, 0, sizeof(g_fx));
+        for (size_t i = 0; i < count; ++i) {
+            g_fx.effects[i] = effects[i];
+            sanitize_effect(g_fx.effects[i]);
+        }
+        g_fx.count = static_cast<uint8_t>(count);
+    }
+    return persist_effects(false);
+}
+
 size_t num_scenes() {
     return g_bank.count;
 }
@@ -594,24 +796,34 @@ const Scene& get_scene(size_t i) {
     return i < g_bank.count ? g_bank.scenes[i] : kBlank;
 }
 
-// Lock-free for the render path: a config write (NVS included) can take tens
-// of ms, a frame cannot wait for it. Retry while a bank edit is in flight; if
-// a writer keeps getting in the way, wait on the lock (priority inheritance).
 bool copy_scene(size_t i, Scene& out) {
-    for (int tries = 0; tries < 64; ++tries) {
-        const uint32_t before = g_bank_seq.load(std::memory_order_acquire);
-        if (before & 1) continue;
-        const bool ok   = i < g_bank.count;
-        const Scene tmp = ok ? g_bank.scenes[i] : Scene{};
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (g_bank_seq.load(std::memory_order_relaxed) == before) {
-            out = tmp;
-            return ok;
-        }
-    }
-    ScopedLock lock;
-    const bool ok = i < g_bank.count;
-    out           = ok ? g_bank.scenes[i] : Scene{};
+    bool ok = false;
+    read_banks([&] {
+        ok  = i < g_bank.count;
+        out = ok ? g_bank.scenes[i] : Scene{};
+    });
+    return ok;
+}
+
+bool copy_scene_part(size_t i, size_t output, Effect& effect, uint8_t& fixture_mode) {
+    bool ok = false;
+    read_banks([&] {
+        const ScenePart* p = i < g_bank.count ? scene_part_for(g_bank.scenes[i], output) : nullptr;
+        ok                 = p != nullptr;
+        effect             = ok && p->effect < g_fx.count ? g_fx.effects[p->effect] : Effect{};
+        fixture_mode       = ok ? p->fixture_mode : kFixtureModeEach;
+    });
+    return ok;
+}
+
+bool copy_scene_look(size_t i, Effect& effect, uint8_t& fixture_mode) {
+    bool ok = false;
+    read_banks([&] {
+        ok                 = i < g_bank.count && g_bank.scenes[i].num_parts > 0;
+        const ScenePart* p = ok ? &g_bank.scenes[i].parts[0] : nullptr;
+        effect             = ok && p->effect < g_fx.count ? g_fx.effects[p->effect] : Effect{};
+        fixture_mode       = ok ? p->fixture_mode : kFixtureModeEach;
+    });
     return ok;
 }
 
@@ -649,7 +861,7 @@ bool delete_scene(size_t i) {
         std::memmove(&g_bank.scenes[i], &g_bank.scenes[i + 1],
                      (g_bank.count - i - 1) * sizeof(Scene));
         --g_bank.count;
-        std::memset(&g_bank.scenes[g_bank.count], 0, sizeof(Scene));
+        g_bank.scenes[g_bank.count] = Scene{};
     }
     persist_scenes(remap_global_scene_refs(SceneEdit::Delete, i, 0));
     return true;
@@ -700,10 +912,16 @@ void reset_to_defaults() {
         channel_key(i, key);
         nvs_save_blob(h, key, &g_channels[i], sizeof(ChannelConfig));
     }
+    save_effects(h);
     save_scenes(h);
+    // The pre-bank scene list goes too: a factory reset leaves no user scenes
+    // behind for a rolled-back firmware to find.
+    nvs_erase_key(h, kKeyScenesV3);
+    nvs_erase_key(h, "v_scenes");
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
     nvs_save_blob(h, kKeyPlaylist, &g_playlist, sizeof(g_playlist));
     nvs_save_blob(h, kKeyGroups, &g_groups, sizeof(g_groups));
+    nvs_save_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles));
     nvs_commit(h);
     nvs_close(h);
 }
@@ -720,6 +938,23 @@ bool set_control(const ControlConfig& cfg) {
     nvs_handle_t h;
     if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
     nvs_save_blob(h, kKeyControl, &g_control, sizeof(g_control));
+    nvs_commit(h);
+    nvs_close(h);
+    return true;
+}
+
+const ProfileBank& get_profiles() {
+    return g_profiles;
+}
+
+bool set_profiles(const ProfileBank& b) {
+    ScopedLock lock;
+    g_profiles = b;
+    sanitize_profiles(g_profiles);
+    if (!g_nvs_ok) return false;
+    nvs_handle_t h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return false;
+    nvs_save_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles));
     nvs_commit(h);
     nvs_close(h);
     return true;

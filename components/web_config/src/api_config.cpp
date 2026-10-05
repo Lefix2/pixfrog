@@ -50,30 +50,58 @@ static cJSON* build_global_json() {
     return jg;
 }
 
+static cJSON* build_effects_json() {
+    cJSON* jfx = cJSON_CreateArray();
+    for (size_t i = 0; i < config::num_effects(); ++i) {
+        const auto& e = config::get_effect(i);
+        cJSON* je     = cJSON_CreateObject();
+        cJSON_AddStringToObject(je, "name", e.name);
+        cJSON_AddNumberToObject(je, "generator", e.generator);
+        cJSON* jcols = cJSON_AddArrayToObject(je, "colors");
+        for (size_t k = 0; k < config::effect_num_colors(e); ++k) {
+            char col[8];
+            snprintf(col, sizeof(col), "#%02x%02x%02x", e.colors[k][0], e.colors[k][1],
+                     e.colors[k][2]);
+            cJSON_AddItemToArray(jcols, cJSON_CreateString(col));
+        }
+        cJSON_AddNumberToObject(je, "speed", e.speed);
+        cJSON_AddNumberToObject(je, "param", e.param);
+        cJSON* jp = cJSON_AddObjectToObject(je, "phaser");
+        cJSON_AddStringToObject(jp, "wave", config::phaser_wave_id(e.ph_wave));
+        cJSON_AddNumberToObject(jp, "rate", e.ph_rate);
+        cJSON_AddNumberToObject(jp, "spread", e.ph_spread);
+        cJSON_AddNumberToObject(jp, "width", e.ph_width);
+        cJSON_AddNumberToObject(jp, "low", e.ph_low);
+        cJSON_AddBoolToObject(jp, "reverse", (e.flags & config::kEffectPhaserReverse) != 0);
+        cJSON_AddBoolToObject(je, "invert", (e.flags & config::kEffectDimmerInvert) != 0);
+        cJSON* jm = cJSON_AddObjectToObject(je, "matricks");
+        cJSON_AddNumberToObject(jm, "block", e.block);
+        cJSON_AddNumberToObject(jm, "groups", e.groups);
+        cJSON_AddNumberToObject(jm, "wings", e.wings);
+        cJSON_AddItemToArray(jfx, je);
+    }
+    return jfx;
+}
+
 static cJSON* build_scenes_json() {
     cJSON* jscenes = cJSON_CreateArray();
     for (size_t i = 0; i < config::num_scenes(); ++i) {
         const auto& sc = config::get_scene(i);
         cJSON* js      = cJSON_CreateObject();
         cJSON_AddStringToObject(js, "name", sc.name);
-        cJSON_AddNumberToObject(js, "effect", sc.effect);
-        char col[8];
-        snprintf(col, sizeof(col), "#%02x%02x%02x", sc.r, sc.g, sc.b);
-        cJSON_AddStringToObject(js, "color", col);
-        cJSON* jcols = cJSON_AddArrayToObject(js, "colors");
-        for (size_t k = 0; k < config::scene_num_colors(sc); ++k) {
-            uint8_t rgb[3];
-            config::scene_color(sc, k, rgb);
-            snprintf(col, sizeof(col), "#%02x%02x%02x", rgb[0], rgb[1], rgb[2]);
-            cJSON_AddItemToArray(jcols, cJSON_CreateString(col));
+        cJSON_AddNumberToObject(js, "mask", config::scene_mask(sc));
+        cJSON* jparts = cJSON_AddArrayToObject(js, "parts");
+        for (size_t k = 0; k < sc.num_parts; ++k) {
+            const auto& p = sc.parts[k];
+            cJSON* jp     = cJSON_CreateObject();
+            cJSON_AddNumberToObject(jp, "mask", p.mask);
+            cJSON_AddNumberToObject(jp, "effect", p.effect);
+            cJSON_AddStringToObject(jp, "fixture_mode",
+                                    config::fixture_mode_id(config::scene_mode_of(p.fixture_mode)));
+            cJSON_AddBoolToObject(jp, "reverse", config::scene_reverse_of(p.fixture_mode));
+            cJSON_AddItemToArray(jparts, jp);
         }
-        cJSON_AddNumberToObject(js, "speed", sc.speed);
-        cJSON_AddNumberToObject(js, "param", sc.param);
-        cJSON_AddNumberToObject(js, "mask", sc.channel_mask);
-        cJSON_AddStringToObject(js, "fixture_mode",
-                                config::fixture_mode_id(config::scene_mode_of(sc.fixture_mode)));
-        cJSON_AddBoolToObject(js, "reverse", config::scene_reverse_of(sc.fixture_mode));
-        cJSON_AddNumberToObject(js, "group", config::scene_group_of(sc.fixture_mode));
+        cJSON_AddNumberToObject(js, "group", config::scene_group(sc));
         cJSON_AddItemToArray(jscenes, js);
     }
     return jscenes;
@@ -110,13 +138,35 @@ static cJSON* build_channels_json() {
         cJSON_AddStringToObject(jc, "packing", config::packing_id(c.packing));
         cJSON_AddNumberToObject(jc, "universes",
                                 static_cast<double>(dmx::channel_universe_span(c)));
+        // DMX control mode — the patch sheet: where each fixture sits on the
+        // wire, [universe, address, channels, profile], in fixture order.
+        if (c.packing == config::kPackControl) {
+            dmx::FixtureAddress at[config::kMaxFixtures];
+            const size_t n = dmx::fixture_patch(c, at, config::kMaxFixtures);
+            cJSON* jpatch  = cJSON_AddArrayToObject(jc, "patch");
+            for (size_t k = 0; k < n; ++k) {
+                cJSON* row = cJSON_CreateArray();
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].universe));
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].address));
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].footprint));
+                cJSON_AddItemToArray(row, cJSON_CreateNumber(at[k].profile));
+                cJSON_AddItemToArray(jpatch, row);
+            }
+        }
         // [[first LED, 1-based physical], count], ... — same shape as the gaps.
         cJSON* jf = cJSON_AddArrayToObject(jc, "fixtures");
         for (size_t k = 0; k < config::fixture_count(c.fixtures, config::kMaxFixtures); ++k) {
             cJSON* pair = cJSON_CreateArray();
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.fixtures[k].pos + 1));
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(config::fixture_len(c.fixtures[k])));
-            if (config::fixture_reversed(c.fixtures[k]))  // [first, count, 1]: mounted backwards
+            const uint8_t profile = config::fixture_profile(c.fixtures[k]);
+            // [first, count, reversed, profile]: the last two only when they say something
+            if (profile) {
+                cJSON_AddItemToArray(
+                    pair, cJSON_CreateNumber(config::fixture_reversed(c.fixtures[k]) ? 1 : 0));
+                cJSON_AddItemToArray(pair, cJSON_CreateNumber(profile));
+            } else if (config::fixture_reversed(
+                           c.fixtures[k]))  // [first, count, 1]: mounted backwards
                 cJSON_AddItemToArray(pair, cJSON_CreateNumber(1));
             cJSON_AddItemToArray(jf, pair);
         }
@@ -159,11 +209,13 @@ esp_err_t handle_get_config(httpd_req_t* req) {
     const char* fseq_file = fseq::active_file();
     cJSON_AddStringToObject(root, "active_fseq", fseq_file ? fseq_file : "");
     cJSON_AddItemToObject(root, "global", build_global_json());
+    cJSON_AddItemToObject(root, "effects", build_effects_json());
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
     cJSON_AddItemToObject(root, "control", build_control_json());
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
     cJSON_AddItemToObject(root, "groups", build_groups_json());
+    cJSON_AddItemToObject(root, "profiles", build_profiles_json());
     return send_json(req, root);
 }
 
@@ -203,14 +255,16 @@ static void backup_filename(httpd_req_t* req, char* out, size_t cap) {
 
 esp_err_t handle_backup(httpd_req_t* req) {
     cJSON* root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "backup_version", 1);
+    cJSON_AddNumberToObject(root, "backup_version", 2);  // 2: effect bank, scenes of parts
     cJSON_AddStringToObject(root, "firmware", esp_app_get_description()->version);
     cJSON_AddItemToObject(root, "global", build_global_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
+    cJSON_AddItemToObject(root, "effects", build_effects_json());
     cJSON_AddItemToObject(root, "scenes", build_scenes_json());
     cJSON_AddItemToObject(root, "control", build_control_json());
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
     cJSON_AddItemToObject(root, "groups", build_groups_json());
+    cJSON_AddItemToObject(root, "profiles", build_profiles_json());
     static char disposition[96];  // httpd keeps the pointer until the send
     backup_filename(req, disposition, sizeof(disposition));
     httpd_resp_set_hdr(req, "Content-Disposition", disposition);
@@ -291,9 +345,13 @@ void apply_fixtures_json(const cJSON* jc, config::ChannelConfig& c, const char**
             return refuse(why, "fixtures: first 1..1024, count 1.., within 1024 LEDs");
         const cJSON* jr = cJSON_GetArrayItem(pair, 2);  // optional third: 1 = reversed
         const bool rev  = cJSON_IsNumber(jr) && jr->valuedouble != 0;
-        parsed[n].pos   = static_cast<uint16_t>(jp->valuedouble - 1);
-        parsed[n++].len = static_cast<uint16_t>(static_cast<uint16_t>(jl->valuedouble) |
-                                                (rev ? config::kFixtureReversed : 0));
+        const cJSON* jq = cJSON_GetArrayItem(pair, 3);  // optional fourth: the DMX profile
+        if (jq && (!cJSON_IsNumber(jq) ||
+                   !(jq->valuedouble >= 0 && jq->valuedouble <= config::kMaxProfiles - 1)))
+            return refuse(why, "fixtures: profile 0..7");
+        parsed[n++] = config::make_fixture(static_cast<uint16_t>(jp->valuedouble - 1),
+                                           static_cast<uint16_t>(jl->valuedouble), rev,
+                                           jq ? static_cast<uint8_t>(jq->valuedouble) : 0);
     }
     for (size_t a = 0; a < n; ++a)
         for (size_t b = a + 1; b < n; ++b)
@@ -435,7 +493,7 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         if (p >= 0)
             c.packing = static_cast<uint8_t>(p);
         else
-            refuse(why, "packing: continuous|whole|fixture");
+            refuse(why, "packing: continuous|whole|fixture|colour|control");
     }
     apply_gaps_json(j, c);
     apply_fixtures_json(j, c, why);
@@ -465,23 +523,120 @@ static bool parse_hex_color(const cJSON* it, uint8_t rgb[3]) {
     return true;
 }
 
-// Partial update: absent or out-of-range fields keep their current value.
-// "colors" (1..kSceneColorsMax) wins over the single legacy "color".
-void apply_scene_json(const cJSON* js, config::Scene& sc) {
+static void apply_name_json(const cJSON* js, char* name, size_t cap) {
     const cJSON* it = cJSON_GetObjectItemCaseSensitive(js, "name");
-    if (cJSON_IsString(it)) {
-        memset(sc.name, 0, sizeof(sc.name));
-        strncpy(sc.name, it->valuestring, sizeof(sc.name) - 1);
+    if (!cJSON_IsString(it)) return;
+    memset(name, 0, cap);
+    strncpy(name, it->valuestring, cap - 1);
+}
+
+static void apply_u8_json(const cJSON* js, const char* key, double hi, uint8_t* out) {
+    const cJSON* n = cJSON_GetObjectItemCaseSensitive(js, key);
+    if (cJSON_IsNumber(n) && n->valuedouble >= 0 && n->valuedouble <= hi)
+        *out = static_cast<uint8_t>(n->valuedouble);
+}
+
+// 1..kSceneColorsMax "#rrggbb" strings, all valid or nothing. Returns the count.
+static int parse_colors_json(const cJSON* js, uint8_t out[config::kSceneColorsMax][3]) {
+    const cJSON* cols = cJSON_GetObjectItemCaseSensitive(js, "colors");
+    const int n       = cJSON_IsArray(cols) ? cJSON_GetArraySize(cols) : 0;
+    if (n < 1 || static_cast<size_t>(n) > config::kSceneColorsMax) return 0;
+    for (int k = 0; k < n; ++k)
+        if (!parse_hex_color(cJSON_GetArrayItem(cols, k), out[k])) return 0;
+    return n;
+}
+
+// Partial update: absent or out-of-range fields keep their current value.
+void apply_effect_json(const cJSON* je, config::Effect& e) {
+    apply_name_json(je, e.name, sizeof(e.name));
+    apply_u8_json(je, "generator", config::kSceneFxCount - 1, &e.generator);
+    apply_u8_json(je, "speed", 255, &e.speed);
+    apply_u8_json(je, "param", 255, &e.param);
+    uint8_t parsed[config::kSceneColorsMax][3];
+    const int n = parse_colors_json(je, parsed);
+    if (n) {
+        std::memset(e.colors, 0, sizeof(e.colors));
+        std::memcpy(e.colors, parsed, static_cast<size_t>(n) * 3);
+        e.num_colors = static_cast<uint8_t>(n);
     }
-    auto num = [&](const char* k, double hi, uint8_t* out) {
-        const cJSON* n = cJSON_GetObjectItemCaseSensitive(js, k);
-        if (cJSON_IsNumber(n) && n->valuedouble >= 0 && n->valuedouble <= hi)
-            *out = static_cast<uint8_t>(n->valuedouble);
+    auto flag = [&](const cJSON* obj, const char* key, uint8_t bit) {
+        const cJSON* b = cJSON_GetObjectItemCaseSensitive(obj, key);
+        if (cJSON_IsBool(b))
+            e.flags = static_cast<uint8_t>(cJSON_IsTrue(b) ? e.flags | bit : e.flags & ~bit);
     };
-    num("effect", config::kSceneFxCount - 1, &sc.effect);
-    num("speed", 255, &sc.speed);
-    num("param", 255, &sc.param);
-    num("mask", 255, &sc.channel_mask);
+    flag(je, "invert", config::kEffectDimmerInvert);
+    const cJSON* jm = cJSON_GetObjectItemCaseSensitive(je, "matricks");
+    if (cJSON_IsObject(jm)) {
+        apply_u8_json(jm, "block", 255, &e.block);
+        apply_u8_json(jm, "groups", 255, &e.groups);
+        apply_u8_json(jm, "wings", 255, &e.wings);
+    }
+    const cJSON* jp = cJSON_GetObjectItemCaseSensitive(je, "phaser");
+    if (!cJSON_IsObject(jp)) return;
+    const cJSON* jw = cJSON_GetObjectItemCaseSensitive(jp, "wave");
+    const int wave  = cJSON_IsString(jw) ? config::phaser_wave_from_id(jw->valuestring) : -1;
+    if (wave >= 0) e.ph_wave = static_cast<uint8_t>(wave);
+    apply_u8_json(jp, "rate", 255, &e.ph_rate);
+    apply_u8_json(jp, "spread", 255, &e.ph_spread);
+    apply_u8_json(jp, "width", 255, &e.ph_width);
+    apply_u8_json(jp, "low", 255, &e.ph_low);
+    flag(jp, "reverse", config::kEffectPhaserReverse);
+}
+
+// Partial update. "parts", when present, replaces the scene's parts — and is
+// taken whole or not at all: false, with the reason in *why, on a bad part.
+bool apply_scene_json(const cJSON* js, config::Scene& sc, const char** why) {
+    apply_name_json(js, sc.name, sizeof(sc.name));
+    const cJSON* jgr = cJSON_GetObjectItemCaseSensitive(js, "group");  // -1 = its outputs
+    if (cJSON_IsNumber(jgr) && jgr->valuedouble >= -1 &&
+        jgr->valuedouble < static_cast<double>(config::kMaxGroups))
+        sc.group = static_cast<uint8_t>(static_cast<int>(jgr->valuedouble) + 1);
+    const cJSON* jparts = cJSON_GetObjectItemCaseSensitive(js, "parts");
+    if (!jparts) return true;
+    auto fail = [&](const char* msg) {
+        *why = msg;
+        return false;
+    };
+    if (!cJSON_IsArray(jparts) ||
+        static_cast<size_t>(cJSON_GetArraySize(jparts)) > config::kMaxSceneParts)
+        return fail("parts: an array of up to 8 parts");
+    config::ScenePart parts[config::kMaxSceneParts] = {};
+    size_t n                                        = 0;
+    for (const cJSON* jp = jparts->child; jp; jp = jp->next) {
+        const cJSON* jm = cJSON_GetObjectItemCaseSensitive(jp, "mask");
+        const cJSON* jf = cJSON_GetObjectItemCaseSensitive(jp, "effect");
+        const cJSON* jo = cJSON_GetObjectItemCaseSensitive(jp, "fixture_mode");
+        if (!cJSON_IsNumber(jm) || !(jm->valuedouble >= 0 && jm->valuedouble <= 255))
+            return fail("part mask: 0..255");
+        if (!cJSON_IsNumber(jf) ||
+            !(jf->valuedouble >= 0 && jf->valuedouble <= config::kMaxEffects - 1))
+            return fail("part effect: an index in the effect bank");
+        config::ScenePart& p = parts[n++];
+        p.mask               = static_cast<uint8_t>(jm->valuedouble);
+        p.effect             = static_cast<uint8_t>(jf->valuedouble);
+        if (jo) {
+            int mode = -1;
+            for (uint8_t m = 0; cJSON_IsString(jo) && m < config::kFixtureModeCount; ++m)
+                if (std::strcmp(jo->valuestring, config::fixture_mode_id(m)) == 0) mode = m;
+            if (mode < 0) return fail("part fixture_mode: each, strip, chain or mirror");
+            p.fixture_mode = static_cast<uint8_t>(mode);
+        }
+        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(jp, "reverse")))
+            p.fixture_mode |= config::kSceneReverseBit;
+    }
+    std::memcpy(sc.parts, parts, sizeof(parts));
+    sc.num_parts = static_cast<uint8_t>(n);
+    return true;
+}
+
+// A scene as backups up to version 1 wrote it: the look and its outputs in one
+// object ("effect" was the generator, "speed" in the old, half-as-fast scale).
+static void apply_scene_v3_json(const cJSON* js, config::SceneV3& sc) {
+    apply_name_json(js, sc.name, sizeof(sc.name));
+    apply_u8_json(js, "effect", config::kSceneFxCount - 1, &sc.effect);
+    apply_u8_json(js, "speed", 255, &sc.speed);
+    apply_u8_json(js, "param", 255, &sc.param);
+    apply_u8_json(js, "mask", 255, &sc.channel_mask);
     // fixture_mode, reverse and group share one byte (pack_scene_mode).
     uint8_t mode    = config::scene_mode_of(sc.fixture_mode);
     bool reverse    = config::scene_reverse_of(sc.fixture_mode);
@@ -496,45 +651,65 @@ void apply_scene_json(const cJSON* js, config::Scene& sc) {
         jgr->valuedouble < static_cast<double>(config::kMaxGroups))
         group = static_cast<int>(jgr->valuedouble);
     sc.fixture_mode = config::pack_scene_mode(mode, reverse, group);
-
     uint8_t rgb[3];
-    const cJSON* cols = cJSON_GetObjectItemCaseSensitive(js, "colors");
-    const int ncols   = cJSON_IsArray(cols) ? cJSON_GetArraySize(cols) : 0;
-    if (ncols >= 1 && static_cast<size_t>(ncols) <= config::kSceneColorsMax) {
-        uint8_t parsed[config::kSceneColorsMax][3];
-        bool ok = true;
-        for (int k = 0; k < ncols && ok; ++k)
-            ok = parse_hex_color(cJSON_GetArrayItem(cols, k), parsed[k]);
-        if (ok) {
-            for (int k = 0; k < ncols; ++k)
-                config::set_scene_color(sc, static_cast<size_t>(k), parsed[k][0], parsed[k][1],
-                                        parsed[k][2]);
-            sc.num_colors = static_cast<uint8_t>(ncols);
-        }
+    uint8_t parsed[config::kSceneColorsMax][3];
+    const int n = parse_colors_json(js, parsed);
+    if (n) {
+        for (int k = 0; k < n; ++k)
+            config::set_scene_color(sc, static_cast<size_t>(k), parsed[k][0], parsed[k][1],
+                                    parsed[k][2]);
+        sc.num_colors = static_cast<uint8_t>(n);
     } else if (parse_hex_color(cJSON_GetObjectItemCaseSensitive(js, "color"), rgb)) {
         config::set_scene_color(sc, 0, rgb[0], rgb[1], rgb[2]);
     }
 }
 
-// The backup's list replaces the current one wholesale (length included).
-static void restore_scenes(const cJSON* jsc) {
-    static config::Scene list[config::kMaxScenes];  // httpd stack is small
-    size_t n = 0;
-    for (const cJSON* js = jsc->child; js && n < config::kMaxScenes; js = js->next) {
-        list[n]              = config::Scene{};
-        list[n].channel_mask = 0xFF;
-        list[n].num_colors   = 1;
-        apply_scene_json(js, list[n++]);
+// The backup's effect bank and scene list replace the current ones wholesale
+// (lengths included). A backup without "effects" comes from a firmware whose
+// scenes carried their own look: each becomes an effect and a scene.
+static void restore_scenes(const cJSON* jfx, const cJSON* jsc) {
+    struct Work {  // 4 kB: neither on the httpd stack nor in internal RAM for good
+        config::EffectBank effects;
+        config::SceneBank scenes;
+        config::SceneBankV3 old;
+    };
+    auto* w = static_cast<Work*>(heap_caps_malloc(sizeof(Work), MALLOC_CAP_SPIRAM));
+    if (!w) w = static_cast<Work*>(malloc(sizeof(Work)));
+    if (!w) return;
+    std::memset(w, 0, sizeof(Work));
+    if (cJSON_IsArray(jfx)) {
+        for (const cJSON* je = jfx->child; je && w->effects.count < config::kMaxEffects;
+             je              = je->next) {
+            config::Effect& e = w->effects.effects[w->effects.count++];
+            e.num_colors      = 1;
+            apply_effect_json(je, e);
+        }
+        for (const cJSON* js = cJSON_IsArray(jsc) ? jsc->child : nullptr;
+             js && w->scenes.count < config::kMaxScenes; js = js->next) {
+            const char* why = nullptr;
+            apply_scene_json(js, w->scenes.scenes[w->scenes.count++], &why);
+        }
+    } else {
+        for (const cJSON* js = jsc->child; js && w->old.count < config::kMaxScenes; js = js->next) {
+            config::SceneV3& sc = w->old.scenes[w->old.count++];
+            sc.channel_mask     = 0xFF;
+            sc.num_colors       = 1;
+            apply_scene_v3_json(js, sc);
+        }
+        config::migrate_scenes_v3(w->old, w->effects, w->scenes);
     }
     dmx::scene_stop();  // the playing index may point elsewhere now
-    config::replace_scenes(list, n);
+    config::replace_effects(w->effects.effects, w->effects.count);
+    config::replace_scenes(w->scenes.scenes, w->scenes.count);
+    heap_caps_free(w);
 }
 
 esp_err_t handle_restore(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    // Full backup ≈ 3 kB + ~170 B per scene (30 max) + up to ~400 B of
-    // fixtures per channel. In PSRAM, once: 16 kB of internal RAM is dear.
-    constexpr size_t kRestoreMax = 16384;
+    // Full backup ≈ 3 kB + ~130 B per effect (31 max) + up to ~450 B per scene
+    // (30 max, 8 parts each) + up to ~400 B of fixtures per channel + the
+    // groups. In PSRAM, once: that much internal RAM is dear.
+    constexpr size_t kRestoreMax = 32768;
     static char* buf             = nullptr;
     if (!buf) buf = static_cast<char*>(heap_caps_malloc(kRestoreMax, MALLOC_CAP_SPIRAM));
     if (!buf) buf = static_cast<char*>(malloc(kRestoreMax));
@@ -543,8 +718,9 @@ esp_err_t handle_restore(httpd_req_t* req) {
     cJSON* j = cJSON_Parse(buf);
     if (!j) return send_err(req, 400, "invalid JSON");
 
+    cJSON* jfx = cJSON_GetObjectItemCaseSensitive(j, "effects");
     cJSON* jsc = cJSON_GetObjectItemCaseSensitive(j, "scenes");
-    if (cJSON_IsArray(jsc)) restore_scenes(jsc);
+    if (cJSON_IsArray(jfx) || cJSON_IsArray(jsc)) restore_scenes(jfx, jsc);
     const config::GlobalConfig before = config::get_global();
     cJSON* jg                         = cJSON_GetObjectItemCaseSensitive(j, "global");
     if (cJSON_IsObject(jg)) restore_global(jg);
@@ -568,6 +744,14 @@ esp_err_t handle_restore(httpd_req_t* req) {
         static config::GroupsConfig gr;  // 2.4 kB: off the httpd stack
         const char* why = nullptr;
         if (apply_groups_json(jgr, gr, &why)) config::set_groups(gr);
+    }
+    // Profiles: likewise all or nothing, and before the channels whose
+    // fixtures point at them.
+    cJSON* jpr = cJSON_GetObjectItemCaseSensitive(j, "profiles");
+    if (cJSON_IsArray(jpr)) {
+        static config::ProfileBank pb;
+        const char* why = nullptr;
+        if (apply_profiles_json(jpr, pb, &why)) config::set_profiles(pb);
     }
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
     if (cJSON_IsArray(jchs)) {
@@ -755,7 +939,9 @@ esp_err_t handle_autopatch(httpd_req_t* req) {
     o.packing         = static_cast<int8_t>(packing);
     cJSON_Delete(j);
     if (!ok) return send_err(req, 400, "base 0..32767");
-    if (bad_p) return send_err(req, 400, "packing: keep|continuous|whole|fixture");
+    // "control" is an output's mode, not a pixel layout to give every output.
+    if (bad_p || packing == config::kPackControl)
+        return send_err(req, 400, "packing: keep|continuous|whole|fixture|colour");
 
     uint16_t next    = 0;
     size_t universes = 0;
@@ -829,14 +1015,18 @@ bool apply_groups_json(const cJSON* j, config::GroupsConfig& g, const char** why
 
 // ── POST /api/groups ────────────────────────────────────────────────────────
 // {"groups": [...]} replaces the whole list. Up to ~9 kB: in PSRAM, once.
+char* big_body_buffer() {
+    static char* buf = nullptr;
+    if (!buf) buf = static_cast<char*>(heap_caps_malloc(kBigBodyMax, MALLOC_CAP_SPIRAM));
+    if (!buf) buf = static_cast<char*>(malloc(kBigBodyMax));
+    return buf;
+}
+
 esp_err_t handle_post_groups(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
-    constexpr size_t kMax = 12288;
-    static char* buf      = nullptr;
-    if (!buf) buf = static_cast<char*>(heap_caps_malloc(kMax, MALLOC_CAP_SPIRAM));
-    if (!buf) buf = static_cast<char*>(malloc(kMax));
+    char* buf = big_body_buffer();
     if (!buf) return send_err(req, 500, "out of memory");
-    if (!read_body(req, buf, kMax - 1)) return send_err(req, 400, "body too large or empty");
+    if (!read_body(req, buf, kBigBodyMax - 1)) return send_err(req, 400, "body too large or empty");
     cJSON* j = cJSON_Parse(buf);
     if (!j) return send_err(req, 400, "invalid JSON");
     static config::GroupsConfig g;  // 2.4 kB: off the httpd stack

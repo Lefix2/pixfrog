@@ -73,8 +73,11 @@ def run(board: Board):
     c.check("ArtTrigger KeyMacro 3 = blackout off", board.get("show", "blackout_local") == "00")
 
     # ── zones + crossfade ───────────────────────────────────────────────────
-    board.cmd("scene set 0 solid ff0000 0 0 ff")
-    board.cmd("scene set 1 solid 0000ff 0 0 ff")
+    # Scene n plays effect n, a steady colour, on every output.
+    board.cmd("fx set 0 solid ff0000 0 0")
+    board.cmd("fx set 1 solid 0000ff 0 0")
+    board.cmd("scene part 0 ff 0")
+    board.cmd("scene part 1 ff 1")
     board.cmd("scene play 0 0f")
     board.cmd("scene play 1 f0")
     c.check("two scenes on two zones",

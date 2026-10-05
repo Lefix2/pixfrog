@@ -83,7 +83,7 @@ TEST(every_route_fits_the_handler_table) {
     // esp_http_server refuses handlers past max_uri_handlers and start()
     // ignores the result: an overflow would silently lose the last routes.
     EXPECT_TRUE(shim::http_running());
-    EXPECT_EQ(shim::http_routes(), 35);
+    EXPECT_EQ(shim::http_routes(), 40);
     EXPECT_TRUE(post("/api/loglevel", "{\"level\":\"info\"}").handled);  // the last one
 }
 
@@ -298,10 +298,24 @@ TEST(scene_play_on_a_group_and_the_status_lists_it) {
     const cJSON* plays = cJSON_GetObjectItem(st["show"], "plays");
     EXPECT_EQ(cJSON_GetArraySize(plays), 1);
     EXPECT_EQ(post("/api/scene/0/play", "{\"group\":5}").status, 400);  // no such group
-    EXPECT_EQ(post("/api/scene/0", "{\"group\":0,\"reverse\":true}").status, 200);
-    EXPECT_EQ(config::scene_group_of(config::get_scene(0).fixture_mode), 0);
-    EXPECT_TRUE(config::scene_reverse_of(config::get_scene(0).fixture_mode));
-    post("/api/scene/0", "{\"group\":-1,\"reverse\":false}");
+    // The default group is the scene's, the direction its part's.
+    EXPECT_EQ(post("/api/scene/0", "{\"group\":0,\"parts\":[{\"mask\":255,\"effect\":0,"
+                                   "\"fixture_mode\":\"chain\",\"reverse\":true}]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), 0);
+    EXPECT_TRUE(config::scene_reverse_of(config::get_scene(0).parts[0].fixture_mode));
+    EXPECT_EQ(config::scene_mode_of(config::get_scene(0).parts[0].fixture_mode),
+              config::kFixtureModeChain);
+    Json cfg(get("/api/config").body);
+    const cJSON* js = cJSON_GetArrayItem(cfg["scenes"], 0);
+    EXPECT_EQ(cJSON_GetObjectItem(js, "group")->valueint, 0);
+    const cJSON* jp = cJSON_GetArrayItem(cJSON_GetObjectItem(js, "parts"), 0);
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(jp, "reverse")));
+    EXPECT_STREQ(cJSON_GetObjectItem(jp, "fixture_mode")->valuestring, "chain");
+    post("/api/scene/0", "{\"group\":-1,\"parts\":[{\"mask\":255,\"effect\":0}]}");
+    EXPECT_EQ(config::scene_group(config::get_scene(0)), -1);
+    EXPECT_TRUE(!config::scene_reverse_of(config::get_scene(0).parts[0].fixture_mode));
     EXPECT_EQ(post("/api/scene/0/stop").status, 200);
     post("/api/groups", "{\"groups\":[]}");
 }
@@ -348,24 +362,153 @@ TEST(out_of_range_numbers_are_ignored_not_wrapped) {
     EXPECT_EQ(config::get_global().refresh_rate_hz, g.refresh_rate_hz);
 }
 
+TEST(effect_endpoints_manage_the_bank) {
+    const size_t n = config::num_effects();
+    Json listed(get("/api/config").body);
+    EXPECT_EQ(cJSON_GetArraySize(listed["effects"]), static_cast<int>(n));
+    const cJSON* chase = cJSON_GetArrayItem(listed["effects"], 1);
+    EXPECT_STREQ(cJSON_GetObjectItem(chase, "name")->valuestring, "Chase");
+    EXPECT_EQ(cJSON_GetObjectItem(chase, "generator")->valueint, config::kSceneFxChase);
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItem(chase, "colors")), 2);
+    EXPECT_EQ(cJSON_GetObjectItem(chase, "speed")->valueint, 30);
+
+    Json added(post("/api/effects/add", "{\"name\":\"Web\",\"generator\":3}").body);
+    EXPECT_EQ(added["index"]->valueint, static_cast<int>(n));
+    EXPECT_EQ(config::get_effect(n).generator, config::kSceneFxBlobs);
+    EXPECT_EQ(config::get_effect(n).colors[0][0], 255);  // white unless told otherwise
+    const std::string url = "/api/effect/" + std::to_string(n);
+    EXPECT_EQ(post(url, "{\"colors\":[\"#ff0000\",\"#00ff00\"],\"speed\":90,\"param\":7}").status,
+              200);
+    EXPECT_EQ(config::effect_num_colors(config::get_effect(n)), 2);
+    EXPECT_EQ(config::get_effect(n).colors[1][1], 255);
+    EXPECT_EQ(config::get_effect(n).speed, 90);
+    EXPECT_EQ(config::get_effect(n).param, 7);
+    // Out of range or malformed: the field keeps its value.
+    post(url, "{\"generator\":99,\"speed\":300,\"colors\":[\"#ff0000\",\"nope\"]}");
+    EXPECT_EQ(config::get_effect(n).generator, config::kSceneFxBlobs);
+    EXPECT_EQ(config::get_effect(n).speed, 90);
+    EXPECT_EQ(config::effect_num_colors(config::get_effect(n)), 2);
+    post(url, "{\"colors\":[]}");
+    EXPECT_EQ(config::effect_num_colors(config::get_effect(n)), 2);
+    EXPECT_EQ(post(url, "{nope").status, 400);
+    EXPECT_EQ(post(url, "").status, 400);
+    EXPECT_EQ(post("/api/effect/99", "{}").status, 404);
+
+    // The dimmer phaser and the invert: partial like the rest.
+    EXPECT_EQ(post(url,
+                   "{\"phaser\":{\"wave\":\"triangle\",\"rate\":20,\"spread\":16,\"width\":128,"
+                   "\"low\":30,\"reverse\":true},\"invert\":true}")
+                  .status,
+              200);
+    const auto& ph = config::get_effect(n);
+    EXPECT_EQ(ph.ph_wave, config::kPhaserTriangle);
+    EXPECT_EQ(ph.ph_rate, 20);
+    EXPECT_EQ(ph.ph_spread, 16);
+    EXPECT_EQ(ph.ph_width, 128);
+    EXPECT_EQ(ph.ph_low, 30);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse | config::kEffectDimmerInvert);
+    post(url, "{\"phaser\":{\"wave\":\"wobble\",\"rate\":300,\"reverse\":1},\"invert\":\"yes\"}");
+    EXPECT_EQ(ph.ph_wave, config::kPhaserTriangle);  // unknown or mistyped: kept
+    EXPECT_EQ(ph.ph_rate, 20);
+    EXPECT_EQ(ph.flags, config::kEffectPhaserReverse | config::kEffectDimmerInvert);
+    post(url, "{\"phaser\":{\"wave\":\"none\",\"reverse\":false},\"invert\":false}");
+    EXPECT_EQ(ph.ph_wave, config::kPhaserNone);
+    EXPECT_EQ(ph.ph_spread, 16);  // left out: kept
+    EXPECT_EQ(ph.flags, 0);
+    post(url, "{\"phaser\":7}");  // not an object: ignored
+
+    // Block / Groups / Wings.
+    EXPECT_EQ(post(url, "{\"matricks\":{\"block\":3,\"groups\":4,\"wings\":2}}").status, 200);
+    EXPECT_EQ(ph.block, 3);
+    EXPECT_EQ(ph.groups, 4);
+    EXPECT_EQ(ph.wings, 2);
+    post(url, "{\"matricks\":{\"block\":300,\"wings\":0}}");  // out of range: kept
+    EXPECT_EQ(ph.block, 3);
+    EXPECT_EQ(ph.groups, 4);
+    EXPECT_EQ(ph.wings, 0);
+    post(url, "{\"matricks\":[1,2,3]}");  // not an object: ignored
+    EXPECT_EQ(ph.block, 3);
+    Json withph(get("/api/config").body);
+    const cJSON* jph = cJSON_GetObjectItem(
+        cJSON_GetArrayItem(withph["effects"], static_cast<int>(n)), "phaser");
+    EXPECT_STREQ(cJSON_GetObjectItem(jph, "wave")->valuestring, "none");
+    EXPECT_EQ(cJSON_GetObjectItem(jph, "spread")->valueint, 16);
+    EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(jph, "reverse")));
+    const cJSON* jmx = cJSON_GetObjectItem(
+        cJSON_GetArrayItem(withph["effects"], static_cast<int>(n)), "matricks");
+    EXPECT_EQ(cJSON_GetObjectItem(jmx, "block")->valueint, 3);
+    EXPECT_EQ(cJSON_GetObjectItem(jmx, "groups")->valueint, 4);
+    EXPECT_EQ(cJSON_GetObjectItem(jmx, "wings")->valueint, 0);
+
+    // Moved to the front: every scene keeps its look.
+    EXPECT_EQ(post("/api/effects/move", "{\"from\":" + std::to_string(n) + ",\"to\":0}").status,
+              200);
+    EXPECT_STREQ(config::get_effect(0).name, "Web");
+    EXPECT_EQ(config::get_scene(0).parts[0].effect, 1);
+    EXPECT_EQ(post("/api/effects/move", "{\"from\":0,\"to\":99}").status, 400);
+    EXPECT_EQ(post("/api/effects/move", "{nope").status, 400);
+    EXPECT_EQ(post("/api/effects/move", "").status, 400);
+    EXPECT_EQ(post("/api/effect/1/delete").status, 409);  // scene 0 plays it
+    EXPECT_EQ(post("/api/effect/0/delete").status, 200);
+    EXPECT_EQ(config::num_effects(), n);
+    EXPECT_EQ(config::get_scene(0).parts[0].effect, 0);
+
+    EXPECT_EQ(post("/api/effects/add", "{nope").status, 400);
+    std::vector<config::Effect> saved;
+    for (size_t i = 0; i < n; ++i)
+        saved.push_back(config::get_effect(i));
+    while (config::num_effects() < config::kMaxEffects)
+        EXPECT_EQ(post("/api/effects/add").status, 200);
+    EXPECT_EQ(post("/api/effects/add").status, 409);  // full
+    config::replace_effects(saved.data(), saved.size());
+}
+
 TEST(scene_endpoints_manage_the_list) {
     const size_t n = config::num_scenes();
-    Json added(post("/api/scenes/add", "{\"name\":\"Web\",\"effect\":3}").body);
+    Json added(post("/api/scenes/add", "{\"name\":\"Web\"}").body);
     EXPECT_EQ(added["index"]->valueint, static_cast<int>(n));
-    EXPECT_EQ(
-        post("/api/scene/" + std::to_string(n), "{\"colors\":[\"#ff0000\",\"#00ff00\"]}").status,
-        200);
-    EXPECT_EQ(config::scene_num_colors(config::get_scene(n)), 2);
-    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeEach);  // the default
-    post("/api/scene/" + std::to_string(n), "{\"fixture_mode\":\"mirror\"}");
-    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeMirror);
-    post("/api/scene/" + std::to_string(n), "{\"fixture_mode\":\"spiral\"}");  // unknown: kept
-    EXPECT_EQ(config::get_scene(n).fixture_mode, config::kFixtureModeMirror);
+    EXPECT_EQ(config::scene_mask(config::get_scene(n)), 0xFF);  // the first effect, everywhere
+    EXPECT_EQ(config::get_scene(n).parts[0].effect, 0);
+    const std::string url = "/api/scene/" + std::to_string(n);
+    EXPECT_EQ(post(url, "{\"parts\":[{\"mask\":15,\"effect\":2,\"fixture_mode\":\"mirror\"},"
+                        "{\"mask\":240,\"effect\":5}]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::get_scene(n).num_parts, 2);
+    EXPECT_EQ(config::get_scene(n).parts[0].fixture_mode, config::kFixtureModeMirror);
+    EXPECT_EQ(config::get_scene(n).parts[1].mask, 0xF0);
+    EXPECT_EQ(config::get_scene(n).parts[1].effect, 5);
+    EXPECT_EQ(config::get_scene(n).parts[1].fixture_mode, config::kFixtureModeEach);  // the default
+    EXPECT_STREQ(config::get_scene(n).name, "Web");  // a field left out keeps its value
     Json listed(get("/api/config").body);
-    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(listed["scenes"], static_cast<int>(n)),
-                                     "fixture_mode")
-                     ->valuestring,
-                 "mirror");
+    const cJSON* js = cJSON_GetArrayItem(listed["scenes"], static_cast<int>(n));
+    EXPECT_EQ(cJSON_GetObjectItem(js, "mask")->valueint, 255);
+    const cJSON* jp = cJSON_GetArrayItem(cJSON_GetObjectItem(js, "parts"), 0);
+    EXPECT_EQ(cJSON_GetObjectItem(jp, "mask")->valueint, 15);
+    EXPECT_EQ(cJSON_GetObjectItem(jp, "effect")->valueint, 2);
+    EXPECT_STREQ(cJSON_GetObjectItem(jp, "fixture_mode")->valuestring, "mirror");
+
+    // A bad part refuses the whole update: the parts are taken whole.
+    for (const char* bad :
+         { "{\"parts\":7}", "{\"parts\":[{\"mask\":300,\"effect\":0}]}",
+           "{\"parts\":[{\"mask\":1}]}", "{\"parts\":[{\"mask\":1,\"effect\":31}]}",
+           "{\"parts\":[{\"mask\":1,\"effect\":0,\"fixture_mode\":\"spiral\"}]}",
+           "{\"parts\":[{\"mask\":1,\"effect\":0,\"fixture_mode\":3}]}",
+           "{\"name\":\"x\",\"parts\":[{\"mask\":1,\"effect\":0},{\"mask\":2,\"effect\":0},"
+           "{\"mask\":4,\"effect\":0},{\"mask\":8,\"effect\":0},{\"mask\":16,\"effect\":0},"
+           "{\"mask\":32,\"effect\":0},{\"mask\":64,\"effect\":0},{\"mask\":128,\"effect\":0},"
+           "{\"mask\":1,\"effect\":0}]}" })
+        EXPECT_EQ(post(url, bad).status, 400);
+    EXPECT_EQ(config::get_scene(n).num_parts, 2);
+    EXPECT_STREQ(config::get_scene(n).name, "Web");
+    EXPECT_EQ(post(url, "{nope").status, 400);
+    EXPECT_EQ(post("/api/scenes/add", "{nope").status, 400);
+    EXPECT_EQ(post("/api/scenes/add", "{\"parts\":7}").status, 400);
+    EXPECT_EQ(config::num_scenes(), n + 1);
+    EXPECT_EQ(post(url, "{\"parts\":[]}").status, 200);  // plays nowhere
+    EXPECT_EQ(config::get_scene(n).num_parts, 0);
+    post(url, "{\"parts\":[{\"mask\":255,\"effect\":1}]}");
+
     EXPECT_EQ(post("/api/scenes/move", "{\"from\":" + std::to_string(n) + ",\"to\":0}").status,
               200);
     EXPECT_STREQ(config::get_scene(0).name, "Web");
@@ -376,6 +519,168 @@ TEST(scene_endpoints_manage_the_list) {
     EXPECT_EQ(post("/api/scene/99/play").status, 404);
     EXPECT_EQ(post("/api/scenes/move", "{\"from\":0,\"to\":99}").status, 400);
     EXPECT_EQ(config::num_scenes(), n);
+}
+
+TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
+    const std::string initial = get("/api/backup").body;  // put back at the end
+    Json cfg(get("/api/config").body);
+    EXPECT_EQ(cJSON_GetArraySize(cfg["profiles"]), 4);
+    const cJSON* fxp = cJSON_GetArrayItem(cfg["profiles"], 2);
+    EXPECT_STREQ(cJSON_GetObjectItem(fxp, "name")->valuestring, "RGB FX");
+    EXPECT_EQ(cJSON_GetObjectItem(fxp, "footprint")->valueint, 6);
+    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(fxp, "slots"), 3), "fn")
+                     ->valuestring,
+                 "bank");
+
+    // The whole list is replaced: a preset, and a profile spelt out.
+    const auto r = post("/api/profiles",
+                        "{\"profiles\":[{\"preset\":\"rgb_fx\",\"name\":\"Bars\"},"
+                        "{\"name\":\"Spots\",\"slots\":[{\"fn\":\"dimmer\",\"fine\":true},"
+                        "{\"fn\":\"red\",\"index\":1},{\"fn\":\"none\"},{\"fn\":\"shutter\"}]}]}");
+    EXPECT_EQ(r.status, 200);
+    const auto& bank = config::get_profiles();
+    EXPECT_EQ(bank.count, 2);
+    EXPECT_STREQ(bank.profiles[0].name, "Bars");
+    EXPECT_EQ(config::profile_footprint(bank.profiles[0]), 6);
+    EXPECT_STREQ(bank.profiles[1].name, "Spots");
+    EXPECT_EQ(config::profile_footprint(bank.profiles[1]), 5);
+    EXPECT_EQ(bank.profiles[1].slots[0].arg, config::kProfileArgFine);
+    EXPECT_EQ(bank.profiles[1].slots[1].arg, 1);
+    Json back(r.body);
+    EXPECT_EQ(cJSON_GetArraySize(back["profiles"]), 2);
+
+    // Refused whole: the bank is kept.
+    for (const char* bad :
+         { "{\"profiles\":[]}", "{\"profiles\":7}", "{\"profiles\":[{\"name\":\"x\"}]}",
+           "{\"profiles\":[{\"preset\":\"nope\"}]}", "{\"profiles\":[{\"slots\":[]}]}",
+           "{\"profiles\":[{\"slots\":[{\"fn\":\"wobble\"}]}]}",
+           "{\"profiles\":[{\"slots\":[{\"fn\":\"red\",\"index\":4}]}]}",
+           "{\"profiles\":[{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},"
+           "{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},{\"preset\":\"rgb\"},"
+           "{\"preset\":\"rgb\"},{\"preset\":\"rgb\"}]}",
+           "{nope", "" })
+        EXPECT_EQ(post("/api/profiles", bad).status, 400);
+    EXPECT_EQ(config::get_profiles().count, 2);
+
+    // The Open Fixture Library export of a profile.
+    const auto f = get("/api/profile/1/fixture");
+    EXPECT_EQ(f.status, 200);
+    EXPECT_TRUE(f.headers.at("Content-Disposition").find("pixfrog-profile-2.json") !=
+                std::string::npos);
+    Json ofl(f.body);
+    EXPECT_STREQ(ofl["name"]->valuestring, "pixfrog Spots");
+    const cJSON* mode = cJSON_GetArrayItem(ofl["modes"], 0);
+    EXPECT_STREQ(cJSON_GetObjectItem(mode, "name")->valuestring, "5-channel");
+    const cJSON* chs = cJSON_GetObjectItem(mode, "channels");
+    EXPECT_EQ(cJSON_GetArraySize(chs), 5);
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 0)->valuestring, "Dimmer");
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 1)->valuestring, "Dimmer fine");
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 2)->valuestring, "Red 2");
+    EXPECT_TRUE(cJSON_IsNull(cJSON_GetArrayItem(chs, 3)));  // the spare channel
+    EXPECT_STREQ(cJSON_GetArrayItem(chs, 4)->valuestring, "Shutter");
+    // Every function exports, and every list of ranges covers 0..255 without a gap.
+    EXPECT_EQ(
+        post("/api/profiles",
+             "{\"profiles\":[{\"name\":\"All\",\"slots\":[{\"fn\":\"dimmer\"},{\"fn\":\"red\"},"
+             "{\"fn\":\"green\"},{\"fn\":\"blue\"},{\"fn\":\"white\"},{\"fn\":\"shutter\"},"
+             "{\"fn\":\"bank\"},{\"fn\":\"speed\"},{\"fn\":\"param\"},{\"fn\":\"ph_wave\"},"
+             "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"red\"}]}]}")
+            .status,
+        200);
+    Json all(get("/api/profile/0/fixture").body);
+    int channels = 0;
+    for (const cJSON* ch = all["availableChannels"]->child; ch; ch = ch->next) {
+        ++channels;
+        const cJSON* caps = cJSON_GetObjectItemCaseSensitive(ch, "capabilities");
+        if (!caps) continue;
+        int next = 0;
+        for (const cJSON* cap = caps->child; cap; cap = cap->next) {
+            const cJSON* rg = cJSON_GetObjectItemCaseSensitive(cap, "dmxRange");
+            EXPECT_EQ(static_cast<int>(cJSON_GetArrayItem(rg, 0)->valuedouble), next);
+            next = static_cast<int>(cJSON_GetArrayItem(rg, 1)->valuedouble) + 1;
+        }
+        EXPECT_EQ(next, 256);
+    }
+    EXPECT_EQ(channels, 17);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Red 2") != nullptr);
+    const cJSON* bankch = cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Effect");
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(bankch, "capabilities")),
+              static_cast<int>(config::num_effects()) + 2);
+    EXPECT_EQ(get("/api/profile/5/fixture").status, 404);
+    EXPECT_EQ(get("/api/profile/0/nope").status, 404);
+
+    // A fixture's profile: the optional fourth element of its entry.
+    EXPECT_EQ(post("/api/channel/5", "{\"protocol\":\"WS2815\",\"pixel_count\":60,"
+                                     "\"fixtures\":[[1,20],[21,20,1],[41,20,0,0]]}")
+                  .status,
+              200);
+    EXPECT_EQ(post("/api/channel/5", "{\"fixtures\":[[1,20,0,7],[21,20,1,3],[41,20]]}").status,
+              200);
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[0]), 7);
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[1]), 3);
+    EXPECT_TRUE(config::fixture_reversed(config::get_channel(5).fixtures[1]));
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[2]), 0);
+    Json ch(get("/api/config").body);
+    const cJSON* jf = cJSON_GetObjectItem(cJSON_GetArrayItem(ch["channels"], 5), "fixtures");
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetArrayItem(jf, 0)), 4);
+    EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetArrayItem(jf, 0), 3)->valueint, 7);
+    EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetArrayItem(jf, 1), 2)->valueint, 1);
+    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetArrayItem(jf, 2)), 2);  // nothing to say: [first, count]
+    EXPECT_EQ(post("/api/channel/5", "{\"fixtures\":[[1,20,0,8]]}").status, 400);
+    EXPECT_EQ(post("/api/channel/5", "{\"fixtures\":[[1,20,0,\"x\"]]}").status, 400);
+
+    // Backup and restore carry the bank and the fixtures' profiles.
+    const std::string backup = get("/api/backup").body;
+    config::reset_to_defaults();
+    EXPECT_EQ(config::get_profiles().count, 4);
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    EXPECT_EQ(config::get_profiles().count, 1);
+    EXPECT_STREQ(config::get_profiles().profiles[0].name, "All");
+    EXPECT_EQ(config::fixture_profile(config::get_channel(5).fixtures[0]), 7);
+    post("/api/restore", "{\"profiles\":[{\"preset\":\"nope\"}]}");  // a bad bank is not applied
+    EXPECT_EQ(config::get_profiles().count, 1);
+    post("/api/restore", initial);
+}
+
+TEST(control_mode_output_and_its_patch_sheet) {
+    const std::string initial = get("/api/backup").body;
+    EXPECT_EQ(post("/api/channel/6",
+                   "{\"protocol\":\"WS2815\",\"pixel_count\":60,"
+                   "\"universe_start\":40,\"dmx_start\":501,\"packing\":\"control\","
+                   "\"fixtures\":[[1,20],[21,20,0,2],[41,20,1,1]]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::get_channel(6).packing, config::kPackControl);
+    Json cfg(get("/api/config").body);
+    const cJSON* ch = cJSON_GetArrayItem(cfg["channels"], 6);
+    EXPECT_STREQ(cJSON_GetObjectItem(ch, "packing")->valuestring, "control");
+    EXPECT_EQ(cJSON_GetObjectItem(ch, "universes")->valueint, 2);
+    // [universe, address, channels, profile] per fixture, in their order.
+    const cJSON* patch = cJSON_GetObjectItem(ch, "patch");
+    EXPECT_EQ(cJSON_GetArraySize(patch), 3);
+    auto cell = [&](int row, int col) {
+        return cJSON_GetArrayItem(cJSON_GetArrayItem(patch, row), col)->valueint;
+    };
+    EXPECT_EQ(cell(0, 0), 40);
+    EXPECT_EQ(cell(0, 1), 501);
+    EXPECT_EQ(cell(0, 2), 3);
+    EXPECT_EQ(cell(1, 0), 40);  // 504..509
+    EXPECT_EQ(cell(1, 1), 504);
+    EXPECT_EQ(cell(1, 2), 6);
+    EXPECT_EQ(cell(1, 3), 2);
+    EXPECT_EQ(cell(2, 0), 41);  // 4 channels would pass 512: the next universe
+    EXPECT_EQ(cell(2, 1), 1);
+    // A pixel output has no patch sheet.
+    EXPECT_TRUE(cJSON_GetObjectItem(cJSON_GetArrayItem(cfg["channels"], 0), "patch") == nullptr);
+
+    // Auto-patch chains it; "control" is not a layout to give every output.
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"packing\":\"control\"}").status, 400);
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"compact\":true,\"packing\":\"whole\"}").status,
+              200);
+    EXPECT_EQ(config::get_channel(6).packing, config::kPackControl);
+    EXPECT_EQ(post("/api/channel/6", "{\"packing\":\"sideways\"}").status, 400);
+    post("/api/restore", initial);
 }
 
 // Several boxes' backups must not collide: the file is named after the box
@@ -430,6 +735,9 @@ TEST(post_and_restore_parse_the_same_fields) {
 TEST(backup_then_restore_round_trips) {
     post("/api/channel/3", "{\"protocol\":\"APA102\",\"pixel_count\":77,\"gaps\":[[5,1]]}");
     post("/api/global", "{\"short_name\":\"before\"}");
+    post("/api/effect/2", "{\"phaser\":{\"wave\":\"bump\",\"rate\":9,\"spread\":4,\"width\":200,"
+                          "\"low\":12,\"reverse\":true},\"invert\":true,"
+                          "\"matricks\":{\"block\":2,\"groups\":5,\"wings\":3}}");
     const auto backup = get("/api/backup");
     EXPECT_EQ(backup.status, 200);
     EXPECT_TRUE(backup.headers.at("Content-Disposition").find("attachment") != std::string::npos);
@@ -440,7 +748,15 @@ TEST(backup_then_restore_round_trips) {
     EXPECT_EQ(post("/api/restore", backup.body).status, 200);
     Json a(snapshot), b(get("/api/config").body);
     EXPECT_TRUE(cJSON_Compare(a["channels"], b["channels"], true));
+    EXPECT_TRUE(cJSON_Compare(a["effects"], b["effects"], true));
     EXPECT_TRUE(cJSON_Compare(a["scenes"], b["scenes"], true));
+    EXPECT_EQ(config::get_effect(2).ph_wave, config::kPhaserBump);  // the phaser came back
+    EXPECT_EQ(config::get_effect(2).ph_width, 200);
+    EXPECT_EQ(config::get_effect(2).block, 2);
+    EXPECT_EQ(config::get_effect(2).groups, 5);
+    EXPECT_EQ(config::get_effect(2).wings, 3);
+    EXPECT_EQ(config::get_effect(2).flags,
+              config::kEffectPhaserReverse | config::kEffectDimmerInvert);
     EXPECT_STREQ(config::get_global().short_name, "before");
     EXPECT_EQ(post("/api/restore", "garbage").status, 400);
 
@@ -809,6 +1125,51 @@ TEST(fixture_profile_covers_every_control_function) {
     EXPECT_EQ(gapless, 3);  // speed, param, scene
     const cJSON* fade = cJSON_GetObjectItemCaseSensitive(avail, "Fade time");
     EXPECT_TRUE(fade != nullptr);
+
+    // The channels on the effect a scene plays: bank, phaser, Block / Groups /
+    // Wings — every one a gapless 0..255 list.
+    EXPECT_EQ(
+        post("/api/control",
+             "{\"slots\":[{\"fn\":\"bank\",\"mask\":15},{\"fn\":\"ph_wave\"},"
+             "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"effect\"}]}")
+            .status,
+        200);
+    Json fx(get("/api/control/fixture").body);
+    int listed = 0;
+    for (const cJSON* ch = fx["availableChannels"]->child; ch; ch = ch->next) {
+        int next = 0;
+        for (const cJSON* cap = cJSON_GetObjectItemCaseSensitive(ch, "capabilities")->child; cap;
+             cap              = cap->next) {
+            const cJSON* r = cJSON_GetObjectItemCaseSensitive(cap, "dmxRange");
+            EXPECT_EQ(static_cast<int>(cJSON_GetArrayItem(r, 0)->valuedouble), next);
+            next = static_cast<int>(cJSON_GetArrayItem(r, 1)->valuedouble) + 1;
+        }
+        EXPECT_EQ(next, 256);
+        ++listed;
+    }
+    EXPECT_EQ(listed, 9);
+    // The bank channel names the effects, band by band; the generator channel
+    // is no longer called "Effect".
+    const cJSON* bank = cJSON_GetObjectItemCaseSensitive(fx["availableChannels"],
+                                                         "Effect (out 1-4)");
+    EXPECT_TRUE(bank != nullptr);
+    const cJSON* caps = cJSON_GetObjectItemCaseSensitive(bank, "capabilities");
+    EXPECT_EQ(cJSON_GetArraySize(caps), static_cast<int>(config::num_effects()) + 2);
+    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(caps, 2), "effectName")->valuestring,
+                 config::get_effect(1).name);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(fx["availableChannels"], "Generator") != nullptr);
+    const cJSON* wave = cJSON_GetObjectItemCaseSensitive(fx["availableChannels"], "Phaser wave");
+    EXPECT_STREQ(cJSON_GetObjectItem(
+                     cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(wave, "capabilities"), 2),
+                     "effectName")
+                     ->valuestring,
+                 "Phaser sine");
+    Json ctl(get("/api/config").body);
+    EXPECT_STREQ(cJSON_GetObjectItem(
+                     cJSON_GetArrayItem(cJSON_GetObjectItem(ctl["control"], "slots"), 0), "fn")
+                     ->valuestring,
+                 "bank");
     post("/api/control", "{\"preset\":\"simple\"}");
 }
 
@@ -848,7 +1209,7 @@ TEST(backup_restore_carries_the_control_mode_and_fade) {
 
 TEST(scene_play_takes_an_output_zone_and_stop_is_per_scene) {
     EXPECT_EQ(post("/api/scene/1/play", "{\"outputs\":15}").status, 200);
-    EXPECT_EQ(dmx::scene_outputs(1), 0x0F & config::get_scene(1).channel_mask);
+    EXPECT_EQ(dmx::scene_outputs(1), 0x0F & config::scene_mask(config::get_scene(1)));
     EXPECT_EQ(post("/api/scene/2/play", "").status, 200);  // no body: its own mask
     EXPECT_EQ(post("/api/scene/1/play", "{\"outputs\":0}").status, 400);
     EXPECT_EQ(post("/api/scene/2/stop", "").status, 200);
@@ -951,12 +1312,50 @@ TEST(channel_post_colour_order_and_numeric_bools) {
     post("/api/channel/4", "{\"invert\":false}");
 }
 
-TEST(restore_accepts_a_single_legacy_scene_colour) {
+// A backup taken before the effect bank: each scene carried its look and its
+// outputs. It comes back as one effect and one scene, at the same pace.
+TEST(restore_converts_a_pre_bank_backup) {
     const std::string backup = get("/api/backup").body;
-    std::string one = "{\"scenes\":[{\"name\":\"Old\",\"effect\":0,\"color\":\"#0a0b0c\"}]}";
-    EXPECT_EQ(post("/api/restore", one).status, 200);
-    EXPECT_EQ(config::get_scene(0).r, 0x0A);
-    EXPECT_EQ(config::get_scene(0).b, 0x0C);
+    const std::string old =
+        "{\"backup_version\":1,\"scenes\":["
+        "{\"name\":\"Old\",\"effect\":0,\"color\":\"#0a0b0c\",\"speed\":200},"
+        "{\"name\":\"Run\",\"effect\":1,\"colors\":[\"#ff0000\",\"#0000ff\"],\"speed\":60,"
+        "\"param\":3,\"mask\":15,\"fixture_mode\":\"chain\"}]}";
+    EXPECT_EQ(post("/api/restore", old).status, 200);
+    EXPECT_EQ(config::num_effects(), 2);
+    EXPECT_EQ(config::num_scenes(), 2);
+    EXPECT_STREQ(config::get_effect(0).name, "Old");
+    EXPECT_EQ(config::get_effect(0).colors[0][0], 0x0A);
+    EXPECT_EQ(config::get_effect(0).colors[0][2], 0x0C);
+    EXPECT_EQ(config::get_effect(0).speed, 200);  // solid: a strobe frequency, as is
+    EXPECT_EQ(config::scene_mask(config::get_scene(0)), 0xFF);
+    EXPECT_EQ(config::get_effect(1).generator, config::kSceneFxChase);
+    EXPECT_EQ(config::get_effect(1).speed, 30);  // half: the scale doubled
+    EXPECT_EQ(config::get_effect(1).param, 3);
+    EXPECT_EQ(config::effect_num_colors(config::get_effect(1)), 2);
+    EXPECT_STREQ(config::get_scene(1).name, "Run");
+    EXPECT_EQ(config::get_scene(1).parts[0].mask, 0x0F);
+    EXPECT_EQ(config::get_scene(1).parts[0].effect, 1);
+    EXPECT_EQ(config::get_scene(1).parts[0].fixture_mode, config::kFixtureModeChain);
+
+    // Today's backup: both lists replaced, length included.
+    EXPECT_EQ(post("/api/restore", backup).status, 200);
+    Json back(get("/api/backup").body), want(backup);
+    EXPECT_EQ(back["backup_version"]->valueint, 2);
+    EXPECT_TRUE(cJSON_Compare(back["effects"], want["effects"], true));
+    EXPECT_TRUE(cJSON_Compare(back["scenes"], want["scenes"], true));
+    // An effect bank alone empties the scene list; a bad part leaves its scene bare.
+    EXPECT_EQ(post("/api/restore", "{\"effects\":[{\"name\":\"Only\"}]}").status, 200);
+    EXPECT_EQ(config::num_effects(), 1);
+    EXPECT_EQ(config::get_effect(0).num_colors, 1);
+    EXPECT_EQ(config::num_scenes(), 0);
+    EXPECT_EQ(post("/api/restore", "{\"effects\":[],\"scenes\":[{\"name\":\"Bare\","
+                                   "\"parts\":[{\"mask\":1}]}]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::num_scenes(), 1);
+    EXPECT_STREQ(config::get_scene(0).name, "Bare");
+    EXPECT_EQ(config::get_scene(0).num_parts, 0);
     post("/api/restore", backup);
 }
 

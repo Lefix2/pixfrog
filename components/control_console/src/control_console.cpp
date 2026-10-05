@@ -440,6 +440,25 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
     printf("%s\n", ng ? "" : "-");
     printf("packing=%s\n", config::packing_id(c.packing));
     printf("universes=%u\n", static_cast<unsigned>(dmx::channel_universe_span(c)));
+    // first LED (1-based):count[:r][:pN], comma-separated; "-" = none
+    const size_t nf = config::fixture_count(c.fixtures, config::kMaxFixtures);
+    printf("fixtures=");
+    for (size_t k = 0; k < nf; ++k) {
+        printf("%s%u:%u", k ? "," : "", c.fixtures[k].pos + 1u, config::fixture_len(c.fixtures[k]));
+        if (config::fixture_reversed(c.fixtures[k])) printf(":r");
+        if (config::fixture_profile(c.fixtures[k]))
+            printf(":p%u", config::fixture_profile(c.fixtures[k]));
+    }
+    printf("%s\n", nf ? "" : "-");
+    // DMX control mode — the patch sheet: universe.address+channels per fixture
+    if (c.packing == config::kPackControl) {
+        static dmx::FixtureAddress at[config::kMaxFixtures];  // off the console task's stack
+        const size_t n = dmx::fixture_patch(c, at, config::kMaxFixtures);
+        printf("patch=");
+        for (size_t k = 0; k < n; ++k)
+            printf("%s%u.%u+%u", k ? "," : "", at[k].universe, at[k].address, at[k].footprint);
+        printf("\n");
+    }
 }
 
 // "pos:len[,pos:len…]" (pos 1-based) or "-" → gaps; false on a malformed list.
@@ -464,6 +483,51 @@ bool parse_gaps(const char* arg, led::PixelGap out[led::kMaxPixelGaps]) {
         out[n++] = led::PixelGap{ static_cast<uint16_t>(pos - 1), static_cast<uint16_t>(len) };
     }
     return n > 0;
+}
+
+// "first:count[:r][:pN],…" (first 1-based) or "-" for none → the fixture
+// list. False on a malformed entry, a fixture past the strip's limits or two
+// fixtures sharing an LED.
+bool parse_fixtures(const char* arg, config::Fixture out[config::kMaxFixtures]) {
+    config::Fixture parsed[config::kMaxFixtures] = {};
+    size_t n                                     = 0;
+    if (strcmp(arg, "-") != 0) {
+        static char buf[config::kMaxFixtures * 16];  // off the console task's stack
+        if (strlen(arg) >= sizeof(buf)) return false;
+        copy_str(buf, sizeof(buf), arg);
+        char* save = nullptr;
+        for (char* tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(nullptr, ",", &save)) {
+            if (n == config::kMaxFixtures) return false;
+            uint32_t first = 0, count = 0, profile = 0;
+            bool reversed = false;
+            char* save2   = nullptr;
+            int field     = 0;
+            for (char* f = strtok_r(tok, ":", &save2); f;
+                 f       = strtok_r(nullptr, ":", &save2), ++field) {
+                if (field == 0) {
+                    if (!parse_u32_in(f, 1, led::kMaxPixelsPerChannel, first)) return false;
+                } else if (field == 1) {
+                    if (!parse_u32_in(f, 1, led::kMaxPixelsPerChannel, count)) return false;
+                } else if (strcmp(f, "r") == 0) {
+                    reversed = true;
+                } else if (f[0] != 'p' ||
+                           !parse_u32_in(f + 1, 0, config::kMaxProfiles - 1, profile)) {
+                    return false;
+                }
+            }
+            if (field < 2 || first + count - 1 > led::kMaxPixelsPerChannel) return false;
+            parsed[n++] = config::make_fixture(static_cast<uint16_t>(first - 1),
+                                               static_cast<uint16_t>(count), reversed,
+                                               static_cast<uint8_t>(profile));
+        }
+        for (size_t a = 0; a < n; ++a)
+            for (size_t b = a + 1; b < n; ++b)
+                if (parsed[a].pos < parsed[b].pos + config::fixture_len(parsed[b]) &&
+                    parsed[b].pos < parsed[a].pos + config::fixture_len(parsed[a]))
+                    return false;
+    }
+    memcpy(out, parsed, sizeof(parsed));
+    return true;
 }
 
 int cmd_ch(int argc, char** argv) {
@@ -526,11 +590,15 @@ int cmd_ch(int argc, char** argv) {
             return err("gaps: pos:len[,pos:len...] (pos 1-based, max 8) or -");
     } else if (strcmp(key, "packing") == 0) {
         const int p = config::packing_from_id(val);
-        if (p < 0) return err("packing: continuous|whole|fixture");
+        if (p < 0) return err("packing: continuous|whole|fixture|colour|control");
         c.packing = static_cast<uint8_t>(p);
+    } else if (strcmp(key, "fixtures") == 0) {
+        if (!parse_fixtures(val, c.fixtures))
+            return err("fixtures: first:count[:r][:pN],... (first 1-based, r = reversed, "
+                       "pN = DMX profile N; max 32, no overlap) or -");
     } else {
         return err("unknown key (protocol order universe dmx_start pixels brightness grouping "
-                   "invert clock_hz gamma_x10 wb gaps packing)");
+                   "invert clock_hz gamma_x10 wb gaps packing fixtures)");
     }
 
     const bool persisted = config::set_channel(ch, c);
@@ -539,9 +607,10 @@ int cmd_ch(int argc, char** argv) {
     return ok();
 }
 
-// autopatch <base> [compact] [continuous|whole|fixture]
+// autopatch <base> [compact] [continuous|whole|fixture|colour]
 int cmd_autopatch(int argc, char** argv) {
-    const char* usage = "usage: autopatch <base_universe> [compact] [continuous|whole|fixture]";
+    const char* usage =
+        "usage: autopatch <base_universe> [compact] [continuous|whole|fixture|colour]";
     if (argc < 2 || argc > 4) return err(usage);
     uint32_t base = 0;
     if (!parse_u32_in(argv[1], 0, 32767, base)) return err("base_universe: 0..32767");
@@ -551,7 +620,7 @@ int cmd_autopatch(int argc, char** argv) {
         const int p = config::packing_from_id(argv[i]);
         if (strcmp(argv[i], "compact") == 0)
             o.compact = true;
-        else if (p >= 0)
+        else if (p >= 0 && p != config::kPackControl)  // a mode of an output, not a layout for all
             o.packing = static_cast<int8_t>(p);
         else
             return err(usage);
@@ -739,12 +808,12 @@ int cmd_identify(int argc, char** argv) {
     return ok();
 }
 
-// ── standalone scenes ───────────────────────────────────────────────────────
+// ── effect bank ─────────────────────────────────────────────────────────────
 
 const char* const kSceneFxNames[] = { "solid",   "chase", "rainbow", "blobs", "gradient", "fade",
                                       "twinkle", "fire",  "scanner", "wave",  "stripes" };
 static_assert(sizeof(kSceneFxNames) / sizeof(kSceneFxNames[0]) == config::kSceneFxCount,
-              "one console name per scene effect");
+              "one console name per generator");
 
 // "rrggbb[,rrggbb…]" → up to kSceneColorsMax colours; returns the count, 0 on error.
 size_t parse_scene_colors(const char* arg, uint8_t out[][3]) {
@@ -760,6 +829,156 @@ size_t parse_scene_colors(const char* arg, uint8_t out[][3]) {
     return n;
 }
 
+bool parse_effect_index(const char* s, uint32_t& out) {
+    return config::num_effects() > 0 && parse_u32_in(s, 0, config::num_effects() - 1, out);
+}
+
+int cmd_fx(int argc, char** argv) {
+    if (argc == 1) {
+        for (size_t i = 0; i < config::num_effects(); ++i) {
+            const auto& e = config::get_effect(i);
+            printf("fx%u name=%s generator=%s color=", static_cast<unsigned>(i), e.name,
+                   kSceneFxNames[e.generator < config::kSceneFxCount ? e.generator : 0]);
+            for (size_t k = 0; k < config::effect_num_colors(e); ++k)
+                printf("%s%02x%02x%02x", k ? "," : "", e.colors[k][0], e.colors[k][1],
+                       e.colors[k][2]);
+            // phaser: wave,rate,spread,width,low[,reverse]
+            // matricks: block,groups,wings
+            printf(" speed=%u param=%u phaser=%s,%u,%u,%u,%u%s invert=%d matricks=%u,%u,%u "
+                   "used=%d\n",
+                   e.speed, e.param, config::phaser_wave_id(e.ph_wave), e.ph_rate, e.ph_spread,
+                   e.ph_width, e.ph_low, (e.flags & config::kEffectPhaserReverse) ? ",reverse" : "",
+                   (e.flags & config::kEffectDimmerInvert) != 0, e.block, e.groups, e.wings,
+                   config::effect_in_use(i));
+        }
+        return ok();
+    }
+
+    uint32_t n = 0;
+    if (strcmp(argv[1], "name") == 0) {
+        if (argc != 4 || !parse_effect_index(argv[2], n))
+            return err("usage: fx name <index> <text>");
+        config::ScopedLock lock;
+        auto e = config::get_effect(n);
+        copy_str(e.name, sizeof(e.name), argv[3]);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "set") == 0) {
+        // fx set <n> <generator> <rrggbb[,rrggbb…]> <speed> <param>
+        if (argc != 7)
+            return err("usage: fx set <n> <generator> <rrggbb[,rrggbb...]> "
+                       "<speed 0..255> <param 0..255>");
+        if (!parse_effect_index(argv[2], n)) return err("fx: an existing index");
+        const int gen = lookup_name(kSceneFxNames, config::kSceneFxCount, argv[3]);
+        if (gen < 0)
+            return err("generator: solid|chase|rainbow|blobs|gradient|fade|twinkle|fire|scanner|"
+                       "wave|stripes or 0..10");
+        uint8_t cols[config::kSceneColorsMax][3] = {};
+        const size_t ncols                       = parse_scene_colors(argv[4], cols);
+        if (ncols == 0) return err("colors: rrggbb[,rrggbb...] (1..4)");
+        uint32_t speed = 0, param = 0;
+        if (!parse_u32_in(argv[5], 0, 255, speed)) return err("speed: 0..255");
+        if (!parse_u32_in(argv[6], 0, 255, param)) return err("param: 0..255");
+        config::ScopedLock lock;
+        auto e      = config::get_effect(n);
+        e.generator = static_cast<uint8_t>(gen);
+        memcpy(e.colors, cols, sizeof(e.colors));
+        e.num_colors = static_cast<uint8_t>(ncols);
+        e.speed      = static_cast<uint8_t>(speed);
+        e.param      = static_cast<uint8_t>(param);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "phaser") == 0) {
+        // fx phaser <n> <wave> [<rate> <spread> [<width> <low> [reverse|forward]]] — the
+        // dimmer phaser; what is left out keeps its value.
+        if (argc < 4 || argc == 5 || argc == 7 || argc > 9 || !parse_effect_index(argv[2], n))
+            return err("usage: fx phaser <n> <wave> [<rate> <spread> [<width> <low> "
+                       "[reverse|forward]]]");
+        const int wave = config::phaser_wave_from_id(argv[3]);
+        if (wave < 0) return err("wave: none|sin|cos|ramp_up|ramp_down|triangle|pwm|bump");
+        uint32_t v[4] = {};
+        for (int k = 4; k < argc && k < 8; ++k)
+            if (!parse_u32_in(argv[k], 0, 255, v[k - 4]))
+                return err("rate, spread, width, low: 0..255");
+        const bool reverse = argc == 9 && strcmp(argv[8], "reverse") == 0;
+        if (argc == 9 && !reverse && strcmp(argv[8], "forward") != 0)
+            return err("direction: reverse|forward");
+        config::ScopedLock lock;
+        auto e    = config::get_effect(n);
+        e.ph_wave = static_cast<uint8_t>(wave);
+        if (argc >= 6) {
+            e.ph_rate   = static_cast<uint8_t>(v[0]);
+            e.ph_spread = static_cast<uint8_t>(v[1]);
+        }
+        if (argc >= 8) {
+            e.ph_width = static_cast<uint8_t>(v[2]);
+            e.ph_low   = static_cast<uint8_t>(v[3]);
+        }
+        if (argc == 9)
+            e.flags = static_cast<uint8_t>(reverse ? e.flags | config::kEffectPhaserReverse
+                                                   : e.flags & ~config::kEffectPhaserReverse);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "matricks") == 0) {
+        // fx matricks <n> <block> <groups> <wings> — on the pixels of the run; 0 = off
+        uint32_t v[3] = {};
+        if (argc != 6 || !parse_effect_index(argv[2], n))
+            return err("usage: fx matricks <n> <block> <groups> <wings>");
+        for (int k = 0; k < 3; ++k)
+            if (!parse_u32_in(argv[3 + k], 0, 255, v[k]))
+                return err("block, groups, wings: 0..255 (0 = off)");
+        config::ScopedLock lock;
+        auto e   = config::get_effect(n);
+        e.block  = static_cast<uint8_t>(v[0]);
+        e.groups = static_cast<uint8_t>(v[1]);
+        e.wings  = static_cast<uint8_t>(v[2]);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "invert") == 0) {
+        // fx invert <n> 0|1 — the intensity negative of the whole effect
+        bool on = false;
+        if (argc != 4 || !parse_effect_index(argv[2], n) || !parse_bool(argv[3], on))
+            return err("usage: fx invert <n> 0|1");
+        config::ScopedLock lock;
+        auto e  = config::get_effect(n);
+        e.flags = static_cast<uint8_t>(on ? e.flags | config::kEffectDimmerInvert
+                                          : e.flags & ~config::kEffectDimmerInvert);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "add") == 0) {
+        // fx add [name] — a solid white effect, appended.
+        config::Effect e{};
+        copy_str(e.name, sizeof(e.name), argc >= 3 ? argv[2] : "New effect");
+        e.num_colors = 1;
+        memset(e.colors[0], 255, 3);
+        const int idx = config::add_effect(e);
+        if (idx < 0) return err("effect bank full (31)");
+        printf("index=%d\n", idx);
+        return ok();
+    }
+    if (strcmp(argv[1], "del") == 0) {
+        if (argc != 3 || !parse_effect_index(argv[2], n)) return err("usage: fx del <index>");
+        if (!config::delete_effect(n)) return err("effect in use by a scene");
+        return ok();
+    }
+    if (strcmp(argv[1], "move") == 0) {
+        uint32_t to = 0;
+        if (argc != 4 || !parse_effect_index(argv[2], n) || !parse_effect_index(argv[3], to))
+            return err("usage: fx move <from> <to>");
+        config::move_effect(n, to);
+        return ok();
+    }
+    return err("usage: fx [name <n> <text> | set <n> ... | phaser <n> ... | invert <n> 0|1 | "
+               "matricks <n> <block> <groups> <wings> | add [name] | del <n> | move <from> <to>]");
+}
+
+// ── standalone scenes ───────────────────────────────────────────────────────
+
 bool parse_scene_index(const char* s, uint32_t& out) {
     return config::num_scenes() > 0 && parse_u32_in(s, 0, config::num_scenes() - 1, out);
 }
@@ -773,14 +992,14 @@ int cmd_scene(int argc, char** argv) {
         printf("\n");
         for (size_t i = 0; i < config::num_scenes(); ++i) {
             const auto& sc = config::get_scene(i);
-            printf("scene%u name=%s effect=%s color=", static_cast<unsigned>(i), sc.name,
-                   kSceneFxNames[sc.effect < config::kSceneFxCount ? sc.effect : 0]);
-            for (size_t k = 0; k < config::scene_num_colors(sc); ++k) {
-                uint8_t rgb[3];
-                config::scene_color(sc, k, rgb);
-                printf("%s%02x%02x%02x", k ? "," : "", rgb[0], rgb[1], rgb[2]);
-            }
-            printf(" speed=%u param=%u mask=%02x\n", sc.speed, sc.param, sc.channel_mask);
+            // parts: <outputs-hex>:<effect>:<fixture mode>[:rev], comma-separated
+            printf("scene%u name=%s mask=%02x group=%d parts=", static_cast<unsigned>(i), sc.name,
+                   config::scene_mask(sc), config::scene_group(sc));
+            for (size_t k = 0; k < sc.num_parts; ++k)
+                printf("%s%02x:%u:%s%s", k ? "," : "", sc.parts[k].mask, sc.parts[k].effect,
+                       config::fixture_mode_id(config::scene_mode_of(sc.parts[k].fixture_mode)),
+                       config::scene_reverse_of(sc.parts[k].fixture_mode) ? ":rev" : "");
+            printf("\n");
         }
         return ok();
     }
@@ -820,48 +1039,72 @@ int cmd_scene(int argc, char** argv) {
     if (strcmp(argv[1], "name") == 0) {
         if (argc != 4 || !parse_scene_index(argv[2], n))
             return err("usage: scene name <index> <text>");
+        config::ScopedLock lock;
         auto sc = config::get_scene(n);
         copy_str(sc.name, sizeof(sc.name), argv[3]);
         if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
         return ok();
     }
-    if (strcmp(argv[1], "set") == 0) {
-        // scene set <n> <effect> <rrggbb[,rrggbb…]> <speed> <param> <mask-hex>
-        if (argc != 8)
-            return err("usage: scene set <n> <effect> <rrggbb[,rrggbb...]> "
-                       "<speed 0..255> <param 0..255> <mask hex>");
-        if (!parse_scene_index(argv[2], n)) return err("scene: an existing index");
-        const int fx = lookup_name(kSceneFxNames, config::kSceneFxCount, argv[3]);
-        if (fx < 0)
-            return err("effect: solid|chase|rainbow|blobs|gradient|fade|twinkle|fire|scanner|"
-                       "wave|stripes or 0..10");
-        uint8_t cols[config::kSceneColorsMax][3];
-        const size_t ncols = parse_scene_colors(argv[4], cols);
-        if (ncols == 0) return err("colors: rrggbb[,rrggbb...] (1..4)");
-        uint32_t speed = 0, param = 0;
-        if (!parse_u32_in(argv[5], 0, 255, speed)) return err("speed: 0..255");
-        if (!parse_u32_in(argv[6], 0, 255, param)) return err("param: 0..255");
+    if (strcmp(argv[1], "part") == 0) {
+        // scene part <n> <outputs-hex> <effect> [mode] [rev] — those outputs play
+        // that effect; they leave the part they were in. `rev`: from the far end.
         uint8_t mask[1];
-        if (parse_hex(argv[7], mask, 1) != 1) return err("mask: 2-digit hex (ff = all)");
-        auto sc   = config::get_scene(n);
-        sc.effect = static_cast<uint8_t>(fx);
-        for (size_t k = 0; k < ncols; ++k)
-            config::set_scene_color(sc, k, cols[k][0], cols[k][1], cols[k][2]);
-        sc.num_colors   = static_cast<uint8_t>(ncols);
-        sc.speed        = static_cast<uint8_t>(speed);
-        sc.param        = static_cast<uint8_t>(param);
-        sc.channel_mask = mask[0];
+        uint32_t fx    = 0;
+        const bool rev = argc >= 6 && strcmp(argv[argc - 1], "rev") == 0;
+        if (rev) --argc;
+        if ((argc != 5 && argc != 6) || !parse_scene_index(argv[2], n))
+            return err(
+                "usage: scene part <n> <outputs-hex> <effect> [each|strip|chain|mirror] [rev]");
+        if (parse_hex(argv[3], mask, 1) != 1 || mask[0] == 0)
+            return err("outputs: 2-digit hex, 01..ff");
+        if (!parse_effect_index(argv[4], fx)) return err("effect: an existing index (see `fx`)");
+        int mode = config::kFixtureModeEach;
+        if (argc == 6) {
+            mode = -1;
+            for (uint8_t m = 0; m < config::kFixtureModeCount; ++m)
+                if (strcmp(argv[5], config::fixture_mode_id(m)) == 0) mode = m;
+            if (mode < 0) return err("mode: each|strip|chain|mirror");
+        }
+        config::ScopedLock lock;
+        auto sc = config::get_scene(n);
+        for (size_t k = 0; k < sc.num_parts; ++k)
+            sc.parts[k].mask = static_cast<uint8_t>(sc.parts[k].mask & ~mask[0]);
+        config::sanitize_scene(sc);  // drops the parts left without an output
+        if (sc.num_parts == config::kMaxSceneParts) return err("scene parts full (8)");
+        sc.parts[sc.num_parts++] = config::ScenePart{
+            mask[0], static_cast<uint8_t>(fx),
+            static_cast<uint8_t>(mode | (rev ? config::kSceneReverseBit : 0)), 0
+        };
+        if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "group") == 0) {
+        // scene group <n> <g|none> — the fixture group it plays on by default
+        uint32_t g = 0;
+        if (argc != 4 || !parse_scene_index(argv[2], n))
+            return err("usage: scene group <index> <group 0..15|none>");
+        const bool none = strcmp(argv[3], "none") == 0;
+        if (!none && !parse_u32_in(argv[3], 0, config::kMaxGroups - 1, g))
+            return err("group: 0..15, or none");
+        config::ScopedLock lock;
+        auto sc  = config::get_scene(n);
+        sc.group = static_cast<uint8_t>(none ? 0 : g + 1);
+        if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "clear") == 0) {
+        // scene clear <n> — no part left: the scene plays nowhere
+        if (argc != 3 || !parse_scene_index(argv[2], n)) return err("usage: scene clear <index>");
+        config::ScopedLock lock;
+        auto sc      = config::get_scene(n);
+        sc.num_parts = 0;
         if (!config::set_scene(n, sc)) printf("warn=not_persisted\n");
         return ok();
     }
     if (strcmp(argv[1], "add") == 0) {
-        // scene add [name] — a solid white scene on every channel, appended.
-        config::Scene sc{};
-        copy_str(sc.name, sizeof(sc.name), argc >= 3 ? argv[2] : "New scene");
-        sc.channel_mask = 0xFF;
-        sc.num_colors   = 1;
-        sc.r = sc.g = sc.b = 255;
-        const int idx      = config::add_scene(sc);
+        // scene add [name] — the first effect on every output, appended.
+        const int idx = config::add_scene(
+            config::make_scene(argc >= 3 ? argv[2] : "New scene", 0xFF, 0));
         if (idx < 0) return err("scene list full (30)");
         printf("index=%d\n", idx);
         return ok();
@@ -880,8 +1123,113 @@ int cmd_scene(int argc, char** argv) {
         dmx::scene_list_edited(config::SceneEdit::Move, n, to);
         return ok();
     }
-    return err("usage: scene [play <n> | stop | name <n> <text> | set <n> ... | add [name] | "
-               "del <n> | move <from> <to>]");
+    return err("usage: scene [play <n> | stop | name <n> <text> | part <n> ... | clear <n> | "
+               "add [name] | del <n> | move <from> <to>]");
+}
+
+// ── fixture DMX profiles ────────────────────────────────────────────────────
+
+// One slot as "fn", "fn:colour" (red:1 = colour 2) or "dimmer+fine".
+bool parse_profile_slot(char* tok, config::ProfileSlot& out) {
+    uint8_t arg = 0;
+    if (char* plus = strchr(tok, '+')) {
+        if (strcmp(plus, "+fine") != 0) return false;
+        arg   |= config::kProfileArgFine;
+        *plus  = '\0';
+    }
+    if (char* colon = strchr(tok, ':')) {
+        uint32_t k = 0;
+        if (!parse_u32_in(colon + 1, 0, config::kSceneColorsMax - 1, k)) return false;
+        arg    |= static_cast<uint8_t>(k);
+        *colon  = '\0';
+    }
+    const int fn = config::fix_fn_from_id(tok);
+    if (fn < 0) return false;
+    out = config::ProfileSlot{ static_cast<uint8_t>(fn), arg };
+    return true;
+}
+
+void print_profiles(const config::ProfileBank& b) {
+    printf("profiles=%u\n", b.count);
+    for (size_t i = 0; i < b.count; ++i) {
+        const auto& p = b.profiles[i];
+        printf("profile%u name=%s footprint=%u slots=", static_cast<unsigned>(i), p.name,
+               static_cast<unsigned>(config::profile_footprint(p)));
+        for (size_t k = 0; k < p.count; ++k) {
+            const auto& sl = p.slots[k];
+            printf("%s%s", k ? "," : "", config::fix_fn_id(sl.fn));
+            if (sl.arg & config::kProfileArgColor) printf(":%u", sl.arg & config::kProfileArgColor);
+            if (sl.arg & config::kProfileArgFine) printf("+fine");
+        }
+        printf("\n");
+    }
+}
+
+int cmd_profile(int argc, char** argv) {
+    static config::ProfileBank b;  // 548 B: off the console task's stack
+    config::ScopedLock lock;       // read-modify-write
+    b = config::get_profiles();
+    if (argc == 1) {
+        print_profiles(b);
+        return ok();
+    }
+    const char* sub = argv[1];
+    uint32_t n      = 0;
+    if (strcmp(sub, "add") == 0) {
+        // profile add [name] — plain RGB, appended
+        if (b.count >= config::kMaxProfiles) return err("profile bank full (8)");
+        config::Profile& p = b.profiles[b.count];
+        config::profile_apply_preset(p, config::ProfilePreset::Rgb);
+        if (argc >= 3) copy_str(p.name, sizeof(p.name), argv[2]);
+        printf("index=%u\n", b.count++);
+    } else if (argc < 3 || !parse_u32_in(argv[2], 0, b.count - 1u, n)) {
+        return err("usage: profile [add [name] | del <n> | name <n> <text> | "
+                   "preset <n> rgb|dim_rgb|rgb_fx|full | slots <n> <fn[:colour][+fine],...>]");
+    } else if (strcmp(sub, "del") == 0) {
+        // The last profile stays: every fixture points at one.
+        if (argc != 3 || b.count == 1) return err("usage: profile del <n> (one profile must stay)");
+        for (size_t i = n; i + 1 < b.count; ++i)
+            b.profiles[i] = b.profiles[i + 1];
+        --b.count;
+    } else if (strcmp(sub, "name") == 0) {
+        if (argc != 4) return err("usage: profile name <n> <text>");
+        copy_str(b.profiles[n].name, sizeof(b.profiles[n].name), argv[3]);
+    } else if (strcmp(sub, "preset") == 0) {
+        int preset = -1;
+        for (uint8_t k = 0; argc == 4 && k < static_cast<uint8_t>(config::ProfilePreset::Count);
+             ++k)
+            if (strcmp(argv[3], config::profile_preset_id(static_cast<config::ProfilePreset>(k))) ==
+                0)
+                preset = k;
+        if (preset < 0) return err("usage: profile preset <n> rgb|dim_rgb|rgb_fx|full");
+        config::profile_apply_preset(b.profiles[n], static_cast<config::ProfilePreset>(preset));
+    } else if (strcmp(sub, "slots") == 0) {
+        if (argc != 4) return err("usage: profile slots <n> <fn[:colour][+fine],...>");
+        config::Profile& p = b.profiles[n];
+        static char list[config::kMaxProfileSlots * 16];
+        if (strlen(argv[3]) >= sizeof(list)) return err("slots: too long");
+        copy_str(list, sizeof(list), argv[3]);
+        config::ProfileSlot slots[config::kMaxProfileSlots] = {};
+        size_t count                                        = 0;
+        char* save                                          = nullptr;
+        for (char* tok = strtok_r(list, ",", &save); tok; tok = strtok_r(nullptr, ",", &save)) {
+            if (count == config::kMaxProfileSlots) return err("slots: at most 24");
+            if (!parse_profile_slot(tok, slots[count++]))
+                return err(
+                    "slot: dimmer[+fine]|red[:n]|green[:n]|blue[:n]|white|shutter|bank|"
+                    "speed|param|ph_wave|ph_rate|ph_spread|ph_width|block|groups|wings|none");
+        }
+        if (count == 0) return err("slots: at least one");
+        memcpy(p.slots, slots, sizeof(slots));
+        p.count = static_cast<uint8_t>(count);
+    } else {
+        return err("usage: profile [add [name] | del <n> | name <n> <text> | "
+                   "preset <n> rgb|dim_rgb|rgb_fx|full | slots <n> <fn[:colour][+fine],...>]");
+    }
+    if (!config::set_profiles(b)) printf("warn=not_persisted\n");
+    dmx::mark_global_dirty();  // footprints moved: the universe map follows
+    print_profiles(config::get_profiles());
+    return ok();
 }
 
 // ── FSEQ player ─────────────────────────────────────────────────────────────
@@ -1204,17 +1552,24 @@ void start() {
     register_cmd("chstat", "Per-channel activity + capacity flags", cmd_chstat);
     register_cmd("global", "global [<key> <value>] — get/set GlobalConfig", cmd_global);
     register_cmd("ch", "ch <n> [<key> <value>] — get/set ChannelConfig", cmd_ch);
-    register_cmd("autopatch",
-                 "autopatch <base> [compact] [continuous|whole|fixture] — re-address all channels",
-                 cmd_autopatch);
+    register_cmd(
+        "autopatch",
+        "autopatch <base> [compact] [continuous|whole|fixture|colour] — re-address all channels",
+        cmd_autopatch);
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
     register_cmd("identify", "identify <ch>|all [blinks] — blink strips white to locate them",
                  cmd_identify);
     register_cmd("audio", "audio test | audio tone <Hz> [ms] — the speaker", cmd_audio);
-    register_cmd("scene", "scene [play <n> [outputs]|stop [n]|name|set] — standalone scenes",
-                 cmd_scene);
+    register_cmd("fx", "fx [name|set|phaser|invert|matricks|add|del|move] — the effect bank",
+                 cmd_fx);
+    register_cmd(
+        "scene",
+        "scene [play <n> [outputs|group <g>]|stop [n]|name|part|group|clear] — standalone scenes",
+        cmd_scene);
+    register_cmd("profile", "profile [add|del|name|preset|slots] — fixture DMX profiles",
+                 cmd_profile);
     register_cmd("show", "show [master|blackout|strobe|fade] — grand master & show control",
                  cmd_show);
     register_cmd("ctrl", "ctrl [enable|universe|address|preset|add|set|del|clear] — DMX control",

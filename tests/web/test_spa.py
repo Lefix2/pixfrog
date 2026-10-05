@@ -104,6 +104,8 @@ def save(page):
 
 def drag(page, handle, target):
     """Pointer drag from a grip to the centre of another element."""
+    expect(handle).to_be_visible()  # a list re-rendered after a save has no box yet
+    expect(target).to_be_visible()
     hb, tb = handle.bounding_box(), target.bounding_box()
     page.mouse.move(hb["x"] + hb["width"] / 2, hb["y"] + hb["height"] / 2)
     page.mouse.down()
@@ -147,29 +149,150 @@ def test_drag_a_scene_to_reorder_the_list(page, device):
     assert device.get("/api/config")["scenes"][3]["name"] == first
 
 
-def test_scene_colours_add_reorder_remove_middle(page, device):
+def test_scene_parts_send_an_effect_to_each_output_group(page, device):
     nav(page, "scenes")
-    page.locator('[data-scene-row="3"]').click()  # Blobs: 3 colours
-    chip = lambda k: page.locator(f'[data-scene-color="4"][data-k="{k}"]')
-    before = device.get("/api/config")["scenes"][3]["colors"]
-    assert len(before) == 3
-    drag(page, chip(0).locator("[data-sc-grip]"), chip(2))
-    page.locator('[data-sc-delcol="4"][data-k="1"]').click()  # the middle one
-    page.locator('[data-sc-addcol="4"]').click()
+    expect(page.locator("[data-pt-row]")).to_have_count(1)  # the default: one effect everywhere
+    expect(page.locator("[data-pt-add]")).to_have_count(0)  # no output left for another part
+    for o in (4, 5, 6, 7):
+        page.locator(f'[data-pt-out="0"][data-o="{o}"]').click()
+    page.locator("[data-pt-add]").click()  # takes the outputs left free
+    expect(page.locator("[data-pt-row]")).to_have_count(2)
+    page.locator('[data-pt-fx="1"]').select_option("2")
+    page.locator('[data-pt-mode="1"]').select_option("chain")
+    page.locator('[data-pt-out="1"][data-o="0"]').click()  # output 1 moves to the second part
     save(page)
-    after = device.get("/api/config")["scenes"][3]["colors"]
+    parts = device.get("/api/config")["scenes"][0]["parts"]
+    assert parts == [{"mask": 0x0E, "effect": 0, "fixture_mode": "each", "reverse": False},
+                     {"mask": 0xF1, "effect": 2, "fixture_mode": "chain", "reverse": False}]
+    expect(page.locator('[data-scene-row="0"]')).to_contain_text("Warm white + 1")
+
+    page.locator('[data-pt-del="0"]').click()
+    save(page)
+    assert device.get("/api/config")["scenes"][0]["parts"] == [
+        {"mask": 0xF1, "effect": 2, "fixture_mode": "chain", "reverse": False}]
+
+
+def test_scene_fixture_mode(page, device):
+    nav(page, "scenes")
+    page.locator("[data-pt-mode]").first.select_option("mirror")
+    save(page)
+    assert device.get("/api/config")["scenes"][0]["parts"][0]["fixture_mode"] == "mirror"
+
+
+# ── effects ──────────────────────────────────────────────────────────────────
+
+def test_add_rename_duplicate_and_delete_an_effect(page, device):
+    nav(page, "effects")
+    rows = page.locator("[data-fx-row]")
+    expect(rows).to_have_count(8)
+    page.locator('[data-action="fx-add"]').click()
+    expect(rows).to_have_count(9)
+    page.locator("[data-fx-name]").fill("From test")
+    save(page)
+    assert device.get("/api/config")["effects"][8]["name"] == "From test"
+    expect(page.locator("[data-fx-users]")).to_contain_text("No scene plays this effect")
+
+    page.locator('[data-action="fx-dup"]').click()
+    expect(rows).to_have_count(10)
+    fx = device.get("/api/config")["effects"]
+    assert fx[9]["name"] == "From test copy" and fx[9]["colors"] == fx[8]["colors"]
+
+    page.locator('[data-action="fx-del"]').click()
+    page.locator("[data-modal-confirm]").click()
+    expect(rows).to_have_count(9)
+
+    # An effect a scene plays stays: the scenes would lose their look.
+    page.locator('[data-fx-row="1"]').click()
+    expect(page.locator("[data-fx-users]")).to_contain_text("Played by scene 2")
+    page.locator('[data-action="fx-del"]').click()
+    expect(page.locator("[data-modal-confirm]")).not_to_be_visible()
+    assert len(device.get("/api/config")["effects"]) == 9
+
+
+def test_drag_an_effect_and_the_scenes_follow(page, device):
+    nav(page, "effects")
+    first = device.get("/api/config")["effects"][0]["name"]
+    drag(page, page.locator('[data-fx-row="0"] [data-frow-grip]'),
+         page.locator('[data-fx-row="3"]'))
+    expect(page.locator('[data-fx-row="3"]')).to_contain_text(first)
+    time.sleep(0.3)
+    cfg = device.get("/api/config")
+    assert cfg["effects"][3]["name"] == first
+    assert cfg["scenes"][0]["parts"][0]["effect"] == 3  # scene 1 kept its look
+    assert cfg["scenes"][1]["parts"][0]["effect"] == 0
+
+
+def test_effect_colours_add_reorder_remove_middle(page, device):
+    nav(page, "effects")
+    page.locator('[data-fx-row="3"]').click()  # Blobs: 3 colours
+    chip = lambda k: page.locator(f'[data-fx-color="4"][data-k="{k}"]')
+    before = device.get("/api/config")["effects"][3]["colors"]
+    assert len(before) == 3
+    drag(page, chip(0).locator("[data-fx-grip]"), chip(2))
+    page.locator('[data-fx-delcol="4"][data-k="1"]').click()  # the middle one
+    page.locator('[data-fx-addcol="4"]').click()
+    save(page)
+    after = device.get("/api/config")["effects"][3]["colors"]
     assert after[0] == before[1] and after[1] == before[0] and len(after) == 3
 
 
-def test_effect_dropdown_and_param_slider(page, device):
-    nav(page, "scenes")
-    page.locator("[data-sc-fxsel]").select_option(label="Fire")
-    expect(page.locator("[data-sc-param]")).to_have_count(0)  # fire has no param
-    page.locator("[data-sc-fxsel]").select_option(label="Twinkle")
-    page.locator("[data-sc-param]").fill("120")
+def test_generator_dropdown_and_param_slider(page, device):
+    nav(page, "effects")
+    page.locator("[data-fx-gen]").select_option(label="Fire")
+    expect(page.locator("[data-fx-param]")).to_have_count(0)  # fire has no param
+    page.locator("[data-fx-gen]").select_option(label="Twinkle")
+    page.locator("[data-fx-param]").fill("120")
+    page.locator("[data-fx-speed]").fill("200")
     save(page)
-    s = device.get("/api/config")["scenes"][0]
-    assert s["effect"] == 6 and s["param"] == 120
+    e = device.get("/api/config")["effects"][0]
+    assert e["generator"] == 6 and e["param"] == 120 and e["speed"] == 200
+
+
+def test_dimmer_phaser_and_invert(page, device):
+    nav(page, "effects")
+    expect(page.locator("[data-fx-phrate]")).to_have_count(0)  # no phaser: no phaser sliders
+    page.locator("[data-fx-wave]").select_option("sin")
+    page.locator("[data-fx-phrate]").fill("20")
+    expect(page.locator("[data-fx-phrateval]")).to_contain_text("1.00 Hz · 60 BPM")
+    page.locator("[data-fx-phspread]").fill("16")
+    expect(page.locator("[data-fx-phspreadval]")).to_contain_text("1 cycle")
+    page.locator("[data-fx-phwidth]").fill("128")
+    page.locator("[data-fx-phlow]").fill("51")
+    expect(page.locator("[data-fx-phlowval]")).to_contain_text("20 %")
+    page.locator("[data-fx-phrev]").check(force=True)
+    page.locator("[data-fx-invert]").check(force=True)
+    save(page)
+    e = device.get("/api/config")["effects"][0]
+    assert e["phaser"] == {"wave": "sin", "rate": 20, "spread": 16, "width": 128, "low": 51,
+                           "reverse": True}
+    assert e["invert"] is True
+    # Reloaded from the box, the card shows what was saved.
+    expect(page.locator("[data-fx-wave]")).to_have_value("sin")
+    expect(page.locator("[data-fx-phrate]")).to_have_value("20")
+    expect(page.locator("[data-fx-invert]")).to_be_checked()
+
+    page.locator("[data-fx-wave]").select_option("none")
+    page.locator("[data-fx-invert]").uncheck(force=True)
+    save(page)
+    e = device.get("/api/config")["effects"][0]
+    assert e["phaser"]["wave"] == "none" and e["invert"] is False
+
+
+def test_block_groups_wings(page, device):
+    nav(page, "effects")
+    expect(page.locator("[data-fx-mxblockval]")).to_have_text("off")
+    page.locator("[data-fx-mxblock]").fill("3")
+    expect(page.locator("[data-fx-mxblockval]")).to_have_text("3 px")
+    page.locator("[data-fx-mxgroups]").fill("4")
+    page.locator("[data-fx-mxwings]").fill("2")
+    expect(page.locator("[data-fx-mxwingsval]")).to_have_text("2 parts")
+    save(page)
+    assert device.get("/api/config")["effects"][0]["matricks"] == {"block": 3, "groups": 4, "wings": 2}
+    expect(page.locator("[data-fx-mxgroups]")).to_have_value("4")  # reloaded from the box
+    page.locator("[data-fx-mxwings]").fill("1")  # one part is no wings at all
+    expect(page.locator("[data-fx-mxwingsval]")).to_have_text("off")
+    save(page)
+    assert device.get("/api/config")["effects"][0]["matricks"]["wings"] == 0
 
 
 # ── channels ─────────────────────────────────────────────────────────────────
@@ -260,7 +383,7 @@ def test_scenes_play_on_groups_and_take_over_only_their_bars(page, device):
     nav(page, "scenes")
     page.locator('[data-scene-row="0"]').click()
     page.locator('[data-sc-group="1"]').select_option("0")  # scene 1 plays on Top
-    page.locator('[data-sc-rev="1"]').check()
+    page.locator('[data-pt-rev="0"]').check()  # its first part, from the far end
     page.locator('[data-sc-playon="1"]').click()  # saved first, then played
     page.locator('[data-scene-row="1"]').click()
     page.locator('[data-sc-group="2"]').select_option("1")  # scene 2 on Centre
@@ -272,7 +395,8 @@ def test_scenes_play_on_groups_and_take_over_only_their_bars(page, device):
         time.sleep(0.05)
     assert sorted(device.get("/api/status")["show"]["plays"]) == [[0, 0], [1, 1]]
     sc = device.get("/api/config")["scenes"]
-    assert sc[0]["group"] == 0 and sc[0]["reverse"] is True and sc[1]["group"] == 1
+    assert sc[0]["group"] == 0 and sc[1]["group"] == 1
+    assert sc[0]["parts"][0]["reverse"] is True
     expect(page.locator('[data-sc-playing="2"]')).to_contain_text("Centre")
     page.locator('[data-sc-stop="2"]').click()  # Centre back to Top's scene? no: to its outputs
     for _ in range(40):
@@ -282,11 +406,84 @@ def test_scenes_play_on_groups_and_take_over_only_their_bars(page, device):
     assert device.get("/api/status")["show"]["plays"] == [[0, 0]]
 
 
-def test_scene_fixture_mode(page, device):
-    nav(page, "scenes")
-    page.locator("[data-sc-fixmode]").first.select_option("mirror")
+# ── DMX profiles ─────────────────────────────────────────────────────────────
+
+def test_dmx_profiles_editor(page, device):
+    nav(page, "profiles")
+    rows = page.locator("[data-pf-row]")
+    expect(rows).to_have_count(4)  # the presets
+    expect(rows.nth(2)).to_contain_text("RGB FX")
+    expect(rows.nth(2)).to_contain_text("6 ch")
+
+    page.locator("[data-pf-new]").click()
+    expect(rows).to_have_count(5)
+    page.locator("#pf-name").fill("Bars")
+    page.locator('[data-pf-preset="dim_rgb"]').click()  # a preset keeps a name of one's own
+    expect(page.locator("#pf-name")).to_have_value("Bars")
+    expect(page.locator("[data-pf-slot]")).to_have_count(4)
+    page.locator('[data-pf-fine="0"]').check()  # a 16-bit dimmer takes two channels
+    expect(page.locator("#pf-foot")).to_have_text("5 ch")
+    page.locator("[data-pf-add]").click()
+    page.locator('[data-pf-fn="4"]').select_option("bank")
+    page.locator('[data-pf-fn="3"]').select_option("red")
+    page.locator('[data-pf-idx="3"]').select_option("1")  # the second colour's red
+    page.locator('[data-pf-up="4"]').click()  # the effect channel before it
+    page.locator('[data-pf-del="1"]').click()  # the first red goes
+    expect(page.locator("[data-pf-ofl]")).to_have_css("pointer-events", "none")  # unsaved
     save(page)
-    assert device.get("/api/config")["scenes"][0]["fixture_mode"] == "mirror"
+    p = device.get("/api/config")["profiles"][4]
+    assert p["name"] == "Bars" and p["footprint"] == 5
+    assert [(s["fn"], s["index"], s["fine"]) for s in p["slots"]] == [
+        ("dimmer", 0, True), ("green", 0, False), ("bank", 0, False), ("red", 1, False)]
+    # Saved: the fixture profile downloads, named after the profile.
+    with page.expect_download() as dl:
+        page.locator("[data-pf-ofl]").click()
+    ofl = json.loads(open(dl.value.path()).read())
+    assert ofl["name"] == "pixfrog Bars" and ofl["modes"][0]["name"] == "5-channel"
+
+    page.locator("[data-pf-remove]").click()
+    save(page)
+    assert len(device.get("/api/config")["profiles"]) == 4
+
+
+def test_dmx_control_layout_gives_each_fixture_a_profile_and_an_address(page, device):
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 60, "universe_start": 1,
+                                   "dmx_start": 1, "fixtures": [[1, 20], [21, 20], [41, 20]]})
+    page.reload()
+    nav(page, "channels")
+    expect(page.locator("[data-lay-prof]")).to_have_count(0)  # a pixel layout: no profile to pick
+    page.locator("#cd-pack").select_option("control")
+    profs = page.locator("[data-lay-prof]")
+    expect(profs).to_have_count(3)
+    addr = page.locator("[data-lay-addr]")
+    expect(addr.nth(0)).to_have_text("U1 · 1")
+    expect(addr.nth(1)).to_have_text("U1 · 4")  # RGB: 3 channels each
+    profs.nth(0).select_option("2")  # RGB FX: 6 channels — the next fixtures move on
+    expect(page.locator("[data-lay-addr]").nth(1)).to_have_text("U1 · 7")
+    page.locator("[data-lay-prof]").nth(2).select_option("3")  # Full: 16 channels
+    expect(page.locator("[data-ctl-note]")).to_contain_text("3 fixtures · 25 ch · U1 · 1 → U1 · 25")
+    page.locator("#cd-dmx").fill("500")  # the Full fixture would straddle: it opens universe 2
+    expect(page.locator("[data-lay-addr]").nth(2)).to_have_text("U2 · 1")
+    save(page)
+    c = device.get("/api/config")["channels"][0]
+    assert c["packing"] == "control" and c["universes"] == 2
+    assert c["fixtures"] == [[1, 20, 0, 2], [21, 20], [41, 20, 0, 3]]
+    # The box computes the same addresses as the page.
+    assert c["patch"] == [[1, 500, 6, 2], [1, 506, 3, 0], [2, 1, 16, 3]]
+    nav(page, "patch")
+    expect(page.locator("#patch-mount")).to_contain_text("DMX control")
+
+
+def test_a_fixture_keeps_its_profile_through_the_layout_editor(page, device):
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 30,
+                                   "fixtures": [[1, 10, 0, 2], [11, 10, 1, 3], [21, 10]]})
+    page.reload()
+    nav(page, "channels")
+    page.locator("#cd-bri").fill("77")  # an edit of the channel that is not its layout
+    save(page)
+    c = device.get("/api/config")["channels"][0]
+    assert c["brightness"] == 77
+    assert c["fixtures"] == [[1, 10, 0, 2], [11, 10, 1, 3], [21, 10]]
 
 
 # ── system / global ──────────────────────────────────────────────────────────
@@ -363,6 +560,9 @@ def test_control_editor_preset_zone_and_save(page, device):
     for o in range(4, 8):  # the scene channel (row 3) plays on outputs 1-4 only
         page.locator(f'[data-ct-out="3"][data-o="{o}"]').click()
     page.locator('[data-ct-fn="4"]').select_option("fseq")
+    page.locator('[data-ct-fn="5"]').select_option("bank")  # the effect, picked in the bank
+    page.locator('[data-ct-fn="6"]').select_option("ph_wave")
+    expect(page.locator('[data-ct-fn="5"] option:checked')).to_have_text("Effect of the bank")
     page.locator("#ct-en").check(force=True)
     page.locator("#ct-uni").fill("77")
     save(page)
@@ -370,6 +570,7 @@ def test_control_editor_preset_zone_and_save(page, device):
     assert c["enabled"] and c["universe"] == 77 and len(c["slots"]) == 15
     assert c["slots"][3] == {"fn": "scene", "mask": 15, "index": 0, "fine": False, "group": -1}
     assert c["slots"][4]["fn"] == "fseq"
+    assert c["slots"][5]["fn"] == "bank" and c["slots"][6]["fn"] == "ph_wave"
     expect(page.locator("#ct-state")).to_contain_text("waiting")
 
 
@@ -473,11 +674,11 @@ def test_scene_fade_setting(page, device):
 
 
 def _play_on(page, row, outputs):
-    """Select scene `row`, set its target channels to `outputs` (0-based), press Play."""
+    """Select scene `row`, set its part's outputs to `outputs` (0-based), press Play."""
     page.locator(f'[data-scene-row="{row}"]').click()
     n = row + 1
     for o in range(8):
-        chip = page.locator(f'[data-sc-ch="{o}"][data-scn="{n}"]')
+        chip = page.locator(f'[data-pt-out="0"][data-o="{o}"]')
         on = "rgba(63,212,99" in (chip.get_attribute("style") or "")  # the lit chip style
         if (o in outputs) != on:
             chip.click()
@@ -727,10 +928,20 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
         expect(pg.locator("#pf-demo-banner")).to_contain_text("simulated box")
         expect(pg.locator("[data-screen-title]")).to_have_text("Dashboard")
         expect(pg.locator('canvas[data-preview="0"]')).to_have_attribute("width", re.compile(r"[1-9]\d*"))
-        for screen in ["scenes", "fseq", "channels", "control", "network", "artnet", "system",
-                       "diag", "dashboard"]:
+        for screen in ["scenes", "effects", "fseq", "channels", "groups", "profiles", "control", "network",
+                       "artnet", "system", "diag", "dashboard"]:
             nav(pg, screen)
             expect(pg.locator("[data-screen-title]")).not_to_have_text("")
+        # The effect bank and the scenes' parts are editable on the simulated box.
+        nav(pg, "effects")
+        bank = pg.locator("[data-fx-row]").count()
+        pg.locator('[data-action="fx-add"]').click()
+        expect(pg.locator("[data-fx-row]")).to_have_count(bank + 1)
+        nav(pg, "scenes")
+        pg.locator('[data-pt-fx="0"]').select_option(str(bank))
+        expect(pg.locator('[data-scene-row="0"]')).to_contain_text("New effect")
+        pg.locator('[data-action="save"]').first.click()
+        expect(pg.locator('[data-live="save-state"]').first).to_contain_text("saved")
         # A setting sticks in the page (the simulated box keeps it).
         nav(pg, "network")
         pg.fill("#n-host", "demo-rack")

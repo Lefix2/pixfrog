@@ -22,8 +22,11 @@ def run(board: Board):
     c.check("pixels decoded", board.get("pixr 0 0 3", "data") == "ff0102")
 
     # ── Sync mode: channel 0 over universes 1 and 2 (200 px, 600 bytes) ────
+    # Continuous layout: universe 2 then starts at byte 512 of the output.
     pixels = board.get("ch 0", "pixels") or "60"
+    packing = board.get("ch 0", "packing") or "continuous"
     board.cmd("ch 0 pixels 200")
+    board.cmd("ch 0 packing continuous")
     u1 = lambda: board.get("pixr 0 0 1", "data")
     u2 = lambda: board.get("pixr 0 512 1", "data")  # universe 2's first slot
     udp_send(artnet_dmx(1, [0x10]), 6454)
@@ -43,6 +46,7 @@ def run(board: Board):
     time.sleep(0.3)
     c.check("free-run 4 s after the last sync", u1() == "12")
     board.cmd(f"ch 0 pixels {pixels}")
+    board.cmd(f"ch 0 packing {packing}")
     return c.finish()
 
 

@@ -94,7 +94,8 @@ int lookup(const char* const* names, size_t count, const char* s);
 cJSON* build_control_json();  // api_show.cpp
 bool apply_control_json(const cJSON* jc, config::ControlConfig& c, const char** why);
 cJSON* build_show_json();
-void apply_scene_json(const cJSON* js, config::Scene& sc);  // api_config.cpp
+void apply_effect_json(const cJSON* je, config::Effect& e);  // api_config.cpp
+bool apply_scene_json(const cJSON* js, config::Scene& sc, const char** why);
 // What a global update changed that the caller must act on (POST only).
 struct GlobalApplied {
     bool network = false;  // reboot to apply
@@ -107,6 +108,12 @@ GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const c
 void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** why);
 cJSON* build_playlist_json();  // api_fseq.cpp
 cJSON* build_groups_json();    // api_config.cpp
+cJSON* build_profiles_json();  // api_show.cpp
+bool apply_profiles_json(const cJSON* j, config::ProfileBank& b, const char** why);
+// One body buffer for the large POSTs (groups, profiles), in PSRAM, allocated
+// once: the server runs one handler at a time. nullptr when out of memory.
+constexpr size_t kBigBodyMax = 12288;
+char* big_body_buffer();
 bool apply_groups_json(const cJSON* j, config::GroupsConfig& g, const char** why);
 bool apply_playlist_json(const cJSON* j, config::FseqPlaylist& p, const char** why);
 cJSON* build_status_json();  // api_status.cpp
@@ -124,6 +131,11 @@ esp_err_t handle_identify(httpd_req_t* req);
 esp_err_t handle_control_fixture(httpd_req_t* req);
 esp_err_t handle_post_control(httpd_req_t* req);
 esp_err_t handle_post_show(httpd_req_t* req);
+esp_err_t handle_post_profiles(httpd_req_t* req);
+esp_err_t handle_profile_fixture(httpd_req_t* req);
+esp_err_t handle_post_effect(httpd_req_t* req);
+esp_err_t handle_effects_add(httpd_req_t* req);
+esp_err_t handle_effects_move(httpd_req_t* req);
 esp_err_t handle_post_scene(httpd_req_t* req);
 esp_err_t handle_scenes_add(httpd_req_t* req);
 esp_err_t handle_scenes_move(httpd_req_t* req);

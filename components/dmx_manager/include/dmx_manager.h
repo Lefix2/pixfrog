@@ -158,6 +158,17 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free = nullptr, size_t* uni
 // dmx_start included).
 size_t channel_universe_span(const config::ChannelConfig& cc);
 
+// Where each fixture of a channel in DMX control mode sits on the wire, in
+// the order they are listed (a channel without fixtures is one). Returns how
+// many were written; 0 for a channel in a pixel layout.
+struct FixtureAddress {
+    uint16_t universe;
+    uint16_t address;    // 1-based
+    uint16_t footprint;  // channels: its profile's
+    uint8_t profile;
+};
+size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_t cap);
+
 // Test injection (control_console): write `len` bytes at byte `offset` into
 // the universe's slot in BOTH banks. Writing both sides makes the data
 // persistent across the per-frame bank swap — same "stale data sticks"

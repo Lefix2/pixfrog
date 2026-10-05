@@ -3,7 +3,8 @@
 // Blobs, each its own NVS key (a grown struct loads zero-filled):
 //   GlobalConfig   : network, Art-Net identity, refresh, services, display…
 //   ChannelConfig  : per-LED-channel settings (×8)
-//   SceneBank      : the standalone scenes
+//   EffectBank     : the looks (generator, palette, phaser, MAtricks)
+//   SceneBank      : the standalone scenes — which effect plays where
 //   ControlConfig  : the DMX control universe
 //   FseqPlaylist   : the FSEQ playlist
 //
@@ -262,10 +263,12 @@ inline const char* fixture_mode_id(uint8_t m) {
     return m < kFixtureModeCount ? kIds[m] : "each";
 }
 
-// Scene::fixture_mode packs three settings (the Scene layout is frozen):
+// A fixture-mode byte packs up to three settings:
 //   bits 0-1  the mode above
 //   bit  2    reverse: the effect runs from the far end (edges → centre)
 //   bits 3-7  default group + 1 (0 = none: the scene plays on its outputs)
+// A v3 scene (SceneV3::fixture_mode, layout frozen) holds all three; a scene
+// part (ScenePart::fixture_mode) the first two, the group being the scene's.
 constexpr uint8_t kSceneReverseBit = 0x04;
 inline uint8_t scene_mode_of(uint8_t packed) {
     return packed & 0x03;
@@ -290,14 +293,17 @@ inline const char* scene_fx_label(uint8_t fx) {
     return fx < kSceneFxCount ? kLabels[fx] : "Solid";
 }
 
+// ── Layouts v1..v3 (legacy) ─────────────────────────────────────────────────
+// Up to v3 a scene was a look and its target outputs in one record. Kept to
+// read the NVS blob and the backups of those firmwares (migrate_scenes_v3).
 // The first 25 bytes are the pre-palette layout, unchanged (see
 // migrate_scenes_v1): colour 1 stays in r/g/b, colours 2.. are appended.
-struct Scene {
+struct SceneV3 {
     char name[kSceneNameMax];               // null-padded
     uint8_t channel_mask;                   // bit n = channel n participates
     uint8_t effect;                         // kSceneFx*
     uint8_t r, g, b;                        // colour 1
-    uint8_t speed;                          // per effect — see fill_scene_pattern
+    uint8_t speed;                          // per effect, in the generator's own units
     uint8_t param;                          // per effect; 0 = the effect's default
     uint8_t num_colors;                     // 1..kSceneColorsMax; 0 (pre-palette blob) reads as 1
     uint8_t fixture_mode;                   // kFixtureMode*: how the effect spreads over fixtures
@@ -305,16 +311,16 @@ struct Scene {
 };
 
 constexpr size_t kSceneV1Size = 25;
-static_assert(offsetof(Scene, num_colors) == 23, "pre-palette Scene layout moved");
-static_assert(sizeof(Scene) == kSceneV1Size + 9, "Scene layout changed");
+static_assert(offsetof(SceneV3, num_colors) == 23, "pre-palette SceneV3 layout moved");
+static_assert(sizeof(SceneV3) == kSceneV1Size + 9, "SceneV3 layout changed");
 
-inline uint8_t scene_num_colors(const Scene& s) {
+inline uint8_t scene_num_colors(const SceneV3& s) {
     if (s.num_colors == 0) return 1;
     return s.num_colors > kSceneColorsMax ? static_cast<uint8_t>(kSceneColorsMax) : s.num_colors;
 }
 
 // Colour k (0-based) as RGB; k past the configured count reads as black.
-inline void scene_color(const Scene& s, size_t k, uint8_t rgb[3]) {
+inline void scene_color(const SceneV3& s, size_t k, uint8_t rgb[3]) {
     if (k == 0) {
         rgb[0] = s.r;
         rgb[1] = s.g;
@@ -328,7 +334,7 @@ inline void scene_color(const Scene& s, size_t k, uint8_t rgb[3]) {
     }
 }
 
-inline void set_scene_color(Scene& s, size_t k, uint8_t r, uint8_t g, uint8_t b) {
+inline void set_scene_color(SceneV3& s, size_t k, uint8_t r, uint8_t g, uint8_t b) {
     if (k == 0) {
         s.r = r;
         s.g = g;
@@ -340,14 +346,103 @@ inline void set_scene_color(Scene& s, size_t k, uint8_t r, uint8_t g, uint8_t b)
     }
 }
 
+// An effect: a reusable look, with no target — what a scene part or a
+// fixture's DMX profile plays. Bytes only, so the struct has no padding and is
+// its own NVS record; every field's zero is its neutral value, which lets
+// later firmware give the reserved bytes a meaning without a migration.
+constexpr size_t kEffectNameMax = 16;
+
+// Effect::ph_wave — the dimmer phaser's waveform. Persisted: append only.
+constexpr uint8_t kPhaserNone      = 0;
+constexpr uint8_t kPhaserSin       = 1;
+constexpr uint8_t kPhaserCos       = 2;
+constexpr uint8_t kPhaserRampUp    = 3;
+constexpr uint8_t kPhaserRampDown  = 4;
+constexpr uint8_t kPhaserTriangle  = 5;
+constexpr uint8_t kPhaserPwm       = 6;
+constexpr uint8_t kPhaserBump      = 7;
+constexpr uint8_t kPhaserWaveCount = 8;
+
+inline const char* phaser_wave_id(uint8_t w) {
+    static const char* const kIds[] = { "none",      "sin",      "cos", "ramp_up",
+                                        "ramp_down", "triangle", "pwm", "bump" };
+    static_assert(sizeof(kIds) / sizeof(kIds[0]) == kPhaserWaveCount, "one id per waveform");
+    return w < kPhaserWaveCount ? kIds[w] : "none";
+}
+inline int phaser_wave_from_id(const char* s) {
+    for (uint8_t w = 0; w < kPhaserWaveCount; ++w)
+        if (std::strcmp(s, phaser_wave_id(w)) == 0) return w;
+    return -1;
+}
+
+// Effect::flags
+constexpr uint8_t kEffectDimmerInvert  = 0x01;  // intensity negative of the whole effect
+constexpr uint8_t kEffectPhaserReverse = 0x02;  // the phaser travels the other way
+constexpr uint8_t kEffectFlagsMask     = 0x03;
+
+struct Effect {
+    char name[kEffectNameMax];           // NUL-terminated
+    uint8_t generator;                   // kSceneFx*
+    uint8_t speed;                       // per generator — see fill_effect_run
+    uint8_t param;                       // per generator; 0 = its default
+    uint8_t num_colors;                  // 1..kSceneColorsMax; 0 reads as 1
+    uint8_t colors[kSceneColorsMax][3];  // RGB
+    uint8_t ph_wave;                     // kPhaser*; 0 = no dimmer phaser
+    uint8_t ph_rate;                     // 1/20 Hz per unit; 0 = a still wave
+    uint8_t ph_spread;                   // 1/16 cycle along the run; 0 = every pixel in phase
+    uint8_t ph_width;                    // share of the cycle the wave takes, n/255; 0 = all of it
+    uint8_t ph_low;                      // dimmer floor
+    uint8_t flags;                       // kEffect*
+    uint8_t block;                       // N neighbouring pixels share a value; 0/1 = off
+    uint8_t groups;                      // the pattern repeats every N; 0/1 = off
+    uint8_t wings;                       // the run splits in N mirrored parts; 0/1 = off
+    uint8_t reserved[7];
+};
+static_assert(sizeof(Effect) == 48, "Effect is an NVS record: bytes only, no padding");
+
+inline uint8_t effect_num_colors(const Effect& e) {
+    if (e.num_colors == 0) return 1;
+    return e.num_colors > kSceneColorsMax ? static_cast<uint8_t>(kSceneColorsMax) : e.num_colors;
+}
+
+inline void sanitize_effect(Effect& e) {
+    e.name[kEffectNameMax - 1] = '\0';
+    if (e.generator >= kSceneFxCount) e.generator = kSceneFxSolid;
+    e.num_colors = effect_num_colors(e);
+    if (e.ph_wave >= kPhaserWaveCount) e.ph_wave = kPhaserNone;
+    e.flags &= kEffectFlagsMask;
+    std::memset(e.reserved, 0, sizeof(e.reserved));
+}
+
+// One unit of Effect::speed is worth two of the v3 scale: twice the top speed,
+// half the resolution. Solid is the exception — its speed is a strobe
+// frequency whose top value means "steady colour 2".
+inline uint8_t effect_speed_from_v3(uint8_t generator, uint8_t speed) {
+    return generator == kSceneFxSolid ? speed : static_cast<uint8_t>((speed + 1) / 2);
+}
+
+// The look of a v3 scene, without its target, at the same apparent speed.
+inline Effect effect_from_scene_v3(const SceneV3& s) {
+    Effect e{};
+    std::memcpy(e.name, s.name, kEffectNameMax);
+    e.name[kEffectNameMax - 1] = '\0';
+    e.generator                = s.effect < kSceneFxCount ? s.effect : kSceneFxSolid;
+    e.speed                    = effect_speed_from_v3(e.generator, s.speed);
+    e.param                    = s.param;
+    e.num_colors               = scene_num_colors(s);
+    for (size_t k = 0; k < kSceneColorsMax; ++k)
+        scene_color(s, k, e.colors[k]);
+    return e;
+}
+
 // v1 stored exactly kLegacyNumScenes × 25-byte records in one blob; the grown
 // record no longer lines up with it, so it is re-packed record by record.
 // Solid used to ignore speed, which now drives its strobe: an upgraded solid
 // scene must stay static. Returns false unless old_size is that exact layout.
-inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* dst) {
+inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, SceneV3* dst) {
     if (old_size != kLegacyNumScenes * kSceneV1Size) return false;
     for (size_t i = 0; i < kLegacyNumScenes; ++i) {
-        std::memset(&dst[i], 0, sizeof(Scene));
+        std::memset(&dst[i], 0, sizeof(SceneV3));
         std::memcpy(&dst[i], old_data + i * kSceneV1Size, kSceneV1Size);
         dst[i].name[kSceneNameMax - 1] = '\0';
         dst[i].num_colors              = 1;
@@ -358,41 +453,171 @@ inline bool migrate_scenes_v1(const uint8_t* old_data, size_t old_size, Scene* d
     return true;
 }
 
-// NVS image of the scene list (v3): a count byte, then that many records.
-// Scene is byte-aligned, so the struct has no padding and the blob is the
-// first 1 + count × sizeof(Scene) bytes of it. v1 (200 B) and v2 (8 fixed
+// NVS image of the v3 scene list: a count byte, then that many records.
+// SceneV3 is byte-aligned, so the struct has no padding and the blob is the
+// first 1 + count × sizeof(SceneV3) bytes of it. v1 (200 B) and v2 (8 fixed
 // records, 272 B) sizes can never be 1 + k × 34, so the three never collide.
-struct SceneBank {
+struct SceneBankV3 {
     uint8_t count;
-    Scene scenes[kMaxScenes];
+    SceneV3 scenes[kMaxScenes];
 };
-static_assert(sizeof(SceneBank) == 1 + kMaxScenes * sizeof(Scene), "SceneBank must be packed");
+static_assert(sizeof(SceneBankV3) == 1 + kMaxScenes * sizeof(SceneV3), "SceneBankV3 is packed");
 
-inline size_t scene_bank_bytes(size_t count) {
-    return 1 + count * sizeof(Scene);
+inline size_t scene_bank_v3_bytes(size_t count) {
+    return 1 + count * sizeof(SceneV3);
 }
 
 // Parses a stored scene blob of any known layout into `bank`. Returns false
 // for an unknown size or an inconsistent count (caller falls back to defaults).
-inline bool load_scene_bank(const uint8_t* blob, size_t size, SceneBank& bank) {
+inline bool load_scene_bank_v3(const uint8_t* blob, size_t size, SceneBankV3& bank) {
     std::memset(&bank, 0, sizeof(bank));
     if (migrate_scenes_v1(blob, size, bank.scenes)) {
         bank.count = kLegacyNumScenes;
-    } else if (size == kLegacyNumScenes * sizeof(Scene)) {
+    } else if (size == kLegacyNumScenes * sizeof(SceneV3)) {
         std::memcpy(bank.scenes, blob, size);
         bank.count = kLegacyNumScenes;
-    } else if (size >= 1 && blob[0] <= kMaxScenes && size == scene_bank_bytes(blob[0])) {
+    } else if (size >= 1 && blob[0] <= kMaxScenes && size == scene_bank_v3_bytes(blob[0])) {
         std::memcpy(&bank, blob, size);
     } else {
         return false;
     }
     for (size_t i = 0; i < bank.count; ++i) {
-        Scene& sc                  = bank.scenes[i];
+        SceneV3& sc                = bank.scenes[i];
         sc.name[kSceneNameMax - 1] = '\0';
         sc.num_colors              = scene_num_colors(sc);
         if (sc.effect >= kSceneFxCount) sc.effect = kSceneFxSolid;
     }
     return true;
+}
+
+// ── Effect bank and scenes (v4) ─────────────────────────────────────────────
+// The effect bank: 0..kMaxEffects looks, addressed by list position. 31 so the
+// bank fits one DMX channel in bands of 8 (band 0 = none). NVS image: the
+// header then `count` records.
+constexpr size_t kMaxEffects = 31;
+struct EffectBank {
+    uint8_t count;
+    uint8_t reserved[3];
+    Effect effects[kMaxEffects];
+};
+static_assert(sizeof(EffectBank) == 4 + kMaxEffects * sizeof(Effect), "EffectBank is packed");
+inline size_t effect_bank_bytes(size_t count) {
+    return 4 + count * sizeof(Effect);
+}
+
+// A scene: a memory of which effect plays where. Each part sends one effect
+// of the bank to a set of outputs; an output belongs to one part at most.
+constexpr size_t kMaxSceneParts = 8;
+constexpr uint8_t kPartModeMask = 0x03 | kSceneReverseBit;
+struct ScenePart {
+    uint8_t mask;          // bit n = output n
+    uint8_t effect;        // index in the effect bank; a missing effect renders black
+    uint8_t fixture_mode;  // kFixtureMode* | kSceneReverseBit (scene_mode_of / scene_reverse_of)
+    uint8_t reserved;
+};
+// The first part is also the scene's look on a fixture group (its effect,
+// mode and direction, drawn along the group): it may have no output at all.
+struct Scene {
+    char name[kSceneNameMax];  // NUL-terminated
+    uint8_t num_parts;
+    // Default fixture group + 1 (0 = none): started everywhere, the scene
+    // plays on that group rather than on its parts' outputs.
+    uint8_t group;
+    uint8_t reserved[2];
+    ScenePart parts[kMaxSceneParts];
+};
+static_assert(sizeof(Scene) == 52, "Scene is an NVS record: bytes only, no padding");
+
+struct SceneBank {
+    uint8_t count;
+    uint8_t reserved[3];
+    Scene scenes[kMaxScenes];
+};
+static_assert(sizeof(SceneBank) == 4 + kMaxScenes * sizeof(Scene), "SceneBank is packed");
+inline size_t scene_bank_bytes(size_t count) {
+    return 4 + count * sizeof(Scene);
+}
+
+// The scene's default group, -1 = none (it plays on its outputs).
+inline int scene_group(const Scene& s) {
+    return static_cast<int>(s.group) - 1;
+}
+
+// Every output the scene plays on.
+inline uint8_t scene_mask(const Scene& s) {
+    uint8_t m = 0;
+    for (size_t i = 0; i < s.num_parts && i < kMaxSceneParts; ++i)
+        m |= s.parts[i].mask;
+    return m;
+}
+
+// The part that holds `output`, nullptr when the scene leaves it alone.
+inline const ScenePart* scene_part_for(const Scene& s, size_t output) {
+    for (size_t i = 0; i < s.num_parts && i < kMaxSceneParts; ++i)
+        if ((s.parts[i].mask >> output) & 1) return &s.parts[i];
+    return nullptr;
+}
+
+// Empty parts go, and an output claimed twice stays with the first part. A
+// scene left with none keeps its first part, outputless: it is still the look
+// the scene plays on a group.
+inline void sanitize_scene(Scene& s) {
+    s.name[kSceneNameMax - 1] = '\0';
+    const size_t n            = s.num_parts > kMaxSceneParts ? kMaxSceneParts : s.num_parts;
+    uint8_t seen              = 0;
+    size_t out                = 0;
+    for (size_t i = 0; i < n; ++i) {
+        ScenePart p = s.parts[i];
+        p.mask      = static_cast<uint8_t>(p.mask & ~seen);
+        if (!p.mask) continue;
+        p.fixture_mode &= kPartModeMask;
+        p.reserved      = 0;
+        seen           |= p.mask;
+        s.parts[out++]  = p;
+    }
+    if (out == 0 && n > 0) {
+        s.parts[0].mask          = 0;
+        s.parts[0].fixture_mode &= kPartModeMask;
+        s.parts[0].reserved      = 0;
+        out                      = 1;
+    }
+    for (size_t i = out; i < kMaxSceneParts; ++i)
+        s.parts[i] = ScenePart{};
+    s.num_parts = static_cast<uint8_t>(out);
+    if (s.group > kMaxGroups) s.group = 0;
+    std::memset(s.reserved, 0, sizeof(s.reserved));
+}
+
+// A one-part scene: `effect` on the outputs of `mask`. `fixture_mode` may
+// carry the reverse bit; `group` is the default group (-1 = none).
+inline Scene make_scene(const char* name, uint8_t mask, uint8_t effect,
+                        uint8_t fixture_mode = kFixtureModeEach, int group = -1) {
+    Scene s{};
+    for (size_t i = 0; i + 1 < kSceneNameMax && name[i]; ++i)
+        s.name[i] = name[i];
+    s.num_parts = 1;
+    s.parts[0]  = ScenePart{ mask, effect, fixture_mode, 0 };
+    s.group     = static_cast<uint8_t>(group < 0 ? 0 : group + 1);
+    sanitize_scene(s);
+    return s;
+}
+
+// A v3 list becomes one effect and one single-part scene per entry, at the
+// same index — references to a scene (boot, failsafe) keep pointing at it.
+inline void migrate_scenes_v3(const SceneBankV3& old, EffectBank& effects, SceneBank& scenes) {
+    std::memset(&effects, 0, sizeof(effects));
+    std::memset(&scenes, 0, sizeof(scenes));
+    const size_t n = old.count > kMaxScenes ? kMaxScenes : old.count;
+    for (size_t i = 0; i < n; ++i) {
+        const SceneV3& o   = old.scenes[i];
+        effects.effects[i] = effect_from_scene_v3(o);
+        // The v3 byte held the mode, the direction and the default group.
+        scenes.scenes[i] = make_scene(effects.effects[i].name, o.channel_mask,
+                                      static_cast<uint8_t>(i), o.fixture_mode & kPartModeMask,
+                                      scene_group_of(o.fixture_mode));
+    }
+    effects.count = static_cast<uint8_t>(n);
+    scenes.count  = static_cast<uint8_t>(n);
 }
 
 // Where scene `idx` lands after the list is edited; -1 when it was deleted.
@@ -425,17 +650,34 @@ constexpr uint32_t kDefaultClockHz = 4'000'000;
 constexpr size_t kMaxFixtures = 32;
 struct Fixture {
     uint16_t pos;  // first physical LED, 0-based
-    uint16_t len;  // LEDs (0 = unused slot) | kFixtureReversed
+    uint16_t len;  // LEDs (0 = unused slot) | profile << 12 | kFixtureReversed
 };
 // In Fixture::len: the fixture is mounted the other way round — the scenes run
 // through it backwards (its LEDs on the wire are untouched). A flag bit, not a
 // field, so the NVS layout and the sort keep it for free.
 constexpr uint16_t kFixtureReversed = 0x8000;
+// Likewise in Fixture::len, the fixture's DMX profile (index in the
+// ProfileBank), on the three bits a length never reaches: a fixture is at
+// most led::kMaxPixelsPerChannel LEDs long. Zero — any blob written before
+// the profiles — is the first profile.
+constexpr unsigned kFixtureProfileShift = 12;
+constexpr uint16_t kFixtureProfileMask  = 0x7000;
+constexpr uint16_t kFixtureLenMask      = 0x0FFF;
 inline uint16_t fixture_len(const Fixture& f) {
-    return f.len & 0x7FFF;
+    return f.len & kFixtureLenMask;
 }
 inline bool fixture_reversed(const Fixture& f) {
     return (f.len & kFixtureReversed) != 0;
+}
+inline uint8_t fixture_profile(const Fixture& f) {
+    return static_cast<uint8_t>((f.len & kFixtureProfileMask) >> kFixtureProfileShift);
+}
+inline Fixture make_fixture(uint16_t pos, uint16_t len, bool reversed = false,
+                            uint8_t profile = 0) {
+    return Fixture{ pos, static_cast<uint16_t>(
+                             (len & kFixtureLenMask) |
+                             ((profile << kFixtureProfileShift) & kFixtureProfileMask) |
+                             (reversed ? kFixtureReversed : 0)) };
 }
 
 // Sorts by position, drops empty / out-of-range / overlapping fixtures (the
@@ -473,9 +715,13 @@ constexpr uint8_t kPackContinuous  = 0;  // byte after byte: a pixel may straddl
 constexpr uint8_t kPackWholePixels = 1;  // whole pixels only (170 RGB / 128 RGBW per universe)
 constexpr uint8_t kPackPerFixture  = 2;  // each fixture from slot 1 of a new universe, whole pixels
 constexpr uint8_t kPackFixtureColour = 3;  // one colour per fixture: 3 (RGBW: 4) channels a bar
-constexpr uint8_t kPackCount         = 4;
+// DMX control mode: no pixel data at all. Each fixture takes the channels of
+// its DMX profile, one after the other from dmx_start; a fixture never
+// straddles two universes. An output without fixtures is one fixture.
+constexpr uint8_t kPackControl = 4;
+constexpr uint8_t kPackCount   = 5;
 inline const char* packing_id(uint8_t p) {
-    static const char* const kIds[] = { "continuous", "whole", "fixture", "colour" };
+    static const char* const kIds[] = { "continuous", "whole", "fixture", "colour", "control" };
     return p < kPackCount ? kIds[p] : "continuous";
 }
 inline int packing_from_id(const char* s) {
@@ -574,13 +820,38 @@ const ChannelConfig& get_channel(size_t channel_index);
 bool set_global(const GlobalConfig& cfg);
 bool set_channel(size_t channel_index, const ChannelConfig& cfg);
 
-// Scene list (RAM-cached, NVS-persisted like channels). Out-of-range reads
-// return a blank (black, no channels) scene rather than aliasing another one.
+// Effect bank (RAM-cached, NVS-persisted like channels). Out-of-range reads
+// return a blank (black, still) effect rather than aliasing another one.
+size_t num_effects();
+const Effect& get_effect(size_t effect_index);
+// A consistent copy without the config lock (render path). False, with `out`
+// blanked, past the last effect.
+bool copy_effect(size_t effect_index, Effect& out);
+bool set_effect(size_t effect_index, const Effect& effect);
+// add_effect returns the new index, -1 when the bank is full.
+int add_effect(const Effect& effect);
+// True while a scene part plays the effect.
+bool effect_in_use(size_t effect_index);
+// Refused (false) while the effect is in use: the scenes would lose their look.
+// The parts that pointed past it follow their effect.
+bool delete_effect(size_t effect_index);
+bool move_effect(size_t from, size_t to);
+// Replaces the whole bank (backup restore). count is clamped to kMaxEffects.
+bool replace_effects(const Effect* effects, size_t count);
+
+// Scene list. Out-of-range reads return a blank scene (no part).
 size_t num_scenes();
 const Scene& get_scene(size_t scene_index);
-// A consistent copy of a scene, taken under the config lock (render path).
+// A consistent copy of a scene without the config lock (render path).
 // False, with `out` blanked, past the last scene.
 bool copy_scene(size_t scene_index, Scene& out);
+// What scene `scene_index` plays on `output`, read in one go so a list edit on
+// another task cannot pair a part with the wrong effect. False when the scene
+// leaves that output alone; a part whose effect is gone gives a blank effect.
+bool copy_scene_part(size_t scene_index, size_t output, Effect& effect, uint8_t& fixture_mode);
+// The look a scene shows on a fixture group: its first part's effect and
+// fixture mode. False, with `effect` blanked, when the scene has no part.
+bool copy_scene_look(size_t scene_index, Effect& effect, uint8_t& fixture_mode);
 bool set_scene(size_t scene_index, const Scene& scene);
 // Structural edits also remap boot_scene / failsafe_scene; a deleted
 // reference is cleared (boot → none, failsafe scene mode → blackout).
@@ -625,29 +896,39 @@ enum class CtlFn : uint8_t {
     Blackout  = 2,  // >= 128 = outputs dark
     Strobe    = 3,  // 0 = off, 1..255 = 1..25 Hz
     Scene     = 4,  // bands of 8: 0-7 = no scene, 8-15 = scene 1, ...
-    Speed     = 5,  // 0 = the scene's own, 1..255 = override
-    Param     = 6,  // 0 = the scene's own, 1..255 = override
-    Red       = 7,  // colour `index` override (R, G and B all 0 = the scene's own)
+    Speed     = 5,  // 0 = the effect's own, 1..255 = override
+    Param     = 6,  // 0 = the effect's own, 1..255 = override
+    Red       = 7,  // colour `index` override (R, G and B all 0 = the effect's own)
     Green     = 8,
     Blue      = 9,
-    Effect    = 10,  // 0 = the scene's own, 1..255 spread over the effects
+    Effect    = 10,  // generator: 0 = the effect's own, 1..255 spread over the generators
     Fade      = 11,  // scene crossfade, value × 100 ms
     Fseq      = 12,  // bands of 8: 0-7 = stop, 8-15 = file 1, ...
-    Direction = 13,  // 0 = the scene's own, 1-127 = forward, 128-255 = from the far end
-    FixMode   = 14,  // 0 = the scene's own, 1-63 each, 64-127 chain, 128-191 mirror, 192+ strip
+    Direction = 13,  // 0 = the part's own, 1-127 = forward, 128-255 = from the far end
+    FixMode   = 14,  // 0 = the part's own, 1-63 each, 64-127 chain, 128-191 mirror, 192+ strip
+    // What follows acts, like Speed and Param, on the effect a scene plays.
+    Bank     = 15,  // bands of 8: 0-7 = the scene's own effect, 8-15 = effect 1 of the bank, ...
+    PhWave   = 16,  // bands of 8: 0-7 = the effect's own, 8-15 = no phaser, 16-23 = sine, ...
+    PhRate   = 17,  // 0 = the effect's own, 1..255 = override
+    PhSpread = 18,
+    PhWidth  = 19,
+    Block    = 20,  // 0 = the effect's own, 1 = off, 2..255 = N
+    Groups   = 21,
+    Wings    = 22,
     Count,
 };
 constexpr uint8_t kCtlFlagFine = 0x01;  // Master only: coarse + fine channel
 // The slot acts on a fixture group instead of outputs: `mask` holds the group
-// index (Master, Blackout, Scene, Speed, Param, Effect, colours, Direction,
-// FixMode; the others ignore it).
+// index (every function but Strobe, Fade and Fseq, which ignore it).
 constexpr uint8_t kCtlFlagGroup = 0x02;
 
 // Lower-case ids (console, REST, backup) — indexed by CtlFn.
 inline const char* ctl_fn_id(uint8_t fn) {
-    static const char* const kIds[] = { "none",   "master", "blackout", "strobe",    "scene",
-                                        "speed",  "param",  "red",      "green",     "blue",
-                                        "effect", "fade",   "fseq",     "direction", "fixmode" };
+    static const char* const kIds[] = { "none",   "master",  "blackout", "strobe",    "scene",
+                                        "speed",  "param",   "red",      "green",     "blue",
+                                        "effect", "fade",    "fseq",     "direction", "fixmode",
+                                        "bank",   "ph_wave", "ph_rate",  "ph_spread", "ph_width",
+                                        "block",  "groups",  "wings" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(CtlFn::Count),
                   "one id per control function");
     return fn < static_cast<uint8_t>(CtlFn::Count) ? kIds[fn] : "none";
@@ -817,6 +1098,189 @@ inline void sanitize_playlist(FseqPlaylist& p) {
 
 const FseqPlaylist& get_playlist();
 bool set_playlist(const FseqPlaylist& p);
+
+// ── Fixture DMX profiles ────────────────────────────────────────────────────
+// A fixture driven like a conventional luminaire.
+// A profile is the ordered list of DMX channels a fixture answers to. Each
+// fixture references one (Fixture::len), up to kMaxProfiles are kept.
+
+// Channel functions. Persisted: append only, never renumber.
+enum class FixFn : uint8_t {
+    None     = 0,  // spare channel
+    Dimmer   = 1,  // intensity (16-bit with kProfileArgFine); full when the profile has none
+    Red      = 2,  // colour `arg & 3` of the effect; all three at 0 = the effect's own
+    Green    = 3,
+    Blue     = 4,
+    White    = 5,  // the white LED of an RGBW strip, when no effect plays
+    Shutter  = 6,  // 0 = open, 1..255 = strobe 1..25 Hz
+    Bank     = 7,  // bands of 8: 0-7 = no effect (plain colour 1), 8-15 = effect 1 of the bank, ...
+    Speed    = 8,  // 0 = the effect's own, 1..255 = override
+    Param    = 9,
+    PhWave   = 10,  // bands of 8: 0-7 = the effect's own, 8-15 = no phaser, 16-23 = sine, ...
+    PhRate   = 11,  // 0 = the effect's own, 1..255 = override
+    PhSpread = 12,
+    PhWidth  = 13,
+    Block    = 14,  // 0 = the effect's own, 1 = off, 2..255 = N
+    Groups   = 15,
+    Wings    = 16,
+    Count,
+};
+constexpr uint8_t kProfileArgColor = 0x03;  // Red/Green/Blue: colour 0..kSceneColorsMax-1
+constexpr uint8_t kProfileArgFine  = 0x80;  // Dimmer: coarse + fine channel
+
+// Lower-case ids (console, REST, backup) — indexed by FixFn.
+inline const char* fix_fn_id(uint8_t fn) {
+    static const char* const kIds[] = { "none",    "dimmer",  "red",       "green",    "blue",
+                                        "white",   "shutter", "bank",      "speed",    "param",
+                                        "ph_wave", "ph_rate", "ph_spread", "ph_width", "block",
+                                        "groups",  "wings" };
+    static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(FixFn::Count),
+                  "one id per profile function");
+    return fn < static_cast<uint8_t>(FixFn::Count) ? kIds[fn] : "none";
+}
+// -1 when unknown.
+inline int fix_fn_from_id(const char* s) {
+    for (uint8_t i = 0; i < static_cast<uint8_t>(FixFn::Count); ++i)
+        if (std::strcmp(s, fix_fn_id(i)) == 0) return i;
+    return -1;
+}
+
+constexpr size_t kMaxProfiles     = 8;  // 3 bits in Fixture::len
+constexpr size_t kMaxProfileSlots = 24;
+constexpr size_t kProfileNameMax  = 16;
+
+struct ProfileSlot {
+    uint8_t fn;   // FixFn
+    uint8_t arg;  // kProfileArg*
+};
+struct Profile {
+    char name[kProfileNameMax];  // NUL-terminated
+    uint8_t count;               // slots in use
+    uint8_t reserved[3];
+    ProfileSlot slots[kMaxProfileSlots];
+};
+struct ProfileBank {
+    uint8_t count;  // profiles in use, 1..kMaxProfiles
+    uint8_t reserved[3];
+    Profile profiles[kMaxProfiles];
+};
+static_assert(sizeof(Profile) == 68, "Profile is an NVS record: bytes only, no padding");
+static_assert(sizeof(ProfileBank) == 4 + kMaxProfiles * sizeof(Profile), "ProfileBank is packed");
+
+inline ProfileSlot profile_slot(FixFn fn, uint8_t arg = 0) {
+    return ProfileSlot{ static_cast<uint8_t>(fn), arg };
+}
+// DMX channels a slot takes: 2 for a 16-bit dimmer, else 1.
+inline size_t profile_slot_width(const ProfileSlot& s) {
+    return s.fn == static_cast<uint8_t>(FixFn::Dimmer) && (s.arg & kProfileArgFine) ? 2 : 1;
+}
+// The profile's footprint in DMX channels.
+inline size_t profile_footprint(const Profile& p) {
+    size_t n = 0;
+    for (size_t i = 0; i < p.count && i < kMaxProfileSlots; ++i)
+        n += profile_slot_width(p.slots[i]);
+    return n;
+}
+
+// Starting points for the editor. They replace the name and the slot list.
+enum class ProfilePreset : uint8_t { Rgb, DimRgb, RgbFx, Full, Count };
+inline const char* profile_preset_id(ProfilePreset p) {
+    static const char* const kIds[] = { "rgb", "dim_rgb", "rgb_fx", "full" };
+    return kIds[static_cast<size_t>(p) < 4 ? static_cast<size_t>(p) : 0];
+}
+inline void profile_apply_preset(Profile& pr, ProfilePreset p) {
+    static const char* const kNames[] = { "RGB", "Dim RGB", "RGB FX", "Full" };
+    pr                                = Profile{};
+    std::strncpy(pr.name, kNames[static_cast<size_t>(p) < 4 ? static_cast<size_t>(p) : 0],
+                 kProfileNameMax - 1);
+    size_t n = 0;
+    auto add = [&](FixFn fn, uint8_t arg = 0) { pr.slots[n++] = profile_slot(fn, arg); };
+    auto rgb = [&](uint8_t colour) {
+        add(FixFn::Red, colour);
+        add(FixFn::Green, colour);
+        add(FixFn::Blue, colour);
+    };
+    switch (p) {
+    case ProfilePreset::DimRgb:
+        add(FixFn::Dimmer);
+        rgb(0);
+        break;
+    case ProfilePreset::RgbFx:  // R, G, B, effect bank, effect speed, shutter
+        rgb(0);
+        add(FixFn::Bank);
+        add(FixFn::Speed);
+        add(FixFn::Shutter);
+        break;
+    case ProfilePreset::Full:  // 16 channels
+        add(FixFn::Dimmer, kProfileArgFine);
+        add(FixFn::Shutter);
+        rgb(0);
+        rgb(1);
+        add(FixFn::Bank);
+        add(FixFn::Speed);
+        add(FixFn::Param);
+        add(FixFn::PhWave);
+        add(FixFn::PhRate);
+        add(FixFn::PhSpread);
+        add(FixFn::PhWidth);
+        break;
+    default: rgb(0); break;
+    }
+    pr.count = static_cast<uint8_t>(n);
+}
+
+inline ProfileBank default_profiles() {
+    ProfileBank b{};
+    b.count = static_cast<uint8_t>(ProfilePreset::Count);
+    for (uint8_t i = 0; i < b.count; ++i)
+        profile_apply_preset(b.profiles[i], static_cast<ProfilePreset>(i));
+    return b;
+}
+
+// Keeps every field meaningful: the bank is never empty (a fixture's profile
+// index must land somewhere), unknown functions become spare channels, flags
+// stay on the functions they belong to, an empty profile becomes plain RGB,
+// and the slots past the counts are cleared. Called on load and on every set.
+inline void sanitize_profiles(ProfileBank& b) {
+    if (b.count == 0 || b.count > kMaxProfiles) {
+        if (b.count == 0) b = default_profiles();
+        if (b.count > kMaxProfiles) b.count = static_cast<uint8_t>(kMaxProfiles);
+    }
+    std::memset(b.reserved, 0, sizeof(b.reserved));
+    for (size_t i = 0; i < kMaxProfiles; ++i) {
+        Profile& p = b.profiles[i];
+        if (i >= b.count) {
+            p = Profile{};
+            continue;
+        }
+        p.name[kProfileNameMax - 1] = '\0';
+        std::memset(p.reserved, 0, sizeof(p.reserved));
+        if (p.count > kMaxProfileSlots) p.count = static_cast<uint8_t>(kMaxProfileSlots);
+        if (p.count == 0) {
+            char name[kProfileNameMax];
+            std::memcpy(name, p.name, sizeof(name));
+            profile_apply_preset(p, ProfilePreset::Rgb);
+            if (name[0]) std::memcpy(p.name, name, sizeof(name));
+        }
+        for (size_t k = 0; k < kMaxProfileSlots; ++k) {
+            ProfileSlot& s = p.slots[k];
+            if (k >= p.count) {
+                s = ProfileSlot{};
+                continue;
+            }
+            if (s.fn >= static_cast<uint8_t>(FixFn::Count)) s.fn = 0;
+            const auto fn       = static_cast<FixFn>(s.fn);
+            const bool colour   = fn == FixFn::Red || fn == FixFn::Green || fn == FixFn::Blue;
+            const uint8_t allow = colour              ? kProfileArgColor
+                                : fn == FixFn::Dimmer ? kProfileArgFine
+                                                      : uint8_t{ 0 };
+            s.arg               = static_cast<uint8_t>(s.arg & allow);
+        }
+    }
+}
+
+const ProfileBank& get_profiles();
+bool set_profiles(const ProfileBank& b);
 
 // ── Fixture groups ──────────────────────────────────────────────────────────
 // Named, ordered sets of fixtures taken on any outputs ("Top", "Bottom",

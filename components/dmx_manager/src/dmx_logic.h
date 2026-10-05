@@ -39,7 +39,8 @@ inline size_t channel_total_bytes(const config::ChannelConfig& cc) {
 
 // Universes the channel's DMX layout spans from its universe_start (see
 // channel_layout below: packing and dmx_start included).
-inline size_t channel_universes_used(const config::ChannelConfig& cc);
+inline size_t channel_universes_used(const config::ChannelConfig& cc,
+                                     const config::ProfileBank* profiles = nullptr);
 
 // ── Universe → slot map ─────────────────────────────────────────────────────
 //
@@ -58,14 +59,15 @@ inline size_t channel_universes_used(const config::ChannelConfig& cc);
 // Returns the number of slots used.
 inline uint16_t build_universe_map(const config::ChannelConfig* chans, size_t n,
                                    uint16_t* uni_to_slot, uint8_t* slot_chans, size_t num_slots,
-                                   size_t* out_unmapped) {
+                                   size_t* out_unmapped,
+                                   const config::ProfileBank* profiles = nullptr) {
     for (size_t i = 0; i <= kMaxUniverseNumber; ++i)
         uni_to_slot[i] = kNoSlot;
 
     uint16_t slot   = 0;
     size_t unmapped = 0;
     for (size_t ch = 0; ch < n; ++ch) {
-        const size_t universes_used = channel_universes_used(chans[ch]);
+        const size_t universes_used = channel_universes_used(chans[ch], profiles);
         for (size_t u = 0; u < universes_used; ++u) {
             const uint32_t uni = static_cast<uint32_t>(chans[ch].universe_start) + u;
             if (universe_routable(uni) && uni_to_slot[uni] != kNoSlot) {
@@ -443,14 +445,12 @@ struct Palette {
     uint8_t n;
 };
 
-inline Palette scene_palette(const config::Scene& s) {
+// Colours past the configured count read as black.
+inline Palette effect_palette(const config::Effect& e) {
     Palette p{};
-    p.n = config::scene_num_colors(s);
-    for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
-        uint8_t rgb[3];
-        config::scene_color(s, k, rgb);
-        p.c[k] = { rgb[0], rgb[1], rgb[2] };
-    }
+    p.n = config::effect_num_colors(e);
+    for (size_t k = 0; k < p.n; ++k)
+        p.c[k] = { e.colors[k][0], e.colors[k][1], e.colors[k][2] };
     return p;
 }
 
@@ -499,7 +499,7 @@ inline uint32_t bounce256(uint64_t travel256, uint32_t span) {
 //   stripes  — param-px bands (default 4) of each colour marching at speed px/s
 namespace fx {
 
-inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                   uint64_t t) {
     const uint64_t pos = static_cast<uint64_t>(t) * speed * 60 % 255000;
     const bool flash   = pos < static_cast<uint64_t>(speed) * 1000;
@@ -508,7 +508,7 @@ inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
         set_px(d, bpp, i, c);
 }
 
-inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                   uint8_t param, uint64_t t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint16_t width = param ? param : 1;
@@ -520,7 +520,8 @@ inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
     }
 }
 
-inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t param, uint64_t t) {
+inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint32_t speed, uint8_t param,
+                    uint64_t t) {
     const uint32_t repeats = param ? param : 1;
     const uint32_t offset  = (static_cast<uint64_t>(t) * speed / 100) % 360;
     for (uint16_t i = 0; i < n; ++i) {
@@ -531,7 +532,7 @@ inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t speed, uint8_t 
     }
 }
 
-inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                   uint8_t param, uint64_t t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint32_t count = param ? (param > 16 ? 16 : param) : 3;
@@ -557,7 +558,7 @@ inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
     }
 }
 
-inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                      uint8_t param, uint64_t t) {
     const uint32_t repeats = param ? param : 1;
     const uint32_t offset  = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000);
@@ -568,14 +569,15 @@ inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint
                               offset));
 }
 
-inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint64_t t) {
+inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
+                 uint64_t t) {
     const Rgb c = palette_at(p,
                              static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000));
     for (uint16_t i = 0; i < n; ++i)
         set_px(d, bpp, i, c);
 }
 
-inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                     uint8_t param, uint64_t t) {
     const uint32_t density = param ? param : 64;
     const uint64_t ticks   = t * (speed + 4u) / 64;  // 64-bit: no wrap in a lifetime
@@ -594,7 +596,8 @@ inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
     }
 }
 
-inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed, uint64_t t) {
+inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
+                 uint64_t t) {
     // The noise coordinate wraps at 2^32 (every ~6 days at full speed): one
     // reseed of a chaotic field, invisible in flames.
     const uint32_t y    = static_cast<uint32_t>(t * (speed + 8u) / 32);
@@ -612,7 +615,7 @@ inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
     }
 }
 
-inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                     uint8_t param, uint64_t t) {
     const uint32_t span   = n > 1 ? n - 1u : 1u;
     const uint32_t width  = param ? param : (n / 20 ? n / 20 : 1);
@@ -639,7 +642,7 @@ inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
     }
 }
 
-inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                  uint8_t param, uint64_t t) {
     const uint32_t waves = param ? param : 2;
     const uint32_t shift = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 512 / 1000);
@@ -651,7 +654,7 @@ inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
     }
 }
 
-inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t speed,
+inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
                     uint8_t param, uint64_t t) {
     const uint32_t width  = param ? param : 4;
     const uint32_t bands  = p.n > 1 ? p.n : 2;  // a lone colour alternates with black
@@ -665,20 +668,22 @@ inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8
 
 }  // namespace fx
 
-// Renders one frame of `scene` at wall-clock time `phase_ms` (animation speed
-// is refresh-rate independent). 64-bit: a 32-bit ms clock wraps after 49.7
-// days, and every effect would jump at that instant on a permanent install. Canonical RGB(W) order;
-// colour order and brightness apply at encode time.
-inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
-                               uint8_t bytes_per_pixel, const config::Scene& scene,
-                               uint64_t phase_ms) {
+// Renders one frame of `generator` (kSceneFx*) on a run of `pixel_count`
+// pixels at wall-clock time `phase_ms` (animation speed is refresh-rate
+// independent), `rate` being the speed in the generator's own units. 64-bit
+// time: a 32-bit ms clock wraps after 49.7 days, and every effect would jump at
+// that instant on a permanent install. Canonical RGB(W) order; colour order
+// and brightness apply at encode time.
+inline void fill_generator(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                           uint8_t bytes_per_pixel, uint8_t generator, const Palette& p,
+                           uint32_t rate, uint8_t param, uint64_t phase_ms) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
-    const Palette p = scene_palette(scene);
-    const uint8_t s = scene.speed, k = scene.param;
+    const uint32_t s  = rate;
+    const uint8_t k   = param;
     const uint16_t n  = pixel_count;
     const uint8_t bpp = bytes_per_pixel;
-    switch (scene.effect) {
+    switch (generator) {
     case config::kSceneFxChase: fx::chase(dst, n, bpp, p, s, k, phase_ms); break;
     case config::kSceneFxRainbow: fx::rainbow(dst, n, bpp, s, k, phase_ms); break;
     case config::kSceneFxBlobs: fx::blobs(dst, n, bpp, p, s, k, phase_ms); break;
@@ -693,12 +698,190 @@ inline void fill_scene_pattern(uint8_t* dst, size_t dst_capacity, uint16_t pixel
     }
 }
 
+// The generator rate of an effect: Effect::speed counts double (twice the top
+// speed of the generators' 0..255 units, half the resolution). Solid keeps its
+// own scale — its speed is a strobe frequency, 255 meaning steady colour 2.
+inline uint32_t effect_rate(const config::Effect& e) {
+    return e.generator == config::kSceneFxSolid ? e.speed : 2u * e.speed;
+}
+
+// ── Dimmer phaser ───────────────────────────────────────────────────────────
+// A dimmer layer over whatever the generator drew: a waveform travelling
+// along the run (Effect::ph_*), as on a desk's phaser.
+
+// One sine period, 0..255 around 127.5, by 1/256 of a turn.
+inline constexpr uint8_t kSin8[256] = {
+    128, 131, 134, 137, 140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173, 176, 179, 182,
+    185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215, 218, 220, 222, 224, 226, 228,
+    230, 232, 234, 235, 237, 238, 240, 241, 243, 244, 245, 246, 248, 249, 250, 250, 251, 252, 253,
+    253, 254, 254, 254, 255, 255, 255, 255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251, 250,
+    250, 249, 248, 246, 245, 244, 243, 241, 240, 238, 237, 235, 234, 232, 230, 228, 226, 224, 222,
+    220, 218, 215, 213, 211, 208, 206, 203, 201, 198, 196, 193, 190, 188, 185, 182, 179, 176, 173,
+    170, 167, 165, 162, 158, 155, 152, 149, 146, 143, 140, 137, 134, 131, 128, 124, 121, 118, 115,
+    112, 109, 106, 103, 100, 97,  93,  90,  88,  85,  82,  79,  76,  73,  70,  67,  65,  62,  59,
+    57,  54,  52,  49,  47,  44,  42,  40,  37,  35,  33,  31,  29,  27,  25,  23,  21,  20,  18,
+    17,  15,  14,  12,  11,  10,  9,   7,   6,   5,   5,   4,   3,   2,   2,   1,   1,   1,   0,
+    0,   0,   0,   0,   0,   0,   1,   1,   1,   2,   2,   3,   4,   5,   5,   6,   7,   9,   10,
+    11,  12,  14,  15,  17,  18,  20,  21,  23,  25,  27,  29,  31,  33,  35,  37,  40,  42,  44,
+    47,  49,  52,  54,  57,  59,  62,  65,  67,  70,  73,  76,  79,  82,  85,  88,  90,  93,  97,
+    100, 103, 106, 109, 112, 115, 118, 121, 124,
+};
+
+// The waveform's level (0..255) at `phase` (one cycle per 65536). `width` is
+// the share of the cycle the wave takes, n/255 (0 = all of it): the wave runs
+// compressed, then holds its end level. For PWM it is the lit share (0 = half).
+inline uint8_t phaser_level(uint8_t wave, uint32_t phase, uint8_t width) {
+    uint32_t x = phase & 0xFFFF;
+    if (wave == config::kPhaserPwm) return x * 255 < (width ? width : 128u) * 65536 ? 255 : 0;
+    if (width && width < 255) {
+        x = x * 255 / width;
+        if (x > 0xFFFF) x = 0xFFFF;
+    }
+    switch (wave) {
+    case config::kPhaserSin: return kSin8[x >> 8];
+    case config::kPhaserCos: return kSin8[((x >> 8) + 64) & 255];
+    case config::kPhaserRampUp: return static_cast<uint8_t>(x >> 8);
+    case config::kPhaserRampDown: return static_cast<uint8_t>(255 - (x >> 8));
+    case config::kPhaserTriangle:
+        return static_cast<uint8_t>(x < 0x8000 ? x >> 7 : (0xFFFF - x) >> 7);
+    case config::kPhaserBump: {  // the upper half of the sine: a hump from 0 and back
+        const int up = 2 * kSin8[x >> 9] - 255;
+        return static_cast<uint8_t>(up > 0 ? up : 0);
+    }
+    default: return 255;
+    }
+}
+
+// The phaser's dimmer (0..255) for pixel `i` of a run of `n` at `phase_ms`.
+// ph_rate counts 1/20 Hz (3 BPM a step), ph_spread 1/16 cycle along the run.
+inline uint8_t phaser_dimmer(const config::Effect& e, uint32_t i, uint32_t n, uint64_t phase_ms) {
+    const uint32_t time  = static_cast<uint32_t>(phase_ms * e.ph_rate * 4096 / 1250);
+    const uint32_t along = n ? i * e.ph_spread * 4096u / n : 0;
+    const uint32_t phase = (e.flags & config::kEffectPhaserReverse) ? time + along : time - along;
+    const uint32_t level = phaser_level(e.ph_wave, phase, e.ph_width);
+    return static_cast<uint8_t>(e.ph_low + (255u - e.ph_low) * level / 255);
+}
+
+// Applies the effect's dimmer layers to the `n` pixels the generator just
+// drew: the phaser, then the invert — an intensity negative measured against
+// colour 1 (a pixel as bright as colour 1 goes dark, a dark one takes colour
+// 1). The invert is worked out from the generator's pixel, so a pixel the
+// phaser dimmed to black still knows its hue.
+inline void apply_effect_dimmer(uint8_t* d, uint16_t n, uint8_t bpp, const config::Effect& e,
+                                uint64_t phase_ms) {
+    const bool phaser = e.ph_wave != config::kPhaserNone && e.ph_wave < config::kPhaserWaveCount;
+    const bool invert = (e.flags & config::kEffectDimmerInvert) != 0;
+    if (!phaser && !invert) return;
+    const uint8_t* c1 = e.colors[0];
+    uint32_t ref      = c1[0] > c1[1] ? c1[0] : c1[1];
+    if (c1[2] > ref) ref = c1[2];
+    // Rainbow ignores the palette: its reference is full brightness.
+    if (e.generator == config::kSceneFxRainbow) ref = 255;
+    for (uint16_t i = 0; i < n; ++i) {
+        uint8_t* px        = d + static_cast<size_t>(i) * bpp;
+        const uint32_t dim = phaser ? phaser_dimmer(e, i, n, phase_ms) + 1u : 256u;
+        if (!invert) {
+            for (uint8_t k = 0; k < 3; ++k)
+                px[k] = static_cast<uint8_t>(px[k] * dim >> 8);
+            continue;
+        }
+        uint32_t own = px[0] > px[1] ? px[0] : px[1];  // the generator's intensity here
+        if (px[2] > own) own = px[2];
+        if (own == 0) {
+            px[0] = c1[0];
+            px[1] = c1[1];
+            px[2] = c1[2];
+            continue;
+        }
+        const uint32_t lum  = own * dim >> 8;
+        const uint32_t left = lum < ref ? ref - lum : 0;
+        for (uint8_t k = 0; k < 3; ++k)
+            px[k] = static_cast<uint8_t>(px[k] * left / own);
+    }
+}
+
+// ── Block / Groups / Wings ──────────────────────────────────────────────────
+// A desk's MAtricks, on the pixels of a run. The effect is drawn on a shorter
+// virtual run, then spread out:
+//   wings  — the run splits in that many parts, every other one mirrored;
+//   block  — that many neighbouring pixels share one value;
+//   groups — the pattern repeats every that many values.
+// 0 or 1 turns each off.
+struct Matricks {
+    uint32_t wing;   // pixels per wing
+    uint32_t block;  // pixels per value
+    uint32_t virt;   // values drawn: the virtual run
+    bool active;     // false: the run is drawn as is
+};
+
+inline Matricks matricks_for(const config::Effect& e, uint32_t n) {
+    Matricks m{};
+    const uint32_t wings = e.wings >= 2 ? (e.wings < n ? e.wings : n) : 1;
+    m.wing               = wings ? (n + wings - 1) / wings : n;
+    m.block              = e.block >= 2 ? e.block : 1;
+    const uint32_t cells = m.block ? (m.wing + m.block - 1) / m.block : m.wing;
+    m.virt               = e.groups >= 2 && e.groups < cells ? e.groups : cells;
+    m.active             = n > 0 && m.virt < n;
+    return m;
+}
+
+// Spreads the `m.virt` values at the head of `d` over the `n` pixels of the
+// run, in place. Last pixel first: a pixel's value sits at or before it, so
+// nothing still to be read is overwritten — no scratch buffer. The value
+// index is kept by counters, one division per wing rather than per pixel.
+inline void expand_matricks(uint8_t* d, uint32_t n, uint8_t bpp, const Matricks& m) {
+    if (!m.active) return;
+    const uint32_t wings = (n + m.wing - 1) / m.wing;
+    for (uint32_t p = wings; p-- > 0;) {
+        const uint32_t first = p * m.wing;
+        const uint32_t len   = n - first < m.wing ? n - first : m.wing;
+        const bool mirrored  = (p & 1) != 0;
+        // Position inside the wing of the pixel being written: counted down
+        // on a plain wing, up on a mirrored one.
+        const uint32_t at = mirrored ? m.wing - len : len - 1;
+        uint32_t in_block = at % m.block;
+        uint32_t value    = at / m.block % m.virt;
+        for (uint32_t j = len; j-- > 0;) {
+            const uint32_t i = first + j;
+            if (i != value)
+                std::memcpy(d + static_cast<size_t>(i) * bpp, d + static_cast<size_t>(value) * bpp,
+                            bpp);
+            if (mirrored) {
+                if (++in_block == m.block) {
+                    in_block = 0;
+                    value    = value + 1 == m.virt ? 0 : value + 1;
+                }
+            } else if (in_block-- == 0) {
+                in_block = m.block - 1;
+                value    = value == 0 ? m.virt - 1 : value - 1;
+            }
+        }
+    }
+}
+
+// Renders one frame of `effect` on a run of `pixel_count` pixels: the
+// generator and the dimmer layers on the virtual run, then Block / Groups /
+// Wings spread it over the pixels.
+inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                            uint8_t bytes_per_pixel, const config::Effect& effect,
+                            uint64_t phase_ms) {
+    const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
+    if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
+    const Matricks m = matricks_for(effect, pixel_count);
+    const auto drawn = static_cast<uint16_t>(m.active ? m.virt : pixel_count);
+    fill_generator(dst, dst_capacity, drawn, bytes_per_pixel, effect.generator,
+                   effect_palette(effect), effect_rate(effect), effect.param, phase_ms);
+    apply_effect_dimmer(dst, drawn, bytes_per_pixel, effect, phase_ms);
+    expand_matricks(dst, pixel_count, bytes_per_pixel, m);
+}
+
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 // A run of the channel's source buffer (the pixels a scene writes).
 struct Span {
     uint16_t first, count;
-    bool reversed = false;  // the fixture is mounted the other way round
+    bool reversed   = false;  // the fixture is mounted the other way round
+    uint8_t profile = 0;      // its DMX profile (control mode)
 };
 
 // Each fixture of `cc` as a source-buffer span, ascending: dead LEDs inside a
@@ -725,7 +908,8 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
         }
         const uint32_t ga = a / group, gb = (b + group - 1) / group;
         out[k++] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga),
-                         config::fixture_reversed(cc.fixtures[i]) };
+                         config::fixture_reversed(cc.fixtures[i]),
+                         config::fixture_profile(cc.fixtures[i]) };
     }
     if (cc.invert_direction)
         for (size_t i = 0; i < k / 2; ++i) {
@@ -736,9 +920,10 @@ inline size_t fixture_spans(const config::ChannelConfig& cc, Span* out, size_t c
     return k;
 }
 
-// Renders `scene` on channel `cc`, spread over its fixtures as the scene's
-// fixture_mode says; pixels outside every fixture stay dark. A channel
-// without fixtures (or a Strip scene) gets the plain whole-strip pattern.
+// Draws on channel `cc` with `fill_run(dst, capacity, pixels)`, spread over
+// its fixtures as `mode` (kFixtureMode*) says; pixels outside every fixture
+// stay dark. A channel
+// without fixtures (or the Strip mode) gets the plain whole-strip pattern.
 // A fixture mounted the other way round runs the effect backwards: its
 // pixels are flipped in place once the pattern is drawn.
 inline void reverse_fixtures(uint8_t* dst, uint8_t bpp, const Span* sp, size_t n) {
@@ -755,25 +940,42 @@ inline void reverse_fixtures(uint8_t* dst, uint8_t bpp, const Span* sp, size_t n
     }
 }
 
-inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
-                                  const config::ChannelConfig& cc, uint8_t bpp,
-                                  const config::Scene& scene, uint64_t phase_ms) {
+// Pixels a..a+n of a buffer, back to front.
+inline void reverse_px(uint8_t* d, uint8_t bpp, uint32_t n) {
+    uint8_t tmp[8];
+    if (n < 2) return;
+    for (uint8_t *a = d, *b = d + static_cast<size_t>(n - 1) * bpp; a < b; a += bpp, b -= bpp) {
+        std::memcpy(tmp, a, bpp);
+        std::memcpy(a, b, bpp);
+        std::memcpy(b, tmp, bpp);
+    }
+}
+
+// `mode` is a part's fixture-mode byte: the mode, and the direction bit — the
+// pattern then runs from the far end (each: of every fixture; chain, mirror:
+// of the chained run).
+template <typename FillRun>
+inline void fill_on_channel(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
+                            uint8_t bpp, uint8_t mode, FillRun fill_run) {
     Span sp[config::kMaxFixtures];
-    const uint8_t mode = config::scene_mode_of(scene.fixture_mode);
+    const bool rev     = config::scene_reverse_of(mode);
+    mode               = config::scene_mode_of(mode);
     const size_t n     = mode == config::kFixtureModeStrip || mode >= config::kFixtureModeCount
                            ? 0
                            : fixture_spans(cc, sp, config::kMaxFixtures);
     const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
     if (n == 0 || total > dst_capacity || bpp == 0) {
-        fill_scene_pattern(dst, dst_capacity, cc.pixel_count, bpp, scene, phase_ms);
+        fill_run(dst, dst_capacity, cc.pixel_count);
+        if (rev && bpp && total <= dst_capacity) reverse_px(dst, bpp, cc.pixel_count);
         return;
     }
     if (mode == config::kFixtureModeEach) {
         std::memset(dst, 0, total);
-        for (size_t i = 0; i < n; ++i)
-            fill_scene_pattern(dst + static_cast<size_t>(sp[i].first) * bpp,
-                               dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count,
-                               bpp, scene, phase_ms);
+        for (size_t i = 0; i < n; ++i) {
+            uint8_t* at = dst + static_cast<size_t>(sp[i].first) * bpp;
+            fill_run(at, dst_capacity - static_cast<size_t>(sp[i].first) * bpp, sp[i].count);
+            if (rev) reverse_px(at, bpp, sp[i].count);
+        }
         reverse_fixtures(dst, bpp, sp, n);
         return;
     }
@@ -785,7 +987,8 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
     uint32_t len         = 0;
     for (size_t i = 0; i < chained; ++i)
         len += sp[i].count;
-    fill_scene_pattern(dst, dst_capacity, static_cast<uint16_t>(len), bpp, scene, phase_ms);
+    fill_run(dst, dst_capacity, static_cast<uint16_t>(len));
+    if (rev) reverse_px(dst, bpp, len);
     uint32_t at = len;
     for (size_t i = chained; i-- > 0;) {
         at -= sp[i].count;
@@ -815,23 +1018,21 @@ inline void fill_scene_on_channel(uint8_t* dst, size_t dst_capacity,
     reverse_fixtures(dst, bpp, sp, n);
 }
 
+// Renders `effect` on channel `cc`, spread over its fixtures as `mode` says.
+inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
+                                   const config::ChannelConfig& cc, uint8_t bpp,
+                                   const config::Effect& effect, uint8_t mode, uint64_t phase_ms) {
+    fill_on_channel(dst, dst_capacity, cc, bpp, mode, [&](uint8_t* d, size_t cap, uint16_t n) {
+        fill_effect_run(d, cap, n, bpp, effect, phase_ms);
+    });
+}
+
 // ── Scenes on groups ────────────────────────────────────────────────────────
 //
 // A group is an ordered list of fixtures on any outputs (config::FixtureGroup).
 // A scene playing on it is drawn once along the group's "virtual strip" — the
 // members end to end, in group order — then each member's slice is copied
 // into its fixture on its output.
-
-// Pixels a..a+n of a buffer, back to front.
-inline void reverse_px(uint8_t* d, uint8_t bpp, uint32_t n) {
-    uint8_t tmp[8];
-    if (n < 2) return;
-    for (uint8_t *a = d, *b = d + static_cast<size_t>(n - 1) * bpp; a < b; a += bpp, b -= bpp) {
-        std::memcpy(tmp, a, bpp);
-        std::memcpy(a, b, bpp);
-        std::memcpy(b, tmp, bpp);
-    }
-}
 
 // Each fixture of `cc` by its index (strip order), as a source-buffer span;
 // count 0 for a fixture cut off by the strip's end. `flip` is set when the
@@ -844,7 +1045,7 @@ inline void fixture_spans_by_index(const config::ChannelConfig& cc,
     const uint32_t live_n = cc.pixel_count;
     const uint32_t group  = cc.grouping ? cc.grouping : 1;
     for (size_t i = 0; i < config::kMaxFixtures; ++i) {
-        out[i] = Span{ 0, 0, false };
+        out[i] = Span{ 0, 0, false, 0 };
         if (i >= nf) continue;
         const uint32_t end = static_cast<uint32_t>(cc.fixtures[i].pos) +
                              config::fixture_len(cc.fixtures[i]);
@@ -859,38 +1060,40 @@ inline void fixture_spans_by_index(const config::ChannelConfig& cc,
         }
         const uint32_t ga = a / group, gb = (b + group - 1) / group;
         out[i] = Span{ static_cast<uint16_t>(ga), static_cast<uint16_t>(gb - ga),
-                       config::fixture_reversed(cc.fixtures[i]) != cc.invert_direction };
+                       config::fixture_reversed(cc.fixtures[i]) != cc.invert_direction,
+                       config::fixture_profile(cc.fixtures[i]) };
     }
 }
 
-// Draws `scene` along a virtual strip of members `lens[0..n)` (pixels each,
-// end to end) into `strip` (RGB, 3 bytes a pixel), honouring the scene's
-// fixture mode and direction:
+// Draws `effect` along a virtual strip of members `lens[0..n)` (pixels each,
+// end to end) into `strip` (RGB, 3 bytes a pixel), honouring the fixture mode
+// and direction packed in `fixture_mode` (config::scene_mode_of / _reverse_of):
 //   each           every member plays the effect on its own
 //   strip, chain   one effect over the whole strip
 //   mirror         over the first half of the members, mirrored on the rest
 //   reverse        the effect runs from the far end (each: from each member's)
 // Returns the strip length, 0 when it does not fit `cap` bytes.
 inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* lens, size_t n,
-                                   const config::Scene& scene, uint64_t phase_ms) {
+                                   const config::Effect& effect, uint8_t fixture_mode,
+                                   uint64_t phase_ms) {
     constexpr uint8_t bpp = 3;
     uint32_t total        = 0;
     for (size_t i = 0; i < n; ++i)
         total += lens[i];
     if (total == 0 || static_cast<size_t>(total) * bpp > cap) return 0;
-    const uint8_t mode = config::scene_mode_of(scene.fixture_mode);
-    const bool rev     = config::scene_reverse_of(scene.fixture_mode);
+    const uint8_t mode = config::scene_mode_of(fixture_mode);
+    const bool rev     = config::scene_reverse_of(fixture_mode);
     if (mode == config::kFixtureModeEach) {
         uint32_t at = 0;
         for (size_t i = 0; i < n; at += lens[i++]) {
-            fill_scene_pattern(strip + static_cast<size_t>(at) * bpp, cap - at * bpp, lens[i], bpp,
-                               scene, phase_ms);
+            fill_effect_run(strip + static_cast<size_t>(at) * bpp, cap - at * bpp, lens[i], bpp,
+                            effect, phase_ms);
             if (rev) reverse_px(strip + static_cast<size_t>(at) * bpp, bpp, lens[i]);
         }
         return total;
     }
     if (mode != config::kFixtureModeMirror) {
-        fill_scene_pattern(strip, cap, static_cast<uint16_t>(total), bpp, scene, phase_ms);
+        fill_effect_run(strip, cap, static_cast<uint16_t>(total), bpp, effect, phase_ms);
         if (rev) reverse_px(strip, bpp, total);
         return total;
     }
@@ -900,7 +1103,7 @@ inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* l
     uint32_t hlen     = 0;
     for (size_t i = 0; i < half; ++i)
         hlen += lens[i];
-    fill_scene_pattern(strip, cap, static_cast<uint16_t>(hlen), bpp, scene, phase_ms);
+    fill_effect_run(strip, cap, static_cast<uint16_t>(hlen), bpp, effect, phase_ms);
     if (rev) reverse_px(strip, bpp, hlen);
     uint32_t offs[config::kMaxGroupMembers + 1];
     offs[0] = 0;
@@ -951,10 +1154,78 @@ constexpr size_t kMaxDmxRuns = 96;
 // and returns how many there were. Nothing is stored: the render task, the
 // boot task and the UI call this on small stacks (an on-stack run array
 // overflowed app_main's 4 kB stack at boot).
+// A fixture of a control-mode channel and where its DMX channels sit.
+struct FixturePatch {
+    uint16_t uni_off;  // universe, relative to cc.universe_start
+    uint16_t slot;     // first channel there, 0-based
+    uint16_t first;    // its span of the source buffer
+    uint16_t count;
+    uint16_t footprint;  // channels it takes: its profile's
+    uint8_t profile;     // index in the bank (clamped: a profile that is gone reads as the first)
+    bool reversed;
+};
+
+// The profile a fixture uses: an index past the bank falls back on the first.
+inline uint8_t patched_profile(const config::ProfileBank& bank, uint8_t index) {
+    return index < bank.count ? index : uint8_t{ 0 };
+}
+
+// Calls visit(patch) for each fixture of a control-mode channel, in the order
+// they are listed (the wiring order, whatever the strip's direction), and
+// returns how many there were. The fixtures follow each other from dmx_start;
+// one that would straddle the end of a universe starts the next instead. A
+// channel without fixtures is one fixture covering the strip, on the first
+// profile. Nothing is stored (see for_each_dmx_run).
 template <typename Visit>
-inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit) {
+inline size_t for_each_fixture_patch(const config::ChannelConfig& cc,
+                                     const config::ProfileBank& bank, Visit visit) {
+    if (led::bytes_per_pixel(cc.protocol) == 0 || cc.pixel_count == 0 || bank.count == 0) return 0;
+    Span sp[config::kMaxFixtures];
+    size_t n = fixture_spans(cc, sp, config::kMaxFixtures);
+    if (n == 0) {
+        const uint32_t group = cc.grouping ? cc.grouping : 1;
+        sp[0] = Span{ 0, static_cast<uint16_t>((cc.pixel_count + group - 1) / group), false, 0 };
+        n     = 1;
+    }
+    uint32_t uni = 0, slot = cc.dmx_start > 0 ? cc.dmx_start - 1u : 0u;
+    uni  += slot / kUniverseSize;
+    slot %= kUniverseSize;
+    for (size_t k = 0; k < n; ++k) {
+        // fixture_spans lists them in buffer order, which invert flips.
+        const Span& f         = sp[cc.invert_direction ? n - 1 - k : k];
+        const uint8_t profile = patched_profile(bank, f.profile);
+        const uint32_t foot   = static_cast<uint32_t>(
+            config::profile_footprint(bank.profiles[profile]));
+        if (slot + foot > kUniverseSize) {
+            ++uni;
+            slot = 0;
+        }
+        visit(FixturePatch{ static_cast<uint16_t>(uni), static_cast<uint16_t>(slot), f.first,
+                            f.count, static_cast<uint16_t>(foot), profile, f.reversed });
+        slot += foot;
+        if (slot >= kUniverseSize) {
+            ++uni;
+            slot = 0;
+        }
+    }
+    return n;
+}
+
+// `profiles` is the bank a control-mode channel is laid out with; without it
+// such a channel has no layout (and takes no universe).
+template <typename Visit>
+inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit,
+                               const config::ProfileBank* profiles = nullptr) {
     const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(cc.protocol));
     if (bpp == 0 || cc.pixel_count == 0) return 0;
+    if (cc.packing == config::kPackControl) {
+        // One run per fixture: its channels, `dst` its rank on the channel.
+        if (!profiles) return 0;
+        uint16_t rank = 0;
+        return for_each_fixture_patch(cc, *profiles, [&](const FixturePatch& f) {
+            visit(DmxRun{ f.uni_off, f.slot, rank++, f.footprint });
+        });
+    }
     uint32_t uni = 0, slot = cc.dmx_start > 0 ? cc.dmx_start - 1u : 0u;
     uni        += slot / kUniverseSize;  // a start past slot 512 rolls into the next universe
     slot       %= kUniverseSize;
@@ -1031,22 +1302,28 @@ inline size_t for_each_dmx_run(const config::ChannelConfig& cc, Visit visit) {
 }
 
 // The runs into `out` (up to `cap`); returns how many the layout needs.
-inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_t cap) {
+inline size_t channel_layout(const config::ChannelConfig& cc, DmxRun* out, size_t cap,
+                             const config::ProfileBank* profiles = nullptr) {
     size_t k = 0;
-    return for_each_dmx_run(cc, [&](const DmxRun& r) {
-        if (k < cap) out[k] = r;
-        ++k;
-    });
+    return for_each_dmx_run(
+        cc,
+        [&](const DmxRun& r) {
+            if (k < cap) out[k] = r;
+            ++k;
+        },
+        profiles);
 }
 
 // The last run (the highest universe), or false when there is none.
-inline bool last_dmx_run(const config::ChannelConfig& cc, DmxRun* last) {
-    return for_each_dmx_run(cc, [&](const DmxRun& r) { *last = r; }) > 0;
+inline bool last_dmx_run(const config::ChannelConfig& cc, DmxRun* last,
+                         const config::ProfileBank* profiles = nullptr) {
+    return for_each_dmx_run(cc, [&](const DmxRun& r) { *last = r; }, profiles) > 0;
 }
 
-inline size_t channel_universes_used(const config::ChannelConfig& cc) {
+inline size_t channel_universes_used(const config::ChannelConfig& cc,
+                                     const config::ProfileBank* profiles) {
     DmxRun last{};
-    return last_dmx_run(cc, &last) ? last.uni_off + 1u : 0u;
+    return last_dmx_run(cc, &last, profiles) ? last.uni_off + 1u : 0u;
 }
 
 // ── Auto-patch ──────────────────────────────────────────────────────────────
@@ -1070,11 +1347,15 @@ struct AutoPatchOptions {
 
 inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelConfig* chans,
                                    size_t n, uint16_t* out_uni, uint16_t* out_dmx,
-                                   uint16_t* slot_after = nullptr) {
+                                   uint16_t* slot_after                = nullptr,
+                                   const config::ProfileBank* profiles = nullptr) {
     uint32_t cur_uni = o.base, cur_slot = 0;
     for (size_t i = 0; i < n; ++i) {
         auto& c = chans[i];
-        if (o.packing >= 0) c.packing = static_cast<uint8_t>(o.packing);
+        // The layout asked for is a pixel layout: an output in DMX control
+        // mode has no pixel channels to lay out, and stays as it is.
+        const bool control = c.packing == config::kPackControl;
+        if (o.packing >= 0 && !control) c.packing = static_cast<uint8_t>(o.packing);
         const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(c.protocol));
         if (bpp == 0 || c.pixel_count == 0) {  // takes no room: parked at the next free one
             out_uni[i]       = static_cast<uint16_t>((cur_slot ? cur_uni + 1 : cur_uni) & 0x7FFF);
@@ -1083,9 +1364,18 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
             c.dmx_start      = 1;
             continue;
         }
+        // A control output's first fixture would itself move to the next
+        // universe if it did not fit: start the output there, so its
+        // address says where its first fixture is.
+        uint32_t first_foot = 0;
+        if (control && profiles)
+            for_each_fixture_patch(c, *profiles, [&](const FixturePatch& f) {
+                if (!first_foot) first_foot = f.footprint;
+            });
         const bool opens = !o.compact || c.packing == config::kPackPerFixture ||
                            (c.packing == config::kPackWholePixels &&
-                            kUniverseSize - cur_slot < bpp);
+                            kUniverseSize - cur_slot < bpp) ||
+                           (control && kUniverseSize - cur_slot < first_foot);
         if (opens && cur_slot > 0) {
             ++cur_uni;
             cur_slot = 0;
@@ -1095,7 +1385,7 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
         c.universe_start = out_uni[i];
         c.dmx_start      = out_dmx[i];
         DmxRun last{};
-        last_dmx_run(c, &last);
+        last_dmx_run(c, &last, profiles);
         cur_uni  = cur_uni + last.uni_off;
         cur_slot = static_cast<uint32_t>(last.slot) + last.bytes;
         if (cur_slot >= kUniverseSize) {
@@ -1282,37 +1572,66 @@ inline int effect_from_dmx(uint8_t v) {
 }
 
 // Per-output scene overrides from the control universe (-1 = not overridden).
-struct SceneOverride {
-    int16_t speed   = -1;
-    int16_t param   = -1;
-    int16_t effect  = -1;
-    int8_t reverse  = -1;  // 0 forward, 1 from the far end
-    int8_t fix_mode = -1;  // config::kFixtureMode*
+// What a desk asks of the effect a scene plays; -1 = its own.
+struct EffectOverride {
+    int16_t bank      = -1;  // another effect of the bank altogether
+    int16_t speed     = -1;
+    int16_t param     = -1;
+    int16_t generator = -1;
+    int16_t ph_wave   = -1;
+    int16_t ph_rate   = -1;
+    int16_t ph_spread = -1;
+    int16_t ph_width  = -1;
+    int16_t block     = -1;
+    int16_t groups    = -1;
+    int16_t wings     = -1;
+    int8_t reverse    = -1;  // 0 forward, 1 from the far end
+    int8_t fix_mode   = -1;  // config::kFixtureMode*
     int16_t color[config::kSceneColorsMax][3];
-    SceneOverride() {
+    EffectOverride() {
         for (auto& c : color)
             c[0] = c[1] = c[2] = -1;
     }
 };
 
-inline void apply_scene_override(config::Scene& sc, const SceneOverride& o) {
-    if (o.speed >= 0) sc.speed = static_cast<uint8_t>(o.speed);
-    if (o.param >= 0) sc.param = static_cast<uint8_t>(o.param);
-    if (o.effect >= 0) sc.effect = static_cast<uint8_t>(o.effect);
-    if (o.reverse >= 0 || o.fix_mode >= 0)
-        sc.fixture_mode = config::pack_scene_mode(
-            o.fix_mode >= 0 ? static_cast<uint8_t>(o.fix_mode)
-                            : config::scene_mode_of(sc.fixture_mode),
-            o.reverse >= 0 ? o.reverse == 1 : config::scene_reverse_of(sc.fixture_mode),
-            config::scene_group_of(sc.fixture_mode));
+// A part's fixture-mode byte with the desk's Direction / Fixture mode on it.
+inline uint8_t apply_mode_override(uint8_t fixture_mode, const EffectOverride& o) {
+    if (o.reverse < 0 && o.fix_mode < 0) return fixture_mode;
+    return config::pack_scene_mode(
+        o.fix_mode >= 0 ? static_cast<uint8_t>(o.fix_mode) : config::scene_mode_of(fixture_mode),
+        o.reverse >= 0 ? o.reverse == 1 : config::scene_reverse_of(fixture_mode), -1);
+}
+
+// Everything but `bank` and the fixture mode: swapping the effect itself is
+// the caller's, which holds the bank (see dmx_manager's render_source).
+inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
+    auto take = [](uint8_t& field, int16_t v) {
+        if (v >= 0) field = static_cast<uint8_t>(v);
+    };
+    take(e.speed, o.speed);
+    take(e.param, o.param);
+    take(e.generator, o.generator);
+    take(e.ph_wave, o.ph_wave);
+    take(e.ph_rate, o.ph_rate);
+    take(e.ph_spread, o.ph_spread);
+    take(e.ph_width, o.ph_width);
+    take(e.block, o.block);
+    take(e.groups, o.groups);
+    take(e.wings, o.wings);
     for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
         const int16_t* c = o.color[k];
         if (c[0] < 0 && c[1] < 0 && c[2] < 0) continue;
-        config::set_scene_color(sc, k, static_cast<uint8_t>(c[0] < 0 ? 0 : c[0]),
-                                static_cast<uint8_t>(c[1] < 0 ? 0 : c[1]),
-                                static_cast<uint8_t>(c[2] < 0 ? 0 : c[2]));
-        if (k + 1 > config::scene_num_colors(sc)) sc.num_colors = static_cast<uint8_t>(k + 1);
+        for (size_t j = 0; j < 3; ++j)
+            e.colors[k][j] = static_cast<uint8_t>(c[j] < 0 ? 0 : c[j]);
+        if (k + 1 > config::effect_num_colors(e)) e.num_colors = static_cast<uint8_t>(k + 1);
     }
+}
+
+// Phaser wave a desk's wave channel selects, in bands of 8: -1 = the effect's
+// own (band 0, or past the last wave), else kPhaser* — band 1 is "no phaser".
+inline int phaser_wave_from_dmx(uint8_t v) {
+    const uint8_t band = dmx_band(v);
+    return band >= 1 && band <= config::kPhaserWaveCount ? band - 1 : -1;
 }
 
 // What one control-universe frame asks for. Masters multiply, blackouts OR,
@@ -1321,7 +1640,7 @@ struct ControlEval {
     uint16_t master[config::kNumChannels];
     uint8_t blackout;  // outputs forced dark
     uint8_t strobe_hz10[config::kNumChannels];
-    SceneOverride ovr[config::kNumChannels];
+    EffectOverride ovr[config::kNumChannels];
     int32_t fade_ms;    // -1 = no Fade slot
     int16_t fseq_band;  // -1 = no Fseq slot
     // Scene selectors in slot order: band (0 = none) + outputs, or a group.
@@ -1331,7 +1650,7 @@ struct ControlEval {
     int8_t scene_group[config::kMaxControlSlots];  // -1 = on scene_mask
     // Group-targeted slots: what they ask of the scenes playing on each group,
     // and a master / blackout over its fixtures.
-    SceneOverride govr[config::kMaxGroups];
+    EffectOverride govr[config::kMaxGroups];
     uint16_t gmaster[config::kMaxGroups];
     uint32_t gblackout;  // bit per group
 
@@ -1342,12 +1661,12 @@ struct ControlEval {
         blackout = 0;
         std::memset(strobe_hz10, 0, sizeof(strobe_hz10));
         for (auto& o : ovr)
-            o = SceneOverride{};
+            o = EffectOverride{};
         fade_ms   = -1;
         fseq_band = -1;
         n_scene   = 0;
         for (auto& o : govr)
-            o = SceneOverride{};
+            o = EffectOverride{};
         for (auto& m : gmaster)
             m = kMasterFull;
         gblackout = 0;
@@ -1369,7 +1688,7 @@ inline void apply_group_slot(ControlEval& out, int16_t (*gcol)[config::kSceneCol
                              int group, config::CtlFn fn, const config::ControlSlot& s, uint8_t v,
                              uint8_t v2) {
     if (group < 0 || group >= static_cast<int>(config::kMaxGroups)) return;
-    SceneOverride& o = out.govr[group];
+    EffectOverride& o = out.govr[group];
     switch (fn) {
     case config::CtlFn::Master: {
         const uint32_t lvl = (s.flags & config::kCtlFlagFine) ? (static_cast<uint32_t>(v) << 8) | v2
@@ -1387,7 +1706,29 @@ inline void apply_group_slot(ControlEval& out, int16_t (*gcol)[config::kSceneCol
         if (v) o.param = v;
         break;
     case config::CtlFn::Effect:
-        if (v) o.effect = static_cast<int16_t>(effect_from_dmx(v));
+        if (v) o.generator = static_cast<int16_t>(effect_from_dmx(v));
+        break;
+    case config::CtlFn::Bank:
+        if (dmx_band(v)) o.bank = static_cast<int16_t>(dmx_band(v) - 1);
+        break;
+    case config::CtlFn::PhWave: o.ph_wave = static_cast<int16_t>(phaser_wave_from_dmx(v)); break;
+    case config::CtlFn::PhRate:
+        if (v) o.ph_rate = v;
+        break;
+    case config::CtlFn::PhSpread:
+        if (v) o.ph_spread = v;
+        break;
+    case config::CtlFn::PhWidth:
+        if (v) o.ph_width = v;
+        break;
+    case config::CtlFn::Block:
+        if (v) o.block = v;
+        break;
+    case config::CtlFn::Groups:
+        if (v) o.groups = v;
+        break;
+    case config::CtlFn::Wings:
+        if (v) o.wings = v;
         break;
     case config::CtlFn::Direction:
         if (v) o.reverse = v >= 128 ? 1 : 0;
@@ -1450,7 +1791,31 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
                 if (v) out.ovr[o].param = v;
                 break;
             case config::CtlFn::Effect:
-                if (v) out.ovr[o].effect = static_cast<int16_t>(effect_from_dmx(v));
+                if (v) out.ovr[o].generator = static_cast<int16_t>(effect_from_dmx(v));
+                break;
+            case config::CtlFn::Bank:
+                if (dmx_band(v)) out.ovr[o].bank = static_cast<int16_t>(dmx_band(v) - 1);
+                break;
+            case config::CtlFn::PhWave:
+                out.ovr[o].ph_wave = static_cast<int16_t>(phaser_wave_from_dmx(v));
+                break;
+            case config::CtlFn::PhRate:
+                if (v) out.ovr[o].ph_rate = v;
+                break;
+            case config::CtlFn::PhSpread:
+                if (v) out.ovr[o].ph_spread = v;
+                break;
+            case config::CtlFn::PhWidth:
+                if (v) out.ovr[o].ph_width = v;
+                break;
+            case config::CtlFn::Block:
+                if (v) out.ovr[o].block = v;
+                break;
+            case config::CtlFn::Groups:
+                if (v) out.ovr[o].groups = v;
+                break;
+            case config::CtlFn::Wings:
+                if (v) out.ovr[o].wings = v;
                 break;
             case config::CtlFn::Direction:
                 if (v) out.ovr[o].reverse = v >= 128 ? 1 : 0;
@@ -1495,6 +1860,148 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
             for (int j = 0; j < 3; ++j)
                 out.govr[g].color[k][j] = c3[j] < 0 ? 0 : c3[j];
         }
+}
+
+// ── DMX control mode ────────────────────────────────────────────────────────
+// An output in control mode is driven like conventional luminaires: each of
+// its fixtures reads the channels of its DMX profile and plays what they ask
+// for — a colour, or an effect of the bank with the desk's overrides.
+
+// What one fixture's channels ask for.
+struct FixtureFrame {
+    uint16_t dimmer      = kMasterFull;  // full unless the profile has a dimmer
+    uint8_t white        = 0;
+    uint8_t shutter_hz10 = 0;                   // 0 = open
+    int16_t bank         = -1;                  // -1 = no effect: colour 1, steady
+    int16_t color[config::kSceneColorsMax][3];  // -1 = not in the profile
+    EffectOverride fx;                          // speed, param, phaser, MAtricks
+    FixtureFrame() { std::memset(color, 0xFF, sizeof(color)); }
+};
+
+// Reads `dmx` — the fixture's channels, profile_footprint(p) of them — as the
+// profile says.
+inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, FixtureFrame& out) {
+    out       = FixtureFrame{};
+    size_t at = 0;
+    for (size_t i = 0; i < p.count && i < config::kMaxProfileSlots; ++i) {
+        const config::ProfileSlot& s = p.slots[i];
+        const uint8_t v              = dmx[at];
+        const auto fn                = static_cast<config::FixFn>(s.fn);
+        switch (fn) {
+        case config::FixFn::Dimmer:
+            out.dimmer = (s.arg & config::kProfileArgFine)
+                           ? static_cast<uint16_t>((v << 8) | dmx[at + 1])
+                           : static_cast<uint16_t>(v * 257u);
+            break;
+        case config::FixFn::Red:
+        case config::FixFn::Green:
+        case config::FixFn::Blue:
+            out.color[s.arg & config::kProfileArgColor]
+                     [static_cast<size_t>(fn) - static_cast<size_t>(config::FixFn::Red)] = v;
+            break;
+        case config::FixFn::White: out.white = v; break;
+        case config::FixFn::Shutter: out.shutter_hz10 = strobe_hz10_from_dmx(v); break;
+        case config::FixFn::Bank:
+            if (dmx_band(v)) out.bank = static_cast<int16_t>(dmx_band(v) - 1);
+            break;
+        case config::FixFn::Speed:
+            if (v) out.fx.speed = v;
+            break;
+        case config::FixFn::Param:
+            if (v) out.fx.param = v;
+            break;
+        case config::FixFn::PhWave:
+            out.fx.ph_wave = static_cast<int16_t>(phaser_wave_from_dmx(v));
+            break;
+        case config::FixFn::PhRate:
+            if (v) out.fx.ph_rate = v;
+            break;
+        case config::FixFn::PhSpread:
+            if (v) out.fx.ph_spread = v;
+            break;
+        case config::FixFn::PhWidth:
+            if (v) out.fx.ph_width = v;
+            break;
+        case config::FixFn::Block:
+            if (v) out.fx.block = v;
+            break;
+        case config::FixFn::Groups:
+            if (v) out.fx.groups = v;
+            break;
+        case config::FixFn::Wings:
+            if (v) out.fx.wings = v;
+            break;
+        default: break;
+        }
+        at += config::profile_slot_width(s);
+    }
+}
+
+// Draws one fixture — `n` pixels at `d` — as its frame asks. `get_effect(index,
+// effect&)` copies an effect of the bank, false when there is none there.
+// With no effect (bank channel at 0, absent, or pointing nowhere) the fixture
+// shows colour 1, steady, plus its white LED; with one, a colour of the desk
+// replaces the effect's unless its three channels are at 0. The phaser and
+// Block / Groups / Wings channels act either way.
+template <typename GetEffect>
+inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, const FixtureFrame& f,
+                           bool reversed, uint64_t phase_ms, GetEffect get_effect) {
+    const size_t total = static_cast<size_t>(n) * bpp;
+    if (total > cap || bpp == 0 || n == 0) return;
+    if (f.dimmer == 0 || !strobe_lit(phase_ms, f.shutter_hz10)) {
+        std::memset(d, 0, total);
+        return;
+    }
+    config::Effect e{};
+    const bool plain = f.bank < 0 || !get_effect(static_cast<size_t>(f.bank), e);
+    if (plain) {
+        e            = config::Effect{};
+        e.num_colors = 1;
+    }
+    for (size_t k = 0; k < config::kSceneColorsMax; ++k) {
+        const int16_t* c = f.color[k];
+        if (c[0] < 0 && c[1] < 0 && c[2] < 0) continue;  // not in the profile
+        // On an effect, a colour at 0,0,0 is the effect's own; plain, colour
+        // 1 is the fixture's colour whatever it is.
+        if (c[0] <= 0 && c[1] <= 0 && c[2] <= 0 && !(plain && k == 0)) continue;
+        if (plain && k > 0) continue;
+        for (size_t j = 0; j < 3; ++j)
+            e.colors[k][j] = static_cast<uint8_t>(c[j] < 0 ? 0 : c[j]);
+        if (k + 1 > config::effect_num_colors(e)) e.num_colors = static_cast<uint8_t>(k + 1);
+    }
+    apply_effect_override(e, f.fx);
+    fill_effect_run(d, cap, n, bpp, e, phase_ms);
+    if (plain && bpp == 4 && f.white)
+        for (uint16_t i = 0; i < n; ++i)
+            d[static_cast<size_t>(i) * 4 + 3] = f.white;
+    if (reversed) {
+        const Span whole{ 0, n, true, 0 };
+        reverse_fixtures(d, bpp, &whole, 1);
+    }
+    apply_master(d, total, f.dimmer);
+}
+
+// Renders a control-mode channel: every fixture from its channels on the
+// wire. `get_universe(number)` returns a 512-byte buffer or nullptr (the
+// fixtures of a missing universe stay dark); pixels in no fixture stay dark.
+template <typename GetUniverse, typename GetEffect>
+inline void render_fixtures(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
+                            const config::ProfileBank& bank, uint64_t phase_ms,
+                            GetUniverse get_universe, GetEffect get_effect) {
+    const uint8_t bpp  = led::bytes_per_pixel(cc.protocol);
+    const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
+    if (total > dst_capacity || total == 0) return;
+    std::memset(dst, 0, total);
+    for_each_fixture_patch(cc, bank, [&](const FixturePatch& p) {
+        const uint8_t* src = get_universe(static_cast<uint16_t>(cc.universe_start + p.uni_off));
+        const size_t at    = static_cast<size_t>(p.first) * bpp;
+        if (!src || at >= total) return;
+        const size_t room = (total - at) / bpp;
+        FixtureFrame frame;
+        decode_fixture(bank.profiles[p.profile], src + p.slot, frame);
+        render_fixture(dst + at, total - at, static_cast<uint16_t>(p.count < room ? p.count : room),
+                       bpp, frame, p.reversed, phase_ms, get_effect);
+    });
 }
 
 }  // namespace pixfrog::dmx::logic

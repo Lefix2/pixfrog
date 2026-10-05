@@ -79,7 +79,7 @@ void start() {
     init_log_capture();  // ensure capture is on even if app_main didn't call it
 
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 40;  // 35 routes today
+    cfg.max_uri_handlers = 48;  // 40 routes today
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
     cfg.stack_size       = 8192;  // esp_ota_* calls need headroom over the 4 kB default
 
@@ -99,6 +99,9 @@ void start() {
         route("/api/ota", HTTP_POST, handle_ota),
         route("/api/backup", HTTP_GET, handle_backup),
         route("/api/restore", HTTP_POST, handle_restore),
+        route("/api/effect/*", HTTP_POST, handle_post_effect),
+        route("/api/effects/add", HTTP_POST, handle_effects_add),
+        route("/api/effects/move", HTTP_POST, handle_effects_move),
         route("/api/scene/*", HTTP_POST, handle_post_scene),
         route("/api/scenes/add", HTTP_POST, handle_scenes_add),
         route("/api/scenes/move", HTTP_POST, handle_scenes_move),
@@ -114,6 +117,8 @@ void start() {
         route("/api/fseq/playlist", HTTP_GET, handle_get_playlist),
         route("/api/fseq/playlist", HTTP_POST, handle_post_playlist),
         route("/api/groups", HTTP_POST, handle_post_groups),
+        route("/api/profiles", HTTP_POST, handle_post_profiles),
+        route("/api/profile/*", HTTP_GET, handle_profile_fixture),
         route("/api/fseq/play", HTTP_POST, handle_fseq_play),
         route("/api/fseq/stop", HTTP_POST, handle_fseq_stop),
         route("/api/fseq/upload", HTTP_POST, handle_fseq_upload),

@@ -192,8 +192,30 @@ scene move 0 1
 scene name 0 Renamed
 scene play 0
 scene stop
-scene set 0 blobs 005aff,ff008c 40 4 ff
-scene set 0 solid ff0000,00ff00,0000ff,ffffff,000000 0 0 ff
+scene part 0 f0 2 chain
+scene part 0 ff 99
+scene clear 0
+fx
+fx add Extra
+fx set 0 blobs 005aff,ff008c 40 4
+fx set 0 solid ff0000,00ff00,0000ff,ffffff,000000 0 0
+fx name 0 Renamed
+fx phaser 0 sin 20 16 128 30 reverse
+fx phaser 0 none
+fx invert 0 1
+fx matricks 0 3 4 2
+profile
+profile add Bars
+profile slots 0 dimmer+fine,red:1,none,bank,wings
+profile preset 1 rgb_fx
+profile name 0 Renamed
+profile del 0
+ch 1 fixtures 1:20,21:20:r:p2,41:20:p1
+ch 1 packing control
+ch 1
+ch 1 fixtures -
+fx move 0 1
+fx del 8
 fseq list
 fseq play show.fseq
 fseq seek 5000
@@ -213,10 +235,18 @@ ctrl enable 1
 ctrl universe 77
 ctrl address 500
 ctrl add scene 0f
+ctrl add bank 0f
+ctrl add ph_wave
+ctrl add wings f0
 ctrl set 0 master ff 0 1
 ctrl del 1
 scene play 1 0f
-scene stop 1""".splitlines()
+scene stop 1
+scene part 0 0f 1 mirror rev
+scene group 0 1
+scene play 0 group 0
+ctrl add bank g0
+ctrl add direction g1""".splitlines()
 
 # fuzz_web_api: byte 0 = route index (kRoutes order), byte 1 = wildcard index.
 ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/scene",
@@ -224,7 +254,8 @@ ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/sc
           "/api/rollback/ack", "/api/autopatch", "/api/fseq/play", "/api/fseq/stop",
           "/api/loglevel", "/api/ota", "GET /api/config", "GET /api/status", "GET /api/backup",
           "GET /api/fseq/files", "GET /api/logs", "/api/show", "/api/control",
-          "GET /api/control/fixture"]
+          "GET /api/control/fixture", "/api/effect", "/api/effects/add", "/api/effects/move",
+          "/api/groups", "/api/profiles", "GET /api/profile/2/fixture"]
 R = {r: i for i, r in enumerate(ROUTES)}
 WEB = [
     (R["/api/global"], 0, '{"refresh_hz":45,"short_name":"rig-a"}'),
@@ -233,10 +264,26 @@ WEB = [
     (R["/api/channel"], 2, '{"pixel_count":321,"protocol":"WS2812B"}'),
     (R["/api/channel"], 3, '{"protocol":"APA102","pixel_count":77,"gaps":[[5,1],[40,3]]}'),
     (R["/api/channel"], 0x80, '{"pixel_count":999,"color_order":"GRB","brightness":200}'),
-    (R["/api/scene"], 0, '{"name":"Blobs","effect":3,"speed":40,"param":4,'
-                         '"colors":[[0,90,255],[255,0,140]]}'),
+    (R["/api/scene"], 0, '{"name":"Zones","parts":[{"mask":15,"effect":3,"fixture_mode":"chain"},'
+                         '{"mask":240,"effect":1}]}'),
     (R["DEL /api/scene"], 1, ""),
-    (R["/api/scenes/add"], 0, '{"name":"Web","effect":3}'),
+    (R["/api/scenes/add"], 0, '{"name":"Web","parts":[{"mask":255,"effect":3}]}'),
+    (R["/api/effect"], 3, '{"name":"Blobs","generator":3,"speed":40,"param":4,'
+                          '"colors":["#005aff","#ff008c"]}'),
+    (R["/api/effects/add"], 0, '{"name":"Web","generator":8,"colors":["#ff0000"]}'),
+    (R["/api/effect"], 1, '{"phaser":{"wave":"bump","rate":40,"spread":8,"width":200,"low":12,'
+                          '"reverse":true},"invert":true,'
+                          '"matricks":{"block":3,"groups":4,"wings":2}}'),
+    (R["/api/effects/move"], 0, '{"from":3,"to":0}'),
+    (R["/api/groups"], 0, '{"groups":[{"name":"Top","members":[[0,0],[1,0]]}]}'),
+    (R["/api/profiles"], 0, '{"profiles":[{"preset":"rgb_fx","name":"Bars"},{"name":"Spots","slots":['
+                            '{"fn":"dimmer","fine":true},{"fn":"red","index":1},{"fn":"bank"}]}]}'),
+    (R["GET /api/profile/2/fixture"], 0, ""),
+    (R["/api/channel"], 1, '{"protocol":"WS2815","pixel_count":60,"packing":"control",'
+                           '"dmx_start":500,"fixtures":[[1,20,0,2],[21,20,1,3]]}'),
+    # A backup from before the effect bank: scenes that carry their own look.
+    (R["/api/restore"], 0, '{"backup_version":1,"scenes":[{"name":"Old","effect":1,"speed":60,'
+                           '"colors":["#ff0000","#0000ff"],"mask":15,"fixture_mode":"mirror"}]}'),
     (R["/api/scenes/move"], 0, '{"from":3,"to":0}'),
     (R["/api/scenes/stop"], 0, "{}"),
     (R["/api/rollback/ack"], 0, "{}"),
@@ -254,6 +301,13 @@ WEB = [
     (R["GET /api/control/fixture"], 0, ""),
     (R["/api/scene"], 1, '{"outputs":240}'),
     (R["/api/global"], 0, '{"scene_fade_ms":2500}'),
+    # Scenes on fixture groups: a default group, a part from the far end, a
+    # play on a group, control channels aimed at one.
+    (R["/api/scene"], 0, '{"group":0,"parts":[{"mask":0,"effect":2,"fixture_mode":"mirror",'
+                         '"reverse":true}]}'),
+    (R["/api/scene"], 1, '{"group":0}'),
+    (R["/api/control"], 0, '{"slots":[{"fn":"bank","group":0},{"fn":"direction","group":1},'
+                           '{"fn":"fixmode","mask":3}]}'),
 ]
 
 

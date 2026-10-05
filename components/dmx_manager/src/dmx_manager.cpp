@@ -161,10 +161,10 @@ std::atomic<uint8_t> g_dmx_blackout{ 0 };
 std::atomic<uint8_t> g_dmx_strobe[config::kNumChannels];
 std::atomic<int32_t> g_dmx_fade_ms{ -1 };
 // Render-task-only control state.
-logic::SceneOverride g_ovr[config::kNumChannels];
+logic::EffectOverride g_ovr[config::kNumChannels];
 // The same for group-targeted control slots (render task only): overrides for
 // the scenes playing on each group, and a master / blackout over its bars.
-logic::SceneOverride g_govr[config::kMaxGroups];
+logic::EffectOverride g_govr[config::kMaxGroups];
 uint16_t g_gmaster[config::kMaxGroups];
 uint32_t g_gblackout = 0;
 uint8_t g_ctrl_prev_band[config::kMaxControlSlots];
@@ -243,7 +243,8 @@ void rebuild_universe_lut() {
 
     size_t unmapped = 0;
     g_slots_used    = logic::build_universe_map(chans, config::kNumChannels, g_universe_to_slot,
-                                                g_slot_chans, kNumUniverses, &unmapped);
+                                                g_slot_chans, kNumUniverses, &unmapped,
+                                                &config::get_profiles());
     // Silent truncation used to look exactly like a patching mistake on the
     // console side, so say it out loud.
     if (unmapped) {
@@ -446,7 +447,7 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
     o.packing = opt.packing;
     uint16_t starts[config::kNumChannels], dmx[config::kNumChannels], slot_after = 0;
     uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx,
-                                              &slot_after);
+                                              &slot_after, &config::get_profiles());
     // Sequential layout: the universes used are next - base (the cursor wraps
     // past 0x7FFF, so the end is computed unmasked to see an overflow).
     size_t used        = static_cast<size_t>((next - opt.base) & 0x7FFF);
@@ -481,7 +482,19 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
 }
 
 size_t channel_universe_span(const config::ChannelConfig& cc) {
-    return logic::channel_universes_used(cc);
+    return logic::channel_universes_used(cc, &config::get_profiles());
+}
+
+size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_t cap) {
+    if (cc.packing != config::kPackControl) return 0;
+    size_t n = 0;
+    logic::for_each_fixture_patch(cc, config::get_profiles(), [&](const logic::FixturePatch& f) {
+        if (n < cap)
+            out[n] = FixtureAddress{ static_cast<uint16_t>(cc.universe_start + f.uni_off),
+                                     static_cast<uint16_t>(f.slot + 1), f.footprint, f.profile };
+        ++n;
+    });
+    return n < cap ? n : cap;
 }
 
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
@@ -721,14 +734,15 @@ void scene_start(uint8_t scene_index) {
 
 void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t fade_ms) {
     if (scene_index >= config::num_scenes()) return;
-    const config::Scene sc = config::get_scene(scene_index);
+    config::Scene scene;
+    config::copy_scene(scene_index, scene);
     // A scene with a default group, started everywhere: it plays on its group.
-    const int group = config::scene_group_of(sc.fixture_mode);
+    const int group = config::scene_group(scene);
     if (outputs == kAllOutputs && group >= 0 && group < config::get_groups().count) {
         group_play(scene_index, static_cast<uint8_t>(group), fade_ms);
         return;
     }
-    const uint8_t mask = outputs & sc.channel_mask;
+    const uint8_t mask = outputs & config::scene_mask(scene);
     {
         PlayLock lock;  // the outputs it takes show it whole: their fixtures too
         release_locked(mask, [](const Play&) { return false; }, fade_len(fade_ms));
@@ -911,9 +925,9 @@ void update_show_control() {
         // control universe being switched off.
         if (!config::get_control().enabled) {
             for (auto& o : g_ovr)
-                o = logic::SceneOverride{};
+                o = logic::EffectOverride{};
             for (auto& o : g_govr)
-                o = logic::SceneOverride{};
+                o = logic::EffectOverride{};
         }
         return;
     }
@@ -967,19 +981,39 @@ void update_show_control() {
 
 namespace {
 
+// The network's view of the output into `buf`: its pixels decoded from the
+// universes, or — in DMX control mode — its fixtures drawn from their channels.
+void decode_live(const config::ChannelConfig& cc, uint8_t* buf, uint64_t t) {
+    auto universe = [](uint16_t u) { return universe_front_buffer_for(u); };
+    if (cc.packing == config::kPackControl) {
+        logic::render_fixtures(
+            buf, kMaxBytesPerChan, cc, config::get_profiles(), t, universe,
+            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); });
+        return;
+    }
+    logic::decode_pixels(buf, kMaxBytesPerChan, cc, universe);
+}
+
 // One source into `buf`: scene `src` (with the desk's overrides) when it is a
 // valid scene whose mask still holds the output, else the live path — FSEQ,
 // failsafe or the decoded universes.
 void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t* buf, uint64_t t) {
     const uint8_t bpp = led::bytes_per_pixel(cc.protocol);
     if (src >= 0 && static_cast<size_t>(src) < config::num_scenes()) {
-        // A copy under the config lock: a scene-list edit (memmove) on another
-        // task cannot tear the scene being drawn.
-        config::Scene scene;
-        config::copy_scene(static_cast<size_t>(src), scene);
-        if ((scene.channel_mask >> ch) & 1) {
-            logic::apply_scene_override(scene, g_ovr[ch]);
-            logic::fill_scene_on_channel(buf, kMaxBytesPerChan, cc, bpp, scene, t);
+        // A copy: a list edit (memmove) on another task cannot tear the part
+        // or the effect being drawn.
+        config::Effect effect;
+        uint8_t mode;
+        if (config::copy_scene_part(static_cast<size_t>(src), ch, effect, mode)) {
+            // The desk's Bank channel: another effect of the bank on this
+            // output (a band past the bank keeps the scene's own).
+            config::Effect picked;
+            if (g_ovr[ch].bank >= 0 &&
+                config::copy_effect(static_cast<size_t>(g_ovr[ch].bank), picked))
+                effect = picked;
+            logic::apply_effect_override(effect, g_ovr[ch]);
+            mode = logic::apply_mode_override(mode, g_ovr[ch]);
+            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, mode, t);
             return;
         }
     }
@@ -988,8 +1022,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
     // Suppress the failsafe check while FSEQ is active so a seek/block-load
     // pause doesn't momentarily blackout channels that are being played back.
     if (g_fseq_active.load(std::memory_order_relaxed)) {
-        logic::decode_pixels(buf, kMaxBytesPerChan, cc,
-                             [](uint16_t u) { return universe_front_buffer_for(u); });
+        decode_live(cc, buf, t);
         return;
     }
 
@@ -1002,11 +1035,11 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
                             esp_timer_get_time(), g.failsafe_timeout_s)) {
         // Mode "scene": play the configured scene's effect on the lost channel —
         // only on the channels the scene targets; the others black out.
-        config::Scene scene;
-        config::copy_scene(g.failsafe_scene, scene);
-        const bool in_mask = (scene.channel_mask >> ch) & 1;
-        if (g.failsafe_mode == config::kFailsafeScene && in_mask) {
-            logic::fill_scene_on_channel(buf, kMaxBytesPerChan, cc, bpp, scene, t);
+        config::Effect effect;
+        uint8_t fx_mode;
+        if (g.failsafe_mode == config::kFailsafeScene &&
+            config::copy_scene_part(g.failsafe_scene, ch, effect, fx_mode)) {
+            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, fx_mode, t);
             return;
         }
         const uint8_t mode = g.failsafe_mode == config::kFailsafeScene ? config::kFailsafeBlackout
@@ -1016,8 +1049,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         return;
     }
 
-    logic::decode_pixels(buf, kMaxBytesPerChan, cc,
-                         [](uint16_t u) { return universe_front_buffer_for(u); });
+    decode_live(cc, buf, t);
 }
 
 }  // namespace
@@ -1054,11 +1086,18 @@ void plays_frame_begin(uint64_t t) {
             g_play_lens[p][m]  = g_spans_r[r.output][r.fixture].count;
             at                += g_play_lens[p][m];
         }
-        config::Scene scene;
-        config::copy_scene(static_cast<size_t>(pl.scene), scene);
-        logic::apply_scene_override(scene, g_govr[pl.group]);  // the desk, on this group
+        // A group plays the scene's look: its first part's effect and mode.
+        config::Effect effect;
+        uint8_t mode;
+        if (!config::copy_scene_look(static_cast<size_t>(pl.scene), effect, mode)) continue;
+        const logic::EffectOverride& ovr = g_govr[pl.group];  // the desk, on this group
+        config::Effect picked;
+        if (ovr.bank >= 0 && config::copy_effect(static_cast<size_t>(ovr.bank), picked))
+            effect = picked;
+        logic::apply_effect_override(effect, ovr);
+        mode         = logic::apply_mode_override(mode, ovr);
         g_play_ok[p] = logic::render_group_strip(g_play_strip[p], kMaxStripPx * 3, g_play_lens[p],
-                                                 g.count, scene, t) > 0;
+                                                 g.count, effect, mode, t) > 0;
     }
 }
 

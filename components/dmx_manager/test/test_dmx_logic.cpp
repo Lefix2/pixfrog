@@ -35,6 +35,28 @@ static int g_fail = 0;
         }                                                                                          \
     } while (0)
 
+// The generators are exercised in their own speed units, through the v3 scene
+// record that carried a look before the effect bank.
+static void fill_scene_pattern(uint8_t* dst, size_t cap, uint16_t n, uint8_t bpp,
+                               const config::SceneV3& s, uint64_t t) {
+    config::Effect e = config::effect_from_scene_v3(s);
+    fill_generator(dst, cap, n, bpp, e.generator, effect_palette(e), s.speed, s.param, t);
+}
+
+static void fill_scene_on_channel(uint8_t* dst, size_t cap, const config::ChannelConfig& cc,
+                                  uint8_t bpp, const config::SceneV3& s, uint64_t t) {
+    fill_on_channel(dst, cap, cc, bpp, s.fixture_mode, [&](uint8_t* d, size_t c, uint16_t n) {
+        fill_scene_pattern(d, c, n, bpp, s, t);
+    });
+}
+
+// A v3 scene along a group's strip: its look, with its packed mode byte.
+static uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* lens, size_t n,
+                                   const config::SceneV3& s, uint64_t t) {
+    return render_group_strip(strip, cap, lens, n, config::effect_from_scene_v3(s), s.fixture_mode,
+                              t);
+}
+
 // ── Sizing helpers ──────────────────────────────────────────────────────────
 
 static void test_total_bytes_rgb() {
@@ -700,11 +722,11 @@ static void test_failsafe_fill_overflow_is_noop() {
     EXPECT_EQ(buf[0], 0);
 }
 
-// ── Scene generators ────────────────────────────────────────────────────────
+// ── SceneV3 generators ────────────────────────────────────────────────────────
 
-static pixfrog::config::Scene mk_scene(uint8_t effect, uint8_t r, uint8_t g, uint8_t b,
-                                       uint8_t speed, uint8_t param) {
-    pixfrog::config::Scene s{};
+static pixfrog::config::SceneV3 mk_scene(uint8_t effect, uint8_t r, uint8_t g, uint8_t b,
+                                         uint8_t speed, uint8_t param) {
+    pixfrog::config::SceneV3 s{};
     s.effect     = effect;
     s.r          = r;
     s.g          = g;
@@ -715,8 +737,8 @@ static pixfrog::config::Scene mk_scene(uint8_t effect, uint8_t r, uint8_t g, uin
     return s;
 }
 
-static pixfrog::config::Scene with_color(pixfrog::config::Scene s, uint8_t r, uint8_t g,
-                                         uint8_t b) {
+static pixfrog::config::SceneV3 with_color(pixfrog::config::SceneV3 s, uint8_t r, uint8_t g,
+                                           uint8_t b) {
     pixfrog::config::set_scene_color(s, s.num_colors, r, g, b);
     ++s.num_colors;
     return s;
@@ -797,6 +819,25 @@ static void test_fixture_modes_each_chain_mirror() {
     EXPECT_TRUE(std::memcmp(buf, ref, 4 * 3) == 0);
     EXPECT_TRUE(std::memcmp(buf + 8 * 3, ref + 4 * 3, 4 * 3) == 0);
     EXPECT_EQ(buf[5 * 3], 0);
+    // From the far end: the chained run back to front, each fixture's own
+    // run back to front, the whole strip back to front.
+    const uint8_t kRev = pixfrog::config::kSceneReverseBit;
+    sc.fixture_mode    = pixfrog::config::kFixtureModeChain | kRev;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    for (int j = 0; j < 4; ++j) {
+        EXPECT_TRUE(std::memcmp(buf + j * 3, ref + (7 - j) * 3, 3) == 0);
+        EXPECT_TRUE(std::memcmp(buf + (8 + j) * 3, ref + (3 - j) * 3, 3) == 0);
+    }
+    sc.fixture_mode = pixfrog::config::kFixtureModeEach | kRev;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 4, 3, sc, 0);
+    for (int j = 0; j < 4; ++j)
+        EXPECT_TRUE(std::memcmp(buf + (8 + j) * 3, ref + (3 - j) * 3, 3) == 0);
+    sc.fixture_mode = pixfrog::config::kFixtureModeStrip | kRev;
+    fill_scene_on_channel(buf, sizeof(buf), cc, 3, sc, 0);
+    fill_scene_pattern(ref, sizeof(ref), 12, 3, sc, 0);
+    for (int j = 0; j < 12; ++j)
+        EXPECT_TRUE(std::memcmp(buf + j * 3, ref + (11 - j) * 3, 3) == 0);
     // Mirror over three fixtures: the third is the first reversed.
     cc.fixtures[1]  = { 4, 4 };
     cc.fixtures[2]  = { 8, 4 };
@@ -875,7 +916,7 @@ static void test_group_strip_modes() {
     uint8_t out[6 * 4];
     std::memset(out, 0xEE, sizeof(out));
     const uint8_t slice[3 * 3] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-    put_member(out, 4, Span{ 2, 3, true }, slice, 3);
+    put_member(out, 4, Span{ 2, 3, true, 0 }, slice, 3);
     EXPECT_EQ(out[2 * 4], 7);      // its first pixel holds the slice's last
     EXPECT_EQ(out[2 * 4 + 3], 0);  // W off
     EXPECT_EQ(out[4 * 4], 1);
@@ -1030,23 +1071,23 @@ static void test_scene_overflow_is_noop() {
 // flashes of colour 2 at speed×60/255 Hz.
 static void test_scene_solid_strobe() {
     using namespace pixfrog::config;
-    const Scene base = with_color(mk_scene(kSceneFxSolid, 10, 0, 0, 0, 0), 0, 0, 200);
+    const SceneV3 base = with_color(mk_scene(kSceneFxSolid, 10, 0, 0, 0, 0), 0, 0, 200);
     uint8_t buf[2 * 3];
     for (uint32_t t : { 0u, 7u, 999u, 123456u }) {
         fill_scene_pattern(buf, sizeof(buf), 2, 3, base, t);
         EXPECT_EQ(buf[0], 10);  // speed 0: never flashes
         EXPECT_EQ(buf[2], 0);
     }
-    Scene full = base;
-    full.speed = 255;
+    SceneV3 full = base;
+    full.speed   = 255;
     for (uint32_t t : { 0u, 7u, 999u, 123456u }) {
         fill_scene_pattern(buf, sizeof(buf), 2, 3, full, t);
         EXPECT_EQ(buf[0], 0);  // 60 Hz of 1/60 s flashes: always colour 2
         EXPECT_EQ(buf[2], 200);
     }
     // 51 → 12 Hz: period 83.3 ms, flash for the first 16.7 ms of each.
-    Scene mid = base;
-    mid.speed = 51;
+    SceneV3 mid = base;
+    mid.speed   = 51;
     fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 5);
     EXPECT_EQ(buf[2], 200);
     fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 40);
@@ -1054,14 +1095,14 @@ static void test_scene_solid_strobe() {
     fill_scene_pattern(buf, sizeof(buf), 2, 3, mid, 90);  // next period's flash
     EXPECT_EQ(buf[2], 200);
     // One colour: the flash is black (classic strobe on a lit strip).
-    Scene single = mk_scene(kSceneFxSolid, 50, 50, 50, 255, 0);
+    SceneV3 single = mk_scene(kSceneFxSolid, 50, 50, 50, 255, 0);
     fill_scene_pattern(buf, sizeof(buf), 2, 3, single, 3);
     EXPECT_EQ(buf[0], 0);
 }
 
 static void test_scene_chase_one_head_per_colour() {
     using namespace pixfrog::config;
-    const Scene s       = with_color(mk_scene(kSceneFxChase, 255, 0, 0, 0, 1), 0, 0, 255);
+    const SceneV3 s     = with_color(mk_scene(kSceneFxChase, 255, 0, 0, 0, 1), 0, 0, 255);
     uint8_t buf[10 * 3] = {};
     fill_scene_pattern(buf, sizeof(buf), 10, 3, s, 0);
     EXPECT_EQ(buf[0 * 3 + 0], 255);  // head 1 at 0
@@ -1078,7 +1119,7 @@ static int lit_pixels(const uint8_t* buf, int n) {
 
 static void test_scene_blobs_move_and_stay_in_bounds() {
     using namespace pixfrog::config;
-    const Scene s    = with_color(mk_scene(kSceneFxBlobs, 0, 0, 255, 60, 3), 255, 0, 0);
+    const SceneV3 s  = with_color(mk_scene(kSceneFxBlobs, 0, 0, 255, 60, 3), 255, 0, 0);
     constexpr int kN = 120;
     uint8_t a[kN * 3 + 3], b[kN * 3 + 3];
     std::memset(a, 0xAB, sizeof(a));
@@ -1096,7 +1137,7 @@ static void test_scene_blobs_move_and_stay_in_bounds() {
 
 static void test_scene_fire_hot_base_dark_tip() {
     using namespace pixfrog::config;
-    Scene s          = with_color(mk_scene(kSceneFxFire, 255, 0, 0, 60, 0), 255, 255, 0);
+    SceneV3 s        = with_color(mk_scene(kSceneFxFire, 255, 0, 0, 60, 0), 255, 255, 0);
     constexpr int kN = 60;
     uint8_t buf[kN * 3];
     fill_scene_pattern(buf, sizeof(buf), kN, 3, s, 4321);
@@ -1106,7 +1147,7 @@ static void test_scene_fire_hot_base_dark_tip() {
 
 static void test_scene_scanner_bounces() {
     using namespace pixfrog::config;
-    const Scene s = mk_scene(kSceneFxScanner, 0, 255, 0, 100, 1);
+    const SceneV3 s = mk_scene(kSceneFxScanner, 0, 255, 0, 100, 1);
     uint8_t buf[11 * 3];
     fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 50);  // 5 px along the first leg
     EXPECT_EQ(buf[5 * 3 + 1], 255);
@@ -1119,7 +1160,7 @@ static void test_scene_scanner_bounces() {
 
 static void test_scene_stripes_alternate_palette() {
     using namespace pixfrog::config;
-    const Scene s = with_color(mk_scene(kSceneFxStripes, 255, 0, 0, 0, 2), 0, 255, 0);
+    const SceneV3 s = with_color(mk_scene(kSceneFxStripes, 255, 0, 0, 0, 2), 0, 255, 0);
     uint8_t buf[8 * 3];
     fill_scene_pattern(buf, sizeof(buf), 8, 3, s, 0);
     EXPECT_EQ(buf[0 * 3 + 0], 255);
@@ -1130,7 +1171,7 @@ static void test_scene_stripes_alternate_palette() {
 
 static void test_scene_fade_crosses_palette() {
     using namespace pixfrog::config;
-    const Scene s = with_color(mk_scene(kSceneFxFade, 255, 0, 0, 255, 0), 0, 0, 255);
+    const SceneV3 s = with_color(mk_scene(kSceneFxFade, 255, 0, 0, 255, 0), 0, 0, 255);
     uint8_t buf[3];
     fill_scene_pattern(buf, sizeof(buf), 1, 3, s, 0);
     EXPECT_EQ(buf[0], 255);
@@ -1143,6 +1184,769 @@ static void test_scene_fade_crosses_palette() {
 
 // Every effect must stay within pixel_count × bpp, zero the W die, and cope
 // with 1-pixel strips, max-size strips and extreme parameters.
+// A v3 scene and the effect it migrates to draw the same frame, on a plain
+// run and through every fixture mode: an even v3 speed halves exactly, and
+// Solid's strobe speed is carried over as is.
+static void test_migrated_effect_matches_v3_scene() {
+    using namespace pixfrog::config;
+    constexpr int kN = 60;
+    uint8_t a[kN * 4], b[kN * 4];
+    ChannelConfig cc{};
+    cc.protocol    = pixfrog::led::Protocol::SK6812;
+    cc.pixel_count = kN;
+    cc.grouping    = 1;
+    cc.fixtures[0] = { 0, 20 };
+    cc.fixtures[1] = { 25, 10 | kFixtureReversed };
+    cc.fixtures[2] = { 40, 20 };
+    bool same      = true;
+    for (uint8_t fx = 0; fx < kSceneFxCount; ++fx)
+        for (uint8_t speed : { 0, 36, 254, 255 }) {
+            if (fx != kSceneFxSolid && (speed & 1)) continue;  // odd speeds round up
+            for (uint64_t t : { 0ull, 1234ull, 987654321ull }) {
+                SceneV3 s      = with_color(mk_scene(fx, 200, 30, 10, speed, 3), 0, 90, 255);
+                const Effect e = effect_from_scene_v3(s);
+                std::memset(a, 0xAA, sizeof(a));
+                std::memset(b, 0xAA, sizeof(b));
+                fill_scene_pattern(a, sizeof(a), kN, 4, s, t);
+                fill_effect_run(b, sizeof(b), kN, 4, e, t);
+                same = same && std::memcmp(a, b, sizeof(a)) == 0;
+                for (uint8_t mode = 0; mode < kFixtureModeCount; ++mode) {
+                    s.fixture_mode = mode;
+                    fill_scene_on_channel(a, sizeof(a), cc, 4, s, t);
+                    fill_effect_on_channel(b, sizeof(b), cc, 4, e, mode, t);
+                    same = same && std::memcmp(a, b, sizeof(a)) == 0;
+                }
+            }
+        }
+    EXPECT_TRUE(same);
+
+    // An unknown generator falls back to Solid; a too-small buffer is left alone.
+    Effect e{};
+    e.generator    = 99;
+    e.colors[0][0] = 9;
+    std::memset(a, 0, sizeof(a));
+    fill_effect_run(a, sizeof(a), 2, 3, e, 0);
+    EXPECT_EQ(a[0], 9);
+    EXPECT_EQ(a[3], 9);
+    a[0] = 0x55;
+    fill_effect_run(a, 2, 2, 3, e, 0);
+    EXPECT_EQ(a[0], 0x55);
+}
+
+// One unit of Effect::speed is two of a generator's: the top speed doubles.
+static void test_effect_speed_counts_double() {
+    using namespace pixfrog::config;
+    Effect e{};
+    e.generator    = kSceneFxChase;
+    e.speed        = 255;
+    e.num_colors   = 1;
+    e.colors[0][0] = 255;
+    EXPECT_EQ(effect_rate(e), 510);
+    uint8_t buf[100 * 3];
+    fill_effect_run(buf, sizeof(buf), 100, 3, e, 100);  // 510 px/s for 0.1 s
+    EXPECT_EQ(buf[51 * 3], 255);
+    EXPECT_EQ(buf[50 * 3], 0);
+    e.generator = kSceneFxSolid;  // a strobe frequency: its own scale
+    EXPECT_EQ(effect_rate(e), 255);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxChase, 255), 128);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxChase, 1), 1);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxChase, 0), 0);
+    EXPECT_EQ(effect_speed_from_v3(kSceneFxSolid, 255), 255);
+}
+
+// ── Dimmer phaser ───────────────────────────────────────────────────────────
+
+static void test_phaser_waveforms() {
+    using namespace pixfrog::config;
+    // The sine table: mid at 0, crest a quarter in, trough at three quarters.
+    EXPECT_EQ(kSin8[0], 128);
+    EXPECT_EQ(kSin8[64], 255);
+    EXPECT_EQ(kSin8[128], 128);
+    EXPECT_EQ(kSin8[192], 0);
+    bool mirror = true;
+    for (int i = 1; i < 128; ++i)
+        mirror = mirror && kSin8[i] + kSin8[256 - i] == 255;
+    EXPECT_TRUE(mirror);
+
+    constexpr uint32_t q = 0x4000;  // a quarter cycle
+    EXPECT_EQ(phaser_level(kPhaserSin, 0, 0), 128);
+    EXPECT_EQ(phaser_level(kPhaserSin, q, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserSin, 3 * q, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserCos, 0, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserCos, 2 * q, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 0, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 2 * q, 0), 128);
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 0xFFFF, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserRampDown, 0, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserRampDown, 0xFFFF, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 0, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, q, 0), 128);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 2 * q, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 3 * q, 0), 127);
+    EXPECT_EQ(phaser_level(kPhaserBump, 0, 0), 1);
+    EXPECT_EQ(phaser_level(kPhaserBump, 2 * q, 0), 255);
+    EXPECT_TRUE(phaser_level(kPhaserBump, 0xFFFF, 0) < 8);
+    EXPECT_EQ(phaser_level(kPhaserPwm, 0, 0), 255);  // half lit by default
+    EXPECT_EQ(phaser_level(kPhaserPwm, 2 * q - 1, 0), 255);
+    EXPECT_EQ(phaser_level(kPhaserPwm, 2 * q + 512, 0), 0);
+    EXPECT_EQ(phaser_level(kPhaserPwm, q - 512, 64), 255);  // width = the lit share
+    EXPECT_EQ(phaser_level(kPhaserPwm, q + 512, 64), 0);
+    EXPECT_EQ(phaser_level(kPhaserNone, q, 0), 255);  // no wave: full
+    EXPECT_EQ(phaser_level(99, q, 0), 255);
+    // The cycle wraps: only the low 16 bits of the phase count.
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 0x30000 + 2 * q, 0), 128);
+
+    // Width: the wave runs in that share of the cycle (128/255, about half
+    // here), then holds its end.
+    EXPECT_TRUE(phaser_level(kPhaserTriangle, q / 2, 128) >= 126);  // half-way up already
+    EXPECT_TRUE(phaser_level(kPhaserTriangle, q, 128) >= 253);      // the crest, twice as early
+    EXPECT_TRUE(phaser_level(kPhaserTriangle, 2 * q, 128) <= 2);    // done
+    EXPECT_EQ(phaser_level(kPhaserTriangle, 3 * q, 128), 0);        // held at the end
+    EXPECT_EQ(phaser_level(kPhaserRampUp, 3 * q, 128), 255);        // a ramp holds its top
+    EXPECT_EQ(phaser_level(kPhaserRampUp, q, 255), 64);             // 255 = the whole cycle
+}
+
+static void test_phaser_dimmer_rate_spread_and_floor() {
+    using namespace pixfrog::config;
+    Effect e{};
+    e.ph_wave = kPhaserRampUp;
+    e.ph_rate = 20;  // 20 × 1/20 Hz = one cycle a second
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 0), 0);
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 500), 128);
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 1500), 128);  // periodic
+    EXPECT_EQ(phaser_dimmer(e, 7, 10, 500), 128);   // no spread: every pixel in phase
+    e.ph_rate = 0;                                  // a still wave
+    EXPECT_EQ(phaser_dimmer(e, 0, 10, 123456), 0);
+
+    // Spread 16 = one whole cycle along the run; the wave travels up the run,
+    // so a pixel further on is earlier in the cycle.
+    e.ph_spread = 16;
+    e.ph_rate   = 20;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 500), 128);
+    EXPECT_EQ(phaser_dimmer(e, 2, 8, 500), 64);   // a quarter cycle behind
+    EXPECT_EQ(phaser_dimmer(e, 4, 8, 500), 0);    // half a cycle behind
+    EXPECT_EQ(phaser_dimmer(e, 2, 8, 750), 128);  // what pixel 0 showed 250 ms ago
+    e.flags = kEffectPhaserReverse;
+    EXPECT_EQ(phaser_dimmer(e, 2, 8, 500), 192);  // ahead instead
+    e.flags = 0;
+    EXPECT_EQ(phaser_dimmer(e, 0, 0, 500), 128);  // an empty run is not a division by zero
+
+    // The floor lifts the whole wave: low..255 instead of 0..255.
+    e.ph_spread = 0;
+    e.ph_low    = 55;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 0), 55);
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 500), 55 + 200 * 128 / 255);
+    e.ph_low = 255;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, 0), 255);
+    // A long uptime does not make the wave jump: same phase one cycle later.
+    e.ph_low               = 0;
+    const uint64_t far_off = 5'000'000'000'000ull;
+    EXPECT_EQ(phaser_dimmer(e, 0, 8, far_off + 250), phaser_dimmer(e, 0, 8, far_off + 1250));
+}
+
+static config::Effect solid_effect(uint8_t r, uint8_t g, uint8_t b) {
+    config::Effect e{};
+    e.generator    = config::kSceneFxSolid;
+    e.num_colors   = 1;
+    e.colors[0][0] = r;
+    e.colors[0][1] = g;
+    e.colors[0][2] = b;
+    return e;
+}
+
+static void test_effect_dimmer_layers() {
+    using namespace pixfrog::config;
+    uint8_t a[8 * 4], b[8 * 4];
+
+    // No phaser, no invert: the generator's frame, untouched.
+    Effect e = solid_effect(200, 100, 50);
+    fill_generator(a, sizeof(a), 8, 3, e.generator, effect_palette(e), 0, 0, 0);
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(std::memcmp(a, b, 24), 0);
+
+    // A still ramp spread over the run dims each pixel by its own level and
+    // keeps the hue. Pixel 0 is at the top of the ramp.
+    e.ph_wave   = kPhaserRampDown;
+    e.ph_spread = 16;
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(b[0], 200);                       // level 255
+    EXPECT_EQ(b[4 * 3], 200 * (128 + 1) >> 8);  // half a cycle behind: level 128
+    EXPECT_EQ(b[4 * 3 + 1], 100 * (128 + 1) >> 8);
+    EXPECT_TRUE(b[1 * 3] < 40);  // an eighth behind wraps to the ramp's end
+    // RGBW: the white byte the generators leave at 0 stays there.
+    std::memset(b, 0xEE, sizeof(b));
+    fill_effect_run(b, sizeof(b), 8, 4, e, 0);
+    EXPECT_EQ(b[0], 200);
+    EXPECT_EQ(b[3], 0);
+
+    // An out-of-range wave is no phaser at all.
+    e.ph_wave = 77;
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(std::memcmp(a, b, 24), 0);
+}
+
+static void test_effect_dimmer_invert() {
+    using namespace pixfrog::config;
+    uint8_t b[16 * 3];
+
+    // A steady colour inverted is dark: every pixel is as bright as colour 1.
+    Effect e = solid_effect(128, 0, 0);
+    e.flags  = kEffectDimmerInvert;
+    fill_effect_run(b, sizeof(b), 4, 3, e, 0);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);
+
+    // With a phaser it is the complement, measured against colour 1 — never
+    // brighter than the colour itself.
+    e.ph_wave   = kPhaserRampDown;
+    e.ph_spread = 16;
+    fill_effect_run(b, sizeof(b), 8, 3, e, 0);
+    EXPECT_EQ(b[0], 0);                              // phaser full → dark
+    EXPECT_EQ(b[4 * 3], 128 - (128 * 129 >> 8));     // phaser half → the other half
+    EXPECT_TRUE(b[1 * 3] > 100 && b[1 * 3] <= 128);  // phaser near 0 → nearly full
+    EXPECT_EQ(b[1 * 3 + 1], 0);                      // the hue is kept
+
+    // A chase inverted: a lit strip with a dark gap running through it.
+    Effect c{};
+    c.generator    = kSceneFxChase;
+    c.num_colors   = 1;
+    c.colors[0][1] = 90;
+    c.flags        = kEffectDimmerInvert;
+    fill_effect_run(b, sizeof(b), 16, 3, c, 0);  // the head is on pixel 0
+    EXPECT_EQ(b[1], 0);
+    EXPECT_EQ(b[5 * 3 + 1], 90);
+    EXPECT_EQ(b[5 * 3], 0);
+
+    // A pixel brighter than colour 1 (another palette colour) just goes dark.
+    Effect two       = c;
+    two.num_colors   = 2;
+    two.colors[1][0] = 255;  // the second head, at half the run
+    fill_effect_run(b, sizeof(b), 16, 3, two, 0);
+    EXPECT_EQ(b[8 * 3] + b[8 * 3 + 1] + b[8 * 3 + 2], 0);
+
+    // Rainbow has its own hue everywhere: the invert follows the phaser and a
+    // pixel the phaser blacked out comes back in its own colour.
+    Effect r{};
+    r.generator = kSceneFxRainbow;
+    r.flags     = kEffectDimmerInvert;
+    r.ph_wave   = kPhaserPwm;  // half the run lit, half dark
+    r.ph_spread = 16;
+    uint8_t plain[16 * 3];
+    Effect rp  = r;
+    rp.flags   = 0;
+    rp.ph_wave = kPhaserNone;
+    fill_effect_run(plain, sizeof(plain), 16, 3, rp, 0);
+    fill_effect_run(b, sizeof(b), 16, 3, r, 0);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);  // lit by the phaser → dark
+    bool kept = false, dark_side_lit = true;
+    for (int i = 1; i < 8; ++i) {  // the phaser's dark half
+        const uint8_t* p = b + i * 3;
+        dark_side_lit    = dark_side_lit && p[0] + p[1] + p[2] > 0;
+        kept             = kept || std::memcmp(p, plain + i * 3, 3) == 0;
+    }
+    EXPECT_TRUE(dark_side_lit);
+    EXPECT_TRUE(kept);
+}
+
+// ── Block / Groups / Wings ──────────────────────────────────────────────────
+
+// The value index of pixel i, the plain way: wing, mirror, block, repeat.
+static uint32_t matricks_value(uint32_t i, uint32_t wing, uint32_t block, uint32_t virt) {
+    const uint32_t p = i / wing, j = i % wing;
+    const uint32_t at = (p & 1) ? wing - 1 - j : j;
+    return at / block % virt;
+}
+
+static void test_matricks_layout() {
+    using namespace pixfrog::config;
+    Effect e{};
+    Matricks m = matricks_for(e, 12);
+    EXPECT_TRUE(!m.active);            // all off: the run as is
+    e.block = e.groups = e.wings = 1;  // 1 is off too
+    EXPECT_TRUE(!matricks_for(e, 12).active);
+
+    e       = Effect{};
+    e.block = 3;
+    m       = matricks_for(e, 12);
+    EXPECT_TRUE(m.active);
+    EXPECT_EQ(m.virt, 4);                    // 12 pixels by blocks of 3
+    EXPECT_EQ(matricks_for(e, 13).virt, 5);  // a last, shorter block
+    e.block = 200;
+    EXPECT_EQ(matricks_for(e, 12).virt, 1);  // one value for the whole run
+
+    e        = Effect{};
+    e.groups = 4;
+    m        = matricks_for(e, 12);
+    EXPECT_EQ(m.virt, 4);  // the pattern repeats every 4 pixels
+    e.groups = 12;
+    EXPECT_TRUE(!matricks_for(e, 12).active);  // as long as the run: nothing to repeat
+    e.groups = 50;
+    EXPECT_TRUE(!matricks_for(e, 12).active);
+
+    e       = Effect{};
+    e.wings = 2;
+    m       = matricks_for(e, 12);
+    EXPECT_EQ(m.wing, 6);
+    EXPECT_EQ(m.virt, 6);
+    EXPECT_EQ(matricks_for(e, 13).wing, 7);  // an odd run: the last wing is one short
+    e.wings = 200;
+    EXPECT_EQ(matricks_for(e, 12).wing, 1);  // never more wings than pixels:
+    EXPECT_EQ(matricks_for(e, 12).virt, 1);  // one-pixel wings, all the same value
+
+    // All three: 24 pixels, 2 wings of 12, blocks of 2 → 6 values, repeating every 3.
+    e.wings  = 2;
+    e.block  = 2;
+    e.groups = 3;
+    m        = matricks_for(e, 24);
+    EXPECT_EQ(m.wing, 12);
+    EXPECT_EQ(m.virt, 3);
+    EXPECT_TRUE(!matricks_for(e, 0).active);  // an empty run
+}
+
+// The in-place expansion against the plain formula, for every run length and
+// a spread of settings, 3 and 4 bytes per pixel.
+static void test_matricks_expand_matches_reference() {
+    using namespace pixfrog::config;
+    constexpr int kMax = 64;
+    uint8_t buf[kMax * 4 + 4];
+    bool same = true;
+    for (uint8_t bpp : { uint8_t{ 3 }, uint8_t{ 4 } })
+        for (uint32_t n = 1; n <= kMax; ++n)
+            for (uint8_t wings : { 0, 2, 3, 5, 64 })
+                for (uint8_t block : { 0, 2, 3, 7 })
+                    for (uint8_t groups : { 0, 2, 3, 5 }) {
+                        Effect e{};
+                        e.wings          = wings;
+                        e.block          = block;
+                        e.groups         = groups;
+                        const Matricks m = matricks_for(e, n);
+                        // Each virtual pixel carries its own index; the tail is junk.
+                        std::memset(buf, 0xEE, sizeof(buf));
+                        for (uint32_t v = 0; v < (m.active ? m.virt : n); ++v)
+                            std::memset(buf + v * bpp, static_cast<int>(v + 1), bpp);
+                        expand_matricks(buf, n, bpp, m);
+                        for (uint32_t i = 0; i < n; ++i) {
+                            const uint32_t want = m.active
+                                                    ? matricks_value(i, m.wing, m.block, m.virt)
+                                                    : i;
+                            for (uint8_t k = 0; k < bpp; ++k)
+                                same = same && buf[i * bpp + k] == want + 1;
+                        }
+                        same = same && buf[n * bpp] == 0xEE;  // nothing past the run
+                    }
+    EXPECT_TRUE(same);
+}
+
+static void test_matricks_on_an_effect() {
+    using namespace pixfrog::config;
+    uint8_t b[24 * 3];
+    auto red = [&](int i) { return b[i * 3]; };
+
+    // Wings on a chase: the head runs in from both ends at once.
+    Effect e{};
+    e.generator    = kSceneFxChase;
+    e.num_colors   = 1;
+    e.colors[0][0] = 200;
+    e.speed        = 1;  // 2 px/s
+    e.wings        = 2;
+    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);  // head on virtual pixel 3
+    for (int i = 0; i < 24; ++i)
+        EXPECT_EQ(red(i), i == 3 || i == 20 ? 200 : 0);
+
+    // Block: the head is three pixels wide and moves by three.
+    e.wings = 0;
+    e.block = 3;
+    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);
+    for (int i = 0; i < 24; ++i)
+        EXPECT_EQ(red(i), i >= 9 && i < 12 ? 200 : 0);
+
+    // Groups: the head repeats every 6 pixels.
+    e.block  = 0;
+    e.groups = 6;
+    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);
+    for (int i = 0; i < 24; ++i)
+        EXPECT_EQ(red(i), i % 6 == 3 ? 200 : 0);
+
+    // The phaser spreads over the virtual run: with 2 wings a still ramp
+    // rises to the middle and falls back, symmetric.
+    Effect p    = solid_effect(255, 255, 255);
+    p.ph_wave   = kPhaserRampUp;
+    p.ph_spread = 16;
+    p.flags     = kEffectPhaserReverse;  // the ramp climbs along the run
+    p.wings     = 2;
+    fill_effect_run(b, sizeof(b), 24, 3, p, 0);
+    bool sym = true, climbs = true;
+    for (int i = 0; i < 12; ++i) {
+        sym = sym && red(i) == red(23 - i);
+        if (i) climbs = climbs && red(i) > red(i - 1);
+    }
+    EXPECT_TRUE(sym);
+    EXPECT_TRUE(climbs);
+
+    // A one-pixel run and a too-small buffer stay safe.
+    b[0] = b[3] = 0x55;
+    fill_effect_run(b, sizeof(b), 1, 3, p, 0);
+    EXPECT_EQ(b[3], 0x55);
+    fill_effect_run(b, 5, 24, 3, p, 0);
+    EXPECT_EQ(b[3], 0x55);
+}
+
+// ── DMX control mode ────────────────────────────────────────────────────────
+
+// A 60-pixel WS2815 output in control mode with three 20-pixel fixtures on
+// the profiles RGB (3 ch), RGB FX (6 ch) and Dim RGB (4 ch).
+static pixfrog::config::ChannelConfig control_chan() {
+    using namespace pixfrog::config;
+    ChannelConfig cc  = fixture_chan(60);
+    cc.packing        = kPackControl;
+    cc.universe_start = 10;
+    cc.dmx_start      = 1;
+    cc.fixtures[0]    = make_fixture(0, 20, false, 0);
+    cc.fixtures[1]    = make_fixture(20, 20, false, 2);
+    cc.fixtures[2]    = make_fixture(40, 20, true, 1);
+    return cc;
+}
+
+static void test_control_layout() {
+    using namespace pixfrog::config;
+    const ProfileBank bank = default_profiles();
+    ChannelConfig cc       = control_chan();
+    std::vector<FixturePatch> got;
+    auto collect = [&](const ChannelConfig& c) {
+        got.clear();
+        return for_each_fixture_patch(c, bank, [&](const FixturePatch& f) { got.push_back(f); });
+    };
+    EXPECT_EQ(collect(cc), 3);
+    EXPECT_EQ(got[0].slot, 0);  // the fixtures follow each other on the wire
+    EXPECT_EQ(got[0].footprint, 3);
+    EXPECT_EQ(got[1].slot, 3);
+    EXPECT_EQ(got[1].footprint, 6);
+    EXPECT_EQ(got[1].first, 20);
+    EXPECT_EQ(got[1].count, 20);
+    EXPECT_EQ(got[2].slot, 9);
+    EXPECT_EQ(got[2].footprint, 4);
+    EXPECT_TRUE(got[2].reversed);
+    EXPECT_EQ(got[2].profile, 1);
+    EXPECT_EQ(channel_universes_used(cc, &bank), 1);  // 13 channels, where pixels took 180
+    EXPECT_EQ(channel_universes_used(cc), 0);         // no bank: no layout
+    cc.packing = kPackContinuous;
+    EXPECT_EQ(channel_universes_used(cc, &bank), 1);  // a pixel layout ignores the bank
+    cc.packing = kPackControl;
+
+    // The runs are the fixtures: rank in dst, footprint in bytes.
+    DmxRun runs[8];
+    EXPECT_EQ(channel_layout(cc, runs, 8, &bank), 3);
+    EXPECT_EQ(runs[1].slot, 3);
+    EXPECT_EQ(runs[1].dst, 1);
+    EXPECT_EQ(runs[1].bytes, 6);
+
+    // A fixture never straddles two universes: the one that would starts the next.
+    cc.dmx_start = 505;  // 504: RGB fits (504..506), RGB FX (6 ch) would end at 513
+    collect(cc);
+    EXPECT_EQ(got[0].uni_off, 0);
+    EXPECT_EQ(got[0].slot, 504);
+    EXPECT_EQ(got[1].uni_off, 1);
+    EXPECT_EQ(got[1].slot, 0);
+    EXPECT_EQ(got[2].uni_off, 1);
+    EXPECT_EQ(got[2].slot, 6);
+    EXPECT_EQ(channel_universes_used(cc, &bank), 2);
+    cc.dmx_start = 510;  // exactly to the end: the next fixture opens a universe
+    collect(cc);
+    EXPECT_EQ(got[0].slot, 509);
+    EXPECT_EQ(got[1].uni_off, 1);
+    EXPECT_EQ(got[1].slot, 0);
+    cc.dmx_start = 600;  // past the universe: rolls, like a pixel layout
+    collect(cc);
+    EXPECT_EQ(got[0].uni_off, 1);
+    EXPECT_EQ(got[0].slot, 87);
+    cc.dmx_start = 1;
+
+    // The wiring order holds whatever the strip's direction.
+    cc.invert_direction = true;
+    collect(cc);
+    EXPECT_EQ(got[0].footprint, 3);  // still the first fixture listed
+    EXPECT_EQ(got[0].first, 40);     // which the inverted strip puts at its far end
+    EXPECT_EQ(got[2].footprint, 4);
+    EXPECT_EQ(got[2].first, 0);
+    cc.invert_direction = false;
+
+    // A profile that left the bank reads as the first.
+    cc.fixtures[1] = make_fixture(20, 20, false, 7);
+    collect(cc);
+    EXPECT_EQ(got[1].profile, 0);
+    EXPECT_EQ(got[1].footprint, 3);
+
+    // No fixtures: one fixture, the whole strip, on the first profile.
+    std::memset(cc.fixtures, 0, sizeof(cc.fixtures));
+    EXPECT_EQ(collect(cc), 1);
+    EXPECT_EQ(got[0].first, 0);
+    EXPECT_EQ(got[0].count, 60);
+    EXPECT_EQ(got[0].footprint, 3);
+    cc.grouping = 4;  // the buffer the encoder reads is that much shorter
+    collect(cc);
+    EXPECT_EQ(got[0].count, 15);
+    cc.grouping = 1;
+
+    // Off, empty, or an empty bank: nothing.
+    cc.pixel_count = 0;
+    EXPECT_EQ(collect(cc), 0);
+    cc.pixel_count = 60;
+    cc.protocol    = pixfrog::led::Protocol::Off;
+    EXPECT_EQ(collect(cc), 0);
+    cc.protocol = pixfrog::led::Protocol::WS2815;
+    EXPECT_EQ(for_each_fixture_patch(cc, ProfileBank{}, [](const FixturePatch&) {}), 0);
+}
+
+static void test_control_decode_fixture() {
+    using namespace pixfrog::config;
+    Profile p{};
+    const FixFn fns[] = { FixFn::Dimmer,  FixFn::Red,     FixFn::Green,  FixFn::Blue,
+                          FixFn::White,   FixFn::Shutter, FixFn::Bank,   FixFn::Speed,
+                          FixFn::Param,   FixFn::PhWave,  FixFn::PhRate, FixFn::PhSpread,
+                          FixFn::PhWidth, FixFn::Block,   FixFn::Groups, FixFn::Wings,
+                          FixFn::None,    FixFn::Red };
+    for (FixFn fn : fns)
+        p.slots[p.count++] = profile_slot(fn);
+    p.slots[0].arg  = kProfileArgFine;  // the dimmer takes two channels
+    p.slots[17].arg = 2;                // the last red is colour 3's
+    EXPECT_EQ(profile_footprint(p), 19);
+    const uint8_t dmx[19] = { 0x80, 0x40, 10, 20,  30, 77, 1, 24, 90, 5,
+                              16,   40,   32, 128, 3,  4,  2, 99, 200 };
+    FixtureFrame f;
+    decode_fixture(p, dmx, f);
+    EXPECT_EQ(f.dimmer, 0x8040);
+    EXPECT_EQ(f.color[0][0], 10);
+    EXPECT_EQ(f.color[0][1], 20);
+    EXPECT_EQ(f.color[0][2], 30);
+    EXPECT_EQ(f.white, 77);
+    EXPECT_EQ(f.shutter_hz10, 10);  // 1 = 1 Hz
+    EXPECT_EQ(f.bank, 2);           // band 3
+    EXPECT_EQ(f.fx.speed, 90);
+    EXPECT_EQ(f.fx.param, 5);
+    EXPECT_EQ(f.fx.ph_wave, kPhaserSin);
+    EXPECT_EQ(f.fx.ph_rate, 40);
+    EXPECT_EQ(f.fx.ph_spread, 32);
+    EXPECT_EQ(f.fx.ph_width, 128);
+    EXPECT_EQ(f.fx.block, 3);
+    EXPECT_EQ(f.fx.groups, 4);
+    EXPECT_EQ(f.fx.wings, 2);
+    EXPECT_EQ(f.color[2][0], 200);
+    EXPECT_EQ(f.color[2][1], -1);  // not in the profile
+    EXPECT_EQ(f.color[1][0], -1);
+
+    // Everything at 0: dark dimmer, open shutter, no effect, nothing overridden.
+    const uint8_t zero[19] = {};
+    decode_fixture(p, zero, f);
+    EXPECT_EQ(f.dimmer, 0);
+    EXPECT_EQ(f.shutter_hz10, 0);
+    EXPECT_EQ(f.bank, -1);
+    EXPECT_EQ(f.fx.speed + f.fx.param + f.fx.ph_wave + f.fx.ph_rate + f.fx.block, -5);
+    EXPECT_EQ(f.color[0][0], 0);  // in the profile, at 0
+
+    // No dimmer in the profile: full. An 8-bit dimmer spans the 16-bit range.
+    Profile rgb{};
+    profile_apply_preset(rgb, ProfilePreset::Rgb);
+    decode_fixture(rgb, dmx, f);
+    EXPECT_EQ(f.dimmer, kMasterFull);
+    Profile dim{};
+    profile_apply_preset(dim, ProfilePreset::DimRgb);
+    const uint8_t full[4] = { 255, 1, 2, 3 };
+    decode_fixture(dim, full, f);
+    EXPECT_EQ(f.dimmer, kMasterFull);
+    EXPECT_EQ(f.color[0][2], 3);
+}
+
+static void test_control_render_fixture() {
+    using namespace pixfrog::config;
+    uint8_t b[8 * 4];
+    // The bank: effect 0 a steady green, effect 1 a white chase.
+    auto bank = [](size_t i, Effect& e) {
+        if (i > 1) return false;
+        e            = Effect{};
+        e.num_colors = 1;
+        if (i == 0) {
+            e.colors[0][1] = 180;
+        } else {
+            e.generator = kSceneFxChase;
+            std::memset(e.colors[0], 255, 3);
+        }
+        return true;
+    };
+    FixtureFrame f;
+    f.color[0][0] = 100;
+    f.color[0][1] = 50;
+    f.color[0][2] = 25;
+
+    // No effect: the fixture's colour, steady, on every pixel.
+    std::memset(b, 0xEE, sizeof(b));
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 100);
+    EXPECT_EQ(b[10], 50);
+    EXPECT_EQ(b[11], 25);
+    EXPECT_EQ(b[12], 0xEE);  // nothing past the fixture
+    // The dimmer scales it; at 0 the fixture is dark.
+    f.dimmer = 0x8000;
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 50);
+    f.dimmer = 0;
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);
+    f.dimmer = kMasterFull;
+    // The shutter strobes: lit at the start of a period, dark after the flash.
+    f.shutter_hz10 = 10;  // 1 Hz
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 100);
+    render_fixture(b, sizeof(b), 4, 3, f, false, 500, bank);
+    EXPECT_EQ(b[0], 0);
+    f.shutter_hz10 = 0;
+    // RGBW: the white channel lights the white LED, the generators leave it at 0.
+    f.white = 66;
+    render_fixture(b, sizeof(b), 4, 4, f, false, 0, bank);
+    EXPECT_EQ(b[0], 100);
+    EXPECT_EQ(b[3], 66);
+    EXPECT_EQ(b[15], 66);
+    f.white = 0;
+
+    // An effect of the bank, in its own colour while the desk's are at 0.
+    FixtureFrame g;
+    g.bank = 0;
+    std::memset(g.color[0], 0, sizeof(g.color[0]));
+    render_fixture(b, sizeof(b), 4, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0], 0);
+    EXPECT_EQ(b[1], 180);
+    g.color[0][0] = 200;  // a desk colour replaces the effect's
+    render_fixture(b, sizeof(b), 4, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0], 200);
+    EXPECT_EQ(b[1], 0);
+    g.color[1][2] = 9;  // a second colour raises the palette
+    g.bank        = 1;
+    g.color[0][0] = 0;
+    render_fixture(b, sizeof(b), 8, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0], 255);        // the chase's own first head
+    EXPECT_EQ(b[4 * 3 + 2], 9);  // the second colour's head, half the run on
+    // A band past the bank is no effect: plain colour 1, the desk's.
+    g.bank = 5;
+    render_fixture(b, sizeof(b), 4, 3, g, false, 0, bank);
+    EXPECT_EQ(b[0] + b[1] + b[2], 0);
+
+    // A fixture mounted the other way round runs backwards; the override
+    // channels act on the effect.
+    FixtureFrame h;
+    h.bank = 1;
+    render_fixture(b, sizeof(b), 8, 3, h, false, 0, bank);
+    EXPECT_EQ(b[0], 255);
+    EXPECT_EQ(b[7 * 3], 0);
+    render_fixture(b, sizeof(b), 8, 3, h, true, 0, bank);
+    EXPECT_EQ(b[0], 0);
+    EXPECT_EQ(b[7 * 3], 255);
+    h.fx.wings = 2;  // both ends lit
+    render_fixture(b, sizeof(b), 8, 3, h, false, 0, bank);
+    EXPECT_EQ(b[0], 255);
+    EXPECT_EQ(b[7 * 3], 255);
+    EXPECT_EQ(b[3 * 3], 0);
+
+    // The phaser channels work on a plain colour too: a still PWM, reversed
+    // by the spread, leaves pixel 0 lit and the far half dark.
+    FixtureFrame k;
+    std::memset(k.color[0], 0, sizeof(k.color[0]));
+    k.color[0][0]  = 240;
+    k.fx.ph_wave   = kPhaserRampDown;
+    k.fx.ph_spread = 16;
+    render_fixture(b, sizeof(b), 8, 3, k, false, 0, bank);
+    EXPECT_EQ(b[0], 240);
+    EXPECT_TRUE(b[4 * 3] > 110 && b[4 * 3] < 130);
+
+    // A buffer too small for the fixture is left alone.
+    b[0] = 0x5A;
+    render_fixture(b, 5, 8, 3, k, false, 0, bank);
+    EXPECT_EQ(b[0], 0x5A);
+}
+
+static void test_control_render_channel() {
+    using namespace pixfrog::config;
+    const ProfileBank bank = default_profiles();
+    ChannelConfig cc       = control_chan();  // RGB @1, RGB FX @4, Dim RGB @10 (reversed)
+    static uint8_t uni[512];
+    std::memset(uni, 0, sizeof(uni));
+    const uint8_t frame[13] = { 10, 20, 30, /* RGB FX */ 0, 0, 200, 0, 0, 0, /* Dim RGB */ 128,
+                                60, 0,  0 };
+    std::memcpy(uni, frame, sizeof(frame));
+    auto get_uni = [&](uint16_t u) -> const uint8_t* { return u == 10 ? uni : nullptr; };
+    auto no_fx   = [](size_t, Effect&) { return false; };
+    static uint8_t buf[64 * 3];
+    std::memset(buf, 0xEE, sizeof(buf));
+    render_fixtures(buf, sizeof(buf), cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[0], 10);
+    EXPECT_EQ(buf[19 * 3 + 2], 30);
+    EXPECT_EQ(buf[20 * 3 + 2], 200);
+    EXPECT_EQ(buf[39 * 3 + 2], 200);
+    EXPECT_EQ(buf[40 * 3], 30);  // 60 at half
+    EXPECT_EQ(buf[59 * 3], 30);
+    EXPECT_EQ(buf[60 * 3], 0xEE);  // nothing past the strip
+
+    // LEDs in no fixture stay dark; a fixture whose universe is missing too.
+    cc.fixtures[1] = make_fixture(25, 10, false, 2);
+    render_fixtures(buf, sizeof(buf), cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[22 * 3 + 2], 0);
+    EXPECT_EQ(buf[25 * 3 + 2], 200);
+    EXPECT_EQ(buf[36 * 3 + 2], 0);
+    cc.universe_start = 11;
+    render_fixtures(buf, sizeof(buf), cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[0] + buf[25 * 3 + 2] + buf[40 * 3], 0);
+    // A buffer too small is left alone.
+    buf[0] = 0x5A;
+    render_fixtures(buf, 10, cc, bank, 0, get_uni, no_fx);
+    EXPECT_EQ(buf[0], 0x5A);
+}
+
+static void test_control_auto_patch() {
+    using namespace pixfrog::config;
+    const ProfileBank bank = default_profiles();
+    ChannelConfig chans[4];
+    for (auto& c : chans) {
+        c             = fixture_chan(60);
+        c.fixtures[0] = Fixture{};
+    }
+    chans[0]             = control_chan();  // 13 channels
+    chans[1].packing     = kPackControl;    // no fixtures: one RGB fixture, 3 channels
+    chans[3].packing     = kPackControl;
+    chans[3].fixtures[0] = make_fixture(0, 60, false, 3);  // Full: 16 channels
+    uint16_t uni[4], dmx[4], after = 0;
+
+    // Aligned: each output opens a universe, control or not.
+    AutoPatchOptions o;
+    o.base = 20;
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank), 24);
+    EXPECT_EQ(uni[0], 20);
+    EXPECT_EQ(uni[1], 21);
+    EXPECT_EQ(uni[2], 22);
+    EXPECT_EQ(uni[3], 23);
+    EXPECT_EQ(after, 16);
+
+    // Compact: the control outputs follow each other inside a universe, and a
+    // layout asked for every output leaves them in control mode.
+    o.compact = true;
+    o.packing = kPackWholePixels;
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank), 21);
+    EXPECT_EQ(chans[0].packing, kPackControl);
+    EXPECT_EQ(chans[2].packing, kPackWholePixels);
+    EXPECT_EQ(uni[0], 20);
+    EXPECT_EQ(dmx[0], 1);
+    EXPECT_EQ(dmx[1], 14);  // after the 13 channels of output 1
+    EXPECT_EQ(dmx[2], 17);  // the pixel output: 180 channels from there
+    EXPECT_EQ(dmx[3], 197);
+    EXPECT_EQ(after, 212);
+
+    // A first fixture that would not fit in what is left opens the next
+    // universe: the output's address says where that fixture is.
+    chans[2].pixel_count   = 100;  // 300 channels: 17..316
+    chans[3].dmx_start     = 1;
+    ChannelConfig tight[2] = { chans[2], chans[3] };
+    tight[0].pixel_count   = 167;  // 501 channels: 11 left, the Full profile needs 16
+    EXPECT_EQ(compute_auto_patch(o, tight, 2, uni, dmx, &after, &bank), 22);
+    EXPECT_EQ(uni[1], 21);
+    EXPECT_EQ(dmx[1], 1);
+}
+
 static void test_scene_all_effects_bounded() {
     using namespace pixfrog::config;
     constexpr int kN = 1024;
@@ -1151,9 +1955,9 @@ static void test_scene_all_effects_bounded() {
         for (int n : { 1, 2, 7, kN })
             for (uint8_t speed : { 0, 1, 255 })
                 for (uint8_t param : { 0, 1, 255 }) {
-                    Scene s = with_color(with_color(mk_scene(fx, 255, 1, 2, speed, param), 3, 4, 5),
-                                         6, 7, 8);
-                    s       = with_color(s, 9, 10, 11);
+                    SceneV3 s = with_color(
+                        with_color(mk_scene(fx, 255, 1, 2, speed, param), 3, 4, 5), 6, 7, 8);
+                    s = with_color(s, 9, 10, 11);
                     std::memset(buf, 0xCD, sizeof(buf));
                     fill_scene_pattern(buf, sizeof(buf), static_cast<uint16_t>(n), 4, s,
                                        0xFFFFFFF0u);
@@ -1464,13 +2268,10 @@ static void test_control_group_slots() {
     EXPECT_EQ(fix_mode_from_dmx(10), config::kFixtureModeEach);
     EXPECT_EQ(fix_mode_from_dmx(100), config::kFixtureModeChain);
     EXPECT_EQ(fix_mode_from_dmx(250), config::kFixtureModeStrip);
-    // Applied to a scene: mode and direction land in its packed byte.
-    config::Scene sc{};
-    sc.fixture_mode = config::pack_scene_mode(config::kFixtureModeEach, false, 4);
-    apply_scene_override(sc, ev.govr[1]);
-    EXPECT_EQ(config::scene_mode_of(sc.fixture_mode), config::kFixtureModeMirror);
-    EXPECT_TRUE(config::scene_reverse_of(sc.fixture_mode));
-    EXPECT_EQ(config::scene_group_of(sc.fixture_mode), 4);  // its group kept
+    // Applied to a part: mode and direction land in its mode byte.
+    const uint8_t pm = apply_mode_override(config::kFixtureModeEach, ev.govr[1]);
+    EXPECT_EQ(config::scene_mode_of(pm), config::kFixtureModeMirror);
+    EXPECT_TRUE(config::scene_reverse_of(pm));
     // Speed / Param / Effect on a group; Direction / FixMode on outputs.
     config::ControlConfig d{};
     d.enabled          = 1;
@@ -1485,17 +2286,41 @@ static void test_control_group_slots() {
     evaluate_control(d, w, sizeof(w), ev);
     EXPECT_EQ(ev.govr[2].speed, 40);
     EXPECT_EQ(ev.govr[2].param, 50);
-    EXPECT_TRUE(ev.govr[2].effect >= 0);
+    EXPECT_TRUE(ev.govr[2].generator >= 0);
     EXPECT_EQ(ev.ovr[0].reverse, 0);  // 10: forward
     EXPECT_EQ(ev.ovr[0].fix_mode, config::kFixtureModeChain);
     EXPECT_EQ(ev.ovr[1].reverse, -1);  // output 2 not in the mask
-    config::Scene sc2{};
-    sc2.fixture_mode = config::pack_scene_mode(config::kFixtureModeMirror, true, -1);
-    SceneOverride only_dir;
-    only_dir.reverse = 0;  // the mode stays the scene's own
-    apply_scene_override(sc2, only_dir);
-    EXPECT_EQ(config::scene_mode_of(sc2.fixture_mode), config::kFixtureModeMirror);
-    EXPECT_TRUE(!config::scene_reverse_of(sc2.fixture_mode));
+    EffectOverride only_dir;
+    only_dir.reverse  = 0;  // the mode stays the part's own
+    const uint8_t pm2 = apply_mode_override(
+        config::pack_scene_mode(config::kFixtureModeMirror, true, -1), only_dir);
+    EXPECT_EQ(config::scene_mode_of(pm2), config::kFixtureModeMirror);
+    EXPECT_TRUE(!config::scene_reverse_of(pm2));
+    EXPECT_EQ(apply_mode_override(pm2, EffectOverride{}), pm2);  // nothing asked: untouched
+    // The effect bank, the phaser and the MAtricks on a group.
+    config::ControlConfig e{};
+    e.enabled                   = 1;
+    e.address                   = 1;
+    e.count                     = 8;
+    const config::CtlFn kFns[8] = { config::CtlFn::Bank,    config::CtlFn::PhWave,
+                                    config::CtlFn::PhRate,  config::CtlFn::PhSpread,
+                                    config::CtlFn::PhWidth, config::CtlFn::Block,
+                                    config::CtlFn::Groups,  config::CtlFn::Wings };
+    for (size_t i = 0; i < 8; ++i)
+        e.slots[i] = config::control_slot(kFns[i], 3, 0, config::kCtlFlagGroup);
+    config::sanitize_control(e);
+    EXPECT_EQ(config::control_slot_group(e.slots[0]), 3);
+    const uint8_t x[8] = { 16, 16, 30, 40, 50, 2, 3, 4 };
+    evaluate_control(e, x, sizeof(x), ev);
+    EXPECT_EQ(ev.govr[3].bank, 1);  // band 2 = the second effect
+    EXPECT_EQ(ev.govr[3].ph_wave, phaser_wave_from_dmx(16));
+    EXPECT_EQ(ev.govr[3].ph_rate, 30);
+    EXPECT_EQ(ev.govr[3].ph_spread, 40);
+    EXPECT_EQ(ev.govr[3].ph_width, 50);
+    EXPECT_EQ(ev.govr[3].block, 2);
+    EXPECT_EQ(ev.govr[3].groups, 3);
+    EXPECT_EQ(ev.govr[3].wings, 4);
+    EXPECT_EQ(ev.ovr[3].bank, -1);  // no output touched
     // A group target on a function that has none is dropped.
     c.slots[0] = config::control_slot(config::CtlFn::Strobe, 3, 0, config::kCtlFlagGroup);
     config::sanitize_control(c);
@@ -1555,29 +2380,99 @@ static void test_control_evaluate() {
     EXPECT_EQ(ev.fade_ms, 0);
 }
 
-static void test_scene_override_applies() {
-    config::Scene sc{};
-    sc.effect     = config::kSceneFxSolid;
-    sc.speed      = 10;
-    sc.num_colors = 1;
-    SceneOverride o;
+// The desk's channels on the effect an output plays: bank, phaser, MAtricks.
+static void test_control_effect_functions() {
+    using config::CtlFn;
+    EXPECT_EQ(phaser_wave_from_dmx(0), -1);  // band 0: the effect's own
+    EXPECT_EQ(phaser_wave_from_dmx(7), -1);
+    EXPECT_EQ(phaser_wave_from_dmx(8), config::kPhaserNone);  // band 1: no phaser
+    EXPECT_EQ(phaser_wave_from_dmx(16), config::kPhaserSin);
+    EXPECT_EQ(phaser_wave_from_dmx(8 * config::kPhaserWaveCount + 7), config::kPhaserBump);
+    EXPECT_EQ(phaser_wave_from_dmx(8 * config::kPhaserWaveCount + 8), -1);  // past the last wave
+    EXPECT_EQ(phaser_wave_from_dmx(255), -1);
+
+    config::ControlConfig c{};
+    c.enabled         = 1;
+    c.address         = 1;
+    const CtlFn fns[] = { CtlFn::Bank,    CtlFn::PhWave, CtlFn::PhRate, CtlFn::PhSpread,
+                          CtlFn::PhWidth, CtlFn::Block,  CtlFn::Groups, CtlFn::Wings };
+    for (CtlFn fn : fns)
+        c.slots[c.count++] = config::control_slot(fn, 0x0F);
+    uint8_t u[8] = { 24, 16, 40, 16, 128, 3, 4, 2 };  // effect 3, sine
+    ControlEval ev;
+    evaluate_control(c, u, sizeof(u), ev);
+    const EffectOverride& o = ev.ovr[0];
+    EXPECT_EQ(o.bank, 2);
+    EXPECT_EQ(o.ph_wave, config::kPhaserSin);
+    EXPECT_EQ(o.ph_rate, 40);
+    EXPECT_EQ(o.ph_spread, 16);
+    EXPECT_EQ(o.ph_width, 128);
+    EXPECT_EQ(o.block, 3);
+    EXPECT_EQ(o.groups, 4);
+    EXPECT_EQ(o.wings, 2);
+    EXPECT_EQ(ev.ovr[4].bank, -1);  // outside the slots' group
+    EXPECT_EQ(ev.ovr[4].wings, -1);
+
+    // Everything at 0: the effect's own, nothing overridden.
+    std::memset(u, 0, sizeof(u));
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_EQ(o.bank, -1);
+    EXPECT_EQ(o.ph_wave, -1);
+    EXPECT_EQ(o.ph_rate + o.ph_spread + o.ph_width + o.block + o.groups + o.wings, -6);
+    u[5] = 1;  // 1 switches a count off, which is not "the effect's own"
+    evaluate_control(c, u, sizeof(u), ev);
+    EXPECT_EQ(o.block, 1);
+
+    // Applied to an effect: only what the desk asked for moves.
+    config::Effect e{};
+    e.ph_wave = config::kPhaserCos;
+    e.ph_rate = 9;
+    e.block   = 7;
+    e.wings   = 4;
+    EffectOverride ask;
+    ask.bank      = 5;  // not this function's business: the caller swaps the effect
+    ask.ph_wave   = config::kPhaserNone;
+    ask.ph_spread = 32;
+    ask.ph_width  = 200;
+    ask.block     = 1;
+    ask.groups    = 6;
+    apply_effect_override(e, ask);
+    EXPECT_EQ(e.ph_wave, config::kPhaserNone);
+    EXPECT_EQ(e.ph_rate, 9);
+    EXPECT_EQ(e.ph_spread, 32);
+    EXPECT_EQ(e.ph_width, 200);
+    EXPECT_EQ(e.block, 1);
+    EXPECT_EQ(e.groups, 6);
+    EXPECT_EQ(e.wings, 4);
+    ask         = EffectOverride{};
+    ask.ph_rate = 77;
+    ask.wings   = 2;
+    apply_effect_override(e, ask);
+    EXPECT_EQ(e.ph_rate, 77);
+    EXPECT_EQ(e.wings, 2);
+}
+
+static void test_effect_override_applies() {
+    config::Effect e{};
+    e.generator  = config::kSceneFxSolid;
+    e.speed      = 10;
+    e.num_colors = 1;
+    EffectOverride o;
     o.speed       = 200;
-    o.effect      = config::kSceneFxChase;
+    o.generator   = config::kSceneFxChase;
     o.color[2][0] = 9;
     o.color[2][1] = 8;
     o.color[2][2] = 7;
-    apply_scene_override(sc, o);
-    EXPECT_EQ(sc.speed, 200);
-    EXPECT_EQ(sc.effect, config::kSceneFxChase);
-    EXPECT_EQ(config::scene_num_colors(sc), 3);  // colour 3 exists now
-    uint8_t rgb[3];
-    config::scene_color(sc, 2, rgb);
-    EXPECT_EQ(rgb[0], 9);
-    EXPECT_EQ(rgb[2], 7);
-    SceneOverride none;
-    config::Scene before = sc;
-    apply_scene_override(sc, none);
-    EXPECT_EQ(std::memcmp(&before, &sc, sizeof(sc)), 0);
+    apply_effect_override(e, o);
+    EXPECT_EQ(e.speed, 200);
+    EXPECT_EQ(e.generator, config::kSceneFxChase);
+    EXPECT_EQ(config::effect_num_colors(e), 3);  // colour 3 exists now
+    EXPECT_EQ(e.colors[2][0], 9);
+    EXPECT_EQ(e.colors[2][2], 7);
+    EffectOverride none;
+    config::Effect before = e;
+    apply_effect_override(e, none);
+    EXPECT_EQ(std::memcmp(&before, &e, sizeof(e)), 0);
 }
 
 // Largest per-byte change between two frames.
@@ -1600,7 +2495,7 @@ static void test_scene_clock_has_no_wrap_jump() {
     constexpr uint16_t kN = 60;
     const uint64_t wrap   = 1ull << 32;
     for (uint8_t fx : fxs) {
-        Scene s = with_color(mk_scene(fx, 255, 0, 0, 200, 0), 0, 0, 255);
+        SceneV3 s = with_color(mk_scene(fx, 255, 0, 0, 200, 0), 0, 0, 255);
         uint8_t a[kN * 3], b[kN * 3], c[kN * 3], d[kN * 3];
         // Steady state: one ms apart, far from any wrap.
         fill_scene_pattern(a, sizeof(a), kN, 3, s, 1'000'000);
@@ -1675,6 +2570,20 @@ int main() {
     test_scene_scanner_bounces();
     test_scene_stripes_alternate_palette();
     test_scene_fade_crosses_palette();
+    test_migrated_effect_matches_v3_scene();
+    test_effect_speed_counts_double();
+    test_phaser_waveforms();
+    test_phaser_dimmer_rate_spread_and_floor();
+    test_effect_dimmer_layers();
+    test_effect_dimmer_invert();
+    test_control_layout();
+    test_control_decode_fixture();
+    test_control_render_fixture();
+    test_control_render_channel();
+    test_control_auto_patch();
+    test_matricks_layout();
+    test_matricks_expand_matches_reference();
+    test_matricks_on_an_effect();
     test_scene_all_effects_bounded();
     test_hue_wheel_endpoints();
     test_merge_single_source_passthrough();
@@ -1698,8 +2607,9 @@ int main() {
     test_control_presets_and_footprint();
     test_control_sanitize();
     test_control_evaluate();
+    test_control_effect_functions();
     test_control_group_slots();
-    test_scene_override_applies();
+    test_effect_override_applies();
 
     std::printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

@@ -7,6 +7,8 @@
 #include "dmx_emu.h"
 #include "dmx_manager.h"
 
+#include "../../../components/dmx_manager/src/dmx_logic.h"  // the real layout maths
+
 namespace pixfrog::dmx {
 
 namespace {
@@ -18,6 +20,10 @@ bool g_capacity_ok[config::kNumChannels] = { true, true, true, true, true, true,
 
 Stats get_stats() {
     return g_stats;
+}
+
+size_t channel_universe_span(const config::ChannelConfig& cc) {
+    return logic::channel_universes_used(cc, &config::get_profiles());
 }
 
 void set_current_fps(uint32_t fps) {
@@ -73,7 +79,7 @@ int identify_channel() {
 // Zones as on the device (no crossfade: the emulator renders no pixels).
 void scene_start_on(uint8_t scene_index, uint8_t outputs, int32_t) {
     if (scene_index >= config::num_scenes()) return;
-    const uint8_t mask = outputs & config::get_scene(scene_index).channel_mask;
+    const uint8_t mask = outputs & config::scene_mask(config::get_scene(scene_index));
     for (size_t o = 0; o < config::kNumChannels; ++o)
         if ((mask >> o) & 1) g_scene_out[o] = scene_index;
 }

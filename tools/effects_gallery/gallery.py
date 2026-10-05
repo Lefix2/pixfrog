@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Effects gallery: every scene effect as a space-time strip, from the
-firmware's own renderer (fill_scene_pattern), for the docs and the site.
+"""Effects gallery: every generator, and the layers an effect can carry over
+one (dimmer phaser, invert, Block / Groups / Wings), as space-time strips from
+the firmware's own renderer (fill_effect_run), for the docs and the site.
 
-    tools/effects_gallery/gallery.py                 # → docs/img/effects/effects-gallery.png
-    tools/effects_gallery/gallery.py --strips        # + one PNG per effect
+    tools/effects_gallery/gallery.py                 # → docs/img/effects/{effects,layers}-gallery.png
+    tools/effects_gallery/gallery.py --strips        # + one PNG per strip
 
 x = time going right (6 s at 40 fps), y = pixel along a 144-px line. Writes
-effects-gallery.png, the labelled sheet (--strips: one PNG per effect too). Needs a C++17
+the two labelled sheets (--strips: one PNG per strip too). Needs a C++17
 compiler and pillow.
 """
 import argparse
@@ -45,9 +46,14 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        exe = build(tmp)
-        names = subprocess.run([exe, tmp], check=True, capture_output=True,
+    try:
+        font = ImageFont.truetype("DejaVuSansMono.ttf", 16)
+    except OSError:
+        font = ImageFont.load_default()
+
+    def sheet(tmp, exe, mode, stem):
+        """One labelled grid, on the site's dark background."""
+        names = subprocess.run([exe, tmp, *mode], check=True, capture_output=True,
                                text=True).stdout.split()
         strips = []
         for name in names:
@@ -58,26 +64,26 @@ def main():
                 path = os.path.join(args.out, f"{name}.png")
                 img.save(path, optimize=True)
                 print("wrote", os.path.relpath(path, REPO))
+        cols, pad, label_h = 4, 18, 30
+        w, h = strips[0][1].size
+        rows = (len(strips) + cols - 1) // cols
+        out = Image.new("RGB", (cols * (w + pad) + pad, rows * (h + label_h + pad) + pad),
+                        (12, 13, 12))
+        draw = ImageDraw.Draw(out)
+        for i, (name, img) in enumerate(strips):
+            x = pad + (i % cols) * (w + pad)
+            y = pad + (i // cols) * (h + label_h + pad)
+            draw.text((x, y + 4), name.replace("_", " ").capitalize(), fill=(237, 238, 234),
+                      font=font)
+            out.paste(img, (x, y + label_h))
+        path = os.path.join(args.out, stem + ".png")
+        out.save(path, optimize=True)
+        print("wrote", os.path.relpath(path, REPO))
 
-    # The sheet: a labelled grid on the site's dark background.
-    cols, pad, label_h = 4, 18, 30
-    w, h = strips[0][1].size
-    rows = (len(strips) + cols - 1) // cols
-    sheet = Image.new("RGB", (cols * (w + pad) + pad, rows * (h + label_h + pad) + pad),
-                      (12, 13, 12))
-    draw = ImageDraw.Draw(sheet)
-    try:
-        font = ImageFont.truetype("DejaVuSansMono.ttf", 16)
-    except OSError:
-        font = ImageFont.load_default()
-    for i, (name, img) in enumerate(strips):
-        x = pad + (i % cols) * (w + pad)
-        y = pad + (i // cols) * (h + label_h + pad)
-        draw.text((x, y + 4), name.capitalize(), fill=(237, 238, 234), font=font)
-        sheet.paste(img, (x, y + label_h))
-    path = os.path.join(args.out, "effects-gallery.png")
-    sheet.save(path, optimize=True)
-    print("wrote", os.path.relpath(path, REPO))
+    with tempfile.TemporaryDirectory() as tmp:
+        exe = build(tmp)
+        sheet(tmp, exe, [], "effects-gallery")
+        sheet(tmp, exe, ["layers"], "layers-gallery")
     return 0
 
 

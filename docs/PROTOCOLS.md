@@ -289,14 +289,17 @@ fixtures, the dead LEDs and any overlap.
   A dead LED inside a fixture is allowed, it only shortens the fixture.
 - They change scenes (and the failsafe scene); the DMX data follows them only
   with the per-fixture layout (§5.6).
-- `Scene::fixture_mode` (`"fixture_mode"` in the API) picks how the effect
-  spreads: `each` (every fixture plays it on its own — the default, so
+- A scene part's `fixture_mode` (`"fixture_mode"` in the API) picks how its
+  effect spreads: `each` (every fixture plays it on its own — the default, so
   defining fixtures is enough), `strip` (the whole strip, fixtures ignored), `chain` (the fixtures end to end as one strip, without the
   LEDs between them), `mirror` (chained over the first half, mirrored on the
-  second). Live pixels in no fixture stay dark outside `strip`.
+  second). Live pixels in no fixture stay dark outside `strip`. The part's
+  direction (`"reverse"` in the API, the desk's Direction channel) runs the
+  effect from the far end: of each fixture in `each`, of the chained run in
+  `chain` and `mirror` (centre out), of the strip in `strip`.
 - Rendering: `logic::fixture_spans` maps each fixture to its run of the source
   buffer (dead LEDs skipped, then invert and grouping, as the encoder does);
-  `logic::fill_scene_on_channel` draws the effect per span.
+  `logic::fill_effect_on_channel` draws the effect per span.
 - Edit: web channel editor ("Fixtures & dead LEDs"): the strip as an ordered
   list of sizes — fixture, dead LEDs, LEDs without fixture — positions follow
   from the order (drag to reorder), the pixel count from the list; a "N × L +
@@ -323,7 +326,7 @@ Scenes on groups (`dmx::group_play / group_stop`, the render task draws them):
 - A scene playing on a group is drawn **once a frame** along the group's
   virtual strip (members end to end, in order — `logic::render_group_strip`):
   `each` member on its own, `strip`/`chain` one effect across, `mirror` over the
-  first half mirrored on the rest; the scene's **reverse** bit runs it from the
+  first half mirrored on the rest; the part's **reverse** bit runs it from the
   far end (in mirror: from the centre out). Each member's slice then goes into
   its fixture (`put_member`: flipped for a reversed bar or an inverted output;
   RGB, W off on RGBW).
@@ -332,12 +335,17 @@ Scenes on groups (`dmx::group_play / group_stop`, the render task draws them):
   own source (live, FSEQ, an output scene). Starting a scene on outputs, or
   stopping them, takes their fixtures back. Fixtures crossfade from a snapshot
   of what they showed (`scene_fade_ms` / the desk's Fade).
-- Up to 16 plays; strips up to 4096 pixels (PSRAM). A scene's default group and
-  reverse share `Scene::fixture_mode` with the mode (`pack_scene_mode`): a scene
-  with a default group plays there when started whole (web ▶, boot, failsafe,
-  menu). API: `POST /api/scene/n/play {"group": g}`, `"group"`/`"reverse"` on
-  scenes, `show.plays` = `[[scene, group], …]` in the status; console
-  `scene play <n> group <g>`.
+- On a group a scene plays its **first part**: that effect of the bank, with
+  the part's fixture mode and direction (`config::copy_scene_look`); the
+  part's outputs do not matter there, and a scene may keep a part without any
+  output for that purpose alone.
+- Up to 16 plays; strips up to 4096 pixels (PSRAM). A scene's default group is
+  `Scene::group`; a part's reverse bit shares `ScenePart::fixture_mode` with
+  the mode. A scene with a default group plays there when started whole (web
+  ▶, boot, menu). API: `POST /api/scene/n/play {"group": g}`, `"group"` on a
+  scene and `"reverse"` on its parts, `show.plays` = `[[scene, group], …]` in
+  the status; console `scene play <n> group <g>`, `scene group <n> <g|none>`,
+  `scene part … [rev]`.
 
 ### 5.6 DMX layout and auto-patch
 
@@ -351,6 +359,35 @@ console), from `(universe_start, dmx_start)`:
 | `whole` | whole pixels only: 170 RGB / 128 RGBW per universe (xLights / Falcon / FPP "510 channels") | 7 universes |
 | `fixture` | each fixture (§5.5) from slot 1 of a universe of its own, whole pixels inside; pixels in no fixture get no data; no fixtures = `whole` | 1 + per fixture |
 | `colour` | one colour per fixture: 3 channels a bar (4 RGBW), bars in strip order, the bar lit with it — patch each bar as a plain RGB fixture; no fixtures = one colour for all | a few slots |
+| `control` | **DMX control mode**: no pixel data. Each fixture takes the channels of its DMX profile, one after the other | 3 channels with one RGB fixture |
+
+**DMX control mode** turns pixel mapping off for an output and drives its
+fixtures like conventional luminaires (the profiles, their functions and
+presets: SHOW_CONTROL "Fixture DMX profiles"):
+
+- The fixtures follow each other on the wire from `(universe_start,
+  dmx_start)`, in the order they are listed, each taking the footprint of its
+  profile. A fixture never straddles two universes: one that would starts the
+  next at slot 1.
+- An output without fixtures is one fixture covering the strip, on the first
+  profile. LEDs in no fixture stay dark. A fixture whose profile left the bank
+  uses the first.
+- Each frame, every fixture reads its channels and plays what they ask for:
+  its colour, steady (effect channel at 0), or an effect of the bank with the
+  desk's colours, speed, phaser and Block / Groups / Wings — at its dimmer,
+  through its shutter. All fixtures share the box's clock.
+- Everything above the network path is unchanged: a scene started on the
+  output overrides the desk, the failsafe takes over on signal loss, the
+  grand master, blackout and strobe apply after.
+- The patch sheet — universe, address and channel count per fixture — is
+  `"patch"` on the channel in `GET /api/config`, `patch=` in `ch N` on the
+  console, and shown next to each fixture in the web channel editor.
+
+![A channel in DMX control mode in the web UI: each fixture with its profile and its address](img/web-channel-control.png)
+
+The point is the universe count: eight outputs of 300 RGBW pixels take 24
+universes pixel-mapped, and one in control mode with a 16-channel fixture
+each.
 
 `logic::channel_layout` turns a channel into runs (universe offset, slot,
 buffer offset, bytes); decoding, the universe span (`channel_universe_span`,
@@ -366,7 +403,10 @@ screen; the TFT/OLED menu keeps the aligned default):
   fits; a `fixture` output always opens one). A shared universe takes one pool
   slot feeding both outputs (`g_slot_chans` is a bit per channel), so activity
   and failsafe follow every output on it.
-- `packing` other than `keep` is set on every output first.
+- `packing` other than `keep` is set on every output first — a pixel layout:
+  an output in DMX control mode keeps its mode. Such outputs chain like the
+  others; compact, one starts in the next universe when its first fixture
+  would not fit in what is left.
 - An enabled DMX control universe follows the outputs: in the room left in the
   last universe when compact, else from slot 1 of the next.
 
