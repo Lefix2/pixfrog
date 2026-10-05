@@ -94,6 +94,14 @@ def fixtures(emu):
     expect(dump(emu, "chan 0")["fixtures"][0] == [0, 60, 0, 2], "fixture 1 on the third profile")
     pick(emu, PATCH1 + [0], 1)
     expect(dump(emu, "chan 0")["packing"] == 1, "pixel map on: the layout it had")
+    pick(emu, PATCH1 + [0], 1)  # already on: nothing moves
+    expect(dump(emu, "chan 0")["packing"] == 1, "pixel map on twice: still the layout")
+    st = goto(emu, PATCH1[:-1] + [7])  # output 8 is off: nothing to patch, Back only
+    expect(st["screen"] == "OutputPatchMenu", f"the patch of an output that is off ({st})")
+    emu.cmd("click")
+    expect(emu.state()["screen"] == "PatchListMenu", "it only leads back")
+    st = goto(emu, PATCH1 + [4])  # output 1's Back row (Pixel map, Layout, Uni, DMX, Back)
+    expect(st["screen"] == "PatchListMenu", f"Back from the patch ({st})")
     pick(emu, PATCH1 + [0], -1)
     goto(emu, fx + [0, 3])  # [Delete]
     c = dump(emu, "chan 0")

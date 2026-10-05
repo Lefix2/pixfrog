@@ -196,11 +196,10 @@ void open_patch(uint8_t idx) {
 }  // namespace
 
 uint8_t pixel_layout_before_control(uint8_t ch) {
-    return ch < config::kNumChannels ? g_last_pixel_layout[ch] : config::kPackContinuous;
+    return g_last_pixel_layout[ch % config::kNumChannels];
 }
 void note_pixel_layout(uint8_t ch, uint8_t packing) {
-    if (ch < config::kNumChannels && packing < config::kPackControl)
-        g_last_pixel_layout[ch] = packing;
+    g_last_pixel_layout[ch % config::kNumChannels] = packing;  // a pixel layout: < control
 }
 
 uint8_t build_patch_list(ListItem* items, OnClick* fns) {
@@ -718,13 +717,11 @@ uint8_t build_network(ListItem* items, OnClick* fns) {
 
 constexpr size_t kProtocolCount = static_cast<size_t>(led::Protocol::COUNT);
 
-// The channel menu is layout-driven: the visible items depend on the protocol
-// family — an Off channel shows only Proto; clocked SPI strips add Clock.
+// The output menu is layout-driven: the visible items depend on the protocol
+// family — an Off output shows only Proto; clocked SPI strips add Clock. Its
+// DMX side (universe, address, layout) is the output's patch, under DMX.
 enum class ChItem : uint8_t {
     Proto,
-    Uni,
-    Dmx,
-    Layout,  // how its pixels (or its fixtures) fill the universes
     Pixels,
     Gaps,      // dead pixels submenu
     Fixtures,  // fixtures submenu
@@ -776,23 +773,6 @@ OnClick channel_action(ChItem it) {
             enter_edit(Field::ChProtocol, ValueKind::Protocol, static_cast<int32_t>(cc.protocol), 0,
                        static_cast<int32_t>(kProtocolCount) - 1, 1, "Proto", Screen::Menu,
                        s.channel_index);
-        };
-    case ChItem::Uni:
-        return [](uint8_t) {
-            const auto& cc = config::get_channel(s.channel_index);
-            enter_edit_uni(s.channel_index, cc.universe_start, Screen::Menu);
-        };
-    case ChItem::Dmx:
-        return [](uint8_t) {
-            const auto& cc = config::get_channel(s.channel_index);
-            enter_edit(Field::ChDmx, ValueKind::Int, cc.dmx_start, 1, 512, 1, "DMX", Screen::Menu,
-                       s.channel_index);
-        };
-    case ChItem::Layout:
-        return [](uint8_t) {
-            const auto& cc = config::get_channel(s.channel_index);
-            enter_edit(Field::ChPacking, ValueKind::Packing, cc.packing, 0, config::kPackCount - 1,
-                       1, "DMX layout", Screen::Menu, s.channel_index);
         };
     case ChItem::Pixels:
         return [](uint8_t) {
@@ -871,11 +851,9 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     const auto& cc = config::get_channel(s.channel_index);
     std::snprintf(g_channel_title, sizeof(g_channel_title), "OUTPUT %u", s.channel_index + 1);
 
-    static char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8],
-        vclk[12], vgam[8], vgaps[8], vfix[8];
+    static char vproto[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12], vgam[8],
+        vgaps[8], vfix[8];
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
-    format_uni(vuni, sizeof(vuni), cc.universe_start);
-    std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
     std::snprintf(vpix, sizeof(vpix), "%u", cc.pixel_count);
     std::snprintf(vorder, sizeof(vorder), "%s", color_order_name(cc.color_order));
     std::snprintf(vbri, sizeof(vbri), "%u", cc.brightness);
@@ -900,9 +878,6 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     for (uint8_t i = 0; i < count; ++i) {
         switch (order[i]) {
         case ChItem::Proto: items[i] = { "Proto", vproto }; break;
-        case ChItem::Uni: items[i] = { "Uni", vuni }; break;
-        case ChItem::Dmx: items[i] = { "DMX", vdmx }; break;
-        case ChItem::Layout: items[i] = { "Layout", packing_label(cc.packing) }; break;
         case ChItem::Pixels: items[i] = { "Pixels", vpix }; break;
         case ChItem::Gaps: items[i] = { "Dead px", vgaps }; break;
         case ChItem::Fixtures: items[i] = { "Fixtures", vfix }; break;

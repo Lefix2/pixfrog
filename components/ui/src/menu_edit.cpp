@@ -601,7 +601,7 @@ void commit_edit() {
         if (v) {
             if (c.packing == config::kPackControl)
                 c.packing = pixel_layout_before_control(s.edit.channel);
-        } else {
+        } else if (c.packing != config::kPackControl) {
             note_pixel_layout(s.edit.channel, c.packing);
             c.packing = config::kPackControl;
         }
