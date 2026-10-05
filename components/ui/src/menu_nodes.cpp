@@ -9,17 +9,119 @@
 namespace pixfrog::ui::detail::menu_impl {
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
-
-// Main menu layout: the 8 channels first (direct access, with protocol badges),
-// then the grouped config sub-menus, About, and the way back to HOME.
-constexpr uint8_t kChannelRows = config::kNumChannels;  // 8
+// The five jobs of the box: run the show (first: the live controls), then in
+// the order a rig is built — describe the rig, build the looks that play on
+// it, patch the DMX — and look after the box itself. The web UI follows the
+// same order, with the dashboard in place of Show.
 
 uint8_t build_main(ListItem* items, OnClick* fns) {
+    uint8_t n = 0;
+    items[n]  = { "Show", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Show); };
+    items[n]  = { "Rig", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Rig); };
+    items[n]  = { "Looks", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Looks); };
+    items[n]  = { "DMX", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Dmx); };
+    items[n]  = { "Box", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Box); };
+    items[n]  = back_item("HOME");
+    fns[n++]  = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── SHOW NODE ───────────────────────────────────────────────────────────────
+// Running the show: the grand master, blackout and strobe (runtime, all
+// outputs), the scene crossfade time, what plays — scenes, FSEQ files — and
+// what the strips do when the live input drops.
+
+uint8_t build_show(ListItem* items, OnClick* fns) {
+    static char vmaster[8], vbo[8], vstrobe[8], vfade[8], vfsm[8], vfst[8];
+    const auto& g = config::get_global();
+    std::snprintf(vmaster, sizeof(vmaster), "%u%%",
+                  (static_cast<unsigned>(dmx::master_local(0)) * 100u + 32767u) / 65535u);
+    std::snprintf(vbo, sizeof(vbo), "%s", dmx::blackout_local() ? "ON" : "OFF");
+    const uint8_t hz10 = dmx::strobe_local(0);
+    if (hz10)
+        std::snprintf(vstrobe, sizeof(vstrobe), "%uHz", hz10 / 10u);
+    else
+        std::snprintf(vstrobe, sizeof(vstrobe), "Off");
+    std::snprintf(vfade, sizeof(vfade), "%u.%us", g.scene_fade_ms / 1000u,
+                  (g.scene_fade_ms / 100u) % 10u);
+    std::snprintf(vfsm, sizeof(vfsm), "%s", failsafe_name(g.failsafe_mode));
+    std::snprintf(vfst, sizeof(vfst), "%us", g.failsafe_timeout_s);
+    uint8_t n = 0;
+    items[n]  = { "Master", vmaster };
+    fns[n++]  = [](uint8_t) {
+        enter_edit(Field::ShowMaster, ValueKind::Int,
+                    (static_cast<int32_t>(dmx::master_local(0)) * 100 + 32767) / 65535, 0, 100, 5,
+                    "Master", Screen::Menu);
+    };
+    items[n] = { "Blackout", vbo };
+    fns[n++] = [](uint8_t) { dmx::blackout_toggle(); };  // instant, like the desk button
+    items[n] = { "Strobe", vstrobe };
+    fns[n++] = [](uint8_t) {
+        enter_edit(Field::ShowStrobe, ValueKind::Int, dmx::strobe_local(0) / 10, 0, 25, 1,
+                   "Strobe Hz", Screen::Menu);
+    };
+    items[n] = { "Fade", vfade };
+    fns[n++] = [](uint8_t) {
+        enter_edit(Field::ShowFade, ValueKind::Tenths, config::get_global().scene_fade_ms / 100, 0,
+                   config::kMaxSceneFadeMs / 100, 1, "Fade", Screen::Menu);
+    };
+    items[n] = { "Scenes", "" };
+    fns[n++] = [](uint8_t) { go(NodeId::Scenes); };
+    items[n] = { "FSEQ", "" };
+    fns[n++] = [](uint8_t) {
+        // Refresh the SD listing as we open the file browser.
+        g_fseq_file_count = static_cast<uint8_t>(fseq::list_files(g_fseq_names, kFseqMenuMaxFiles));
+        go(NodeId::Fseq);
+    };
+    items[n] = { "Failsafe", vfsm };
+    fns[n++] = [](uint8_t) {
+        const auto& gl = config::get_global();
+        enter_edit(Field::ArtnetFailsafeMode, ValueKind::Failsafe, gl.failsafe_mode, 0, 3, 1,
+                   "Failsafe", Screen::Menu);
+    };
+    items[n] = { "FSafe s", vfst };
+    fns[n++] = [](uint8_t) {
+        const auto& gl = config::get_global();
+        enter_edit(Field::ArtnetFailsafeTimeout, ValueKind::Int, gl.failsafe_timeout_s, 0, 3600, 1,
+                   "FSafe s", Screen::Menu);
+    };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── LOOKS NODE ──────────────────────────────────────────────────────────────
+// What the box plays on its own: the scenes (the effect bank is edited from
+// the web UI or the console).
+
+uint8_t build_looks(ListItem* items, OnClick* fns) {
+    static char vcount[8];
+    std::snprintf(vcount, sizeof(vcount), "%u", static_cast<unsigned>(config::num_scenes()));
+    items[0] = { "Scenes", vcount };
+    fns[0]   = [](uint8_t) { go(NodeId::SceneList); };
+    items[1] = back_item();
+    fns[1]   = [](uint8_t) { go_back(); };
+    return 2;
+}
+
+// ── RIG NODE ────────────────────────────────────────────────────────────────
+// The installation: the eight outputs (protocol badge; an Off one greyed) —
+// each with its LED hardware, dead pixels and fixtures — then the frame rate
+// they share and the built-in test patterns.
+
+constexpr uint8_t kChannelRows = config::kNumChannels;  // 8
+
+namespace {
+// The eight output rows of a list: "Output n" with its protocol and badge.
+uint8_t output_rows(ListItem* items, OnClick* fns, OnClick open) {
     static char names[kChannelRows][12];
     for (uint8_t i = 0; i < kChannelRows; ++i) {
-        // Channel rows: show the configured protocol + a numbered badge.
-        // A disabled channel ("Off") is greyed out instead of gold.
-        std::snprintf(names[i], sizeof(names[i]), "Channel %u", i + 1);
+        std::snprintf(names[i], sizeof(names[i]), "Output %u", i + 1);
         const auto& cc     = config::get_channel(i);
         items[i]           = {};
         items[i].label     = names[i];
@@ -27,24 +129,178 @@ uint8_t build_main(ListItem* items, OnClick* fns) {
         items[i].badge     = static_cast<int8_t>(i);
         items[i].badge_col = badge_color(cc.protocol);
         items[i].value_col = led::is_off(cc.protocol) ? color::DarkGray : color::Gold;
-        fns[i]             = open_channel;
+        fns[i]             = open;
     }
-    uint8_t n = kChannelRows;
-    items[n]  = { "Inputs", "" };
-    fns[n++]  = [](uint8_t) { go(NodeId::Inputs); };
-    items[n]  = { "Network", "" };
-    fns[n++]  = [](uint8_t) { go(NodeId::Network); };
-    items[n]  = { "Output", "" };
-    fns[n++]  = [](uint8_t) { go(NodeId::Output); };
-    items[n]  = { "Playback", "" };
-    fns[n++]  = [](uint8_t) { go(NodeId::Playback); };
-    items[n]  = { "Settings", "" };
-    fns[n++]  = [](uint8_t) { go(NodeId::Settings); };
-    items[n]  = { "About", "" };
-    fns[n++]  = [](uint8_t) { s.screen = Screen::About; };
-    items[n]  = back_item("HOME");
-    fns[n++]  = [](uint8_t) { go_back(); };
+    return kChannelRows;
+}
+}  // namespace
+
+uint8_t build_rig(ListItem* items, OnClick* fns) {
+    static char vrefresh[8];
+    std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", config::get_global().refresh_rate_hz);
+    uint8_t n = output_rows(items, fns, open_channel);
+    items[n]  = { "Refresh", vrefresh };
+    fns[n++]  = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::GlobalRefresh, ValueKind::Int, g.refresh_rate_hz, config::kMinRefreshHz,
+                    config::kMaxRefreshHz, 1, "Refresh", Screen::Menu);
+    };
+    items[n] = { "Test pattern", "" };
+    fns[n++] = [](uint8_t) { go(NodeId::TestPattern); };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
     return n;
+}
+
+// ── DMX NODE ────────────────────────────────────────────────────────────────
+// Addressing and remote control, in the order they are set up: what carries
+// the DMX, where each output sits, the control universe, and — last — the
+// auto-patch that re-addresses them all.
+
+uint8_t build_dmx(ListItem* items, OnClick* fns) {
+    static char vctl[8];
+    std::snprintf(vctl, sizeof(vctl), "%s", config::get_control().enabled ? "ON" : "OFF");
+    uint8_t n = 0;
+    items[n]  = { "Protocols", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::Inputs); };
+    items[n]  = { "Patch", "" };
+    fns[n++]  = [](uint8_t) { go(NodeId::PatchList); };
+    items[n]  = { "Control uni", vctl };
+    fns[n++]  = [](uint8_t) { go(NodeId::Control); };
+    items[n]  = { "Auto-patch", "" };
+    fns[n++]  = [](uint8_t) {
+        // Cascade all outputs from a base universe; seed with output 1's so
+        // re-patching in place is one click.
+        enter_edit(Field::AutoPatch, ValueKind::Int, config::get_channel(0).universe_start, 0,
+                    32767, 1, "Patch", Screen::Menu);
+    };
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── PATCH NODES ─────────────────────────────────────────────────────────────
+// The eight outputs again, this time for where they sit in the universes.
+// One output: pixel by pixel (its layout, universe and address) or — the
+// switch off — DMX control, each fixture then on the channels of its profile.
+
+namespace {
+uint8_t g_last_pixel_layout[config::kNumChannels];  // to give back when Pixel map returns
+
+void open_patch(uint8_t idx) {
+    s.channel_index                                  = idx;
+    s.cur[static_cast<uint8_t>(NodeId::OutputPatch)] = 0;
+    s.scr[static_cast<uint8_t>(NodeId::OutputPatch)] = 0;
+    go(NodeId::OutputPatch);
+}
+}  // namespace
+
+uint8_t pixel_layout_before_control(uint8_t ch) {
+    return ch < config::kNumChannels ? g_last_pixel_layout[ch] : config::kPackContinuous;
+}
+void note_pixel_layout(uint8_t ch, uint8_t packing) {
+    if (ch < config::kNumChannels && packing < config::kPackControl)
+        g_last_pixel_layout[ch] = packing;
+}
+
+uint8_t build_patch_list(ListItem* items, OnClick* fns) {
+    uint8_t n = output_rows(items, fns, open_patch);
+    static char values[kChannelRows][12];
+    for (uint8_t i = 0; i < kChannelRows; ++i) {  // the address, not the protocol
+        const auto& cc = config::get_channel(i);
+        if (led::is_off(cc.protocol)) continue;
+        std::snprintf(values[i], sizeof(values[i]), "%u.%u", cc.universe_start, cc.dmx_start);
+        items[i].value = values[i];
+    }
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+char g_patch_title[12];
+
+uint8_t build_output_patch(ListItem* items, OnClick* fns) {
+    const auto& cc = config::get_channel(s.channel_index);
+    std::snprintf(g_patch_title, sizeof(g_patch_title), "PATCH %u", s.channel_index + 1);
+    uint8_t n = 0;
+    if (led::is_off(cc.protocol)) {  // nothing to patch on an output that is off
+        items[n] = back_item();
+        fns[n++] = [](uint8_t) { go_back(); };
+        return n;
+    }
+    const bool pixels = cc.packing != config::kPackControl;
+    static char vuni[12], vdmx[8];
+    static char flabel[config::kMaxFixtures][16], fvalue[config::kMaxFixtures][10];
+    format_uni(vuni, sizeof(vuni), cc.universe_start);
+    std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
+    items[n] = { "Pixel map", pixels ? "ON" : "OFF" };
+    fns[n++] = [](uint8_t) {
+        const auto& c = config::get_channel(s.channel_index);
+        enter_edit(Field::ChPixelMap, ValueKind::Bool, c.packing != config::kPackControl ? 1 : 0, 0,
+                   1, 1, "Pixel map", Screen::Menu, s.channel_index);
+    };
+    if (pixels) {
+        items[n] = { "Layout", packing_label(cc.packing) };
+        fns[n++] = [](uint8_t) {
+            const auto& c = config::get_channel(s.channel_index);
+            enter_edit(Field::ChPacking, ValueKind::Packing, c.packing, 0, config::kPackControl - 1,
+                       1, "DMX layout", Screen::Menu, s.channel_index);
+        };
+    }
+    items[n] = { "Uni", vuni };
+    fns[n++] = [](uint8_t) {
+        const auto& c = config::get_channel(s.channel_index);
+        enter_edit_uni(s.channel_index, c.universe_start, Screen::Menu);
+    };
+    items[n] = { "DMX", vdmx };
+    fns[n++] = [](uint8_t) {
+        const auto& c = config::get_channel(s.channel_index);
+        enter_edit(Field::ChDmx, ValueKind::Int, c.dmx_start, 1, 512, 1, "DMX", Screen::Menu,
+                   s.channel_index);
+    };
+    if (!pixels) {
+        // DMX control: one row a fixture, its profile to pick. They take their
+        // channels one after the other from the address above.
+        static uint8_t first_row;
+        first_row       = n;
+        const size_t nf = config::fixture_count(cc.fixtures, config::kMaxFixtures);
+        EditCtx as{};
+        as.kind = ValueKind::Profile;
+        for (size_t k = 0; k < nf; ++k) {
+            std::snprintf(flabel[k], sizeof(flabel[k]), "F%u %u-%u", static_cast<unsigned>(k + 1),
+                          cc.fixtures[k].pos + 1u,
+                          cc.fixtures[k].pos + config::fixture_len(cc.fixtures[k]));
+            format_value(as, config::fixture_profile(cc.fixtures[k]), fvalue[k], sizeof(fvalue[k]));
+            items[n] = { flabel[k], fvalue[k] };
+            fns[n++] = [](uint8_t row) {
+                g_fix_index      = static_cast<uint8_t>(row - first_row);
+                const auto& c    = config::get_channel(s.channel_index);
+                const int32_t hi = config::get_profiles().count ? config::get_profiles().count - 1
+                                                                : 0;
+                int32_t cur      = config::fixture_profile(c.fixtures[g_fix_index]);
+                if (cur > hi) cur = 0;  // its profile left the bank: the first, as the box plays it
+                enter_edit(Field::FixProfile, ValueKind::Profile, cur, 0, hi, 1, "DMX profile",
+                           Screen::Menu, s.channel_index);
+            };
+        }
+    }
+    items[n] = back_item();
+    fns[n++] = [](uint8_t) { go_back(); };
+    return n;
+}
+
+// ── BOX NODE ────────────────────────────────────────────────────────────────
+
+uint8_t build_box(ListItem* items, OnClick* fns) {
+    items[0] = { "Network", "" };
+    fns[0]   = [](uint8_t) { go(NodeId::Network); };
+    items[1] = { "Settings", "" };
+    fns[1]   = [](uint8_t) { go(NodeId::Settings); };
+    items[2] = { "About", "" };
+    fns[2]   = [](uint8_t) { s.screen = Screen::About; };
+    items[3] = back_item();
+    fns[3]   = [](uint8_t) { go_back(); };
+    return 4;
 }
 
 // ── TEST PATTERN NODE ───────────────────────────────────────────────────────
@@ -138,9 +394,9 @@ uint8_t build_fseq(ListItem* items, OnClick* fns) {
     return static_cast<uint8_t>(n + 2);
 }
 
-// ── INPUTS NODE ──────────────────────────────────────────────────────────────
-// DMX-over-IP reception: Art-Net addressing + alternative input protocols
-// (sACN, FPP) + the universe auto-patch helper.
+// ── PROTOCOLS NODE ───────────────────────────────────────────────────────────
+// DMX-over-IP reception: Art-Net addressing and the alternative input
+// protocols (sACN, FPP).
 
 uint8_t build_inputs(ListItem* items, OnClick* fns) {
     static char vnet[8], vsub[8], vunicast[8], vsacn[8], vfpp[8];
@@ -180,20 +436,9 @@ uint8_t build_inputs(ListItem* items, OnClick* fns) {
         enter_edit(Field::ArtnetFpp, ValueKind::Bool, g.fpp_remote ? 1 : 0, 0, 1, 1, "FPP",
                      Screen::Menu);
     };
-    items[5] = { "Auto-patch", "" };
-    fns[5]   = [](uint8_t) {
-        // Cascade all channels from a base universe; seed with channel 0's so
-        // re-patching in place is one click.
-        enter_edit(Field::AutoPatch, ValueKind::Int, config::get_channel(0).universe_start, 0,
-                     32767, 1, "Patch", Screen::Menu);
-    };
-    static char vctl[8];
-    std::snprintf(vctl, sizeof(vctl), "%s", config::get_control().enabled ? "ON" : "OFF");
-    items[6] = { "DMX ctrl", vctl };
-    fns[6]   = [](uint8_t) { go(NodeId::Control); };
-    items[7] = back_item();
-    fns[7]   = [](uint8_t) { go_back(); };
-    return 8;
+    items[5] = back_item();
+    fns[5]   = [](uint8_t) { go_back(); };
+    return 6;
 }
 
 // ── DMX CONTROL NODE ─────────────────────────────────────────────────────────
@@ -331,71 +576,6 @@ uint8_t build_control_slot(ListItem* items, OnClick* fns) {
     return n;
 }
 
-// ── OUTPUT NODE ──────────────────────────────────────────────────────────────
-// Global output behaviour: the LED refresh rate and what the strips do when the
-// live input drops (failsafe mode + timeout).
-
-uint8_t build_output(ListItem* items, OnClick* fns) {
-    static char vrefresh[8], vfsm[8], vfst[8];
-    const auto& g = config::get_global();
-    std::snprintf(vrefresh, sizeof(vrefresh), "%uHz", g.refresh_rate_hz);
-    std::snprintf(vfsm, sizeof(vfsm), "%s", failsafe_name(g.failsafe_mode));
-    std::snprintf(vfst, sizeof(vfst), "%us", g.failsafe_timeout_s);
-
-    items[0] = { "Refresh", vrefresh };
-    fns[0]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::GlobalRefresh, ValueKind::Int, g.refresh_rate_hz, config::kMinRefreshHz,
-                     config::kMaxRefreshHz, 1, "Refresh", Screen::Menu);
-    };
-    items[1] = { "Failsafe", vfsm };
-    fns[1]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::ArtnetFailsafeMode, ValueKind::Failsafe, g.failsafe_mode, 0, 3, 1,
-                     "Failsafe", Screen::Menu);
-    };
-    items[2] = { "FSafe s", vfst };
-    fns[2]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::ArtnetFailsafeTimeout, ValueKind::Int, g.failsafe_timeout_s, 0, 3600, 1,
-                     "FSafe s", Screen::Menu);
-    };
-    // Show control (runtime, all outputs): grand master, blackout, strobe; and
-    // the scene crossfade time (persisted).
-    static char vmaster[8], vbo[8], vstrobe[8], vfade[8];
-    std::snprintf(vmaster, sizeof(vmaster), "%u%%",
-                  (static_cast<unsigned>(dmx::master_local(0)) * 100u + 32767u) / 65535u);
-    std::snprintf(vbo, sizeof(vbo), "%s", dmx::blackout_local() ? "ON" : "OFF");
-    const uint8_t hz10 = dmx::strobe_local(0);
-    if (hz10)
-        std::snprintf(vstrobe, sizeof(vstrobe), "%uHz", hz10 / 10u);
-    else
-        std::snprintf(vstrobe, sizeof(vstrobe), "Off");
-    std::snprintf(vfade, sizeof(vfade), "%u.%us", g.scene_fade_ms / 1000u,
-                  (g.scene_fade_ms / 100u) % 10u);
-    items[3] = { "Master", vmaster };
-    fns[3]   = [](uint8_t) {
-        enter_edit(Field::ShowMaster, ValueKind::Int,
-                     (static_cast<int32_t>(dmx::master_local(0)) * 100 + 32767) / 65535, 0, 100, 5,
-                     "Master", Screen::Menu);
-    };
-    items[4] = { "Blackout", vbo };
-    fns[4]   = [](uint8_t) { dmx::blackout_toggle(); };  // instant, like the desk button
-    items[5] = { "Strobe", vstrobe };
-    fns[5]   = [](uint8_t) {
-        enter_edit(Field::ShowStrobe, ValueKind::Int, dmx::strobe_local(0) / 10, 0, 25, 1,
-                     "Strobe Hz", Screen::Menu);
-    };
-    items[6] = { "Fade", vfade };
-    fns[6]   = [](uint8_t) {
-        enter_edit(Field::ShowFade, ValueKind::Tenths, config::get_global().scene_fade_ms / 100, 0,
-                     config::kMaxSceneFadeMs / 100, 1, "Fade", Screen::Menu);
-    };
-    items[7] = back_item();
-    fns[7]   = [](uint8_t) { go_back(); };
-    return 8;
-}
-
 // ── SETTINGS NODE ────────────────────────────────────────────────────────────
 // The box itself rather than the show: the backlight (TFT builds), the
 // speaker volume (boards with the speaker mod), the nerd stats. The dim delay
@@ -464,28 +644,6 @@ uint8_t build_settings(ListItem* items, OnClick* fns) {
     items[n] = back_item();
     fns[n++] = [](uint8_t) { go_back(); };
     return n;
-}
-
-// ── PLAYBACK NODE ────────────────────────────────────────────────────────────
-// Output sources that aren't live DMX-over-IP: stored scenes, SD-card FSEQ
-// sequences, and the built-in test patterns.
-
-uint8_t build_playback(ListItem* items, OnClick* fns) {
-    items[0] = { "Scenes", "" };
-    fns[0]   = [](uint8_t) { go(NodeId::Scenes); };
-    items[1] = { "Edit scenes", "" };
-    fns[1]   = [](uint8_t) { go(NodeId::SceneList); };
-    items[2] = { "FSEQ", "" };
-    fns[2]   = [](uint8_t) {
-        // Refresh the SD listing as we open the file browser.
-        g_fseq_file_count = static_cast<uint8_t>(fseq::list_files(g_fseq_names, kFseqMenuMaxFiles));
-        go(NodeId::Fseq);
-    };
-    items[3] = { "Test pattern", "" };
-    fns[3]   = [](uint8_t) { go(NodeId::TestPattern); };
-    items[4] = back_item();
-    fns[4]   = [](uint8_t) { go_back(); };
-    return 5;
 }
 
 // ── NETWORK NODE ─────────────────────────────────────────────────────────────
@@ -590,9 +748,6 @@ uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
         out[n++] = ChItem::Back;
         return n;
     }
-    out[n++] = ChItem::Uni;
-    out[n++] = ChItem::Dmx;
-    out[n++] = ChItem::Layout;
     out[n++] = ChItem::Pixels;
     out[n++] = ChItem::Gaps;
     out[n++] = ChItem::Fixtures;
@@ -714,7 +869,7 @@ OnClick channel_action(ChItem it) {
 
 uint8_t build_channel(ListItem* items, OnClick* fns) {
     const auto& cc = config::get_channel(s.channel_index);
-    std::snprintf(g_channel_title, sizeof(g_channel_title), "CHANNEL %u", s.channel_index + 1);
+    std::snprintf(g_channel_title, sizeof(g_channel_title), "OUTPUT %u", s.channel_index + 1);
 
     static char vproto[8], vuni[12], vdmx[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8],
         vclk[12], vgam[8], vgaps[8], vfix[8];
@@ -918,9 +1073,9 @@ uint8_t build_fixtures(ListItem* items, OnClick* fns) {
 }
 
 // ── FIXTURE NODE ─────────────────────────────────────────────────────────────
-// One fixture: where it starts, how long it is, which way round it is mounted
-// and — on an output in DMX control mode — its DMX profile. The ranges stop at
-// its neighbours, so two fixtures never overlap.
+// One fixture: where it starts, how long it is and which way round it is
+// mounted (its DMX profile, in DMX control mode, is picked in the output's
+// patch). The ranges stop at its neighbours, so two fixtures never overlap.
 
 uint8_t build_fixture(ListItem* items, OnClick* fns) {
     const auto& cc  = config::get_channel(s.channel_index);
@@ -933,7 +1088,7 @@ uint8_t build_fixture(ListItem* items, OnClick* fns) {
         return n;
     }
     const config::Fixture& f = cc.fixtures[g_fix_index];
-    static char vfirst[8], vlen[8], vprof[10];
+    static char vfirst[8], vlen[8];
     std::snprintf(vfirst, sizeof(vfirst), "%u", f.pos + 1u);
     std::snprintf(vlen, sizeof(vlen), "%u", static_cast<unsigned>(config::fixture_len(f)));
     items[n] = { "First LED", vfirst };
@@ -961,20 +1116,6 @@ uint8_t build_fixture(ListItem* items, OnClick* fns) {
                    config::fixture_reversed(c.fixtures[g_fix_index]) ? 1 : 0, 0, 1, 1, "Reversed",
                    Screen::Menu, s.channel_index);
     };
-    if (cc.packing == config::kPackControl) {
-        EditCtx as{};
-        as.kind = ValueKind::Profile;
-        format_value(as, config::fixture_profile(f), vprof, sizeof(vprof));
-        items[n] = { "Profile", vprof };
-        fns[n++] = [](uint8_t) {
-            const auto& c    = config::get_channel(s.channel_index);
-            const int32_t hi = config::get_profiles().count ? config::get_profiles().count - 1 : 0;
-            int32_t cur      = config::fixture_profile(c.fixtures[g_fix_index]);
-            if (cur > hi) cur = 0;  // its profile left the bank: the first, as the box plays it
-            enter_edit(Field::FixProfile, ValueKind::Profile, cur, 0, hi, 1, "DMX profile",
-                       Screen::Menu, s.channel_index);
-        };
-    }
     items[n] = { "[Delete]", "" };
     fns[n++] = [](uint8_t) {
         auto c = config::get_channel(s.channel_index);

@@ -22,7 +22,7 @@ so a strip can still be found during a blackout.
 | From | How |
 |---|---|
 | Web UI | the SHOW card on the dashboard |
-| TFT | OUTPUT → Master / Blackout / Strobe / Fade |
+| TFT | SHOW → Master / Blackout / Strobe / Fade |
 | UART | `show master <0..100> [outputs]`, `show blackout on\|off\|toggle [outputs]`, `show strobe <0..25> [outputs]`, `show fade <ms>` |
 | REST | `POST /api/show {"outputs":15,"master":80,"blackout":true\|false\|"toggle","strobe_hz":5}` |
 | ArtTrigger | Oem 0xFFFF, Key 1 (KeyMacro): SubKey 1 = toggle, 2 = on, 3 = off |
@@ -123,7 +123,7 @@ Groups / Wings — as the same space-time strips:
 | Web UI | **Effects** screen | **Scenes** screen: the parts — their outputs, effect, fixture mode and direction — and the group the scene plays on |
 | UART | `fx`, `fx add [name]`, `fx set <n> <generator> <rrggbb[,…]> <speed> <param>`, `fx name`, `fx move`, `fx del` (refused while a scene plays it) | `scene`, `scene add [name]`, `scene part <n> <outputs-hex> <effect> [each\|strip\|chain\|mirror] [rev]`, `scene group <n> <group\|none>`, `scene clear <n>`, `scene name`, `scene move`, `scene del` |
 | REST | `POST /api/effect/<n>`, `/api/effects/add\|move` | `POST /api/scene/<n>`, `/api/scenes/add\|move` |
-| TFT / OLED | — (the bank is edited from the web or the console) | PLAYBACK → **Edit scenes**: name, the group it plays on, its parts — outputs (one toggle each; an output taken by a part leaves the other), effect of the bank, fixture mode, direction — `[Add part]`, `[New]`, `[Delete]`, and `[Play]` / `[Stop]` to see the result |
+| TFT / OLED | — (the bank is edited from the web or the console) | LOOKS → **Scenes**: name, the group it plays on, its parts — outputs (one toggle each; an output taken by a part leaves the other), effect of the bank, fixture mode, direction — `[Add part]`, `[New]`, `[Delete]`, and `[Play]` / `[Stop]` to see the result |
 
 Scenes stored by an older firmware are converted at the first boot: each
 becomes one effect and one single-part scene, at the same position and the
@@ -143,7 +143,7 @@ side, and a scene started on an overlapping group takes those outputs over.
 | UART | `scene play <n> <outputs-hex>` (e.g. `scene play 0 01`, `scene play 1 02`), `scene stop <n>` |
 | REST | `POST /api/scene/<n>/play {"outputs":1}`, `POST /api/scene/<n>/stop` |
 | Desk | two Scene slots with different output groups in the control universe |
-| TFT, ArtTrigger | play on the outputs of the scene's parts (PLAYBACK → Scenes: one click a scene) |
+| TFT, ArtTrigger | play on the outputs of the scene's parts (SHOW → Scenes: one click a scene) |
 
 Every change of source crossfades over the scene fade time (`scene_fade_ms`,
 0–25.5 s, eased). This covers live → scene, scene → scene and scene → live.
@@ -210,7 +210,7 @@ function but strobe, fade time and show file can aim at a group — "Top",
 
 **Editors:**
 - web: *DMX control*, with the channel map and overlap and overflow warnings;
-- TFT: INPUTS → DMX ctrl;
+- TFT: DMX → Control uni;
 - UART: `ctrl`, `ctrl preset simple|full`, `ctrl add <fn> [mask|g<group>] [colour] [fine]`, `ctrl set|del`, `ctrl universe|address|enable`;
 - REST: `POST /api/control`.
 

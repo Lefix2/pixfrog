@@ -270,7 +270,7 @@ so they are indexed in physical order from the controller and never move with
   being edited on the TFT the ruler follows the pending value.
 - Edit: web Outputs screen ("Fixtures & dead LEDs"), console
   `ch N gaps 1:1,301:2` (first dead LED, 1-based : count; `-` clears), TFT
-  channel menu → "Dead px". API/backup: `"gaps": [[first_led, count], ...]`.
+  RIG → output menu → "Dead px". API/backup: `"gaps": [[first_led, count], ...]`.
 
 ### 5.5 Fixtures
 
@@ -304,12 +304,13 @@ fixtures, the dead LEDs and any overlap.
   list of sizes — fixture, dead LEDs, LEDs without fixture — positions follow
   from the order (drag to reorder), the pixel count from the list; a "N × L +
   K dead" fill. API/backup: `"fixtures": [[first_led, count], ...]`.
-  On the device: channel menu → **Fixtures** — one row a fixture, `[Add]`
+  On the device: RIG → output menu → **Fixtures** — one row a fixture, `[Add]`
   (after the last one, as long as it; the first takes the strip as it is, and
   the strip grows under a fixture that passes its end), **Split in** *N* equal
   fixtures, and per fixture its first LED, length (both stop at its
   neighbours), mounting direction and, in DMX control mode, its DMX profile.
-  The channel menu's **Layout** row picks the DMX layout (§5.6).
+  The output's DMX layout, universe and address are under DMX → **Patch**
+  (§5.6), with the **Pixel map** switch — off: DMX control mode.
 
 ### 5.5b Fixture groups
 
