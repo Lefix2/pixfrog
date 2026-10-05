@@ -301,12 +301,23 @@ def test_dimmer_phaser_and_invert(page, device):
     save(page)
     e = device.get("/api/config")["effects"][0]
     assert e["phaser"] == {"wave": "sin", "rate": 20, "spread": 16, "width": 128, "low": 51,
-                           "reverse": True}
+                           "attack": 0, "decay": 0, "reverse": True}
     assert e["invert"] is True
     # Reloaded from the box, the card shows what was saved.
     expect(page.locator("[data-fx-wave]")).to_have_value("sin")
     expect(page.locator("[data-fx-phrate]")).to_have_value("20")
     expect(page.locator("[data-fx-invert]")).to_be_checked()
+
+    # A PWM gets its attack and decay: the edges of the lit part.
+    expect(page.locator("[data-fx-phattack]")).to_have_count(0)
+    page.locator("[data-fx-wave]").select_option("pwm")
+    expect(page.locator("[data-fx-phattackval]")).to_contain_text("hard edge")
+    page.locator("[data-fx-phattack]").fill("64")
+    expect(page.locator("[data-fx-phattackval]")).to_contain_text("25 %")
+    page.locator("[data-fx-phdecay]").fill("128")
+    save(page)
+    ph = device.get("/api/config")["effects"][0]["phaser"]
+    assert ph["wave"] == "pwm" and ph["attack"] == 64 and ph["decay"] == 128
 
     page.locator("[data-fx-wave]").select_option("none")
     page.locator("[data-fx-invert]").uncheck(force=True)

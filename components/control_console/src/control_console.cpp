@@ -844,12 +844,13 @@ int cmd_fx(int argc, char** argv) {
                        e.colors[k][2]);
             // phaser: wave,rate,spread,width,low[,reverse]
             // matricks: block,groups,wings
+            // envelope: attack,decay (of a PWM phaser)
             printf(" speed=%u param=%u phaser=%s,%u,%u,%u,%u%s invert=%d matricks=%u,%u,%u "
-                   "used=%d\n",
+                   "used=%d envelope=%u,%u\n",
                    e.speed, e.param, config::phaser_wave_id(e.ph_wave), e.ph_rate, e.ph_spread,
                    e.ph_width, e.ph_low, (e.flags & config::kEffectPhaserReverse) ? ",reverse" : "",
                    (e.flags & config::kEffectDimmerInvert) != 0, e.block, e.groups, e.wings,
-                   config::effect_in_use(i));
+                   config::effect_in_use(i), e.ph_attack, e.ph_decay);
         }
         return ok();
     }
@@ -919,6 +920,21 @@ int cmd_fx(int argc, char** argv) {
         if (argc == 9)
             e.flags = static_cast<uint8_t>(reverse ? e.flags | config::kEffectPhaserReverse
                                                    : e.flags & ~config::kEffectPhaserReverse);
+        if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
+        return ok();
+    }
+    if (strcmp(argv[1], "envelope") == 0) {
+        // fx envelope <n> <attack> <decay> — a PWM phaser's fade in and out, each a
+        // share of its lit part (0..255; 0 = a hard edge).
+        uint32_t a = 0, d = 0;
+        if (argc != 5 || !parse_effect_index(argv[2], n))
+            return err("usage: fx envelope <n> <attack> <decay>");
+        if (!parse_u32_in(argv[3], 0, 255, a) || !parse_u32_in(argv[4], 0, 255, d))
+            return err("attack, decay: 0..255");
+        config::ScopedLock lock;
+        auto e      = config::get_effect(n);
+        e.ph_attack = static_cast<uint8_t>(a);
+        e.ph_decay  = static_cast<uint8_t>(d);
         if (!config::set_effect(n, e)) printf("warn=not_persisted\n");
         return ok();
     }
@@ -1217,7 +1233,8 @@ int cmd_profile(int argc, char** argv) {
             if (!parse_profile_slot(tok, slots[count++]))
                 return err(
                     "slot: dimmer[+fine]|red[:n]|green[:n]|blue[:n]|white|shutter|bank|"
-                    "speed|param|ph_wave|ph_rate|ph_spread|ph_width|block|groups|wings|none");
+                    "speed|param|ph_wave|ph_rate|ph_spread|ph_width|ph_attack|ph_decay|block|"
+                    "groups|wings|none");
         }
         if (count == 0) return err("slots: at least one");
         memcpy(p.slots, slots, sizeof(slots));

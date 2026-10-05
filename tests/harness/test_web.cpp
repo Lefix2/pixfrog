@@ -448,6 +448,18 @@ TEST(effect_endpoints_manage_the_bank) {
     EXPECT_EQ(ph.ph_width, 128);
     EXPECT_EQ(ph.ph_low, 30);
     EXPECT_EQ(ph.flags, config::kEffectPhaserReverse | config::kEffectDimmerInvert);
+    EXPECT_EQ(ph.ph_attack + ph.ph_decay, 0);  // left out: hard edges
+    post(url, "{\"phaser\":{\"wave\":\"pwm\",\"attack\":64,\"decay\":128}}");
+    EXPECT_EQ(ph.ph_attack, 64);
+    EXPECT_EQ(ph.ph_decay, 128);
+    {
+        Json cfg(get("/api/config").body);
+        const cJSON* jp = cJSON_GetObjectItem(
+            cJSON_GetArrayItem(cfg["effects"], static_cast<int>(n)), "phaser");
+        EXPECT_EQ(cJSON_GetObjectItem(jp, "attack")->valueint, 64);
+        EXPECT_EQ(cJSON_GetObjectItem(jp, "decay")->valueint, 128);
+    }
+    post(url, "{\"phaser\":{\"wave\":\"triangle\",\"attack\":0,\"decay\":0}}");
     post(url, "{\"phaser\":{\"wave\":\"wobble\",\"rate\":300,\"reverse\":1},\"invert\":\"yes\"}");
     EXPECT_EQ(ph.ph_wave, config::kPhaserTriangle);  // unknown or mistyped: kept
     EXPECT_EQ(ph.ph_rate, 20);
@@ -626,6 +638,7 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
              "{\"fn\":\"green\"},{\"fn\":\"blue\"},{\"fn\":\"white\"},{\"fn\":\"shutter\"},"
              "{\"fn\":\"bank\"},{\"fn\":\"speed\"},{\"fn\":\"param\"},{\"fn\":\"ph_wave\"},"
              "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"ph_attack\"},{\"fn\":\"ph_decay\"},"
              "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"red\"}]}]}")
             .status,
         200);
@@ -643,7 +656,9 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
         }
         EXPECT_EQ(next, 256);
     }
-    EXPECT_EQ(channels, 17);
+    EXPECT_EQ(channels, 19);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Phaser attack") !=
+                nullptr);
     EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Red 2") != nullptr);
     const cJSON* bankch = cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Effect");
     EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(bankch, "capabilities")),
@@ -1203,6 +1218,7 @@ TEST(fixture_profile_covers_every_control_function) {
         post("/api/control",
              "{\"slots\":[{\"fn\":\"bank\",\"mask\":15},{\"fn\":\"ph_wave\"},"
              "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
+             "{\"fn\":\"ph_attack\"},{\"fn\":\"ph_decay\"},"
              "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"effect\"}]}")
             .status,
         200);
@@ -1219,7 +1235,9 @@ TEST(fixture_profile_covers_every_control_function) {
         EXPECT_EQ(next, 256);
         ++listed;
     }
-    EXPECT_EQ(listed, 9);
+    EXPECT_EQ(listed, 11);
+    EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(fx["availableChannels"], "Phaser decay") !=
+                nullptr);
     // The bank channel names the effects, band by band; the generator channel
     // is no longer called "Effect".
     const cJSON* bank = cJSON_GetObjectItemCaseSensitive(fx["availableChannels"],

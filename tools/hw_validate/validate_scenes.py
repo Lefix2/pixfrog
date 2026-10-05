@@ -100,6 +100,17 @@ def run(board: Board):
     c.check("phaser: one half lit, one half dark",
             n_px >= 4 and len(px) == n_px and lit[0] and not lit[-1] and
             abs(sum(lit) - n_px / 2) <= 1)
+    # Attack and decay: the lit half is no longer a block but a hump, dark at
+    # both ends and full in the middle; the dark half stays dark.
+    board.cmd("fx envelope 0 128 128")
+    board.cmd("status")
+    d = board.get("pixr 0", "data", deadline=8) or ""
+    lum = [int(d[i:i + 2], 16) for i in range(0, len(d) - 5, 6)]
+    half = n_px // 2
+    c.check("attack / decay: the lit half rises and falls",
+            len(lum) == n_px and lum[0] < 0x20 and lum[half - 1] < 0x20 and
+            max(lum[:half]) >= 0x70 and max(lum[half + 1:]) == 0)
+    board.cmd("fx envelope 0 0 0")
     board.cmd("fx invert 0 1")
     board.cmd("status")
     d = board.get("pixr 0", "data", deadline=8) or ""

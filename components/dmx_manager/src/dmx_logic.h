@@ -729,10 +729,27 @@ inline constexpr uint8_t kSin8[256] = {
 
 // The waveform's level (0..255) at `phase` (one cycle per 65536). `width` is
 // the share of the cycle the wave takes, n/255 (0 = all of it): the wave runs
-// compressed, then holds its end level. For PWM it is the lit share (0 = half).
-inline uint8_t phaser_level(uint8_t wave, uint32_t phase, uint8_t width) {
+// compressed, then holds its end level. For PWM it is the lit share (0 = half),
+// and `attack` / `decay` are the shares of that lit part spent fading in and
+// out (n/255 each): a square at 0, a trapezoid, a triangle when they take it
+// all — past that they split it in their proportion.
+inline uint8_t phaser_level(uint8_t wave, uint32_t phase, uint8_t width, uint8_t attack = 0,
+                            uint8_t decay = 0) {
     uint32_t x = phase & 0xFFFF;
-    if (wave == config::kPhaserPwm) return x * 255 < (width ? width : 128u) * 65536 ? 255 : 0;
+    if (wave == config::kPhaserPwm) {
+        const uint32_t w = width ? width : 128u;
+        if (x * 255 >= w * 65536) return 0;
+        const uint32_t lit = w * 65536 / 255;
+        uint32_t up = lit * attack / 255, down = lit * decay / 255;
+        if (up + down > lit) {
+            up   = lit * attack / (static_cast<uint32_t>(attack) + decay);
+            down = lit - up;
+        }
+        if (up && x < up) return static_cast<uint8_t>(x * 255 / up);
+        if (down && x + down >= lit)
+            return static_cast<uint8_t>((lit > x ? lit - x : 0) * 255 / down);
+        return 255;
+    }
     if (width && width < 255) {
         x = x * 255 / width;
         if (x > 0xFFFF) x = 0xFFFF;
@@ -758,7 +775,7 @@ inline uint8_t phaser_dimmer(const config::Effect& e, uint32_t i, uint32_t n, ui
     const uint32_t time  = static_cast<uint32_t>(phase_ms * e.ph_rate * 4096 / 1250);
     const uint32_t along = n ? i * e.ph_spread * 4096u / n : 0;
     const uint32_t phase = (e.flags & config::kEffectPhaserReverse) ? time + along : time - along;
-    const uint32_t level = phaser_level(e.ph_wave, phase, e.ph_width);
+    const uint32_t level = phaser_level(e.ph_wave, phase, e.ph_width, e.ph_attack, e.ph_decay);
     return static_cast<uint8_t>(e.ph_low + (255u - e.ph_low) * level / 255);
 }
 
@@ -1582,6 +1599,8 @@ struct EffectOverride {
     int16_t ph_rate   = -1;
     int16_t ph_spread = -1;
     int16_t ph_width  = -1;
+    int16_t ph_attack = -1;
+    int16_t ph_decay  = -1;
     int16_t block     = -1;
     int16_t groups    = -1;
     int16_t wings     = -1;
@@ -1615,6 +1634,8 @@ inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
     take(e.ph_rate, o.ph_rate);
     take(e.ph_spread, o.ph_spread);
     take(e.ph_width, o.ph_width);
+    take(e.ph_attack, o.ph_attack);
+    take(e.ph_decay, o.ph_decay);
     take(e.block, o.block);
     take(e.groups, o.groups);
     take(e.wings, o.wings);
@@ -1625,6 +1646,12 @@ inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
             e.colors[k][j] = static_cast<uint8_t>(c[j] < 0 ? 0 : c[j]);
         if (k + 1 > config::effect_num_colors(e)) e.num_colors = static_cast<uint8_t>(k + 1);
     }
+}
+
+// An Attack / Decay channel: 0 is "the effect's own" (the caller's), 1 hard
+// edges, then up to the whole lit part at 255.
+inline int16_t envelope_from_dmx(uint8_t v) {
+    return v <= 1 ? 0 : v;
 }
 
 // Phaser wave a desk's wave channel selects, in bands of 8: -1 = the effect's
@@ -1721,6 +1748,12 @@ inline void apply_group_slot(ControlEval& out, int16_t (*gcol)[config::kSceneCol
     case config::CtlFn::PhWidth:
         if (v) o.ph_width = v;
         break;
+    case config::CtlFn::PhAttack:
+        if (v) o.ph_attack = envelope_from_dmx(v);
+        break;
+    case config::CtlFn::PhDecay:
+        if (v) o.ph_decay = envelope_from_dmx(v);
+        break;
     case config::CtlFn::Block:
         if (v) o.block = v;
         break;
@@ -1807,6 +1840,12 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
                 break;
             case config::CtlFn::PhWidth:
                 if (v) out.ovr[o].ph_width = v;
+                break;
+            case config::CtlFn::PhAttack:
+                if (v) out.ovr[o].ph_attack = envelope_from_dmx(v);
+                break;
+            case config::CtlFn::PhDecay:
+                if (v) out.ovr[o].ph_decay = envelope_from_dmx(v);
                 break;
             case config::CtlFn::Block:
                 if (v) out.ovr[o].block = v;
@@ -1921,6 +1960,12 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
             break;
         case config::FixFn::PhWidth:
             if (v) out.fx.ph_width = v;
+            break;
+        case config::FixFn::PhAttack:
+            if (v) out.fx.ph_attack = envelope_from_dmx(v);
+            break;
+        case config::FixFn::PhDecay:
+            if (v) out.fx.ph_decay = envelope_from_dmx(v);
             break;
         case config::FixFn::Block:
             if (v) out.fx.block = v;

@@ -288,9 +288,10 @@ bool is_gauge_kind(ValueKind k) {
 // TFT labels of the control functions, indexed by config::CtlFn.
 const char* ctl_fn_label(uint8_t fn) {
     static const char* const kLabels[] = {
-        "Spare",   "Master",  "Blackout", "Strobe",   "Scene", "Speed",     "Param",    "Red",
-        "Green",   "Blue",    "Generat",  "Fade",     "FSEQ",  "Direction", "Fix mode", "Effect",
-        "Ph wave", "Ph rate", "Ph sprd",  "Ph width", "Block", "Groups",    "Wings"
+        "Spare",    "Master", "Blackout", "Strobe",  "Scene",   "Speed",    "Param",
+        "Red",      "Green",  "Blue",     "Generat", "Fade",    "FSEQ",     "Direction",
+        "Fix mode", "Effect", "Ph wave",  "Ph rate", "Ph sprd", "Ph width", "Block",
+        "Groups",   "Wings",  "Ph attck", "Ph decay"
     };
     static_assert(sizeof(kLabels) / sizeof(kLabels[0]) == static_cast<size_t>(config::CtlFn::Count),
                   "one label per control function");

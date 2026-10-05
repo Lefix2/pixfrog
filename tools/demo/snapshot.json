@@ -335,6 +335,8 @@
     "name": "Warm white",
     "param": 0,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -359,6 +361,8 @@
     "name": "Chase",
     "param": 3,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -382,6 +386,8 @@
     "name": "Rainbow",
     "param": 1,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -407,6 +413,8 @@
     "name": "Blobs",
     "param": 4,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -433,6 +441,8 @@
     "name": "Fire",
     "param": 0,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -457,6 +467,8 @@
     "name": "Twinkle",
     "param": 60,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -480,6 +492,8 @@
     "name": "Scanner",
     "param": 0,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -504,6 +518,8 @@
     "name": "Strobe",
     "param": 0,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 0,
      "reverse": false,
@@ -527,6 +543,8 @@
     "name": "Breathe",
     "param": 0,
     "phaser": {
+     "attack": 0,
+     "decay": 0,
      "low": 0,
      "rate": 10,
      "reverse": false,

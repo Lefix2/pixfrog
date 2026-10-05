@@ -851,7 +851,7 @@ var FR={
   'Scene':'Scène',
   'Effect speed':'Vitesse de l’effet',
   'Effect parameter':'Paramètre de l’effet',
-  'Generator':'Générateur','Effect of the bank':'Effet de la banque','Phaser wave':'Onde du phaser','Phaser rate':'Cadence du phaser','Phaser spread':'Étalement du phaser','Phaser width':'Largeur du phaser',
+  'Generator':'Générateur','Effect of the bank':'Effet de la banque','Phaser wave':'Onde du phaser','Phaser rate':'Cadence du phaser','Phaser spread':'Étalement du phaser','Phaser width':'Largeur du phaser','Phaser attack':'Attaque du phaser','Phaser decay':'Chute du phaser','ATTACK':'ATTAQUE','DECAY':'CHUTE','hard edge':'front raide','Attack and decay soften the edges of the lit part: the share of it spent fading in, and out.':'L’attaque et la chute adoucissent les fronts de la partie allumée : la part de celle-ci passée à monter, puis à descendre.',
   'Colour red':'Couleur rouge',
   'Colour green':'Couleur verte',
   'Colour blue':'Couleur bleue',
@@ -1132,7 +1132,9 @@ var PH_WAVES=[['none','No phaser'],['sin','Sine'],['cos','Cosine'],['ramp_up','R
 var PH_KEYS={phrate:['rate',function(e){ return e.ph.rate?(e.ph.rate/20).toFixed(2)+' Hz · '+(e.ph.rate*3)+' BPM':t('still'); }],
   phspread:['spread',function(e){ return e.ph.spread?(+(e.ph.spread/16).toFixed(2))+' '+t(e.ph.spread===16?'cycle':'cycles'):t('in phase'); }],
   phwidth:['width',function(e){ return e.ph.width?Math.round(e.ph.width*100/255)+' %':t('auto'); }],
-  phlow:['low',function(e){ return Math.round(e.ph.low*100/255)+' %'; }]};
+  phlow:['low',function(e){ return Math.round(e.ph.low*100/255)+' %'; }],
+  phattack:['attack',function(e){ return e.ph.attack?Math.round(e.ph.attack*100/255)+' %':t('hard edge'); }],
+  phdecay:['decay',function(e){ return e.ph.decay?Math.round(e.ph.decay*100/255)+' %':t('hard edge'); }]};
 // Block / Groups / Wings, on the pixels of the run the effect is drawn on.
 function mxText(v,unit){ return v>1?v+' '+t(unit):t('off'); }
 var MX_KEYS={mxblock:['block','px'],mxgroups:['groups','px'],mxwings:['wings','parts']};
@@ -1157,7 +1159,9 @@ function phaserHTML(e){
       +slider('phrate',e,'RATE',255,e.ph.rate,phText(e,'phrate'))
       +slider('phspread',e,'SPREAD',Math.max(64,e.ph.spread),e.ph.spread,phText(e,'phspread'))
       +slider('phwidth',e,e.ph.wave==='pwm'?'LIT SHARE':'WAVE WIDTH',255,e.ph.width,phText(e,'phwidth'))
-      +slider('phlow',e,'FLOOR',255,e.ph.low,phText(e,'phlow'))+'</div>'
+      +slider('phlow',e,'FLOOR',255,e.ph.low,phText(e,'phlow'))
+      +(e.ph.wave==='pwm'?slider('phattack',e,'ATTACK',255,e.ph.attack,phText(e,'phattack'))+slider('phdecay',e,'DECAY',255,e.ph.decay,phText(e,'phdecay')):'')+'</div>'
+      +(e.ph.wave==='pwm'?'<div class="hint">'+esc(t('Attack and decay soften the edges of the lit part: the share of it spent fading in, and out.'))+'</div>':'')
       +toggleRow('data-fx-phrev="'+e.n+'"',e.ph.reverse,'Reverse','The wave travels towards the start of the run'):'')
     +toggleRow('data-fx-invert="'+e.n+'"',e.invert,'Dimmer invert','Lit becomes dark, dark takes color 1')
     +'</div>';
@@ -2264,7 +2268,7 @@ function buildGlobalBody(){
   return b;
 }
 function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:layToWire(c).pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:layToWire(c).gaps,fixtures:layToWire(c).fixtures,packing:c.pack||'continuous'}; }
-function phaserOf(p){ p=p||{}; return {wave:p.wave||'none',rate:p.rate||0,spread:p.spread||0,width:p.width||0,low:p.low||0,reverse:!!p.reverse}; }
+function phaserOf(p){ p=p||{}; return {wave:p.wave||'none',rate:p.rate||0,spread:p.spread||0,width:p.width||0,low:p.low||0,attack:p.attack||0,decay:p.decay||0,reverse:!!p.reverse}; }
 function matricksOf(m){ m=m||{}; return {block:m.block||0,groups:m.groups||0,wings:m.wings||0}; }
 function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param,phaser:e.ph,invert:e.invert,matricks:e.mx}; }
 function sceneBody(s){ return {name:s.name,group:s.group!=null?s.group:-1,parts:s.parts.map(function(p){ return {mask:p.mask,effect:p.effect,fixture_mode:p.mode||'each',reverse:!!p.rev}; })}; }
@@ -2274,8 +2278,8 @@ var FIX_HINTS={strip:'The effect runs over the whole strip, fixtures ignored.',e
 /* ─────────── fixture DMX profiles ─────────── */
 // PROFILES[i] = {name, slots:[{fn, index, fine}]}. Mirrors config::FixFn (ids as the API names them).
 var PROFILES=[], curProfile=0, MAX_PROFILES=8, MAX_PF_SLOTS=24;
-var PF_FNS=['none','dimmer','red','green','blue','white','shutter','bank','speed','param','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings'];
-var PF_LABELS={none:'Spare',dimmer:'Dimmer',red:'Colour red',green:'Colour green',blue:'Colour blue',white:'White',shutter:'Shutter (strobe)',bank:'Effect of the bank',speed:'Effect speed',param:'Effect parameter',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings'};
+var PF_FNS=['none','dimmer','red','green','blue','white','shutter','bank','speed','param','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings','ph_attack','ph_decay'];
+var PF_LABELS={none:'Spare',dimmer:'Dimmer',red:'Colour red',green:'Colour green',blue:'Colour blue',white:'White',shutter:'Shutter (strobe)',bank:'Effect of the bank',speed:'Effect speed',param:'Effect parameter',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings',ph_attack:'Phaser attack',ph_decay:'Phaser decay'};
 // Mirrors config::profile_apply_preset.
 var PF_PRESETS={rgb:['RGB','red green blue'],dim_rgb:['Dim RGB','dimmer red green blue'],rgb_fx:['RGB FX','red green blue bank speed shutter'],
   full:['Full','dimmer+ shutter red green blue red:1 green:1 blue:1 bank speed param ph_wave ph_rate ph_spread ph_width']};
@@ -2396,9 +2400,9 @@ function gmDragEnd(){
 }
 /* ─────────── DMX control universe ─────────── */
 var CTL={enabled:false,universe:100,address:1,slots:[]}, CTL_STATE='off';
-var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq','direction','fixmode','bank','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings'];
+var CTL_FNS=['none','master','blackout','strobe','scene','speed','param','red','green','blue','effect','fade','fseq','direction','fixmode','bank','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings','ph_attack','ph_decay'];
 var CTL_GROUP_FNS=CTL_FNS.filter(function(f){ return ['none','strobe','fade','fseq'].indexOf(f)<0; });  // can target a group
-var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Effect speed',param:'Effect parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Generator',fade:'Fade time',fseq:'Show file',direction:'Direction',fixmode:'Fixture mode',bank:'Effect of the bank',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings'};
+var CTL_LABELS={none:'Spare',master:'Master',blackout:'Blackout',strobe:'Strobe',scene:'Scene',speed:'Effect speed',param:'Effect parameter',red:'Colour red',green:'Colour green',blue:'Colour blue',effect:'Generator',fade:'Fade time',fseq:'Show file',direction:'Direction',fixmode:'Fixture mode',bank:'Effect of the bank',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings',ph_attack:'Phaser attack',ph_decay:'Phaser decay'};
 function ctlWidth(sl){ return (sl.fn==='master'&&sl.fine)?2:1; }
 function ctlFootprint(){ return CTL.slots.reduce(function(n,sl){ return n+ctlWidth(sl); },0); }
 function ctlPreset(which){

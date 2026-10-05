@@ -482,7 +482,8 @@ static void test_effect_from_scene_v3_and_sanitize() {
     EXPECT_EQ(bad.num_colors, kSceneColorsMax);
     EXPECT_EQ(bad.ph_wave, kPhaserNone);
     EXPECT_EQ(bad.flags, kEffectFlagsMask);
-    EXPECT_EQ(bad.reserved[0] + bad.reserved[6], 0);
+    EXPECT_EQ(bad.reserved[0] + bad.reserved[4], 0);
+    EXPECT_EQ(bad.ph_attack + bad.ph_decay, 510);  // any share is valid: the wave splits them
     EXPECT_EQ(bad.block, 255);  // any count is valid: the renderer clamps to the run
 
     Effect zero{};

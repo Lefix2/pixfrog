@@ -72,6 +72,8 @@ static cJSON* build_effects_json() {
         cJSON_AddNumberToObject(jp, "spread", e.ph_spread);
         cJSON_AddNumberToObject(jp, "width", e.ph_width);
         cJSON_AddNumberToObject(jp, "low", e.ph_low);
+        cJSON_AddNumberToObject(jp, "attack", e.ph_attack);
+        cJSON_AddNumberToObject(jp, "decay", e.ph_decay);
         cJSON_AddBoolToObject(jp, "reverse", (e.flags & config::kEffectPhaserReverse) != 0);
         cJSON_AddBoolToObject(je, "invert", (e.flags & config::kEffectDimmerInvert) != 0);
         cJSON* jm = cJSON_AddObjectToObject(je, "matricks");
@@ -580,6 +582,8 @@ void apply_effect_json(const cJSON* je, config::Effect& e) {
     apply_u8_json(jp, "spread", 255, &e.ph_spread);
     apply_u8_json(jp, "width", 255, &e.ph_width);
     apply_u8_json(jp, "low", 255, &e.ph_low);
+    apply_u8_json(jp, "attack", 255, &e.ph_attack);
+    apply_u8_json(jp, "decay", 255, &e.ph_decay);
     flag(jp, "reverse", config::kEffectPhaserReverse);
 }
 

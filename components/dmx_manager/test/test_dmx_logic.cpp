@@ -1,6 +1,7 @@
 // Host-side unit tests for dmx_manager::logic.
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -1291,6 +1292,37 @@ static void test_phaser_waveforms() {
     EXPECT_EQ(phaser_level(kPhaserPwm, 2 * q + 512, 0), 0);
     EXPECT_EQ(phaser_level(kPhaserPwm, q - 512, 64), 255);  // width = the lit share
     EXPECT_EQ(phaser_level(kPhaserPwm, q + 512, 64), 0);
+    // Attack and decay: shares of the lit part (here the first half-cycle,
+    // 0..2q) spent fading in and out — a trapezoid.
+    const uint8_t a = 64, d = 128;                       // a quarter of it in, half of it out
+    EXPECT_EQ(phaser_level(kPhaserPwm, 0, 0, a, d), 0);  // it starts from dark
+    EXPECT_TRUE(std::abs(phaser_level(kPhaserPwm, q / 4, 0, a, d) - 127) <= 2);  // half-way up
+    EXPECT_EQ(phaser_level(kPhaserPwm, q / 2 + 64, 0, a, d), 255);               // the plateau
+    EXPECT_EQ(phaser_level(kPhaserPwm, q - 64, 0, a, d), 255);
+    EXPECT_TRUE(std::abs(phaser_level(kPhaserPwm, q + q / 2, 0, a, d) - 127) <=
+                2);  // half-way down
+    EXPECT_TRUE(phaser_level(kPhaserPwm, 2 * q - 64, 0, a, d) <= 2);
+    EXPECT_EQ(phaser_level(kPhaserPwm, 2 * q + 512, 0, a, d), 0);  // the dark part is untouched
+    // Attack alone: a ramp up over the lit part, then the drop.
+    EXPECT_TRUE(std::abs(phaser_level(kPhaserPwm, q, 0, 255, 0) - 127) <= 2);
+    EXPECT_TRUE(phaser_level(kPhaserPwm, 2 * q - 300, 0, 255, 0) >= 250);
+    // Both at the top: they split the lit part — a triangle, its peak in the middle.
+    EXPECT_TRUE(phaser_level(kPhaserPwm, q, 0, 255, 255) >= 250);
+    EXPECT_TRUE(std::abs(phaser_level(kPhaserPwm, q / 2, 0, 255, 255) - 127) <= 2);
+    EXPECT_TRUE(std::abs(phaser_level(kPhaserPwm, q + q / 2, 0, 255, 255) - 127) <= 2);
+    // Never out of range, whatever the three shares.
+    for (int w = 0; w < 256; w += 17)
+        for (int at = 0; at < 256; at += 51)
+            for (int de = 0; de < 256; de += 51)
+                for (uint32_t ph = 0; ph < 65536; ph += 257)
+                    EXPECT_TRUE(phaser_level(kPhaserPwm, ph, static_cast<uint8_t>(w),
+                                             static_cast<uint8_t>(at),
+                                             static_cast<uint8_t>(de)) <= 255);
+    // The other waves ignore them.
+    EXPECT_EQ(phaser_level(kPhaserSin, q, 0, 200, 200), phaser_level(kPhaserSin, q, 0));
+    EXPECT_EQ(envelope_from_dmx(0), 0);
+    EXPECT_EQ(envelope_from_dmx(1), 0);  // "none" from the desk
+    EXPECT_EQ(envelope_from_dmx(200), 200);
     EXPECT_EQ(phaser_level(kPhaserNone, q, 0), 255);  // no wave: full
     EXPECT_EQ(phaser_level(99, q, 0), 255);
     // The cycle wraps: only the low 16 bits of the phase count.
@@ -1729,6 +1761,18 @@ static void test_control_decode_fixture() {
     EXPECT_EQ(f.fx.block, 3);
     EXPECT_EQ(f.fx.groups, 4);
     EXPECT_EQ(f.fx.wings, 2);
+    // A PWM's attack and decay: 0 the effect's own, 1 none, then the share.
+    Profile env{};
+    env.slots[env.count++] = profile_slot(FixFn::PhAttack);
+    env.slots[env.count++] = profile_slot(FixFn::PhDecay);
+    const uint8_t soft[2]  = { 90, 1 };
+    FixtureFrame fe;
+    decode_fixture(env, soft, fe);
+    EXPECT_EQ(fe.fx.ph_attack, 90);
+    EXPECT_EQ(fe.fx.ph_decay, 0);
+    const uint8_t own[2] = { 0, 0 };
+    decode_fixture(env, own, fe);
+    EXPECT_EQ(fe.fx.ph_attack + fe.fx.ph_decay, -2);
     EXPECT_EQ(f.color[2][0], 200);
     EXPECT_EQ(f.color[2][1], -1);  // not in the profile
     EXPECT_EQ(f.color[1][0], -1);
@@ -2419,6 +2463,32 @@ static void test_control_effect_functions() {
     EXPECT_EQ(o.bank, -1);
     EXPECT_EQ(o.ph_wave, -1);
     EXPECT_EQ(o.ph_rate + o.ph_spread + o.ph_width + o.block + o.groups + o.wings, -6);
+    // A PWM's attack and decay, on outputs and on a group.
+    config::ControlConfig env{};
+    env.enabled        = 1;
+    env.address        = 1;
+    env.count          = 4;
+    env.slots[0]       = config::control_slot(CtlFn::PhAttack, 0x01);
+    env.slots[1]       = config::control_slot(CtlFn::PhDecay, 0x01);
+    env.slots[2]       = config::control_slot(CtlFn::PhAttack, 2, 0, config::kCtlFlagGroup);
+    env.slots[3]       = config::control_slot(CtlFn::PhDecay, 2, 0, config::kCtlFlagGroup);
+    const uint8_t x[4] = { 80, 1, 0, 200 };
+    ControlEval ee;
+    evaluate_control(env, x, sizeof(x), ee);
+    EXPECT_EQ(ee.ovr[0].ph_attack, 80);
+    EXPECT_EQ(ee.ovr[0].ph_decay, 0);  // 1: none
+    EXPECT_EQ(ee.ovr[1].ph_attack, -1);
+    EXPECT_EQ(ee.govr[2].ph_attack, -1);  // 0: the effect's own
+    EXPECT_EQ(ee.govr[2].ph_decay, 200);
+    config::Effect soft{};
+    soft.ph_attack = 9;
+    apply_effect_override(soft, ee.ovr[0]);
+    EXPECT_EQ(soft.ph_attack, 80);
+    const uint8_t y[4] = { 0, 0, 90, 0 };  // the other way round
+    evaluate_control(env, y, sizeof(y), ee);
+    EXPECT_EQ(ee.ovr[0].ph_attack + ee.ovr[0].ph_decay, -2);
+    EXPECT_EQ(ee.govr[2].ph_attack, 90);
+    EXPECT_EQ(ee.govr[2].ph_decay, -1);
     u[5] = 1;  // 1 switches a count off, which is not "the effect's own"
     evaluate_control(c, u, sizeof(u), ev);
     EXPECT_EQ(o.block, 1);
