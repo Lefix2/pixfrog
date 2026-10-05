@@ -1226,6 +1226,13 @@ bool decode_pixels_for_channel(size_t ch) {
     return true;
 }
 
+size_t render_effect_preview(const config::Effect& effect, uint16_t pixels, uint64_t t_ms,
+                             uint8_t* rgb, size_t cap) {
+    if (!rgb || pixels == 0 || static_cast<size_t>(pixels) * 3 > cap) return 0;
+    logic::fill_effect_run(rgb, cap, pixels, 3, effect, t_ms);
+    return pixels;
+}
+
 bool is_channel_capacity_ok(size_t ch) {
     if (ch >= config::kNumChannels) return false;
     return g_channel_capacity_ok[ch];

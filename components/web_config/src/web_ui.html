@@ -998,7 +998,7 @@ var FR={
   'Fixture profile (OFL)':'Profil de fixture (OFL)','Save first: the file is made from the saved profile':'Enregistrez d’abord : le fichier est fait à partir du profil enregistré',
   'DMX control: no pixel data, each fixture on its profile':'Contrôle DMX : pas de données pixel, chaque fixture sur son profil','DMX profile':'Profil DMX',
   '{n} fixtures':'{n} fixtures','No fixture listed: the whole strip is one fixture, on profile 1':'Aucune fixture listée : tout le ruban est une fixture, sur le profil 1',
-  'PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
+  'PREVIEW':'APERÇU','LEDs in the preview':'LEDs de l’aperçu','Drawn by the box, as on a strip of that many LEDs — unsaved changes included.':'Dessiné par le boîtier, comme sur un ruban de ce nombre de LEDs — modifications non enregistrées comprises.','PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
   'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
   'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
   'Scene added':'Scène ajoutée','Scene deleted':'Scène supprimée','Scene moved':'Scène déplacée','Scene duplicated':'Scène dupliquée',
@@ -1220,6 +1220,50 @@ function cardFooter(dup,del){
 }
 // Scenes whose parts play effect index i (0-based), as "1, 4".
 function fxUsers(i){ var a=[]; SCENES.forEach(function(sc,k){ if(sc.parts.some(function(p){ return p.effect===i; })) a.push(k+1); }); return a; }
+/* Effect preview: the box draws the look itself (POST /api/effect/preview —
+   the renderer of the outputs), a second of frames per request; the page
+   plays them and asks for the next second before they run out. The request
+   carries the effect as edited, so the strip follows the sliders unsaved. */
+var FXP={px:60,fps:30,q:[],f:0,next:0,busy:false,key:'',err:0,timer:null,last:null};
+var FXP_SIZES=[30,60,144];
+function fxPreviewHTML(){
+  var opts=FXP_SIZES.map(function(n){ return '<option value="'+n+'"'+(n===FXP.px?' selected':'')+'>'+n+' LED</option>'; }).join('');
+  return '<div><div style="display:flex;align-items:center;gap:8px"><div class="eyebrow-sm" style="flex:1;margin:0">'+t('PREVIEW')+'</div>'
+    +'<select data-fx-pvsize title="'+esc(t('LEDs in the preview'))+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg-2);border-radius:0;padding:3px 6px;font:500 11px \'DM Mono\'">'+opts+'</select></div>'
+    +'<canvas data-fx-preview width="'+FXP.px+'" height="1" style="display:block;width:100%;height:30px;margin-top:6px;background:#050605;border:1px solid var(--line);image-rendering:pixelated"></canvas>'
+    +'<div class="hint" style="margin-top:5px">'+esc(t('Drawn by the box, as on a strip of that many LEDs — unsaved changes included.'))+'</div></div>';
+}
+// What the preview shows: the look, not its name.
+function fxpKey(){ var e=EFFECTS[curEffect]; if(!e) return ''; var b=effectBody(e); delete b.name; return FXP.px+JSON.stringify(b); }
+function fxpDraw(rgb){
+  var cv=document.querySelector('canvas[data-fx-preview]'); if(!cv||!rgb) return;
+  var n=rgb.length/3; if(cv.width!==n) cv.width=n;
+  var cx=cv.getContext('2d'), img=cx.createImageData(n,1);
+  for(var p=0;p<n;p++){ img.data[p*4]=rgb[p*3]; img.data[p*4+1]=rgb[p*3+1]; img.data[p*4+2]=rgb[p*3+2]; img.data[p*4+3]=255; }
+  cx.putImageData(img,0,0);
+}
+function fxpFetch(){
+  var e=EFFECTS[curEffect]; if(!e||FXP.busy) return;
+  var key=FXP.key, px=FXP.px, t0=FXP.next, body=effectBody(e);
+  FXP.busy=true;
+  fetch('/api/effect/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({effect:body,pixels:px,frames:FXP.fps,fps:FXP.fps,t:t0})})
+    .then(function(r){ if(!r.ok) throw new Error('http'); return r.arrayBuffer(); })
+    .then(function(buf){ FXP.busy=false; FXP.err=0; if(key!==FXP.key) return;  // edited meanwhile: asked again on the next tick
+      var all=new Uint8Array(buf), fb=px*3; for(var i=0;i+fb<=all.length;i+=fb) FXP.q.push(all.subarray(i,i+fb)); FXP.next=t0+1000; })
+    .catch(function(){ FXP.busy=false; FXP.err=Date.now(); });
+}
+function fxpTick(){
+  if(curScreen!=='effects'||document.hidden||!EFFECTS[curEffect]) return;
+  var key=fxpKey();
+  if(key!==FXP.key){ FXP.key=key; FXP.q=[]; }  // another look: drop what was queued
+  if(FXP.q.length) FXP.last=FXP.q.shift();
+  fxpDraw(FXP.last);  // a rebuilt card gets the last frame back at once
+  if(FXP.q.length<FXP.fps/2 && !FXP.busy && Date.now()-FXP.err>2000) fxpFetch();
+}
+function fxpRun(on){
+  if(FXP.timer){ clearInterval(FXP.timer); FXP.timer=null; }
+  if(on){ FXP.q=[]; FXP.key=''; FXP.timer=setInterval(fxpTick,Math.round(1000/FXP.fps)); }
+}
 function effectCardHTML(e){
   var fx=fxOf(e);
   var opts=FX.map(function(f,i){ return '<option value="'+i+'"'+(i===e.gen?' selected':'')+'>'+esc(t(f.n))+'</option>'; }).join('');
@@ -1238,6 +1282,7 @@ function effectCardHTML(e){
     +'<span data-role="bigsw" style="width:38px;height:38px;border-radius:0;background:'+fxSwatch(e)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
     +'<div style="flex:1;min-width:0"><div class="eyebrow">'+t('EFFECT')+' '+e.n+'</div>'
     +'<input data-fx-name="'+e.n+'" value="'+esc(e.name)+'" placeholder="'+esc(t('Unnamed effect — click to name'))+'" maxlength="15" style="'+NAME_STYLE+'"/></div></div>'
+    +fxPreviewHTML()
     +'<div><div class="eyebrow-sm">'+t('GENERATOR')+'</div><select data-fx-gen="'+e.n+'" style="'+SEL_STYLE+'">'+opts+'</select></div>'
     +colsHtml
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'+sliders+'</div>'
@@ -1543,6 +1588,7 @@ function go(name){
   if(name==='fseq'){ loadFseq(); loadPlaylist(); }
   if(diagTimer){ clearInterval(diagTimer); diagTimer=null; }
   if(name==='diag'){ pollDiag(); diagTimer=setInterval(pollDiag,1500); }
+  fxpRun(name==='effects');
 }
 function navStyle(el,active){
   if(el.tagName!=='DIV'||!el.hasAttribute('data-nav')) return;
@@ -2707,6 +2753,7 @@ function onInput(e){
   if(t.hasAttribute&&t.hasAttribute('data-sc-group')){ var gs=+t.getAttribute('data-sc-group'); SCENES[gs-1].group=parseInt(t.value,10); markDirty('scene'+(gs-1)); renderScene(gs); return; }
   if(t.hasAttribute&&t.hasAttribute('data-pt-rev')){ SCENES[curScene].parts[+t.getAttribute('data-pt-rev')].rev=t.checked; markDirty('scene'+curScene); return; }
   if(t.hasAttribute&&t.hasAttribute('data-pt-mode')){ SCENES[curScene].parts[+t.getAttribute('data-pt-mode')].mode=t.value; markDirty('scene'+curScene); renderScene(curScene+1); return; }
+  if(t.hasAttribute&&t.hasAttribute('data-fx-pvsize')){ FXP.px=parseInt(t.value,10)||60; return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-name')){ var en=+t.getAttribute('data-fx-name'); EFFECTS[en-1].name=t.value; markDirty('fx'+(en-1)); renderEffectList(); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-speed')){ var sn=+t.getAttribute('data-fx-speed'); EFFECTS[sn-1].speed=parseInt(t.value,10)||0; var sv=document.querySelector('[data-fx-speedval="'+sn+'"]'); if(sv) sv.textContent=speedText(EFFECTS[sn-1]); markDirty('fx'+(sn-1)); return; }
   if(t.hasAttribute&&t.hasAttribute('data-fx-param')){ var pn=+t.getAttribute('data-fx-param'); EFFECTS[pn-1].param=parseInt(t.value,10)||0; var pv=document.querySelector('[data-fx-paramval="'+pn+'"]'); if(pv) pv.textContent=paramText(EFFECTS[pn-1]); markDirty('fx'+(pn-1)); return; }

@@ -827,12 +827,61 @@ static char g_scene_body[640];
 //                               effects shift down by one, the scenes follow
 // POST /api/effects/add         append (optional effect JSON body) → {"index":n}
 // POST /api/effects/move        {"from":a,"to":b}
+// POST /api/effect/preview      {"effect":{…}, "index":n, "pixels":p, "frames":f,
+//                               "fps":r, "t":ms} → f × p × 3 bytes of RGB
+
+// The effect editor's preview: `frames` frames of an effect on `pixels` RGB
+// pixels, `fps` apart from time `t`, drawn by the renderer the outputs use.
+// The look is the bank's effect `index` (else a plain white one) with the
+// fields of "effect" over it, so unsaved edits show. Changes nothing: no
+// password asked.
+constexpr uint16_t kPreviewMaxPixels = 144;
+constexpr uint16_t kPreviewMaxFrames = 60;
+
+static esp_err_t handle_effect_preview(httpd_req_t* req) {
+    if (!read_body(req, g_scene_body, sizeof(g_scene_body) - 1))
+        return send_err(req, 400, "body too large or empty");
+    cJSON* j = cJSON_Parse(g_scene_body);
+    if (!j) return send_err(req, 400, "invalid JSON");
+    config::Effect e{};
+    e.num_colors = 1;
+    std::memset(e.colors[0], 255, 3);
+    auto num = [&](const char* key, double lo, double hi, double fallback) {
+        const cJSON* n = cJSON_GetObjectItemCaseSensitive(j, key);
+        return cJSON_IsNumber(n) && n->valuedouble >= lo && n->valuedouble <= hi ? n->valuedouble
+                                                                                 : fallback;
+    };
+    const double index = num("index", 0, static_cast<double>(config::kMaxEffects) - 1, -1);
+    if (index >= 0) config::copy_effect(static_cast<size_t>(index), e);
+    const cJSON* je = cJSON_GetObjectItemCaseSensitive(j, "effect");
+    if (cJSON_IsObject(je)) apply_effect_json(je, e);
+    const auto pixels = static_cast<uint16_t>(num("pixels", 1, kPreviewMaxPixels, 60));
+    const auto frames = static_cast<uint16_t>(num("frames", 1, kPreviewMaxFrames, 30));
+    const auto fps    = static_cast<uint32_t>(num("fps", 1, 60, 30));
+    const auto t0     = static_cast<uint64_t>(num("t", 0, 1e15, 0));
+    cJSON_Delete(j);
+
+    const size_t frame_bytes = static_cast<size_t>(pixels) * 3;
+    const size_t bytes       = frame_bytes * frames;  // 26 kB at most: PSRAM, for the request
+    auto* buf                = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM));
+    if (!buf) buf = static_cast<uint8_t*>(malloc(bytes));
+    if (!buf) return send_err(req, 500, "out of memory");
+    for (uint32_t f = 0; f < frames; ++f)
+        dmx::render_effect_preview(e, pixels, t0 + f * 1000u / fps, buf + f * frame_bytes,
+                                   frame_bytes);
+    httpd_resp_set_type(req, "application/octet-stream");
+    const esp_err_t rc = httpd_resp_send(req, reinterpret_cast<const char*>(buf),
+                                         static_cast<ssize_t>(bytes));
+    heap_caps_free(buf);
+    return rc;
+}
 
 esp_err_t handle_post_effect(httpd_req_t* req) {
+    const char* tail = req->uri + strlen("/api/effect/");
+    if (std::strncmp(tail, "preview", 7) == 0) return handle_effect_preview(req);
     if (!require_auth(req)) return ESP_OK;
 
-    const char* tail = req->uri + strlen("/api/effect/");
-    const int idx    = atoi(tail);
+    const int idx = atoi(tail);
     if (idx < 0 || static_cast<size_t>(idx) >= config::num_effects())
         return send_err(req, 404, "no such effect");
 
