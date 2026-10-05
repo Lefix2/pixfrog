@@ -362,6 +362,47 @@ TEST(out_of_range_numbers_are_ignored_not_wrapped) {
     EXPECT_EQ(config::get_global().refresh_rate_hz, g.refresh_rate_hz);
 }
 
+// The effect editor's preview: frames of RGB drawn by the outputs' renderer,
+// the unsaved fields of "effect" over the bank's own, without a password.
+TEST(effect_preview_renders_frames_with_unsaved_edits) {
+    const auto def = post("/api/effect/preview", "{}");
+    EXPECT_EQ(def.status, 200);
+    EXPECT_EQ(def.body.size(), 30u * 60u * 3u);         // a second at 30 fps on 60 LEDs
+    EXPECT_EQ(static_cast<uint8_t>(def.body[0]), 255);  // no look given: plain white
+
+    // A solid with a colour of its own, on 8 LEDs, 2 frames.
+    const auto solid = post("/api/effect/preview",
+                            "{\"effect\":{\"generator\":0,\"colors\":[\"#102030\"],\"speed\":0},"
+                            "\"pixels\":8,\"frames\":2,\"fps\":10}");
+    EXPECT_EQ(solid.body.size(), 2u * 8u * 3u);
+    for (size_t px = 0; px < 16; ++px) {
+        EXPECT_EQ(static_cast<uint8_t>(solid.body[px * 3]), 0x10);
+        EXPECT_EQ(static_cast<uint8_t>(solid.body[px * 3 + 2]), 0x30);
+    }
+    // The bank's chase with an edited colour: it moves from a frame to the next.
+    const auto chase = post("/api/effect/preview",
+                            "{\"index\":1,\"effect\":{\"colors\":[\"#00ff00\"],\"speed\":100},"
+                            "\"pixels\":40,\"frames\":10,\"fps\":10,\"t\":5000}");
+    EXPECT_EQ(chase.body.size(), 10u * 40u * 3u);
+    EXPECT_TRUE(chase.body.find('\xff') != std::string::npos);  // the edited green is there
+    EXPECT_TRUE(chase.body.substr(0, 120) != chase.body.substr(120, 120));
+    EXPECT_STREQ(config::get_effect(1).name, "Chase");  // and the bank is untouched
+    EXPECT_EQ(config::get_effect(1).colors[0][0], 255);
+    // Out of range sizes fall back to the defaults; a broken body is refused.
+    EXPECT_EQ(post("/api/effect/preview", "{\"pixels\":5000,\"frames\":0}").body.size(),
+              30u * 60u * 3u);
+    EXPECT_EQ(post("/api/effect/preview", "{nope").status, 400);
+    EXPECT_EQ(post("/api/effect/preview", "").status, 400);
+    // Read-only: a password does not gate it.
+    config::set_web_password("pa55");
+    EXPECT_EQ(post("/api/effect/preview", "{\"pixels\":4,\"frames\":1}").body.size(), 12u);
+    EXPECT_EQ(post("/api/effect/0", "{\"speed\":3}").status, 401);
+    config::set_web_password("");
+    uint8_t rgb[9];
+    EXPECT_EQ(dmx::render_effect_preview(config::get_effect(0), 3, 0, rgb, sizeof(rgb)), 3u);
+    EXPECT_EQ(dmx::render_effect_preview(config::get_effect(0), 4, 0, rgb, sizeof(rgb)), 0u);
+}
+
 TEST(effect_endpoints_manage_the_bank) {
     const size_t n = config::num_effects();
     Json listed(get("/api/config").body);

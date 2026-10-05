@@ -145,6 +145,7 @@
       });
       return ok({ next_free: uni, universes: used, pool: 72 });
     }
+    if (p === '/api/effect/preview') return { __bytes: previewClip(body) };
     if ((m = p.match(/^\/api\/effect\/(\d+)(\/delete)?$/))) {
       var fi = +m[1];
       if (!S.config.effects[fi]) return bad(404, 'no such effect');
@@ -287,6 +288,26 @@
     var i = Math.floor(h * 6) % 6, f = h * 6 - Math.floor(h * 6), q = 1 - f;
     return [[1, f, 0], [q, 1, 0], [0, 1, f], [0, q, 1], [f, 0, 1], [1, 0, q]][i].map(function (x) { return x * 255; });
   }
+  // One pixel of an effect, roughly: the demo has no firmware to draw it.
+  function fxPixel(fx, k, n, now) {
+    var cols = (fx && fx.colors && fx.colors.length ? fx.colors : ['#000000']).map(hex);
+    if (!fx || fx.generator === FX_SOLID) return cols[0];
+    if (fx.generator === 2) return hsv(((k / n) + now / 4000) % 1);
+    return cols[Math.floor(k / 6 + now / 300) % cols.length];
+  }
+  // The effect editor's preview (POST /api/effect/preview): frames × pixels RGB.
+  function previewClip(body) {
+    body = body || {};
+    var fx = Object.assign({}, S.config.effects[body.index] || { generator: FX_SOLID, colors: ['#ffffff'] }, body.effect || {});
+    var n = Math.min(144, Math.max(1, body.pixels || 60)), frames = Math.min(60, Math.max(1, body.frames || 30));
+    var fps = body.fps || 30, t0 = body.t || 0, out = new Uint8Array(frames * n * 3), at = 0;
+    for (var f = 0; f < frames; ++f)
+      for (var k = 0; k < n; ++k) {
+        var rgb = fxPixel(fx, k, n, t0 + f * 1000 / fps);
+        out[at++] = rgb[0]; out[at++] = rgb[1]; out[at++] = rgb[2];
+      }
+    return out;
+  }
   // What output `o` shows now, as up to 64 RGB samples (the firmware's
   // /api/ws preview): identify blink, its scene, else a moving rainbow as if a
   // desk were sending.
@@ -307,10 +328,7 @@
     for (k = 0; k < n; ++k) {
       var rgb;
       if (sc) {
-        var cols = (fx && fx.colors && fx.colors.length ? fx.colors : ['#000000']).map(hex);
-        if (!fx || fx.generator === FX_SOLID) rgb = cols[0];
-        else if (fx.generator === 2) rgb = hsv(((k / n) + now / 4000) % 1);
-        else rgb = cols[Math.floor(k / 6 + now / 300) % cols.length];
+        rgb = fxPixel(fx, k, n, now);
       } else {
         rgb = hsv(((k / n) * 0.6 + o / 8 + now / 9000) % 1);
       }
@@ -338,6 +356,7 @@
     var status = r && r.__status ? r.__status : 200;
     var text = r && r.__text !== undefined ? r.__text : JSON.stringify(r);
     var type = r && r.__type ? r.__type : (r && r.__status ? 'text/plain' : 'application/json');
+    if (r && r.__bytes) return { status: 200, text: r.__bytes, type: 'application/octet-stream' };
     return { status: status, text: text, type: type };
   }
   var realFetch = window.fetch.bind(window);

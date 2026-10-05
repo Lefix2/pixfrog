@@ -52,6 +52,7 @@ const Route kRoutes[] = {
     { "POST", "/api/groups", false },
     { "POST", "/api/profiles", false },
     { "GET", "/api/profile/2/fixture", false },
+    { "POST", "/api/effect/preview", false },
 };
 constexpr size_t kRouteCount = sizeof(kRoutes) / sizeof(kRoutes[0]);
 

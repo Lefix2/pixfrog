@@ -209,6 +209,43 @@ def test_add_rename_duplicate_and_delete_an_effect(page, device):
     assert len(device.get("/api/config")["effects"]) == 9
 
 
+def test_effect_preview_plays_what_the_box_draws(page, device):
+    nav(page, "effects")
+    px = "(function(){var c=document.querySelector('canvas[data-fx-preview]');" \
+         "var d=c.getContext('2d').getImageData(0,0,c.width,1).data;return [c.width].concat(Array.from(d));})()"
+
+    def strip():
+        d = page.evaluate(px)
+        return d[0], [tuple(d[1 + i * 4:4 + i * 4]) for i in range(d[0])]
+
+    def wait_for(pred):
+        for _ in range(60):
+            n, leds = strip()
+            if pred(n, leds):
+                return n, leds
+            time.sleep(0.05)
+        raise AssertionError(f"preview never matched: {strip()}")
+
+    # Effect 1 is the factory warm white: every LED of the strip shows it.
+    n, leds = wait_for(lambda n, leds: leds[0] == (255, 180, 110))
+    assert n == 60 and set(leds) == {(255, 180, 110)}
+    # Edited, not saved: the preview follows, the box keeps its effect.
+    page.locator("[data-fx-gen]").select_option("2")  # rainbow
+    wait_for(lambda n, leds: len(set(leds)) > 10)
+    assert device.get("/api/config")["effects"][0]["generator"] == 0
+    page.locator('[data-fx-row="1"]').click()  # the factory chase: it moves
+    _, first = wait_for(lambda n, leds: (255, 255, 255) in leds and (0, 0, 0) in leds)
+    wait_for(lambda n, leds: leds != first and (255, 255, 255) in leds)
+    page.locator("[data-fx-pvsize]").select_option("144")
+    wait_for(lambda n, leds: n == 144)
+    nav(page, "scenes")  # leaving the screen stops the requests
+    time.sleep(0.3)
+    seen = []
+    page.on("request", lambda r: seen.append(r.url) if "/api/effect/preview" in r.url else None)
+    time.sleep(1.5)
+    assert not seen
+
+
 def test_drag_an_effect_and_the_scenes_follow(page, device):
     nav(page, "effects")
     first = device.get("/api/config")["effects"][0]["name"]

@@ -255,7 +255,8 @@ ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/sc
           "/api/loglevel", "/api/ota", "GET /api/config", "GET /api/status", "GET /api/backup",
           "GET /api/fseq/files", "GET /api/logs", "/api/show", "/api/control",
           "GET /api/control/fixture", "/api/effect", "/api/effects/add", "/api/effects/move",
-          "/api/groups", "/api/profiles", "GET /api/profile/2/fixture"]
+          "/api/groups", "/api/profiles", "GET /api/profile/2/fixture",
+          "/api/effect/preview"]
 R = {r: i for i, r in enumerate(ROUTES)}
 WEB = [
     (R["/api/global"], 0, '{"refresh_hz":45,"short_name":"rig-a"}'),
@@ -308,6 +309,9 @@ WEB = [
     (R["/api/scene"], 1, '{"group":0}'),
     (R["/api/control"], 0, '{"slots":[{"fn":"bank","group":0},{"fn":"direction","group":1},'
                            '{"fn":"fixmode","mask":3}]}'),
+    (R["/api/effect/preview"], 0, '{"index":1,"effect":{"generator":8,"colors":["#ff0000","#0000ff"],'
+                                  '"speed":40,"phaser":{"wave":"sin","rate":20,"spread":16},'
+                                  '"matricks":{"wings":2}},"pixels":48,"frames":12,"fps":24,"t":90000}'),
 ]
 
 

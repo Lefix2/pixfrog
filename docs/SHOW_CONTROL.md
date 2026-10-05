@@ -44,7 +44,12 @@ its first part's effect along the group, in that part's fixture mode, from the
 far end if the part says so. Give the scene a default group ("Plays on") and
 ▶, the boot scene and the menu start it there.
 
-![The effect editor in the web UI: generator, colours, dimmer phaser, Block / Groups / Wings](img/web-effects.png)
+![The effect editor in the web UI: preview, generator, colours, dimmer phaser, Block / Groups / Wings](img/web-effects.png)
+
+The editor's **preview** strip is drawn by the box itself, with the renderer
+of the outputs, on 30, 60 or 144 LEDs: what it shows is what a strip of that
+length plays, unsaved changes included (`POST /api/effect/preview`). It needs
+no output and no scene, so a look can be built without touching the rig.
 
 The eleven generators, each over six seconds on a 144-pixel line (time going
 right, pixel 0 at the top), rendered by the firmware's own `fill_effect_run`

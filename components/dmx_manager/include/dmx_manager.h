@@ -365,6 +365,13 @@ const uint8_t* pixel_front_buffer(size_t ch);
 // task; a frame swapped mid-read only tears the preview. 0 for an Off channel.
 size_t output_preview(size_t ch, uint8_t* rgb, size_t max_samples);
 
+// One frame of `effect` on a bare run of `pixels` RGB pixels at `t_ms`, into
+// `rgb` (3 bytes a pixel) — the very renderer the outputs use, for the web
+// UI's effect preview. Touches no state: any task. Returns the pixels drawn, 0
+// when they do not fit `cap` bytes.
+size_t render_effect_preview(const config::Effect& effect, uint16_t pixels, uint64_t t_ms,
+                             uint8_t* rgb, size_t cap);
+
 // Copy DMX bytes for channel `ch` from the front universe bank into
 // `pixel_back_buffer(ch)`. Spans multiple universes if a channel's pixel
 // data straddles a universe boundary. Applies `dmx_start` as the per-channel
