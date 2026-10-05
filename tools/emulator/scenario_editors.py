@@ -113,7 +113,7 @@ def main():
 
         # FSEQ browser on a fake SD card: play a file, see it starred, stop.
         emu.cmd("set sd 3")
-        st = goto(emu, [0, MAIN_PLAYBACK, 1])
+        st = goto(emu, [0, MAIN_PLAYBACK, 2])  # Scenes, Edit scenes, FSEQ
         expect(st["screen"] == "FSeqMenu", "FSEQ node opens")
         emu.cmd("click")  # show1.fseq
         emu.shot(os.devnull)

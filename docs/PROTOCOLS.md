@@ -304,6 +304,12 @@ fixtures, the dead LEDs and any overlap.
   list of sizes — fixture, dead LEDs, LEDs without fixture — positions follow
   from the order (drag to reorder), the pixel count from the list; a "N × L +
   K dead" fill. API/backup: `"fixtures": [[first_led, count], ...]`.
+  On the device: channel menu → **Fixtures** — one row a fixture, `[Add]`
+  (after the last one, as long as it; the first takes the strip as it is, and
+  the strip grows under a fixture that passes its end), **Split in** *N* equal
+  fixtures, and per fixture its first LED, length (both stop at its
+  neighbours), mounting direction and, in DMX control mode, its DMX profile.
+  The channel menu's **Layout** row picks the DMX layout (§5.6).
 
 ### 5.5b Fixture groups
 

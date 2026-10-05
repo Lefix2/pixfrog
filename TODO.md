@@ -55,6 +55,10 @@ on the one before.
       first part only; let each part target a group (across outputs, in the
       group's order) next to the parts on outputs, so one scene holds several
       effects on several groups.
+- [ ] **Effects on the device menu** — fixtures and scenes are edited on the
+      TFT / OLED; the effect bank (generator, colours, speed, phaser, Block /
+      Groups / Wings) is still web / console only. A scene's part picks its
+      effect by name, so a look cannot be tuned from the box.
 - [ ] **Smooth live speed changes** — the phase is `time × speed`, so riding a
       speed fader makes the pattern jump; accumulate the phase per fixture.
 

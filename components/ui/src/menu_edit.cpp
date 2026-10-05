@@ -587,6 +587,71 @@ void commit_edit() {
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
+    case Field::ChPacking: {
+        auto c    = config::get_channel(s.edit.channel);
+        c.packing = static_cast<uint8_t>(v);
+        config::set_channel(s.edit.channel, c);
+        dmx::mark_channel_dirty(s.edit.channel);
+        break;
+    }
+    // One fixture of the open channel. The editors' ranges keep it clear of
+    // its neighbours, so the list keeps its order and g_fix_index its fixture.
+    case Field::FixFirst:
+    case Field::FixLen:
+    case Field::FixReversed:
+    case Field::FixProfile: {
+        auto c = config::get_channel(s.edit.channel);
+        if (g_fix_index >= config::fixture_count(c.fixtures, config::kMaxFixtures)) break;
+        const config::Fixture f = c.fixtures[g_fix_index];
+        uint16_t pos = f.pos, len = config::fixture_len(f);
+        bool rev        = config::fixture_reversed(f);
+        uint8_t profile = config::fixture_profile(f);
+        switch (s.edit.field) {
+        case Field::FixFirst: pos = static_cast<uint16_t>(v - 1); break;
+        case Field::FixLen: len = static_cast<uint16_t>(v); break;
+        case Field::FixReversed: rev = v != 0; break;
+        default: profile = static_cast<uint8_t>(v); break;
+        }
+        c.fixtures[g_fix_index] = config::make_fixture(pos, len, rev, profile);
+        config::set_channel(s.edit.channel, c);
+        dmx::mark_channel_dirty(s.edit.channel);
+        break;
+    }
+    case Field::FixSplit: {
+        // N equal fixtures over the strip; the LEDs left over stay without one.
+        auto c             = config::get_channel(s.edit.channel);
+        const uint16_t end = strip_end(c);
+        const auto each    = static_cast<uint16_t>(end / v);
+        if (each == 0) break;
+        std::memset(c.fixtures, 0, sizeof(c.fixtures));
+        for (int32_t i = 0; i < v; ++i)
+            c.fixtures[i] = config::make_fixture(static_cast<uint16_t>(i * each), each);
+        config::set_channel(s.edit.channel, c);
+        dmx::mark_channel_dirty(s.edit.channel);
+        break;
+    }
+    case Field::SceneGroup:
+    case Field::PartEffect:
+    case Field::PartMode:
+    case Field::PartReverse: {
+        if (g_scene_index >= config::num_scenes()) break;
+        auto sc = config::get_scene(g_scene_index);
+        if (s.edit.field == Field::SceneGroup) {
+            sc.group = static_cast<uint8_t>(v);
+        } else if (g_part_index < sc.num_parts) {
+            auto& p            = sc.parts[g_part_index];
+            const uint8_t mode = config::scene_mode_of(p.fixture_mode);
+            const bool rev     = config::scene_reverse_of(p.fixture_mode);
+            if (s.edit.field == Field::PartEffect)
+                p.effect = static_cast<uint8_t>(v);
+            else if (s.edit.field == Field::PartMode)
+                p.fixture_mode = config::pack_scene_mode(static_cast<uint8_t>(v), rev, -1);
+            else
+                p.fixture_mode = config::pack_scene_mode(mode, v != 0, -1);
+        }
+        config::set_scene(g_scene_index, sc);
+        break;
+    }
 
     default: break;
     }
@@ -773,6 +838,15 @@ void commit_edit_string() {
         --end;
     s.str_edit.buf[end] = '\0';
 
+    if (s.str_edit.field == StringField::SceneName) {
+        if (g_scene_index >= config::num_scenes()) return;
+        auto sc        = config::get_scene(g_scene_index);
+        const size_t n = std::min(std::strlen(s.str_edit.buf), sizeof(sc.name) - 1);
+        std::memset(sc.name, 0, sizeof(sc.name));
+        std::memcpy(sc.name, s.str_edit.buf, n);
+        config::set_scene(g_scene_index, sc);
+        return;
+    }
     auto g = config::get_global();
     if (s.str_edit.field == StringField::ArtnetShort) {
         const size_t n = std::min(std::strlen(s.str_edit.buf), sizeof(g.short_name) - 1);

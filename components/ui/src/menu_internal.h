@@ -211,6 +211,12 @@ enum class NodeId : uint8_t {
     Gaps,
     Control,      // DMX control universe
     ControlSlot,  // one slot of it
+    Fixtures,     // the open channel's fixtures
+    Fixture,      // one of them
+    SceneList,    // scenes to edit (Scenes above plays them)
+    SceneEdit,    // one scene: name, group, parts
+    ScenePart,    // one part: outputs, effect, fixture mode, direction
+    PartOutputs,  // its outputs, one toggle each
     Count,
 };
 
@@ -222,6 +228,23 @@ void open_channel(uint8_t idx);
 extern uint8_t g_ctl_slot;
 extern char g_ctl_slot_title[12];
 void save_control(const config::ControlConfig& c);
+
+// What the fixture and scene editors have open, and their dynamic titles.
+extern uint8_t g_fix_index;
+extern uint8_t g_scene_index;
+extern uint8_t g_part_index;
+extern char g_fix_title[12];
+extern char g_scene_title[12];
+extern char g_part_title[12];
+// First LED past the strip of `cc`, dead LEDs included (physical, 0-based).
+uint16_t strip_end(const config::ChannelConfig& cc);
+// Short names of the DMX layouts and the fixture modes (value column).
+const char* packing_label(uint8_t packing);
+const char* fix_mode_label(uint8_t mode);
+// The effect's name ("Effect 3" when it has none, "?" past the bank), and the
+// group picker's ("Outputs" for 0, else group v-1's name).
+void effect_label(size_t index, char* out, size_t cap);
+void group_label(int32_t v, char* out, size_t cap);
 
 extern uint8_t g_gap_index;  // gap being edited (== gap_count for a new one)
 void preview_gap_edit(uint16_t pos0, uint16_t len);
@@ -262,6 +285,16 @@ enum class Field : uint8_t {
     ChClock,
     ChGapPos,  // first dead LED of gap s.gap_index (1-based); chains to ChGapLen
     ChGapLen,  // its length; 0 removes the gap
+    ChPacking,
+    FixFirst,  // fixture g_fix_index of the open channel: first LED (1-based)
+    FixLen,
+    FixReversed,
+    FixProfile,
+    FixSplit,    // replace the list with N equal fixtures over the strip
+    SceneGroup,  // scene g_scene_index: 0 = its outputs, g + 1 = a fixture group
+    PartEffect,  // part g_part_index of it
+    PartMode,
+    PartReverse,
     AutoPatch,
     ShowMaster,
     ShowStrobe,
@@ -279,6 +312,7 @@ enum class Field : uint8_t {
 enum class StringField : uint8_t {
     ArtnetShort,
     ArtnetLong,
+    SceneName,  // scene g_scene_index
 };
 
 enum class IpField : uint8_t {
@@ -299,6 +333,11 @@ enum class ValueKind : uint8_t {
     Mask,        // outputs bitmask, shown as "1234----"
     Tenths,      // tenths shown as "2.5s"
     IpFallback,  // address without a DHCP server (link-local / Art-Net)
+    Packing,     // DMX layout of an output
+    FixMode,     // each / strip / chain / mirror
+    Effect,      // an effect of the bank, by name
+    Group,       // "Outputs" or a fixture group, by name
+    Profile,     // a fixture DMX profile, by name
 };
 
 // Pick-from-a-list kinds (wheel) vs numeric ones (gauge).
@@ -490,6 +529,12 @@ uint8_t build_channel(ListItem* items, OnClick* fns);
 void preview_gap_edit(uint16_t pos0, uint16_t len);
 void enter_gap_len_edit();
 uint8_t build_gaps(ListItem* items, OnClick* fns);
+uint8_t build_fixtures(ListItem* items, OnClick* fns);
+uint8_t build_fixture(ListItem* items, OnClick* fns);
+uint8_t build_scene_list(ListItem* items, OnClick* fns);
+uint8_t build_scene_edit(ListItem* items, OnClick* fns);
+uint8_t build_scene_part(ListItem* items, OnClick* fns);
+uint8_t build_part_outputs(ListItem* items, OnClick* fns);
 void enter_edit(Field field, ValueKind kind, int32_t cur, int32_t mn, int32_t mx, int32_t step,
                 const char* label, Screen return_screen, uint8_t channel = 0xFF);
 void render_edit_value();
