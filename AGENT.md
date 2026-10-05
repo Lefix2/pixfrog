@@ -86,7 +86,11 @@ behind the optional password):
   output, blinked one after the other),
   `POST /api/autopatch`, `GET /api/backup`, `POST /api/restore`
 - effect bank: `POST /api/effect/{n}[/delete]` (`{name, generator, colors, speed, param}`;
-  delete answers 409 while a scene plays the effect), `POST /api/effects/add|move`
+  delete answers 409 while a scene plays the effect), `POST /api/effects/add|move`,
+  `POST /api/effect/preview` (`{effect, index, pixels, frames, fps, t}` → frames × pixels × 3
+  bytes of RGB drawn by `fill_effect_run`; read-only, no password)
+- scenes also take `"group"` (default fixture group, -1 = none) and `"reverse"` on a part;
+  play takes `{"group":g}` as well
 - scenes: `POST /api/scene/{n}[/play|/stop|/delete]` (`{name, parts:[{mask, effect,
   fixture_mode}]}`; play takes `{"outputs":mask}`), `POST /api/scenes/add|move|stop`
 - groups: `POST /api/groups`
