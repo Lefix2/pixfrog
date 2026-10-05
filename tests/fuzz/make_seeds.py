@@ -246,7 +246,10 @@ scene part 0 0f 1 mirror rev
 scene group 0 1
 scene play 0 group 0
 ctrl add bank g0
-ctrl add direction g1""".splitlines()
+ctrl add direction g1
+fx envelope 1 64 128
+ctrl add ph_attack 0f
+ctrl add ph_decay g0""".splitlines()
 
 # fuzz_web_api: byte 0 = route index (kRoutes order), byte 1 = wildcard index.
 ROUTES = ["/api/config", "/api/global", "/api/channel", "/api/restore", "/api/scene",
@@ -309,6 +312,7 @@ WEB = [
     (R["/api/scene"], 1, '{"group":0}'),
     (R["/api/control"], 0, '{"slots":[{"fn":"bank","group":0},{"fn":"direction","group":1},'
                            '{"fn":"fixmode","mask":3}]}'),
+    (R["/api/effect"], 1, '{"phaser":{"wave":"pwm","width":100,"attack":64,"decay":255}}'),
     (R["/api/effect/preview"], 0, '{"index":1,"effect":{"generator":8,"colors":["#ff0000","#0000ff"],'
                                   '"speed":40,"phaser":{"wave":"sin","rate":20,"spread":16},'
                                   '"matricks":{"wings":2}},"pixels":48,"frames":12,"fps":24,"t":90000}'),

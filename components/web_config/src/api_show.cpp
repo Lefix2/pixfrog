@@ -297,6 +297,12 @@ static cJSON* ofl_channel(const config::ControlSlot& sl) {
     case config::CtlFn::PhWidth:
         ofl_override(caps, ofl_generic("Share of the cycle the wave takes, value / 255"));
         break;
+    case config::CtlFn::PhAttack:
+        ofl_override(caps, ofl_generic("PWM fade-in, share of the lit part (1 = none)"));
+        break;
+    case config::CtlFn::PhDecay:
+        ofl_override(caps, ofl_generic("PWM fade-out, share of the lit part (1 = none)"));
+        break;
     case config::CtlFn::Block: ofl_count(caps, "Pixels sharing a value"); break;
     case config::CtlFn::Groups: ofl_count(caps, "Pattern repeats every"); break;
     case config::CtlFn::Wings: ofl_count(caps, "Mirrored parts"); break;
@@ -371,6 +377,8 @@ static const char* ofl_base_name(const config::ControlSlot& sl, char* buf, size_
     case config::CtlFn::PhRate: return "Phaser rate";
     case config::CtlFn::PhSpread: return "Phaser spread";
     case config::CtlFn::PhWidth: return "Phaser width";
+    case config::CtlFn::PhAttack: return "Phaser attack";
+    case config::CtlFn::PhDecay: return "Phaser decay";
     case config::CtlFn::Block: return "Block";
     case config::CtlFn::Groups: return "Groups";
     case config::CtlFn::Wings: return "Wings";
@@ -705,6 +713,8 @@ static const char* ofl_profile_base(const config::ProfileSlot& sl, char* buf, si
     case config::FixFn::PhRate: return "Phaser rate";
     case config::FixFn::PhSpread: return "Phaser spread";
     case config::FixFn::PhWidth: return "Phaser width";
+    case config::FixFn::PhAttack: return "Phaser attack";
+    case config::FixFn::PhDecay: return "Phaser decay";
     case config::FixFn::Block: return "Block";
     case config::FixFn::Groups: return "Groups";
     case config::FixFn::Wings: return "Wings";
@@ -727,6 +737,8 @@ static bool control_twin(const config::ProfileSlot& sl, config::ControlSlot& out
     case config::FixFn::PhRate: fn = config::CtlFn::PhRate; break;
     case config::FixFn::PhSpread: fn = config::CtlFn::PhSpread; break;
     case config::FixFn::PhWidth: fn = config::CtlFn::PhWidth; break;
+    case config::FixFn::PhAttack: fn = config::CtlFn::PhAttack; break;
+    case config::FixFn::PhDecay: fn = config::CtlFn::PhDecay; break;
     case config::FixFn::Block: fn = config::CtlFn::Block; break;
     case config::FixFn::Groups: fn = config::CtlFn::Groups; break;
     case config::FixFn::Wings: fn = config::CtlFn::Wings; break;

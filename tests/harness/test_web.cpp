@@ -448,6 +448,18 @@ TEST(effect_endpoints_manage_the_bank) {
     EXPECT_EQ(ph.ph_width, 128);
     EXPECT_EQ(ph.ph_low, 30);
     EXPECT_EQ(ph.flags, config::kEffectPhaserReverse | config::kEffectDimmerInvert);
+    EXPECT_EQ(ph.ph_attack + ph.ph_decay, 0);  // left out: hard edges
+    post(url, "{\"phaser\":{\"wave\":\"pwm\",\"attack\":64,\"decay\":128}}");
+    EXPECT_EQ(ph.ph_attack, 64);
+    EXPECT_EQ(ph.ph_decay, 128);
+    {
+        Json cfg(get("/api/config").body);
+        const cJSON* jp = cJSON_GetObjectItem(
+            cJSON_GetArrayItem(cfg["effects"], static_cast<int>(n)), "phaser");
+        EXPECT_EQ(cJSON_GetObjectItem(jp, "attack")->valueint, 64);
+        EXPECT_EQ(cJSON_GetObjectItem(jp, "decay")->valueint, 128);
+    }
+    post(url, "{\"phaser\":{\"wave\":\"triangle\",\"attack\":0,\"decay\":0}}");
     post(url, "{\"phaser\":{\"wave\":\"wobble\",\"rate\":300,\"reverse\":1},\"invert\":\"yes\"}");
     EXPECT_EQ(ph.ph_wave, config::kPhaserTriangle);  // unknown or mistyped: kept
     EXPECT_EQ(ph.ph_rate, 20);

@@ -74,6 +74,7 @@ chained fixtures, as the part's fixture mode says).
 | Spread | phase shift along the run, 1/16 cycle a step: 0 = every pixel in phase (the run breathes as one), 16 = one whole wave along the run |
 | Width | the share of the cycle the wave takes (n/255, 0 = all of it): it runs compressed, then holds its end level. For PWM, the lit share (0 = half) |
 | Floor | the dimmer's low point (n/255): the wave runs between the floor and full |
+| Attack, Decay | PWM only: the shares of the lit part spent fading in and out (n/255 each, 0 = a hard edge). A square becomes a trapezoid; when the two take the whole lit part, a triangle |
 | Reverse | the wave travels towards the start of the run |
 
 **Dimmer invert** is the intensity negative of the whole effect, with or
@@ -82,9 +83,16 @@ colour 1, the hue is kept in between. A chase becomes a lit strip with a dark
 gap running through it; a sine phaser shifts by half a cycle; a steady colour
 alone goes dark.
 
+In grandMA2 terms this is an effect line on the dimmer: Wave is the **Form**,
+Spread the **Phase** range over the selection (16 = "0 thru 360"), Width the
+**Width**, Attack and Decay the same, Reverse the **Dir**. A light wave
+running along a strip — `900012345678900012345678` — is a ramp down, three
+cycles of spread, 75 % of width, and a rate.
+
 UART: `fx phaser <n> <wave> [<rate> <spread> [<width> <low> [reverse|forward]]]`,
-`fx invert <n> 0|1`. REST: `"phaser": {"wave", "rate", "spread", "width", "low",
-"reverse"}` and `"invert"` in the effect.
+`fx envelope <n> <attack> <decay>`, `fx invert <n> 0|1`. REST: `"phaser":
+{"wave", "rate", "spread", "width", "low", "attack", "decay", "reverse"}` and
+`"invert"` in the effect.
 
 ### Block, Groups, Wings
 
@@ -164,6 +172,7 @@ function but strobe, fade time and show file can aim at a group — "Top",
 | Red / Green / Blue (colour n) | overrides colour n of the effect an output plays; all three at 0 = the effect's own |
 | Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine, then cosine, ramp up, ramp down, triangle, PWM, bump |
 | Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |
+| Phaser attack / decay | 0 = the effect's own, 1 = none (hard edge), 2–255 = the share of the lit part |
 | Block / Groups / Wings | 0 = the effect's own, 1 = off, 2–255 = N |
 | Fade | scene fade time, value × 0.1 s |
 | FSEQ | bands of 8: 0–7 = stop, 8–15 = file 1 … (the order of the file list) |
@@ -233,6 +242,7 @@ output in DMX control mode (PROTOCOLS §5.6).
 | Effect speed / parameter | 0 = the effect's own, 1–255 = override |
 | Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine … |
 | Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |
+| Phaser attack / decay | 0 = the effect's own, 1 = none (hard edge), 2–255 = the share of the lit part |
 | Block / Groups / Wings | 0 = the effect's own, 1 = off, 2–255 = N |
 | Spare | nothing; it keeps a channel free |
 

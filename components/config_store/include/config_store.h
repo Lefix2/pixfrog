@@ -396,7 +396,9 @@ struct Effect {
     uint8_t block;                       // N neighbouring pixels share a value; 0/1 = off
     uint8_t groups;                      // the pattern repeats every N; 0/1 = off
     uint8_t wings;                       // the run splits in N mirrored parts; 0/1 = off
-    uint8_t reserved[7];
+    uint8_t ph_attack;                   // PWM: share of the lit part spent fading in, n/255
+    uint8_t ph_decay;                    // PWM: share of the lit part spent fading out, n/255
+    uint8_t reserved[5];
 };
 static_assert(sizeof(Effect) == 48, "Effect is an NVS record: bytes only, no padding");
 
@@ -915,6 +917,8 @@ enum class CtlFn : uint8_t {
     Block    = 20,  // 0 = the effect's own, 1 = off, 2..255 = N
     Groups   = 21,
     Wings    = 22,
+    PhAttack = 23,  // 0 = the effect's own, 1 = none, 2..255 = override
+    PhDecay  = 24,
     Count,
 };
 constexpr uint8_t kCtlFlagFine = 0x01;  // Master only: coarse + fine channel
@@ -928,7 +932,7 @@ inline const char* ctl_fn_id(uint8_t fn) {
                                         "speed",  "param",   "red",      "green",     "blue",
                                         "effect", "fade",    "fseq",     "direction", "fixmode",
                                         "bank",   "ph_wave", "ph_rate",  "ph_spread", "ph_width",
-                                        "block",  "groups",  "wings" };
+                                        "block",  "groups",  "wings",    "ph_attack", "ph_decay" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(CtlFn::Count),
                   "one id per control function");
     return fn < static_cast<uint8_t>(CtlFn::Count) ? kIds[fn] : "none";
@@ -1123,6 +1127,8 @@ enum class FixFn : uint8_t {
     Block    = 14,  // 0 = the effect's own, 1 = off, 2..255 = N
     Groups   = 15,
     Wings    = 16,
+    PhAttack = 17,  // 0 = the effect's own, 1 = none, 2..255 = override
+    PhDecay  = 18,
     Count,
 };
 constexpr uint8_t kProfileArgColor = 0x03;  // Red/Green/Blue: colour 0..kSceneColorsMax-1
@@ -1133,7 +1139,7 @@ inline const char* fix_fn_id(uint8_t fn) {
     static const char* const kIds[] = { "none",    "dimmer",  "red",       "green",    "blue",
                                         "white",   "shutter", "bank",      "speed",    "param",
                                         "ph_wave", "ph_rate", "ph_spread", "ph_width", "block",
-                                        "groups",  "wings" };
+                                        "groups",  "wings",   "ph_attack", "ph_decay" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(FixFn::Count),
                   "one id per profile function");
     return fn < static_cast<uint8_t>(FixFn::Count) ? kIds[fn] : "none";

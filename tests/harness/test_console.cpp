@@ -187,6 +187,15 @@ TEST(fx_commands_manage_the_bank) {
     EXPECT_TRUE(run("fx phaser 8 ramp_down 1 2 3 4 reverse"));
     EXPECT_TRUE(run("fx"));
     EXPECT_TRUE(has("phaser=ramp_down,1,2,3,4,reverse invert=1"));
+    EXPECT_TRUE(run("fx envelope 8 64 128"));  // a PWM's fade in and out
+    EXPECT_EQ(ph.ph_attack, 64);
+    EXPECT_EQ(ph.ph_decay, 128);
+    EXPECT_TRUE(run("fx"));
+    EXPECT_TRUE(has("used=0 envelope=64,128"));
+    EXPECT_FALSE(run("fx envelope 8 64"));
+    EXPECT_FALSE(run("fx envelope 8 64 300"));
+    EXPECT_FALSE(run("fx envelope 99 1 1"));
+    EXPECT_TRUE(run("fx envelope 8 0 0"));
     EXPECT_TRUE(run("fx phaser 8 none"));  // the wave alone
     EXPECT_EQ(ph.ph_wave, config::kPhaserNone);
     EXPECT_EQ(ph.ph_rate, 1);
