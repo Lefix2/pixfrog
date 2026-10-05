@@ -843,9 +843,8 @@ void open_fixture(uint8_t k) {
 }
 
 void add_fixture() {
-    auto c          = config::get_channel(s.channel_index);
-    const size_t nf = config::fixture_count(c.fixtures, config::kMaxFixtures);
-    if (nf >= config::kMaxFixtures) return;
+    auto c            = config::get_channel(s.channel_index);
+    const size_t nf   = config::fixture_count(c.fixtures, config::kMaxFixtures);  // < max: the row
     const int32_t end = strip_end(c);
     int32_t pos = 0, len = end;
     if (nf) {
@@ -909,8 +908,7 @@ uint8_t build_fixtures(ListItem* items, OnClick* fns) {
         const int32_t end = strip_end(c);
         const int32_t max = end < static_cast<int32_t>(config::kMaxFixtures)
                               ? end
-                              : static_cast<int32_t>(config::kMaxFixtures);
-        if (max < 1) return;
+                              : static_cast<int32_t>(config::kMaxFixtures);  // a strip has an LED
         enter_edit(Field::FixSplit, ValueKind::Int, cur ? cur : 1, 1, max, 1, "Fixtures",
                    Screen::Menu, s.channel_index);
     };

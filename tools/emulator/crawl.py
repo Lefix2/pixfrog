@@ -132,8 +132,9 @@ def crawl(emu, seen):
     menus = [("MainMenu", [0])]  # (name, path) queue
     explored = set()
     # A menu is walked once — its rows are the same wherever it is opened
-    # from — but for the channel menus, whose rows follow the protocol.
-    every_time = ("ChannelMenu", "GapsMenu")
+    # from — but for the channel menus, whose rows follow the protocol, and the
+    # control slots, whose rows follow the function.
+    every_time = ("ChannelMenu", "GapsMenu", "ControlSlotMenu")
     while menus:
         name, path = menus.pop(0)
         key = (name, tuple(path))

@@ -223,8 +223,9 @@ bool exec_cmd(const std::string& line) {
             std::fflush(stdout);
         }
     } else if (line.rfind("set fixtures ", 0) == 0) {
-        // set fixtures <idx> [<pos0>:<len>[:r] ...] — replace a channel's fixtures
-        // (0-based physical positions, r = mounted the other way round).
+        // set fixtures <idx> [<pos0>:<len>[:r][:p<n>] ...] — replace a channel's
+        // fixtures (0-based physical positions, r = mounted the other way
+        // round, p<n> = DMX profile n).
         char* p  = nullptr;
         long idx = std::strtol(line.c_str() + 13, &p, 10);
         if (idx >= 0 && idx < static_cast<long>(pixfrog::config::kNumChannels)) {
@@ -239,12 +240,15 @@ bool exec_cmd(const std::string& line) {
                 p              += used;
                 const bool rev  = p[0] == ':' && p[1] == 'r';
                 if (rev) p += 2;
+                unsigned profile = 0;
+                if (p[0] == ':' && p[1] == 'p') profile = std::strtoul(p + 2, &p, 10);
                 cc.fixtures[k] = pixfrog::config::make_fixture(static_cast<uint16_t>(pos),
-                                                               static_cast<uint16_t>(len), rev);
+                                                               static_cast<uint16_t>(len), rev,
+                                                               static_cast<uint8_t>(profile));
             }
             pixfrog::config::set_channel(static_cast<size_t>(idx), cc);
         } else {
-            std::printf("error: usage: set fixtures <idx> [<pos0>:<len>[:r] ...]\n");
+            std::printf("error: usage: set fixtures <idx> [<pos0>:<len>[:r][:p<n>] ...]\n");
             std::fflush(stdout);
         }
     } else if (line.rfind("set speaker ", 0) == 0) {
@@ -286,6 +290,12 @@ bool exec_cmd(const std::string& line) {
             std::printf("error: usage: set global <web|sacn|cap> <value>\n");
         }
         std::fflush(stdout);
+    } else if (line.rfind("set scenes ", 0) == 0) {
+        // set scenes <n> — cut the scene list down to n (as a delete from the
+        // web would, under a menu that has a later scene open).
+        const size_t keep = static_cast<size_t>(std::atoi(line.c_str() + 11));
+        while (pixfrog::config::num_scenes() > keep)
+            pixfrog::config::delete_scene(pixfrog::config::num_scenes() - 1);
     } else if (line.rfind("dump chan ", 0) == 0) {
         // dump chan <idx> — what the menu stored: pixels, layout, fixtures
         // as [pos0, len, reversed, profile].

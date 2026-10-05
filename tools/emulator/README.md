@@ -61,7 +61,8 @@ starts at HOME for deterministic runs.
 | `set active <ch>`  | mark channel `ch` (0–7) active (HOME dot)          |
 | `set chan <i> <proto> <uni> <pix>` | seed channel `i` (protocol enum value) |
 | `set gaps <i> [<pos0>:<len> …]` | replace channel `i`'s dead-pixel gaps |
-| `set fixtures <i> [<pos0>:<len>[:r] …]` | replace channel `i`'s fixtures (`r` = mounted the other way round) |
+| `set fixtures <i> [<pos0>:<len>[:r][:p<n>] …]` | replace channel `i`'s fixtures (`r` = mounted the other way round, `p<n>` = DMX profile n) |
+| `set scenes <n>` | cut the scene list down to n |
 | `dump chan <i>` / `dump scene <i>` | one JSON line of what the menu stored: a channel's pixels, layout and fixtures; a scene's name, group and parts |
 | `set sd <n>`       | fake a microSD with n `.fseq` files (0 = none)     |
 | `quit`             | exit                                               |

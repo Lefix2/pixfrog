@@ -57,6 +57,9 @@ def pick(emu, path, steps):
 def fixtures(emu):
     fx = CH1 + [CH_FIXTURES]
     # An empty list: [Add], Split in, Back. The first fixture is the strip.
+    st = goto(emu, fx + [1])
+    expect(st["screen"] == "EditValue" and st["gauge"] == 0, f"Split in starts at one ({st})")
+    emu.cmd("longclick")
     st = goto(emu, fx + [0])
     expect(st["screen"] == "FixtureMenu", f"[Add] opens the new fixture ({st})")
     expect(dump(emu, "chan 0")["fixtures"] == [[0, 300, 0, 0]], "the first fixture takes the strip")
@@ -70,6 +73,8 @@ def fixtures(emu):
     edit_to(emu, fx + [1, 1], 1, 60, 50)
     edit_to(emu, fx + [1, 0], 61, 71, 71)
     expect(dump(emu, "chan 0")["fixtures"][1] == [70, 50, 1, 0], "fixture 2 reversed, 50 LEDs at 71")
+    pick(emu, fx + [1, 2], 0)  # its Reversed row opens on ON
+    expect(dump(emu, "chan 0")["fixtures"][1][2] == 1, "still reversed")
     # A sixth after the last: the strip grows to hold it.
     goto(emu, fx + [5])
     c = dump(emu, "chan 0")
@@ -82,6 +87,46 @@ def fixtures(emu):
     goto(emu, fx + [0, 4])  # [Delete]
     c = dump(emu, "chan 0")
     expect(len(c["fixtures"]) == 5 and c["fixtures"][0][0] == 70, f"fixture 1 deleted ({c})")
+    for back in (fx + [0, 5], fx + [7]):  # the Back rows: a fixture's, the list's
+        st = goto(emu, back)
+        expect(st["screen"] in ("FixturesMenu", "ChannelMenu"), f"Back climbs a level ({st})")
+
+    # A strip the output cannot drive any longer: [Add] gives the new fixture
+    # the LEDs that are left, then none.
+    emu.cmd("set chan 0 1 1 1000")
+    emu.cmd("set fixtures 0 0:1000")
+    goto(emu, fx + [1])
+    c = dump(emu, "chan 0")
+    expect(c["pixels"] == 1024 and c["fixtures"][1] == [1000, 24, 0, 0], f"the last 24 LEDs ({c})")
+    goto(emu, fx + [2])
+    expect(len(dump(emu, "chan 0")["fixtures"]) == 2, "no LED left: nothing added")
+    # Room left on the strip: the next fixture just follows. Thirty-two fill the
+    # list: [Add] is gone, Split in comes first after them.
+    emu.cmd("set chan 0 1 1 300")
+    emu.cmd("set fixtures 0 0:50")
+    goto(emu, fx + [1])
+    c = dump(emu, "chan 0")
+    expect(c["pixels"] == 300 and c["fixtures"] == [[0, 50, 0, 0], [50, 50, 0, 0]], f"it fits ({c})")
+    edit_to(emu, fx + [3], 1, 32, 32)
+    st = goto(emu, fx + [32])
+    expect(st["screen"] == "EditValue" and len(dump(emu, "chan 0")["fixtures"]) == 32,
+           f"a full list has no [Add] ({st})")
+    emu.cmd("longclick")
+    # A fixture drawn past the strip's end keeps its length in the editors; one
+    # whose profile left the bank is offered the first.
+    emu.cmd("set chan 0 1 1 300")
+    emu.cmd("set fixtures 0 0:400:p7")
+    st = goto(emu, fx + [0, 1])
+    expect(st["screen"] == "EditValue" and st["gauge"] > 0.99, f"400 LEDs is the top ({st})")
+    emu.cmd("longclick")
+    pick(emu, fx + [0, 3], 0)
+    expect(dump(emu, "chan 0")["fixtures"] == [[0, 400, 0, 0]], "the first profile")
+    # The list emptied from elsewhere while one of its fixtures is open: only
+    # Back is left.
+    goto(emu, fx + [0])
+    emu.cmd("set fixtures 0")
+    emu.cmd("click")
+    expect(emu.state()["screen"] == "FixturesMenu", "a fixture that is gone leads back")
 
 
 def scenes(emu):
@@ -126,8 +171,10 @@ def scenes(emu):
     emu.cmd("right")
     expect(click_until_leaves(emu, "EditString"), "the name commits")
     expect(dump(emu, "scene 0")["name"] != "Scene 1", "the name changed")
-    goto(emu, sc + [3, 4])  # part 2 → [Delete]
-    expect(len(dump(emu, "scene 0")["parts"]) == 1, "part 2 deleted")
+    pick(emu, sc + [3, 3], 0)  # part 2's Reverse row opens on ON
+    goto(emu, sc + [2, 4])  # part 1 → [Delete]: part 2 closes up
+    p = dump(emu, "scene 0")["parts"]
+    expect(p == [[0x0B, 2, 3, 1]], f"part 1 deleted, part 2 takes its place ({p})")
     # [New] appends a scene and opens it; [Delete] removes it again.
     st = goto(emu, SCENES + [8])
     expect(st["screen"] == "SceneEditMenu", f"[New] opens the new scene ({st})")
@@ -135,6 +182,30 @@ def scenes(emu):
     expect(d["count"] == 9 and d["parts"] == [[255, 0, 0, 0]], f"a new scene ({d})")
     goto(emu, SCENES + [8, 5])
     expect(dump(emu, "scene 0")["count"] == 8, "the new scene is deleted")
+    # The last effect of the bank and the last group have no name: the pickers
+    # number them.
+    pick(emu, SCENES + [7, 1], 3)
+    expect(dump(emu, "scene 7")["group"] == 2, "scene 8 on the unnamed third group")
+    # Scene 8 plays an effect that left the bank: its editor offers the first.
+    pick(emu, SCENES + [7, 2, 1], 0)
+    expect(dump(emu, "scene 7")["parts"][0][1] == 0, "a missing effect becomes the first")
+    # Back rows, from the innermost menu out (scene 1 has outputs to spare, so
+    # an [Add part] row sits before its Play / Stop / Delete / Back).
+    for back, where in ((SCENES + [0, 2, 0, 8], "ScenePartMenu"), (SCENES + [0, 2, 5], "SceneEditMenu"),
+                        (SCENES + [0, 7], "SceneListMenu"), (SCENES + [9], "PlaybackMenu"),
+                        (CH1 + [5, 1], "ChannelMenu")):  # and the dead-pixel list's
+        st = goto(emu, back)
+        expect(st["screen"] == where, f"Back from {back} lands on {where} ({st})")
+    expect(dump(emu, "scene 0")["count"] == 8, "Back deletes nothing")
+    # A scene deleted from elsewhere under the editors: each shows Back only.
+    goto(emu, SCENES + [8])  # [New] → scene 9
+    st = goto(emu, SCENES + [8, 2, 0])  # its part's outputs
+    expect(st["screen"] == "PartOutputsMenu", f"scene 9's outputs ({st})")
+    emu.cmd("set scenes 8")
+    for where in ("ScenePartMenu", "SceneEditMenu", "SceneListMenu"):
+        emu.cmd("click")
+        st = emu.state()
+        expect(st["screen"] == where, f"a scene that is gone leads back to {where} ({st})")
 
 
 def main():

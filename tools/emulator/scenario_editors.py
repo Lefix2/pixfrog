@@ -133,6 +133,23 @@ def main():
         emu.cmd("click")
         home(emu)
         emu.shot(os.devnull)
+
+        # DMX control slots: the rows that follow the function — a master's
+        # 16-bit switch, a colour's number.
+        ctl = [0, MAIN_INPUTS, 6]  # Enabled, Universe, Address, Preset, then the slots
+        st = goto(emu, ctl + [4, 2])  # slot 1 is a master
+        expect(st["screen"] == "EditValue", f"16-bit opens an editor ({st})")
+        emu.cmd("left")
+        emu.cmd("click")
+        st = goto(emu, ctl + [5, 0])  # slot 2: blackout → red
+        expect(st["screen"] == "EditValue", f"Function opens an editor ({st})")
+        for _ in range(5):
+            emu.cmd("right")
+        emu.cmd("click")
+        st = goto(emu, ctl + [5, 2])
+        expect(st["screen"] == "EditValue", f"a colour slot has a Colour # row ({st})")
+        emu.cmd("right")
+        emu.cmd("click")
     finally:
         emu.close()
     print("SCENARIO OK: editors")
