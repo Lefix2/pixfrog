@@ -9,6 +9,16 @@ std::atomic<uint32_t> g_push_run{ 0 };
 SemaphoreHandle_t g_server_mux = nullptr;
 constexpr size_t kMaxWsClients = 8;
 
+// Frames handed to the httpd task and not sent yet. A client that stopped
+// reading holds that task in send() until the socket times out, frame after
+// frame. Unbounded, the six frames a second queued behind it ate the whole
+// PSRAM and no HTTP request got through any more (bench, 2026-10-05: 14 kB
+// of PSRAM left after 7 h, the web server silent, ping fine). Two in
+// flight are plenty: a frame the server has no time for is dropped — the next
+// one is fresher anyway.
+constexpr uint32_t kMaxPending = 2;
+std::atomic<uint32_t> g_ws_pending{ 0 };  // 32-bit: P4 RMW rule
+
 esp_err_t handle_ws(httpd_req_t* req) {
     if (req->method == HTTP_GET) {  // the handshake: httpd answered it already
         g_ws_seen.store(1, std::memory_order_relaxed);
@@ -55,22 +65,35 @@ static void ws_broadcast(void* arg) {
             f.type    = p->type;
             f.payload = p->data;
             f.len     = p->len;
-            httpd_ws_send_frame_async(p->server, fds[i], &f);
+            // A send that failed timed out on a client that reads no more:
+            // close it, or every later frame waits out the timeout again. A
+            // browser that is still there reconnects.
+            if (httpd_ws_send_frame_async(p->server, fds[i], &f) != ESP_OK)
+                httpd_sess_trigger_close(p->server, fds[i]);
         }
     }
     if (!sent) g_ws_seen.store(0, std::memory_order_relaxed);
     free(p->data);
     delete p;
+    g_ws_pending.fetch_sub(1, std::memory_order_acq_rel);
 }
 
-// Hand a frame to the httpd task; takes ownership of `data`.
+// The httpd task still holds the frames it was given: no room for another.
+static bool ws_backlog_full() {
+    return g_ws_pending.load(std::memory_order_acquire) >= kMaxPending;
+}
+
+// Hand a frame to the httpd task; takes ownership of `data`. Dropped when the
+// task is behind (ws_backlog_full) or the server is down.
 static void ws_queue(uint8_t* data, size_t len, httpd_ws_type_t type) {
-    auto* p     = new (std::nothrow) WsPush{ nullptr, data, len, type };
+    auto* p = ws_backlog_full() ? nullptr : new (std::nothrow) WsPush{ nullptr, data, len, type };
     bool queued = false;
     xSemaphoreTake(g_server_mux, portMAX_DELAY);
     if (p && g_server) {
         p->server = g_server;
-        queued    = httpd_queue_work(g_server, ws_broadcast, p) == ESP_OK;
+        g_ws_pending.fetch_add(1, std::memory_order_acq_rel);
+        queued = httpd_queue_work(g_server, ws_broadcast, p) == ESP_OK;
+        if (!queued) g_ws_pending.fetch_sub(1, std::memory_order_acq_rel);
     }
     xSemaphoreGive(g_server_mux);
     if (queued) return;
@@ -117,6 +140,7 @@ void web_push_task(void*) {
     while (g_push_run.load(std::memory_order_acquire)) {
         vTaskDelay(pdMS_TO_TICKS(200));
         if (!g_ws_seen.load(std::memory_order_relaxed)) continue;  // nobody listening yet
+        if (ws_backlog_full()) continue;  // the server is behind: build nothing it would drop
         push_preview();
         if (++tick % 5 == 0) push_status();
     }

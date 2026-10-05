@@ -91,6 +91,14 @@ void http_serve(uint16_t port, volatile bool* stop);
 int ws_open(const std::string& uri);  // -1: no websocket route there
 std::vector<std::string> ws_frames(int fd);
 void ws_close(int fd);
+// A client that reads no more: sends to it fail (the socket timeout), and it
+// stays connected until the server closes it (ws_is_open tells).
+void ws_stall(int fd);
+bool ws_is_open(int fd);
+// The httpd task busy elsewhere: queued work waits (http_pending_work counts
+// it) until http_hold_work(false) runs it.
+void http_hold_work(bool hold);
+size_t http_pending_work();
 
 // ── Fault injection ─────────────────────────────────────────────────────────
 // The next `count` calls of that API fail (error paths of the code under test).
