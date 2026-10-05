@@ -15,6 +15,13 @@ belongs to that fork.
       If it comes back, capture EMAC/PHY state and ARP from the PC before
       resetting.
 
+- [ ] **Web server silent while the board runs (seen once, 2026-10-05)** — after
+      a night up (v1.3.0-173), ping and the TCP connect answered but no HTTP
+      request got a reply (10 s timeouts, every try); a reset fixed it. Internal
+      RAM is tight (about 40 kB free at boot). If it comes back, read `status`
+      / `stats` on the console *without* opening the port with DTR/RTS (that
+      resets the board) and look at the httpd sockets and the internal heap.
+
 ## Security
 
 The web password stays optional by design: pixfrog targets private show
