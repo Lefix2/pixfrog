@@ -198,6 +198,37 @@ TEST(dmx_start_offset_and_universe_spanning) {
     EXPECT_EQ(px[509], u2[0]);    // continues in U2
 }
 
+// Two universes at different rates (two senders, or one sent on change only):
+// the one that is not rewritten keeps its LAST value. It used to come back
+// with the value of two swaps ago every other frame — the bank being
+// presented had never received it.
+TEST(a_universe_not_rewritten_keeps_its_last_value) {
+    one_channel(200, 4);  // U1 from slot 4, the rest in U2
+    uint8_t u1[512], u2[512];
+    std::memset(u1, 11, sizeof(u1));
+    std::memset(u2, 21, sizeof(u2));
+    dmx::write_universe_from_source(1, u1, 512, kSrcA, dmx::kArtnetMergeTimeoutUs);
+    dmx::write_universe_from_source(2, u2, 512, kSrcA, dmx::kArtnetMergeTimeoutUs);
+    decode0();
+    std::memset(u1, 12, sizeof(u1));  // U1 changes once...
+    dmx::write_universe_from_source(1, u1, 512, kSrcA, dmx::kArtnetMergeTimeoutUs);
+    EXPECT_EQ(decode0()[0], 12);
+    for (uint8_t v = 22; v < 28; ++v) {  // ... then only U2 keeps coming
+        std::memset(u2, v, sizeof(u2));
+        dmx::write_universe_from_source(2, u2, 512, kSrcA, dmx::kArtnetMergeTimeoutUs);
+        const uint8_t* px = decode0();
+        EXPECT_EQ(px[0], 12);
+        EXPECT_EQ(px[509], v);
+    }
+    // A short packet still keeps the tail of its universe's last frame.
+    const uint8_t head[2] = { 90, 91 };
+    dmx::write_universe_from_source(2, head, 2, kSrcA, dmx::kArtnetMergeTimeoutUs);
+    const uint8_t* px = decode0();
+    EXPECT_EQ(px[509], 90);
+    EXPECT_EQ(px[511], 27);
+    EXPECT_EQ(px[0], 12);
+}
+
 TEST(unmapped_universe_is_dropped) {
     const uint8_t d[3] = { 1, 2, 3 };
     EXPECT_FALSE(dmx::write_universe_from_source(500, d, 3, kSrcA, dmx::kArtnetMergeTimeoutUs));

@@ -39,8 +39,8 @@ std::atomic<uint8_t*> g_uni_front{ nullptr };
 // receiver-task write. Without it the receiver can resolve the back bank, get
 // pre-empted by a swap, and finish its write into the bank the decode is now
 // reading — a torn frame, and a dirty bit the swap has already consumed. Held
-// only across one universe-sized memcpy, so the render task's worst-case wait
-// here is microseconds.
+// across one universe-sized memcpy by a writer, so the render task's worst-case
+// wait here is microseconds.
 SemaphoreHandle_t g_uni_swap_mux = nullptr;
 
 // One bit per pool slot, set once the receiver has written that slot into the
@@ -53,8 +53,7 @@ SemaphoreHandle_t g_uni_swap_mux = nullptr;
 //   - the first write to a slot after a swap seeds that slot from the front bank,
 //     so a packet shorter than the universe cannot leave a tail from two source
 //     frames ago.
-// Seeding on the receiver task rather than inside the swap is what keeps it
-// race-free: only the receiver ever writes the back bank.
+// Both run with g_uni_swap_mux held, so a seed cannot race the swap.
 // 32-bit words: read-modify-write atomics on the ESP32-P4 must be 32-bit.
 constexpr size_t kDirtyWords = (kNumUniverses + 31) / 32;
 std::atomic<uint32_t> g_uni_dirty[kDirtyWords]{};
@@ -68,6 +67,29 @@ bool any_dirty() {
 void clear_dirty() {
     for (auto& w : g_uni_dirty)
         w.store(0, std::memory_order_relaxed);
+}
+
+// One bit per pool slot: written before the last swap, so the back bank holds
+// its value from one source frame earlier. A slot nobody writes again would
+// come back with that older value at the next swap — two senders at different
+// rates, or a universe sent on change only, flickered between their last two
+// frames. swap_universes() brings such a slot level before presenting the
+// bank: one copy per slot after its last write, none while every universe
+// arrives every frame. Only touched with g_uni_swap_mux held.
+uint32_t g_uni_behind[kDirtyWords]{};
+
+// Call with g_uni_swap_mux held, before the flip.
+void level_back_bank(uint8_t* back, const uint8_t* front) {
+    for (size_t w = 0; w < kDirtyWords; ++w) {
+        const uint32_t dirty = g_uni_dirty[w].load(std::memory_order_acquire);
+        uint32_t stale       = g_uni_behind[w] & ~dirty;
+        g_uni_behind[w]      = dirty;
+        for (; stale; stale &= stale - 1) {
+            const size_t base = (w * 32 + static_cast<size_t>(__builtin_ctz(stale))) *
+                                kUniverseSize;
+            memcpy(back + base, front + base, kUniverseSize);
+        }
+    }
 }
 
 // Per-channel pixel buffers in internal SRAM, double-buffered.
@@ -1542,7 +1564,9 @@ void swap_universes() {
     // so every universe of a frame goes out together.
     if (sync_mode() && !synced) return;
     xSemaphoreTake(g_uni_swap_mux, portMAX_DELAY);
-    g_uni_front.store(back_bank_locked(), std::memory_order_release);
+    uint8_t* back = back_bank_locked();
+    level_back_bank(back, g_uni_front.load(std::memory_order_relaxed));
+    g_uni_front.store(back, std::memory_order_release);
     clear_dirty();
     xSemaphoreGive(g_uni_swap_mux);
 }

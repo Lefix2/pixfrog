@@ -166,6 +166,14 @@ front the first time it is touched since the last swap) and set its bit in
 `g_uni_dirty`; `render_task` swaps once per frame, only when something is
 dirty, so a universe nobody updated keeps its value (hold-last-look).
 
+A slot written before a swap and not since exists in one bank only — the
+other still holds its previous frame. `g_uni_behind` remembers those slots
+and `swap_universes()` copies them front → back before the flip
+(`level_back_bank`), or two senders at different rates — a pixel mapper and a
+desk on the same output, a universe sent on change only — would alternate
+between their last two frames. One 512-byte copy per slot after its last
+write; none while every universe arrives every frame.
+
 Resolving the back bank and writing into it must not straddle a swap, so both
 sides take **`g_uni_swap_mux`**: the receivers (`artnet_rx` / `sacn_rx`,
 priority 10), the FSEQ player for a whole frame (`inject_frame_begin/end`,
