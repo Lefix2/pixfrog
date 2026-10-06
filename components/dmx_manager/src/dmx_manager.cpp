@@ -498,8 +498,23 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
     return all_persisted;
 }
 
+size_t channel_pixel_span(const config::ChannelConfig& cc) {
+    return logic::pixel_universes_used(cc, &config::get_profiles());
+}
+
+size_t channel_fixture_span(const config::ChannelConfig& cc) {
+    return logic::fixture_universes_used(cc, &config::get_profiles());
+}
+
 size_t channel_universe_span(const config::ChannelConfig& cc) {
     return logic::channel_universes_used(cc, &config::get_profiles());
+}
+
+bool fixtures_clear_of_pixels(size_t ch, config::ChannelConfig& cc) {
+    return logic::fixtures_clear_of_pixels(
+        cc, ch, config::kNumChannels,
+        [](size_t i) -> const config::ChannelConfig& { return config::get_channel(i); },
+        &config::get_profiles());
 }
 
 size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_t cap) {

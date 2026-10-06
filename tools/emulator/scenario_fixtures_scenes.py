@@ -85,9 +85,12 @@ def fixtures(emu):
     # row a fixture, for its profile.
     pick(emu, PATCH1 + [1], 1)
     expect(dump(emu, "chan 0")["packing"] == 1, "layout: whole pixels")
+    emu.cmd("set patch 0 1 0 2 9")  # a fixture address inside the output's own pixels (1-3)
     pick(emu, PATCH1 + [4], 1)
     c = dump(emu, "chan 0")
     expect(c["pixel_map"] and c["fixture_ctl"] and c["packing"] == 1, f"both ways at once ({c})")
+    expect(c["fix"][0] > 3 and c["fix"][1] == 1, f"switched on over pixels: moved after them ({c})")
+    emu.cmd("set patch 0 1 1 0 1")
     st = goto(emu, PATCH1 + [5])  # Fix uni: the net.sub.uni editor, on the fixtures' address
     expect(st["screen"] == "EditUni", f"Fix uni opens the universe editor ({st})")
     emu.cmd("click")

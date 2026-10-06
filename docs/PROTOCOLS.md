@@ -383,6 +383,16 @@ device):
 - **Neither** — the output listens to no universe and takes none of the pool;
   it only plays scenes.
 
+On the network side an output is its two ranges: sACN joins the multicast
+groups of both, and the pool maps both. Art-Net knows a port by one universe —
+its pixels', or its fixtures' when it has no pixel mapping: that is what
+ArtPollReply announces and what ArtAddress programs. On the device, HOME shows
+the pixels' span (`8-10`), the fixtures' universe (`F21`) or both (`3+F20`).
+Switching **Fixtures** on from the web or the device while their address sits
+inside some output's pixels — never set, it is universe 0 — moves it to the
+first universe after everything patched (the API and the console take the
+address as given).
+
 The dimmers multiply: the fixture's own, then the control universe's master,
 then the box's. The output is alive — no failsafe — while either of its ranges
 receives; a range that stops keeps its last frame (ARCHITECTURE §6.1: a

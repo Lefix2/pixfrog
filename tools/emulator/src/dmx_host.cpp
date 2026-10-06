@@ -22,8 +22,23 @@ Stats get_stats() {
     return g_stats;
 }
 
+size_t channel_pixel_span(const config::ChannelConfig& cc) {
+    return logic::pixel_universes_used(cc, &config::get_profiles());
+}
+
+size_t channel_fixture_span(const config::ChannelConfig& cc) {
+    return logic::fixture_universes_used(cc, &config::get_profiles());
+}
+
 size_t channel_universe_span(const config::ChannelConfig& cc) {
     return logic::channel_universes_used(cc, &config::get_profiles());
+}
+
+bool fixtures_clear_of_pixels(size_t ch, config::ChannelConfig& cc) {
+    return logic::fixtures_clear_of_pixels(
+        cc, ch, config::kNumChannels,
+        [](size_t i) -> const config::ChannelConfig& { return config::get_channel(i); },
+        &config::get_profiles());
 }
 
 void set_current_fps(uint32_t fps) {

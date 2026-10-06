@@ -357,6 +357,26 @@ static void test_dmx_modes_and_the_fixture_address() {
     old.universe_start = 7;  // its own address now: the pixel address no longer moves it
     EXPECT_EQ(fix_universe(old), 40);
 
+    // The universe the output is known by on the network: its pixels', or its
+    // fixtures' when it has no pixel mapping.
+    ChannelConfig port{};
+    port.universe_start = 3;
+    set_fix_address(port, 20, 5);
+    EXPECT_EQ(port_universe(port), 3);
+    set_dmx_modes(port, true, true);
+    EXPECT_EQ(port_universe(port), 3);
+    set_port_universe(port, 4);
+    EXPECT_EQ(port.universe_start, 4);
+    EXPECT_EQ(fix_universe(port), 20);
+    set_dmx_modes(port, false, true);
+    EXPECT_EQ(port_universe(port), 20);
+    set_port_universe(port, 21);
+    EXPECT_EQ(fix_universe(port), 21);
+    EXPECT_EQ(fix_dmx_start(port), 5);
+    EXPECT_EQ(port.universe_start, 4);
+    set_dmx_modes(port, false, false);
+    EXPECT_EQ(port_universe(port), 4);
+
     // Bits this firmware does not know, a layout past the last: dropped.
     ChannelConfig odd{};
     odd.packing = 0x38 | 6 | kChanFixtureCtl;

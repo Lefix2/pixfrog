@@ -86,9 +86,9 @@ void send_poll_reply(uint32_t target_addr_net_order) {
             const size_t ch     = base_ch + p;
             const bool mapped   = ch < config::kNumChannels;
             const bool disabled = mapped && led::is_off(config::get_channel(ch).protocol);
-            in.sw_out[p]        = mapped
-                                    ? static_cast<uint8_t>(config::get_channel(ch).universe_start & 0x0F)
-                                    : 0;
+            in.sw_out[p]        = mapped ? static_cast<uint8_t>(
+                                        config::port_universe(config::get_channel(ch)) & 0x0F)
+                                         : 0;
             in.port_enabled[p]  = mapped && !disabled;
             in.port_merging[p]  = mapped && !disabled && dmx::is_channel_merging(ch);
         }
@@ -164,9 +164,9 @@ void handle_address(const uint8_t* buf, size_t len, const sockaddr_in& from) {
             if (!(f.sw_out[p] & 0x80)) continue;
             const size_t ch = base_ch + p;
             if (ch >= config::kNumChannels) continue;
-            auto c           = config::get_channel(ch);
-            c.universe_start = static_cast<uint16_t>((c.universe_start & ~0x0Fu) |
-                                                     (f.sw_out[p] & 0x0F));
+            auto c = config::get_channel(ch);
+            config::set_port_universe(c, static_cast<uint16_t>((config::port_universe(c) & ~0x0Fu) |
+                                                               (f.sw_out[p] & 0x0F)));
             config::set_channel(ch, c);
             dmx::mark_channel_dirty(ch);
         }

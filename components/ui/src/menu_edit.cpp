@@ -599,7 +599,12 @@ void commit_edit() {
         case Field::ChPixelMap:
             config::set_dmx_modes(c, v != 0, config::fixture_controlled(c));
             break;
-        case Field::ChFixtureCtl: config::set_dmx_modes(c, config::pixel_mapped(c), v != 0); break;
+        case Field::ChFixtureCtl:
+            // Switched on where pixels are patched: after them, as the web does.
+            if (v != 0 && !config::fixture_controlled(c))
+                dmx::fixtures_clear_of_pixels(s.edit.channel, c);
+            config::set_dmx_modes(c, config::pixel_mapped(c), v != 0);
+            break;
         default:
             config::set_fix_address(c, config::fix_universe(c), static_cast<uint16_t>(v));
             break;

@@ -49,6 +49,34 @@ inline size_t fixture_universes_used(const config::ChannelConfig& cc,
 inline size_t channel_universes_used(const config::ChannelConfig& cc,
                                      const config::ProfileBank* profiles = nullptr);
 
+// Fixture control being switched on for output `ch` (`cc`, its edited copy): a
+// fixture address inside some output's pixels — never set, it is universe 0 —
+// would have pixel data read as the fixtures' channels. Moves it to slot 1 of
+// the first universe after everything patched; true when it moved.
+// `get(i)` returns output i's stored configuration.
+template <typename GetChan>
+inline bool fixtures_clear_of_pixels(config::ChannelConfig& cc, size_t ch, size_t num_channels,
+                                     GetChan get, const config::ProfileBank* profiles) {
+    const uint32_t at = config::fix_universe(cc);
+    uint32_t free     = 0;
+    bool clash        = false;
+    for (size_t i = 0; i < num_channels; ++i) {
+        const config::ChannelConfig& o = i == ch ? cc : get(i);
+        if (led::is_off(o.protocol)) continue;
+        const uint32_t px = static_cast<uint32_t>(pixel_universes_used(o, profiles));
+        if (px) {
+            if (at >= o.universe_start && at < o.universe_start + px) clash = true;
+            if (o.universe_start + px > free) free = o.universe_start + px;
+        }
+        const uint32_t fx = i == ch ? 0
+                                    : static_cast<uint32_t>(fixture_universes_used(o, profiles));
+        if (fx && config::fix_universe(o) + fx > free) free = config::fix_universe(o) + fx;
+    }
+    if (!clash) return false;
+    config::set_fix_address(cc, static_cast<uint16_t>(free > 32767 ? 32767 : free), 1);
+    return true;
+}
+
 // ── Universe → slot map ─────────────────────────────────────────────────────
 //
 // Assign every channel's universe span a slot in the pool, and record which

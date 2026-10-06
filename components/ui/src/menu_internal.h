@@ -146,7 +146,7 @@ void draw_chan_badge(int x, int y, int side, int number, Color family, bool fill
 // byte-footprint (pixels × bytes/px, offset by dmx_start); a disabled channel
 // none. Lets HOME show the real
 // addressing span (U1-2, U8-10) instead of only the start universe.
-int channel_universe_span(const config::ChannelConfig& cc);
+void format_ch_universes(const config::ChannelConfig& cc, char* buf, size_t cap);
 
 // Edit-screen hint bar: green keycaps + dim actions, three segments (design
 // Hints "TURN · PRESS · HOLD"). Drawn flush to the bottom over a top hairline.

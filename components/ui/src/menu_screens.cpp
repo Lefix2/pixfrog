@@ -156,13 +156,8 @@ void render_home() {
             // Universe range, centred on the shared column axis. When a wide
             // range would meet a wide metric it is nudged left to keep a small
             // gap (perfect centring holds for the common short values).
-            const int span = channel_universe_span(cc);
             char ur[24];  // two 10-digit numbers and a dash
-            if (span > 1)
-                std::snprintf(ur, sizeof(ur), "%u-%u", cc.universe_start,
-                              static_cast<unsigned>(cc.universe_start + span - 1));
-            else
-                std::snprintf(ur, sizeof(ur), "%u", cc.universe_start);
+            format_ch_universes(cc, ur, sizeof(ur));
             const int urw      = body_w(ur);
             const int protoEnd = x0 + protoX + body_w(pname);
             int uni_x          = x0 + uniCtr - urw / 2;

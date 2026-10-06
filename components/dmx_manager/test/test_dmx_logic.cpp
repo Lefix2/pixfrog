@@ -2125,6 +2125,34 @@ static void test_pixels_plus_fixtures() {
     EXPECT_EQ(out[0], 100);
     EXPECT_EQ(out[23], 123);
 
+    // Fixture control switched on where pixels are patched — an address never
+    // set is universe 0: it moves past everything, once.
+    {
+        ChannelConfig rig[3]  = { fixture_chan(300), fixture_chan(60), fixture_chan(60) };
+        rig[0].universe_start = 0;  // 900 channels: universes 0-1
+        rig[1].universe_start = 2;
+        set_dmx_modes(rig[1], true, true);
+        set_fix_address(rig[1], 7, 1);  // its fixtures on universe 7
+        rig[2].protocol       = led::Protocol::Off;
+        rig[2].universe_start = 30;  // off: not counted
+        auto get              = [&](size_t i) -> const ChannelConfig& { return rig[i]; };
+        ChannelConfig edit    = rig[0];  // fixture address 0.1: inside its own pixels
+        EXPECT_TRUE(fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_universe(edit), 8);  // after output 2's fixtures
+        EXPECT_EQ(fix_dmx_start(edit), 1);
+        EXPECT_TRUE(!fixtures_clear_of_pixels(edit, 0, 3, get, &bank));  // clear already
+        set_fix_address(edit, 2, 40);                                    // inside output 2's pixels
+        EXPECT_TRUE(fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_universe(edit), 8);
+        set_fix_address(edit, 5, 40);  // a free universe: left alone, address and all
+        EXPECT_TRUE(!fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_dmx_start(edit), 40);
+        rig[1].universe_start = 32767;  // nothing past the last universe: it stops there
+        set_fix_address(edit, 32767, 1);
+        EXPECT_TRUE(fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_universe(edit), 32767);
+    }
+
     // Neither: no run, no patch, no universe.
     set_dmx_modes(cc, false, false);
     EXPECT_EQ(pixel_layout(cc), kPackWholePixels * 0 + pixel_layout(cc));

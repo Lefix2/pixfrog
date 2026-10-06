@@ -155,9 +155,19 @@ struct AutoPatch {
 };
 bool auto_patch(const AutoPatch& opt, uint16_t* next_free = nullptr, size_t* universes = nullptr);
 
-// Universes a channel's DMX layout spans from its universe_start (packing and
-// dmx_start included).
+// Universes an output listens to, on its two address ranges: its pixels' from
+// universe_start (layout and dmx_start included), its fixtures' from
+// config::fix_universe (their profiles' footprints). Either may be 0; the span
+// is their sum.
+size_t channel_pixel_span(const config::ChannelConfig& cc);
+size_t channel_fixture_span(const config::ChannelConfig& cc);
 size_t channel_universe_span(const config::ChannelConfig& cc);
+
+// Fixture control being switched on for output `ch` (`cc`, its edited copy,
+// not stored yet): a fixture address inside some output's pixels — never set,
+// it is universe 0 — moves to the first universe after everything patched.
+// True when it moved.
+bool fixtures_clear_of_pixels(size_t ch, config::ChannelConfig& cc);
 
 // Where each fixture of a channel in DMX control mode sits on the wire, in
 // the order they are listed (a channel without fixtures is one). Returns how
