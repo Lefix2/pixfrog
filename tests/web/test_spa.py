@@ -56,6 +56,13 @@ class Device:
         with urllib.request.urlopen(req, timeout=5) as r:
             return json.loads(r.read())
 
+    def post_raw(self, path, body):
+        """POST, the answer's bytes as they came (the effect preview's frames)."""
+        req = urllib.request.Request(self.url + path, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.read()
+
     def close(self):
         self.proc.terminate()
         self.proc.wait(timeout=5)
@@ -1187,7 +1194,102 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
         with pg.expect_download() as dl:
             pg.locator('[data-action="export"]').first.click()
         assert json.loads(open(dl.value.path()).read())["global"]["short_name"] == "demo-rack"
+        # The simulated box keeps what was set across a reload, until told to
+        # start over.
+        pg.reload()
+        expect(pg.locator('[data-live="node-name"]').first).to_have_text("demo-rack")
+        nav(pg, "effects")
+        expect(pg.locator("[data-fx-row]")).to_have_count(bank + 1)
+        pg.on("dialog", lambda d: d.accept())
+        pg.locator("#pf-demo-reset").click()
+        expect(pg.locator('[data-live="node-name"]').first).not_to_have_text("demo-rack")
+        nav(pg, "effects")
+        expect(pg.locator("[data-fx-row]")).to_have_count(bank)
     finally:
         ctx.close()
         srv.shutdown()
     assert not errors, errors
+
+
+def test_the_demo_draws_the_effects_with_the_firmware_engine(browser, device, tmp_path):
+    """preview.wasm is the box's own effect engine: for every generator and a
+    phaser, the demo's frame is the host firmware's, byte for byte."""
+    import functools
+    import http.server
+    import threading
+    subprocess.run([sys.executable, os.path.join(REPO, "tools", "demo", "build.py"),
+                    str(tmp_path / "demo")], check=True, capture_output=True)
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(tmp_path))
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    ctx = browser.new_context()
+    try:
+        pg = ctx.new_page()
+        pg.goto(f"http://127.0.0.1:{srv.server_port}/demo/")
+        expect(pg.locator("#pf-demo-banner")).to_be_visible()
+        pg.wait_for_function("() => window.pfDemoRender && window.pfDemoRender({generator:0,colors:['#ffffff']}, 1, 0)")
+        looks = [{"generator": g, "colors": ["#ff2200", "#00ff66", "#2244ff"], "speed": 90, "param": 3}
+                 for g in range(11)]
+        looks.append({"generator": 0, "colors": ["#ffffff"], "speed": 0,
+                      "phaser": {"wave": "ramp_down", "rate": 40, "spread": 64, "width": 128, "low": 10,
+                                 "attack": 20, "decay": 60, "reverse": True},
+                      "matricks": {"block": 2, "groups": 3, "wings": 2}, "invert": True})
+        for look in looks:
+            for t in (0, 1234, 20000):
+                ours = pg.evaluate("([fx, t]) => window.pfDemoRender(fx, 59, t)", [look, t])
+                theirs = device.post_raw("/api/effect/preview",
+                                         {"effect": look, "pixels": 59, "frames": 1, "fps": 30, "t": t})
+                assert bytes(ours) == theirs, (look, t)
+        # The effect editor's preview runs on it: the canvas is not black.
+        nav(pg, "effects")
+        lit = pg.wait_for_function("""() => { const c = document.querySelector('canvas[data-fx-preview]');
+            if (!c) return false; const d = c.getContext('2d').getImageData(0, 0, c.width, 1).data;
+            for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 0) return true; return false; }""")
+        assert lit
+    finally:
+        ctx.close()
+        srv.shutdown()
+
+
+def test_effects_and_shows_travel_as_files(page, device, tmp_path):
+    """An effect, the bank and a show (the looks without the hardware) leave as
+    files built in the page and come back through the box's own API."""
+    nav(page, "effects")
+    n = page.locator("[data-fx-row]").count()
+    page.locator('[data-fx-row="0"]').click()
+    with page.expect_download() as dl:
+        page.locator('[data-action="fx-export"]').click()
+    one = json.loads(open(dl.value.path()).read())
+    assert one["pixfrog"] == "effect" and one["effect"]["name"] == device.get("/api/config")["effects"][0]["name"]
+    with page.expect_download() as dl:
+        page.locator('[data-action="fx-export-all"]').click()
+    bank = json.loads(open(dl.value.path()).read())
+    assert bank["pixfrog"] == "effects" and len(bank["effects"]) == n
+    # Import the one: added at the end, selected.
+    one["effect"]["name"] = "From file"
+    f = tmp_path / "x.effect.json"
+    f.write_text(json.dumps(one))
+    page.locator("#fx-file").set_input_files(str(f))
+    expect(page.locator("[data-fx-row]")).to_have_count(n + 1)
+    expect(page.locator(f'[data-fx-row="{n}"]')).to_contain_text("From file")
+    assert device.get("/api/config")["effects"][n]["name"] == "From file"
+    # A show file: the looks, nothing of the rig.
+    nav(page, "maint")
+    with page.expect_download() as dl:
+        page.locator('[data-action="show-export"]').click()
+    show = json.loads(open(dl.value.path()).read())
+    assert show["pixfrog"] == "show" and len(show["effects"]) == n + 1
+    assert "channels" not in show and "global" not in show
+    assert set(show) >= {"effects", "scenes", "groups", "profiles", "control"}
+    # Imported on a box: the looks replaced, the rig untouched.
+    show["effects"] = show["effects"][:2]
+    show["effects"][0]["name"] = "Show look"
+    before_rig = device.get("/api/config")["channels"]
+    f = tmp_path / "x.show.json"
+    f.write_text(json.dumps(show))
+    page.on("dialog", lambda d: d.accept())
+    page.locator("#show-file").set_input_files(str(f))
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("show imported")
+    cfg = device.get("/api/config")
+    assert [e["name"] for e in cfg["effects"]][:1] == ["Show look"] and len(cfg["effects"]) == 2
+    assert cfg["channels"] == before_rig

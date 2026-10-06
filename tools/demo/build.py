@@ -5,9 +5,10 @@
 
 Copies the SPA as the firmware embeds it (components/web_config/src/
 web_ui.html) and loads, before its own script, the demo box: snapshot.json
-as window.PF_SNAPSHOT, then mock.js. The demo therefore follows every UI
-change; only the snapshot needs refreshing when the API grows
-(tools/demo/snapshot.py, checked by tests/web).
+as window.PF_SNAPSHOT, then mock.js, and the firmware's effect engine next to
+them (preview.wasm). The demo therefore follows every UI change; the snapshot
+needs refreshing when the API grows (tools/demo/snapshot.py, checked by
+tests/web) and the engine when the effects change (tools/demo/build_wasm.sh).
 """
 import json
 import os
@@ -24,6 +25,9 @@ def main(out):
     with open(os.path.join(out, "demo-data.js"), "w") as f:
         f.write("window.PF_SNAPSHOT = " + json.dumps(snap, separators=(",", ":")) + ";\n")
     with open(os.path.join(HERE, "mock.js")) as src, open(os.path.join(out, "mock.js"), "w") as dst:
+        dst.write(src.read())
+    # The firmware's effect engine for the demo box (tools/demo/build_wasm.sh).
+    with open(os.path.join(HERE, "preview.wasm"), "rb") as src, open(os.path.join(out, "preview.wasm"), "wb") as dst:
         dst.write(src.read())
     tags = ('<script src="demo-data.js"></script>\n<script src="mock.js"></script>\n'
             '<title>pixfrog — démo de l\'interface</title>\n')

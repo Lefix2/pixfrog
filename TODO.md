@@ -117,12 +117,6 @@ on the one before.
 
 ## Web UI
 
-- [ ] **Looks as files, a show prepared offline** — export / import an effect,
-      the bank, and a "show" (effects, scenes, groups, profiles, control
-      universe — the looks without the rig) so an operator prepares a show
-      away from the box and brings it in; the online demo keeps what is set in
-      it and draws the effects with the firmware's engine (WebAssembly), so it
-      is that offline workbench.
 - [ ] **More classes** — ~330 inline styles remain (one-off layout, JS-built
       rows); fold further repeats into classes as screens are touched.
 
