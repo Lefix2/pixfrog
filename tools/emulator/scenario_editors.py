@@ -17,7 +17,7 @@ from crawl import Emu, goto, home  # noqa: E402
 # DMX: Protocols, Patch, Control uni, Auto-patch. Box: Network, Settings, About.
 MAIN_SHOW, MAIN_RIG, MAIN_LOOKS, MAIN_DMX, MAIN_BOX, MAIN_BACK = 0, 1, 2, 3, 4, 5
 NETWORK, SETTINGS, ABOUT = [MAIN_BOX, 0], [MAIN_BOX, 1], [MAIN_BOX, 2]
-PATCH1 = [MAIN_DMX, 1, 0]  # output 1's patch: Pixel map, Layout, Uni, DMX
+PATCH1 = [MAIN_DMX, 1, 0]  # output 1's patch: Pixel map, Layout, Uni, DMX, Fixtures
 CONTROL = [MAIN_DMX, 2]
 SETTINGS_STATS = 4  # after Bright, Idle dim, Dim after, Refresh px (no speaker here)
 

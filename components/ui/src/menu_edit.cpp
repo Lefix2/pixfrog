@@ -587,23 +587,22 @@ void commit_edit() {
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
-    case Field::ChPacking: {
-        auto c    = config::get_channel(s.edit.channel);
-        c.packing = static_cast<uint8_t>(v);
-        config::set_channel(s.edit.channel, c);
-        dmx::mark_channel_dirty(s.edit.channel);
-        break;
-    }
-    case Field::ChPixelMap: {
-        // Off: DMX control, the fixtures on their profiles. On again: the
-        // pixel layout the output had.
+    case Field::ChPacking:
+    case Field::ChPixelMap:
+    case Field::ChFixtureCtl:
+    case Field::ChFixDmx: {
+        // The output's patch: its pixel layout, the two switches (the layout
+        // and both addresses stay whatever they say), the fixture address.
         auto c = config::get_channel(s.edit.channel);
-        if (v) {
-            if (c.packing == config::kPackControl)
-                c.packing = pixel_layout_before_control(s.edit.channel);
-        } else if (c.packing != config::kPackControl) {
-            note_pixel_layout(s.edit.channel, c.packing);
-            c.packing = config::kPackControl;
+        switch (s.edit.field) {
+        case Field::ChPacking: config::set_pixel_layout(c, static_cast<uint8_t>(v)); break;
+        case Field::ChPixelMap:
+            config::set_dmx_modes(c, v != 0, config::fixture_controlled(c));
+            break;
+        case Field::ChFixtureCtl: config::set_dmx_modes(c, config::pixel_mapped(c), v != 0); break;
+        default:
+            config::set_fix_address(c, config::fix_universe(c), static_cast<uint16_t>(v));
+            break;
         }
         config::set_channel(s.edit.channel, c);
         dmx::mark_channel_dirty(s.edit.channel);
@@ -1041,10 +1040,11 @@ void dispatch_edit_ip(Event e) {
 
 // ── EDIT UNI — net.sub.uni (3 segments) ─────────────────────────────────────
 
-void enter_edit_uni(uint8_t channel, uint16_t current, Screen return_screen) {
+void enter_edit_uni(uint8_t channel, uint16_t current, Screen return_screen, bool fixtures) {
     s.uni_edit.value         = current & 0x7FFF;
     s.uni_edit.cursor        = 0;
     s.uni_edit.channel       = channel;
+    s.uni_edit.fixtures      = fixtures;
     s.uni_edit.return_screen = return_screen;
     s.screen                 = Screen::EditUni;
     accel_reset();
@@ -1052,7 +1052,8 @@ void enter_edit_uni(uint8_t channel, uint16_t current, Screen return_screen) {
 
 void render_edit_uni() {
     char title[24];
-    std::snprintf(title, sizeof(title), "EDIT UNI C%u", s.uni_edit.channel + 1);
+    std::snprintf(title, sizeof(title), s.uni_edit.fixtures ? "FIX UNI C%u" : "EDIT UNI C%u",
+                  s.uni_edit.channel + 1);
 
     // Render as "0.[2].1 = U513" with brackets around the current segment.
     const uint16_t v      = s.uni_edit.value;
@@ -1134,8 +1135,11 @@ void render_edit_uni() {
 }
 
 void commit_edit_uni() {
-    auto c           = config::get_channel(s.uni_edit.channel);
-    c.universe_start = s.uni_edit.value;
+    auto c = config::get_channel(s.uni_edit.channel);
+    if (s.uni_edit.fixtures)
+        config::set_fix_address(c, s.uni_edit.value, config::fix_dmx_start(c));
+    else
+        c.universe_start = s.uni_edit.value;
     config::set_channel(s.uni_edit.channel, c);
     dmx::mark_channel_dirty(s.uni_edit.channel);
 }

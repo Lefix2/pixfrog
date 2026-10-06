@@ -181,12 +181,12 @@ uint8_t build_dmx(ListItem* items, OnClick* fns) {
 
 // ── PATCH NODES ─────────────────────────────────────────────────────────────
 // The eight outputs again, this time for where they sit in the universes.
-// One output: pixel by pixel (its layout, universe and address) or — the
-// switch off — DMX control, each fixture then on the channels of its profile.
+// One output has two switches, each with its own address: "Pixel map" (every
+// LED has its DMX channels: layout, universe, address) and "Fixtures" (each
+// fixture on the channels of its DMX profile: universe, address, then one row
+// a fixture to pick its profile). Both, either or none.
 
 namespace {
-uint8_t g_last_pixel_layout[config::kNumChannels];  // to give back when Pixel map returns
-
 void open_patch(uint8_t idx) {
     s.channel_index                                  = idx;
     s.cur[static_cast<uint8_t>(NodeId::OutputPatch)] = 0;
@@ -195,20 +195,22 @@ void open_patch(uint8_t idx) {
 }
 }  // namespace
 
-uint8_t pixel_layout_before_control(uint8_t ch) {
-    return g_last_pixel_layout[ch % config::kNumChannels];
-}
-void note_pixel_layout(uint8_t ch, uint8_t packing) {
-    g_last_pixel_layout[ch % config::kNumChannels] = packing;  // a pixel layout: < control
-}
-
 uint8_t build_patch_list(ListItem* items, OnClick* fns) {
     uint8_t n = output_rows(items, fns, open_patch);
-    static char values[kChannelRows][12];
+    static char values[kChannelRows][16];
     for (uint8_t i = 0; i < kChannelRows; ++i) {  // the address, not the protocol
         const auto& cc = config::get_channel(i);
         if (led::is_off(cc.protocol)) continue;
-        std::snprintf(values[i], sizeof(values[i]), "%u.%u", cc.universe_start, cc.dmx_start);
+        if (config::pixel_mapped(cc) && config::fixture_controlled(cc))  // both: the universes
+            std::snprintf(values[i], sizeof(values[i]), "%u+F%u", cc.universe_start,
+                          config::fix_universe(cc));
+        else if (config::pixel_mapped(cc))
+            std::snprintf(values[i], sizeof(values[i]), "%u.%u", cc.universe_start, cc.dmx_start);
+        else if (config::fixture_controlled(cc))
+            std::snprintf(values[i], sizeof(values[i]), "F%u.%u", config::fix_universe(cc),
+                          config::fix_dmx_start(cc));
+        else
+            std::snprintf(values[i], sizeof(values[i]), "-");
         items[i].value = values[i];
     }
     items[n] = back_item();
@@ -227,39 +229,58 @@ uint8_t build_output_patch(ListItem* items, OnClick* fns) {
         fns[n++] = [](uint8_t) { go_back(); };
         return n;
     }
-    const bool pixels = cc.packing != config::kPackControl;
-    static char vuni[12], vdmx[8];
+    const bool pixels = config::pixel_mapped(cc), fixtures = config::fixture_controlled(cc);
+    static char vuni[12], vdmx[8], vfuni[12], vfdmx[8];
     static char flabel[config::kMaxFixtures][16], fvalue[config::kMaxFixtures][10];
-    format_uni(vuni, sizeof(vuni), cc.universe_start);
-    std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
     items[n] = { "Pixel map", pixels ? "ON" : "OFF" };
     fns[n++] = [](uint8_t) {
         const auto& c = config::get_channel(s.channel_index);
-        enter_edit(Field::ChPixelMap, ValueKind::Bool, c.packing != config::kPackControl ? 1 : 0, 0,
-                   1, 1, "Pixel map", Screen::Menu, s.channel_index);
+        enter_edit(Field::ChPixelMap, ValueKind::Bool, config::pixel_mapped(c) ? 1 : 0, 0, 1, 1,
+                   "Pixel map", Screen::Menu, s.channel_index);
     };
     if (pixels) {
-        items[n] = { "Layout", packing_label(cc.packing) };
+        format_uni(vuni, sizeof(vuni), cc.universe_start);
+        std::snprintf(vdmx, sizeof(vdmx), "%u", cc.dmx_start);
+        items[n] = { "Layout", packing_label(config::pixel_layout(cc)) };
         fns[n++] = [](uint8_t) {
             const auto& c = config::get_channel(s.channel_index);
-            enter_edit(Field::ChPacking, ValueKind::Packing, c.packing, 0, config::kPackControl - 1,
-                       1, "DMX layout", Screen::Menu, s.channel_index);
+            enter_edit(Field::ChPacking, ValueKind::Packing, config::pixel_layout(c), 0,
+                       config::kPackControl - 1, 1, "DMX layout", Screen::Menu, s.channel_index);
+        };
+        items[n] = { "Uni", vuni };
+        fns[n++] = [](uint8_t) {
+            const auto& c = config::get_channel(s.channel_index);
+            enter_edit_uni(s.channel_index, c.universe_start, Screen::Menu);
+        };
+        items[n] = { "DMX", vdmx };
+        fns[n++] = [](uint8_t) {
+            const auto& c = config::get_channel(s.channel_index);
+            enter_edit(Field::ChDmx, ValueKind::Int, c.dmx_start, 1, 512, 1, "DMX", Screen::Menu,
+                       s.channel_index);
         };
     }
-    items[n] = { "Uni", vuni };
+    items[n] = { "Fixtures", fixtures ? "ON" : "OFF" };
     fns[n++] = [](uint8_t) {
         const auto& c = config::get_channel(s.channel_index);
-        enter_edit_uni(s.channel_index, c.universe_start, Screen::Menu);
+        enter_edit(Field::ChFixtureCtl, ValueKind::Bool, config::fixture_controlled(c) ? 1 : 0, 0,
+                   1, 1, "Fixtures", Screen::Menu, s.channel_index);
     };
-    items[n] = { "DMX", vdmx };
-    fns[n++] = [](uint8_t) {
-        const auto& c = config::get_channel(s.channel_index);
-        enter_edit(Field::ChDmx, ValueKind::Int, c.dmx_start, 1, 512, 1, "DMX", Screen::Menu,
-                   s.channel_index);
-    };
-    if (!pixels) {
-        // DMX control: one row a fixture, its profile to pick. They take their
-        // channels one after the other from the address above.
+    if (fixtures) {
+        format_uni(vfuni, sizeof(vfuni), config::fix_universe(cc));
+        std::snprintf(vfdmx, sizeof(vfdmx), "%u", config::fix_dmx_start(cc));
+        items[n] = { "Fix uni", vfuni };
+        fns[n++] = [](uint8_t) {
+            const auto& c = config::get_channel(s.channel_index);
+            enter_edit_uni(s.channel_index, config::fix_universe(c), Screen::Menu, true);
+        };
+        items[n] = { "Fix DMX", vfdmx };
+        fns[n++] = [](uint8_t) {
+            const auto& c = config::get_channel(s.channel_index);
+            enter_edit(Field::ChFixDmx, ValueKind::Int, config::fix_dmx_start(c), 1, 512, 1,
+                       "Fix DMX", Screen::Menu, s.channel_index);
+        };
+        // One row a fixture, its profile to pick. They take their channels one
+        // after the other from the address above.
         static uint8_t first_row;
         first_row       = n;
         const size_t nf = config::fixture_count(cc.fixtures, config::kMaxFixtures);

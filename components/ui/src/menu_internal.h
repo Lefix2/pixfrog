@@ -242,10 +242,6 @@ extern char g_fix_title[12];
 extern char g_scene_title[12];
 extern char g_part_title[12];
 extern char g_patch_title[12];
-// The pixel layout an output had before it went to DMX control (RAM only: a
-// reboot gives it the continuous one back).
-uint8_t pixel_layout_before_control(uint8_t ch);
-void note_pixel_layout(uint8_t ch, uint8_t packing);
 // First LED past the strip of `cc`, dead LEDs included (physical, 0-based).
 uint16_t strip_end(const config::ChannelConfig& cc);
 // Short names of the DMX layouts and the fixture modes (value column).
@@ -296,8 +292,10 @@ enum class Field : uint8_t {
     ChGapPos,  // first dead LED of gap s.gap_index (1-based); chains to ChGapLen
     ChGapLen,  // its length; 0 removes the gap
     ChPacking,
-    ChPixelMap,  // pixel by pixel (a pixel layout) or DMX control
-    FixFirst,    // fixture g_fix_index of the open channel: first LED (1-based)
+    ChPixelMap,    // pixel mapping on / off
+    ChFixtureCtl,  // fixtures on their DMX profiles on / off
+    ChFixDmx,
+    FixFirst,  // fixture g_fix_index of the open channel: first LED (1-based)
     FixLen,
     FixReversed,
     FixProfile,
@@ -398,6 +396,7 @@ struct EditUniCtx {
     uint16_t value       = 0;  // packed 15-bit port-address
     uint8_t cursor       = 0;  // 0..3; 3 = DONE position
     uint8_t channel      = 0;
+    bool fixtures        = false;  // the output's fixture address, not its pixels'
     Screen return_screen = Screen::Menu;
 };
 
@@ -563,7 +562,7 @@ void format_uni(char* buf, size_t cap, uint16_t v);
 void enter_edit_ip(IpField field, uint32_t current, const char* label, Screen return_screen);
 void render_edit_ip();
 void dispatch_edit_ip(Event e);
-void enter_edit_uni(uint8_t channel, uint16_t current, Screen return_screen);
+void enter_edit_uni(uint8_t channel, uint16_t current, Screen return_screen, bool fixtures = false);
 void render_edit_uni();
 void dispatch_edit_uni(Event e);
 void go(NodeId n);

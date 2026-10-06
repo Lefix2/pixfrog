@@ -19,7 +19,7 @@ from scenario_editors import click_until_leaves, expect  # noqa: E402
 
 CH1 = [0, 1, 0]  # main menu → Rig → output 1: Proto, Pixels, Dead px, Fixtures, …
 CH_FIXTURES = 3
-PATCH1 = [0, 3, 1, 0]  # main menu → DMX → Patch → output 1: Pixel map, Layout, Uni, DMX
+PATCH1 = [0, 3, 1, 0]  # main menu → DMX → Patch → output 1: Pixel map, Layout, Uni, DMX, Fixtures
 SCENES = [0, 2, 0]  # main menu → Looks → Scenes (to edit)
 
 
@@ -80,29 +80,59 @@ def fixtures(emu):
     goto(emu, fx + [5])
     c = dump(emu, "chan 0")
     expect(c["pixels"] == 360 and c["fixtures"][5] == [300, 60, 0, 0], f"the strip grows ({c})")
-    # The output's patch: a pixel layout, then Pixel map off = DMX control,
-    # where each fixture has a profile to pick; on again gives the layout back.
+    # The output's patch: two switches, each opening its own rows. Pixel map
+    # (Layout, Uni, DMX) is on; Fixtures adds the fixtures' address and one
+    # row a fixture, for its profile.
     pick(emu, PATCH1 + [1], 1)
     expect(dump(emu, "chan 0")["packing"] == 1, "layout: whole pixels")
-    pick(emu, PATCH1 + [0], -1)
-    expect(dump(emu, "chan 0")["packing"] == 4, "pixel map off: DMX control")
-    st = goto(emu, PATCH1 + [3])  # Pixel map, Uni, DMX, then F1…
+    pick(emu, PATCH1 + [4], 1)
+    c = dump(emu, "chan 0")
+    expect(c["pixel_map"] and c["fixture_ctl"] and c["packing"] == 1, f"both ways at once ({c})")
+    st = goto(emu, PATCH1 + [5])  # Fix uni: the net.sub.uni editor, on the fixtures' address
+    expect(st["screen"] == "EditUni", f"Fix uni opens the universe editor ({st})")
+    emu.cmd("click")
+    emu.cmd("click")
+    for _ in range(3):
+        emu.cmd("right")
+    expect(click_until_leaves(emu, "EditUni"), "the fixtures' universe commits")
+    c = dump(emu, "chan 0")
+    expect(c["fix"] == [3, 1] and c["uni"] == 1, f"fixtures on universe 3, pixels where they were ({c})")
+    edit_to(emu, PATCH1 + [6], 1, 512, 21)
+    expect(dump(emu, "chan 0")["fix"] == [3, 21], "fixtures from channel 21")
+    st = goto(emu, PATCH1 + [7])  # … then F1
     expect(st["screen"] == "EditValue", f"a fixture row opens the profile picker ({st})")
     for _ in range(2):
         emu.cmd("right")
     emu.cmd("click")
     expect(dump(emu, "chan 0")["fixtures"][0] == [0, 60, 0, 2], "fixture 1 on the third profile")
+    goto(emu, PATCH1[:-1])  # the list shows both universes
+    # Pixel map off: the fixtures alone — Pixel map, Fixtures, Fix uni, Fix DMX, F1…
+    pick(emu, PATCH1 + [0], -1)
+    c = dump(emu, "chan 0")
+    expect(not c["pixel_map"] and c["fixture_ctl"] and c["packing"] == 1, f"fixtures alone ({c})")
+    st = goto(emu, PATCH1 + [4])
+    expect(st["screen"] == "EditValue", f"F1 follows the fixtures' address ({st})")
+    emu.cmd("longclick")
+    goto(emu, PATCH1[:-1])
+    # Fixtures off too: the output listens to no universe — two switches and Back.
+    pick(emu, PATCH1 + [1], -1)
+    c = dump(emu, "chan 0")
+    expect(not c["pixel_map"] and not c["fixture_ctl"], f"neither ({c})")
+    st = goto(emu, PATCH1 + [2])
+    expect(st["screen"] == "PatchListMenu", f"only Back is left ({st})")
     pick(emu, PATCH1 + [0], 1)
-    expect(dump(emu, "chan 0")["packing"] == 1, "pixel map on: the layout it had")
+    c = dump(emu, "chan 0")
+    expect(c["pixel_map"] and c["packing"] == 1 and c["uni"] == 1, f"pixel map on: as it was ({c})")
     pick(emu, PATCH1 + [0], 1)  # already on: nothing moves
     expect(dump(emu, "chan 0")["packing"] == 1, "pixel map on twice: still the layout")
     st = goto(emu, PATCH1[:-1] + [7])  # output 8 is off: nothing to patch, Back only
     expect(st["screen"] == "OutputPatchMenu", f"the patch of an output that is off ({st})")
     emu.cmd("click")
     expect(emu.state()["screen"] == "PatchListMenu", "it only leads back")
-    st = goto(emu, PATCH1 + [4])  # output 1's Back row (Pixel map, Layout, Uni, DMX, Back)
+    st = goto(emu, PATCH1 + [5])  # output 1's Back row (Pixel map, Layout, Uni, DMX, Fixtures, Back)
     expect(st["screen"] == "PatchListMenu", f"Back from the patch ({st})")
-    pick(emu, PATCH1 + [0], -1)
+    pick(emu, PATCH1 + [0], -1)  # the fixtures alone again, for what follows
+    pick(emu, PATCH1 + [1], 1)
     goto(emu, fx + [0, 3])  # [Delete]
     c = dump(emu, "chan 0")
     expect(len(c["fixtures"]) == 5 and c["fixtures"][0][0] == 70, f"fixture 1 deleted ({c})")
@@ -138,9 +168,12 @@ def fixtures(emu):
     st = goto(emu, fx + [0, 1])
     expect(st["screen"] == "EditValue" and st["gauge"] > 0.99, f"400 LEDs is the top ({st})")
     emu.cmd("longclick")
-    pick(emu, PATCH1 + [3], 0)
+    pick(emu, PATCH1 + [4], 0)
     expect(dump(emu, "chan 0")["fixtures"] == [[0, 400, 0, 0]], "the first profile")
-    pick(emu, PATCH1 + [0], 1)  # pixel map back on for the rest
+    pick(emu, PATCH1 + [0], 1)  # pixel map alone again for the rest
+    pick(emu, PATCH1 + [4], -1)
+    c = dump(emu, "chan 0")
+    expect(c["pixel_map"] and not c["fixture_ctl"], f"back to pixel mapping alone ({c})")
     # The list emptied from elsewhere while one of its fixtures is open: only
     # Back is left.
     goto(emu, fx + [0])

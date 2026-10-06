@@ -42,6 +42,7 @@ GOLDEN = {
     "dmx_menu": [0, 3],
     "patch_list": [0, 3, 1],
     "output_patch1": [0, 3, 1, 0],
+    "output_patch2": [0, 3, 1, 1],  # pixels and fixtures at once
     "control_menu": [0, 3, 2],
 }
 
@@ -56,6 +57,10 @@ SEED = [
     "set chan 7 0 17 10",    # Off
     "set gaps 0 10:2 40:1",
     "set fixtures 0 0:100 100:100:r 200:100",
+    "set fixtures 1 0:75:p1 75:75:p2",
+    "set patch 1 1 1 20 101",  # output 2: its pixels and its fixtures, each on its range
+    "set patch 2 0 1 21 1",    # output 3: its fixtures alone
+    "set patch 3 0 0",         # output 4: neither — scenes only
     "set net connected",
     "set ip 192.168.2.50",
 ]
@@ -154,7 +159,9 @@ def crawl(emu, seen):
             scr = st["screen"]
             seen.add(scr)
             if scr.startswith("Edit"):
-                for c in ("right", "right", "left"):
+                # One step up in the end — and a switch that is on stays on,
+                # or the rows it opens would never be walked.
+                for c in ("right", "left", "right"):
                     emu.cmd(c)
                 if scr == "EditValue":
                     emu.cmd("click")  # commit: exercises commit_edit
