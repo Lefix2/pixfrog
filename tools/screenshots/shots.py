@@ -43,7 +43,7 @@ WEB = [
     ("effects", "effects", '[data-fx-row="8"]'),
     ("fseq", "fseq", None),
     ("channels", "channels", None),
-    # An output in DMX control mode, in the output patch.
+    # An output driven by its pixels and by its fixtures' profiles, in the output patch.
     ("channel-control", "dmxpatch", '#patch-list-mount [data-chan="6"]'),
     ("auto", "auto", None),
     ("maint", "maint", None),

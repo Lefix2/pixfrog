@@ -230,7 +230,9 @@ for other desks, then patch one fixture at the configured address.
 A **profile** is the ordered list of DMX channels a fixture answers to, like the
 mode of a conventional luminaire. The box keeps up to eight; each fixture of an
 output points at one (the first by default). They drive the fixtures of an
-output in DMX control mode (PROTOCOLS §5.6).
+output whose **Fixtures** switch is on (PROTOCOLS §5.6) — alone, or over the
+output's pixel mapping: the Effect channel at 0 then shows the fixture's
+pixels, under its dimmer and shutter.
 
 | Function | Value |
 |---|---|
