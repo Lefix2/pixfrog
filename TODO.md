@@ -49,8 +49,19 @@ Feedback from a lighting operator (GrandMA): drive the box like a conventional
 fixture, not only as a pixel-mapped node. In landing order — each item builds
 on the one before.
 
+- [ ] ★ **Pixels and fixtures at once on an output** — an output is either
+      pixel-mapped or under fixture control ("DMX control mode"); a rig with a
+      media server on the pixels and a desk on the fixtures needs both: two
+      switches per output, each with its own address range (the pixels on one
+      universe, the fixtures' profiles on another). A fixture whose Effect
+      channel is at 0 shows its pixels under its dimmer and shutter; above 0
+      it plays the effect. Auto-patch in blocks: pixels, fixtures, control.
 - [ ] ★ **GDTF export of a profile** — a native fixture file for GrandMA3, next
       to the OFL one.
+- [ ] **Patch overlap check** — the web Auto-patch table says "no overlap
+      detected" whatever the addresses: compute it on the box from the real
+      runs (pixels, fixtures, control universe) and flag the outputs that
+      share channels, in the API, the web patch screens and the console.
 - [ ] **Scene parts aimed at fixture groups** — on a group a scene plays its
       first part only; let each part target a group (across outputs, in the
       group's order) next to the parts on outputs, so one scene holds several
