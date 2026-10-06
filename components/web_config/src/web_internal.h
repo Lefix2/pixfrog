@@ -36,6 +36,7 @@
 #include "led_protocols.h"
 #include "mbedtls/base64.h"
 #include "mdns.h"
+#include "net.h"
 #include "sacn.h"
 #include "ui.h"
 #include "web_config.h"

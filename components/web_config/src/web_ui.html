@@ -748,7 +748,7 @@
     </div>
 
     <footer style="flex:none;height:58px;border-top:1px solid var(--rule-2);background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:0 28px">
-      <span style="display:inline-flex;align-items:center;gap:8px;font:500 12px 'DM Mono';color:var(--fg-4)"><i data-lucide="hard-drive" class="ic14 fg-6"></i><span data-i18n="Settings persisted in NVS · network changes apply on reboot">Settings persisted in NVS · network changes apply on reboot</span></span>
+      <span style="display:inline-flex;align-items:center;gap:8px;font:500 12px 'DM Mono';color:var(--fg-4)"><i data-lucide="hard-drive" class="ic14 fg-6"></i><span data-i18n="Settings persisted in NVS · applied at once">Settings persisted in NVS · applied at once</span></span>
       <div style="display:flex;gap:10px;align-items:center">
         <span data-live="save-state" style="font:500 12px 'DM Mono';color:var(--accent)">✓ saved</span>
         <button class="btn-sec" data-action="cancel" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);border-radius:0;padding:9px 16px;font:500 12.5px 'DM Mono';cursor:pointer" data-i18n="Cancel">Cancel</button>
@@ -969,7 +969,7 @@ var FR={
   'The playlist holds 16 files':'La playlist contient 16 fichiers au plus',
   'Playing the playlist':'Lecture de la playlist','playlist':'playlist','loop':'boucle',
   '8 lines · 2 outputs (DATA + CLOCK) per channel':'8 lignes · 2 sorties (DATA + CLOCK) par canal',
-  'IP addressing — applied after reboot':'Adressage IP — appliqué après redémarrage',
+  'IP addressing — applied at once, the page reconnects':'Adressage IP — appliqué immédiatement, la page se reconnecte',
   'Without a DHCP server':'Sans serveur DHCP',
   'Link-local 169.254.x.x (a laptop meets it with no setup)':'Link-local 169.254.x.x (un portable la joint sans réglage)',
   'Art-Net 2.x.x.x/8 (the desk convention)':'Art-Net 2.x.x.x/8 (la convention des consoles)',
@@ -1040,7 +1040,7 @@ var FR={
   'FIRMWARE':'FIRMWARE','Upload a firmware (.bin)':'Téléverser un firmware (.bin)',
   'Export JSON':'Exporter JSON','Import JSON':'Importer JSON','DANGER ZONE':'ZONE SENSIBLE',
   'Reboot':'Redémarrer','Factory reset':'Réinitialiser (usine)','Language':'Langue','English':'English','French':'Français',
-  'Settings persisted in NVS · network changes apply on reboot':'Réglages persistés en NVS · les changements réseau s’appliquent au redémarrage',
+  'Settings persisted in NVS · applied at once':'Réglages persistés en NVS · appliqués immédiatement','Network settings applied':'Réglages réseau appliqués','The box is asking a DHCP server for an address. Its screen shows it once it has one.':'Le boîtier demande une adresse à un serveur DHCP. Son écran l’affiche dès qu’il en a une.','The box now answers at {url}.':'Le boîtier répond maintenant sur {url}.','Reconnecting as soon as it answers…':'Reconnexion dès qu’il répond…','Stay here':'Rester ici',
   '✓ saved':'✓ enregistré','Cancel':'Annuler','Save':'Enregistrer','Saving…':'Enregistrement…',
   'Error: ':'Erreur : ','pending change':'modif. en attente','pending changes':'modif. en attente',
   'Solid':'Fixe','Chase':'Chase','Rainbow':'Arc-en-ciel','SLOT':'EMPLACEMENT',
@@ -1088,7 +1088,7 @@ var FR={
   'Identifying channel ':'Identification canal ','Identifying outputs ':'Identification des sorties ','No output configured':'Aucune sortie configurée','Outputs stopped':'Sorties arrêtées',
   'Patch — next free universe U':'Patch — prochain univers libre U','Sequence stopped':'Séquence arrêtée',
   'Playing scene ':'Lecture scène ','Playing: ':'Lecture : ','Saved':'Enregistré',
-  'Restored — reboot to apply network':'Restauré — redémarrez pour le réseau','Invalid JSON':'JSON invalide',
+  '✓ restored':'✓ restauré','Invalid JSON':'JSON invalide',
   'Firmware upload…':'Téléversement firmware…','Flashed — rebooting, reload in ~10 s':'Flashé — redémarrage, rechargez dans ~10 s',
   'Transfer failed':'Échec du transfert','The file must end in .fseq':'Le fichier doit finir par .fseq',
   'Uploading ':'Téléversement ','Uploaded: ':'Téléversé : ','Cannot connect: ':'Connexion impossible : ',
@@ -1667,7 +1667,7 @@ function buildPatch(){
 
 /* ─────────── navigation ─────────── */
 var TITLES={dashboard:'Dashboard',fseq:'Sequences',auto:'Automations',effects:'Effects',scenes:'Scenes',channels:'Outputs',groups:'Groups',artnet:'Protocols',profiles:'DMX profiles',dmxpatch:'Output patch',control:'Control universe',patch:'Auto-patch',network:'Network',system:'System',maint:'Maintenance'};
-var SUBS={dashboard:'Live update · every 1 s',fseq:'Play .fseq sequences from the microSD card',auto:'What the box does on its own: at startup, between scenes, when the signal is lost',effects:'Up to 31 effects · 11 generators · up to 4 colors',scenes:'Up to 30 scenes · each part plays an effect on its outputs',channels:'8 outputs · the LED hardware and the fixtures of each strip',groups:'Ordered sets of fixtures, on any outputs',artnet:'ArtNet 4 + sACN E1.31 reception · merge',profiles:'Up to 8 profiles · the DMX channels a fixture answers to',dmxpatch:'Where each output sits in the universes: layout, universe, address',control:'Drive the box from any desk: compose its DMX channels',patch:'Last: re-address every output, then the control universe',network:'IP addressing — applied after reboot',system:'Language · screen · speaker · security',maint:'Firmware · configuration backup · telemetry & device logs · restart'};
+var SUBS={dashboard:'Live update · every 1 s',fseq:'Play .fseq sequences from the microSD card',auto:'What the box does on its own: at startup, between scenes, when the signal is lost',effects:'Up to 31 effects · 11 generators · up to 4 colors',scenes:'Up to 30 scenes · each part plays an effect on its outputs',channels:'8 outputs · the LED hardware and the fixtures of each strip',groups:'Ordered sets of fixtures, on any outputs',artnet:'ArtNet 4 + sACN E1.31 reception · merge',profiles:'Up to 8 profiles · the DMX channels a fixture answers to',dmxpatch:'Where each output sits in the universes: layout, universe, address',control:'Drive the box from any desk: compose its DMX channels',patch:'Last: re-address every output, then the control universe',network:'IP addressing — applied at once, the page reconnects',system:'Language · screen · speaker · security',maint:'Firmware · configuration backup · telemetry & device logs · restart'};
 var curScreen='dashboard';
 function go(name){
   curScreen=name;
@@ -2023,7 +2023,7 @@ function applyStatus(s){
     setLive('link-text',t(link?'Connected · 100 Mb/s full-duplex':'Disconnected'));
     var up=fmtUptime(s.uptime_s); setLive('uptime',up); setLive('uptime-big',up);
     if(s.ip) setLive('ip-line',s.ip);
-    if(s.host) setLive('mdns-host',s.host+'.local');
+    if(s.host){ lastHost=s.host; setLive('mdns-host',s.host+'.local'); }
     // Only a board with the speaker mod reports audio (stock: no card at all).
     if(el('spk-card')) el('spk-card').style.display=s.audio?'':'none';
     setLive('audio-state',t(s.audio?'ES8311 codec ready':'No audio codec answering'));
@@ -2617,7 +2617,7 @@ function saveAll(){
   var bad=CHANS.filter(function(c,i){ return dirty.has('ch'+i) && layHasError(c); });
   if(bad.length){ toast(t('Channel {n}: the layout list is not valid — fix it before saving').replace('{n}',bad[0].n),true); return; }
   var ops=[];
-  if(['network','artnet','sysgen','sysauth','syslang'].some(function(g){ return dirty.has(g); })) ops.push(api('POST','/api/global',buildGlobalBody()));
+  if(['network','artnet','sysgen','sysauth','syslang'].some(function(g){ return dirty.has(g); })) ops.push(api('POST','/api/global',buildGlobalBody()).then(function(r){ if(r&&r.network&&r.network.applied) netReconnect(r.network); return r; }));
   CHANS.forEach(function(c,i){ if(dirty.has('ch'+i)) ops.push(api('POST','/api/channel/'+i,chanBody(c))); });
   EFFECTS.forEach(function(e,i){ if(dirty.has('fx'+i)) ops.push(api('POST','/api/effect/'+i,effectBody(e))); });
   SCENES.forEach(function(s,i){ if(dirty.has('scene'+i)) ops.push(api('POST','/api/scene/'+i,sceneBody(s))); });
@@ -2626,6 +2626,32 @@ function saveAll(){
   if(dirty.has('groups')) ops.push(api('POST','/api/groups',{groups:GROUPS}));
   toast(t('Saving…'));
   Promise.all(ops).then(function(){ dirty.clear(); langDirty=false; updateSaveBar(); toast(t('✓ saved')); return reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
+}
+
+// The box re-addressed itself on save: this page is on the old address. Say
+// where it went and go there as soon as it answers — its static address, or
+// its mDNS name while it waits for a DHCP lease (then the screen shows the
+// address, for the hosts without mDNS).
+var lastHost='';
+function netReconnect(n){
+  var here=location.hostname, byName=/\.local$/i.test(here);
+  var target=n.ip&&!byName?'http://'+n.ip+'/':(byName?location.origin+'/':(lastHost?'http://'+lastHost+'.local/':''));
+  if(n.ip&&here===n.ip) return;  // the same address: nothing to do
+  var old=el('pf-netmove'); if(old) old.remove();
+  var box=document.createElement('div'); box.id='pf-netmove';
+  box.style.cssText='position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(5,6,5,.82);padding:16px';
+  box.innerHTML='<div style="max-width:520px;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px">'
+    +'<div class="h-sm" style="margin-bottom:8px">'+esc(t('Network settings applied'))+'</div>'
+    +'<div style="font:500 12.5px \'DM Mono\';color:var(--fg-2);line-height:1.55">'
+    +(n.dhcp?esc(t('The box is asking a DHCP server for an address. Its screen shows it once it has one.')):esc(t('The box now answers at {url}.').replace('{url}',target)))
+    +(target?'<br/>'+esc(t('Reconnecting as soon as it answers…'))+' <a data-netmove-link href="'+esc(target)+'" style="color:var(--accent)">'+esc(target)+'</a>':'')
+    +'</div><div style="margin-top:14px;display:flex;justify-content:flex-end"><button class="btn-sec" data-netmove-stay style="background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 12px;font:500 12px \'DM Mono\';cursor:pointer">'+esc(t('Stay here'))+'</button></div></div>';
+  document.body.appendChild(box);
+  var timer=null;
+  box.querySelector('[data-netmove-stay]').onclick=function(){ if(timer) clearInterval(timer); box.remove(); };
+  if(!target) return;
+  function probe(){ fetch(target+'api/status',{mode:'no-cors',cache:'no-store'}).then(function(){ clearInterval(timer); location.href=target; }).catch(function(){}); }
+  timer=setInterval(probe,2000); setTimeout(probe,800);
 }
 
 /* ─────────── colour maths ─────────── */
@@ -2795,7 +2821,8 @@ function restoreUpload(){
   f.text().then(function(txt){ try{ JSON.parse(txt); }catch(e){ toast(t('Invalid JSON'),true); return; }
     if(!confirm(t('Restore configuration from ')+f.name+' ?')){ el('restore-file').value=''; return; }
     fetch('/api/restore',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHdr?{Authorization:authHdr}:{}),body:txt})
-      .then(function(r){ if(!r.ok) return r.text().then(function(tx){ throw new Error(tx); }); toast(t('Restored — reboot to apply network')); reloadConfig(); })
+      .then(function(r){ if(!r.ok) return r.text().then(function(tx){ throw new Error(tx); }); return r.json(); })
+      .then(function(r){ toast(t('✓ restored')); if(r&&r.network&&r.network.applied) netReconnect(r.network); reloadConfig(); })
       .catch(function(e){ toast(t('Error: ')+e.message,true); });
   });
 }

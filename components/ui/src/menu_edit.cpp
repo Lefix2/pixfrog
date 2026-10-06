@@ -473,6 +473,7 @@ void commit_edit() {
         g.use_dhcp = (v != 0);
         config::set_global(g);
         dmx::mark_global_dirty();
+        net::apply(g);  // live: the box re-addresses itself now
         break;
     }
     case Field::NetworkIpFallback: {
@@ -1016,6 +1017,7 @@ void commit_edit_ip() {
     }
     config::set_global(g);
     dmx::mark_global_dirty();
+    net::apply(g);  // live: the box re-addresses itself now
 }
 
 void dispatch_edit_ip(Event e) {

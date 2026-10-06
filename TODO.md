@@ -81,11 +81,6 @@ on the one before.
 
 ## Network & protocols
 
-- [ ] **Network settings applied without a reboot** — DHCP / static IP, mask and
-      gateway only take effect at the next boot (the UI and the console say
-      so); switching to DHCP on site should not need a power cycle. Re-run the
-      netif setup on a change, from the menu, the console, the web and
-      ArtIpProg.
 - [ ] **ArtPollReply: one bind per universe** — it advertises 8 ports with the
       global net/subnet and each channel's first universe only; desks (MADRIX,
       xLights) should see every mapped universe with its own Net/SubNet (and

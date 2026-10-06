@@ -13,6 +13,7 @@
 #include "esp_system.h"
 #include "fakes/fseq_fake.h"
 #include "fakes/modules_fake.h"
+#include "fakes/net_fake.h"
 #include "harness.h"
 #include "hub_election.h"
 #include "sacn.h"
@@ -1422,13 +1423,19 @@ TEST(diag_names_every_reset_reason) {
 
 TEST(global_post_sets_network_display_failsafe_and_services) {
     const auto before = config::get_global();
+    ::fake::reset_net();
     Json r(post("/api/global",
                 "{\"dhcp\":0,\"ip\":\"10.1.2.3\",\"mask\":\"255.255.0.0\",\"gw\":\"10.1.0.1\","
                 "\"long_name\":\"A long name\",\"tft_brightness\":55,\"tft_dim_delay_s\":80,"
                 "\"failsafe_scene\":1,\"failsafe_color\":\"#102030\",\"sacn_enabled\":1,"
                 "\"fpp_remote\":true}")
                .body);
-    EXPECT_STREQ(r["note"]->valuestring, "network_changes_apply_after_reboot");
+    // Applied live: the answer says where the box now is.
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(r["network"], "applied")));
+    EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(r["network"], "dhcp")));
+    EXPECT_STREQ(cJSON_GetObjectItem(r["network"], "ip")->valuestring, "10.1.2.3");
+    EXPECT_EQ(::fake::net().applies, 1);
+    EXPECT_EQ(::fake::net().last_ip, 0x0A010203u);
     const auto& g = config::get_global();
     EXPECT_FALSE(g.use_dhcp);
     EXPECT_EQ(g.static_ip, 0x0A010203u);
@@ -1441,11 +1448,28 @@ TEST(global_post_sets_network_display_failsafe_and_services) {
     EXPECT_EQ(g.failsafe_g, 0x20);
     EXPECT_TRUE(sacn::is_running());
     EXPECT_TRUE(::fake::modules().fpp_running);
-    post("/api/global", "{\"sacn_enabled\":false,\"fpp_remote\":false}");
+    Json r2(post("/api/global", "{\"sacn_enabled\":false,\"fpp_remote\":false}").body);
+    EXPECT_TRUE(r2["network"] == nullptr);  // nothing of the network changed
+    EXPECT_EQ(::fake::net().applies, 1);
     shim::run_task("sacn_rx");  // the stopped task runs to its end
     EXPECT_FALSE(sacn::is_running());
     EXPECT_FALSE(::fake::modules().fpp_running);
+    // Back on DHCP: applied too, nowhere known to reconnect to.
+    Json r3(post("/api/global", "{\"dhcp\":1}").body);
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(r3["network"], "dhcp")));
+    EXPECT_TRUE(cJSON_IsNull(cJSON_GetObjectItem(r3["network"], "ip")));
+    EXPECT_EQ(::fake::net().applies, 2);
+    EXPECT_TRUE(::fake::net().last_dhcp);
     EXPECT_EQ(post("/api/global", "{\"ip\":\"1.2.3\"}").status, 400);
+    EXPECT_EQ(::fake::net().applies, 2);  // refused: not applied
+    // A restore that brings another address applies it as well; one that
+    // leaves the network alone does not.
+    Json r4(post("/api/restore", "{\"global\":{\"dhcp\":false,\"ip\":\"10.9.8.7\"}}").body);
+    EXPECT_STREQ(cJSON_GetObjectItem(r4["network"], "ip")->valuestring, "10.9.8.7");
+    EXPECT_EQ(::fake::net().applies, 3);
+    Json r5(post("/api/restore", "{\"global\":{\"long_name\":\"same box\"}}").body);
+    EXPECT_TRUE(r5["network"] == nullptr);
+    EXPECT_EQ(::fake::net().applies, 3);
     EXPECT_EQ(post("/api/global", "{\"mask\":\"x\"}").status, 400);
     EXPECT_EQ(post("/api/global", "{\"gw\":\"300.1.1.1\"}").status, 400);
     config::set_global(before);

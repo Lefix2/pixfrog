@@ -14,6 +14,7 @@
 #include "esp32_p4_devkit.h"
 #include "harness.h"
 #include "led_output.h"
+#include "net.h"
 #include "shim_control.h"
 #include "ui.h"
 
@@ -125,6 +126,8 @@ TEST(boot_stops_short_without_universe_memory_or_led_output) {
     EXPECT_TRUE(shim::task_created("sd_mon"));
     EXPECT_FALSE(shim::task_created("render"));
     EXPECT_FALSE(shim::netif_log().created);  // never reached the network
+    net::apply(config::get_global());         // nothing to apply it to: a no-op
+    EXPECT_FALSE(shim::netif_log().dhcp_stopped);
 }
 
 TEST(a_rejected_ota_image_is_recorded_once) {
@@ -291,6 +294,65 @@ TEST(static_mode_publishes_its_address_on_every_link_up) {
     shim::event_post(ETH_EVENT, ETHERNET_EVENT_CONNECTED);
     EXPECT_EQ(ui::get_ip(), 0xC0A80232u);
     EXPECT_TRUE(ui::get_net_state() == ui::NetState::Connected);
+}
+
+// A network setting changed from any surface re-addresses the box at once:
+// to a static address the link makes usable on the spot, or back to DHCP,
+// a fresh lease asked for and Acquiring until it comes.
+TEST(the_addressing_is_applied_live) {
+    configure(true);
+    boot();
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_CONNECTED);
+    ip_event_got_ip_t got{};
+    got.ip_info.ip.addr = lwip_htonl(0x0A000105);
+    shim::event_post(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got);
+    EXPECT_EQ(ui::get_ip(), 0x0A000105u);
+    EXPECT_TRUE(net::link_up());
+
+    auto g           = config::get_global();
+    g.use_dhcp       = false;
+    g.static_ip      = 0xC0A801C8;  // 192.168.1.200
+    g.static_mask    = 0xFFFFFF00;
+    g.static_gateway = 0xC0A80101;
+    net::apply(g);
+    const auto& n = shim::netif_log();
+    EXPECT_TRUE(n.dhcp_stopped);
+    EXPECT_EQ(n.ip, lwip_htonl(0xC0A801C8));
+    EXPECT_EQ(n.gw, lwip_htonl(0xC0A80101));
+    EXPECT_EQ(ui::get_ip(), 0xC0A801C8u);  // usable at once: the link is up
+    EXPECT_TRUE(ui::get_net_state() == ui::NetState::Connected);
+    // The lease that was still coming is no business of the static mode.
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED);
+    EXPECT_EQ(ui::get_ip(), 0u);
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_CONNECTED);
+    EXPECT_EQ(ui::get_ip(), 0xC0A801C8u);
+
+    const int restarts = n.dhcp_restarts;
+    g.use_dhcp         = true;
+    net::apply(g);
+    EXPECT_EQ(n.dhcp_restarts, restarts + 1);
+    EXPECT_FALSE(n.dhcp_stopped);
+    EXPECT_EQ(ui::get_ip(), 0u);  // nothing to advertise until the server answers
+    EXPECT_TRUE(ui::get_net_state() == ui::NetState::Acquiring);
+    got.ip_info.ip.addr = lwip_htonl(0x0A000107);
+    shim::event_post(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got);
+    EXPECT_EQ(ui::get_ip(), 0x0A000107u);
+    EXPECT_TRUE(ui::get_net_state() == ui::NetState::Connected);
+
+    // A static address set with the cable out waits for the link.
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED);
+    g.use_dhcp  = false;
+    g.static_ip = 0xC0A801C9;
+    net::apply(g);
+    EXPECT_EQ(n.ip, lwip_htonl(0xC0A801C9));
+    EXPECT_EQ(ui::get_ip(), 0u);
+    EXPECT_TRUE(ui::get_net_state() == ui::NetState::Disconnected);
+    shim::event_post(ETH_EVENT, ETHERNET_EVENT_CONNECTED);
+    EXPECT_EQ(ui::get_ip(), 0xC0A801C9u);
+    // Static with no address at all is DHCP.
+    g.static_ip = 0;
+    net::apply(g);
+    EXPECT_EQ(n.dhcp_restarts, restarts + 2);
 }
 
 TEST(network_bring_up_failures_never_stop_the_boot) {

@@ -27,6 +27,7 @@ set(FIRMWARE_INCLUDES
     ${REPO}/components/led_output/include
     ${REPO}/components/ui/include
     ${REPO}/components/web_config/include
+    ${REPO}/components/net/include
     ${REPO}/components/audio/include
     ${REPO}/components/web_config/src
     ${REPO}/components/config_store/include
@@ -117,6 +118,7 @@ endforeach()
 pixfrog_harness(harness_receivers
     test_receivers.cpp
     fakes/fseq_fake.cpp
+    fakes/net_fake.cpp
     ${REPO}/components/artnet/src/artnet.cpp
     ${REPO}/components/sacn/src/sacn.cpp
     ${REPO}/components/dmx_manager/src/dmx_manager.cpp
@@ -126,6 +128,7 @@ pixfrog_harness(harness_receivers
 pixfrog_harness(harness_console
     test_console.cpp
     fakes/fseq_fake.cpp
+    fakes/net_fake.cpp
     fakes/modules_fake.cpp
     ${REPO}/components/control_console/src/control_console.cpp
     ${REPO}/components/sacn/src/sacn.cpp
@@ -159,6 +162,7 @@ set_target_properties(webui_blob PROPERTIES LINKER_LANGUAGE C)
 
 set(WEB_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/fakes/fseq_fake.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/fakes/net_fake.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/fakes/modules_fake.cpp
     ${REPO}/components/web_config/src/web_config.cpp
     ${REPO}/components/web_config/src/web_util.cpp
@@ -226,6 +230,7 @@ pixfrog_harness(harness_boot
     test_boot.cpp
     fakes/menu_fake.cpp
     ${REPO}/main/main.cpp
+    ${REPO}/components/net/src/net.cpp
     ${REPO}/components/artnet/src/artnet.cpp
     ${REPO}/components/sacn/src/sacn.cpp
     ${REPO}/components/fpp_sync/src/fpp_sync.cpp

@@ -10,6 +10,7 @@
 #include "config_store.h"
 #include "dmx_manager.h"
 #include "fakes/fseq_fake.h"
+#include "fakes/net_fake.h"
 #include "harness.h"
 #include "sacn.h"
 #include "sacn_parser.h"
@@ -195,6 +196,7 @@ TEST(artaddress_programs_names_universe_and_merge) {
 }
 
 TEST(artipprog_programs_static_ip_and_replies) {
+    ::fake::reset_net();
     Bytes p = art_header(artnet::parser::kOpIpProg, 34);
     p[14]   = 0x80 | 0x04 | 0x02;  // enable, program IP + mask
     p[16] = 10, p[17] = 1, p[18] = 2, p[19] = 3;
@@ -204,6 +206,9 @@ TEST(artipprog_programs_static_ip_and_replies) {
     EXPECT_FALSE(config::get_global().use_dhcp);
     EXPECT_EQ(config::get_global().static_ip, 0x0A010203u);
     EXPECT_EQ(config::get_global().static_mask, 0xFF000000u);
+    // The desk expects the node on its new address at once.
+    EXPECT_EQ(::fake::net().applies, 1);
+    EXPECT_EQ(::fake::net().last_ip, 0x0A010203u);
     EXPECT_EQ(shim::net_sent().size(), 1);
     if (!shim::net_sent().empty()) EXPECT_EQ(shim::net_sent()[0].bytes[9], 0xF9);
 }
@@ -451,6 +456,7 @@ TEST(artaddress_switches_long_name_and_commands) {
 }
 
 TEST(artipprog_reset_to_defaults_and_dhcp) {
+    ::fake::reset_net();
     Bytes p = art_header(artnet::parser::kOpIpProg, 34);
     p[14]   = 0x80 | 0x10;  // enable + reset to defaults
     shim::net_push(kArt, p);
@@ -465,6 +471,7 @@ TEST(artipprog_reset_to_defaults_and_dhcp) {
     pump_artnet();
     EXPECT_EQ(config::get_global().static_gateway, 0x0A000001u);
     EXPECT_EQ(shim::net_sent().size(), 3);  // one ArtIpProgReply each
+    EXPECT_EQ(::fake::net().applies, 2);    // the two that programmed, not the reply-only one
 }
 
 TEST(artpollreply_send_failure_is_survived) {
