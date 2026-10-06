@@ -52,7 +52,10 @@ void seed_demo() {
             for (uint16_t k = 0; k < 4; ++k)
                 c.fixtures[k] = cfg::make_fixture(static_cast<uint16_t>(30 * k), 30, k == 2,
                                                   profiles[k]);
-            c.packing = cfg::kPackControl;
+            // Driven both ways: its pixels where it is addressed, its bars
+            // on their profiles from a universe of their own.
+            cfg::set_dmx_modes(c, true, true);
+            cfg::set_fix_address(c, 100, 1);
         }
         cfg::set_channel(ch, c);
         pixfrog::dmx::mark_channel_dirty(ch);
