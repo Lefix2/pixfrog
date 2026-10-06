@@ -1157,6 +1157,16 @@ static void test_scene_scanner_bounces() {
     fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 150);  // 15 px: bounced back to 5
     EXPECT_EQ(buf[5 * 3 + 1], 255);
     EXPECT_TRUE(buf[6 * 3 + 1] > 0);  // trail now on the other side
+    // Just after the turn the trail is still where the eye came from: it
+    // follows the eye through the end instead of vanishing there.
+    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 110);  // 11 px: back to 9
+    EXPECT_EQ(buf[9 * 3 + 1], 255);
+    EXPECT_TRUE(buf[8 * 3 + 1] > 0 && buf[7 * 3 + 1] > 0);  // passed on the way up
+    EXPECT_TRUE(buf[8 * 3 + 1] > buf[7 * 3 + 1]);           // ... and fading with the path
+    EXPECT_EQ(buf[4 * 3 + 1], 0);
+    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 20);  // 2 px, first pass: nothing ahead
+    EXPECT_EQ(buf[2 * 3 + 1], 255);
+    EXPECT_EQ(buf[3 * 3 + 1] + buf[10 * 3 + 1], 0);
 }
 
 static void test_scene_stripes_alternate_palette() {
