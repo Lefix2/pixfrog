@@ -440,8 +440,8 @@ TEST(auto_patch_lays_channels_out_contiguously) {
 }
 
 // Compact: channels follow each other inside a universe and share it; the
-// control universe takes the room left. Data on the shared universe makes
-// both outputs active and each decodes its own slots.
+// control universe is a block of its own, on the universe after. Data on the
+// shared universe makes both outputs active and each decodes its own slots.
 TEST(compact_auto_patch_shares_universes) {
     config::ChannelConfig saved[3];
     for (size_t ch = 0; ch < 3; ++ch) {
@@ -467,10 +467,10 @@ TEST(compact_auto_patch_shares_universes) {
     EXPECT_EQ(config::get_channel(1).universe_start, 10);
     EXPECT_EQ(config::get_channel(1).dmx_start, 151);
     EXPECT_EQ(config::get_channel(2).dmx_start, 301);
-    EXPECT_EQ(config::get_control().universe, 10);  // in the room after channel 3
-    EXPECT_EQ(config::get_control().address, 451);
-    EXPECT_EQ(next, 11);
-    EXPECT_EQ(used, 1u);
+    EXPECT_EQ(config::get_control().universe, 11);  // its own block, after the pixels
+    EXPECT_EQ(config::get_control().address, 1);
+    EXPECT_EQ(next, 12);
+    EXPECT_EQ(used, 2u);
     dmx::handle_pending_remaps();
     uint8_t u[512]{};
     u[150] = 77;  // channel 1's first byte
@@ -924,6 +924,69 @@ TEST(control_mode_drives_each_fixture_from_its_profile) {
     EXPECT_EQ(dmx::fixture_patch(config::get_channel(0), at, 8), 0u);  // a pixel layout has none
 }
 
+// Both switches on: the pixels on universe 1, the fixtures' channels on
+// universe 9. A fixture whose Effect channel is at 0 shows its pixels under
+// its dimmer; above 0 it plays the effect of the bank.
+TEST(pixels_and_fixtures_drive_one_output) {
+    control_output();
+    auto c = config::get_channel(0);
+    config::set_dmx_modes(c, true, true);
+    config::set_fix_address(c, 9, 1);
+    config::set_channel(0, c);
+    apply_channels();
+    EXPECT_EQ(dmx::channel_universe_span(config::get_channel(0)), 2u);
+    dmx::FixtureAddress at[4];
+    EXPECT_EQ(dmx::fixture_patch(config::get_channel(0), at, 4), 3u);
+    EXPECT_EQ(at[0].universe, 9);
+    EXPECT_EQ(at[2].address, 10);
+
+    config::Effect fx{};
+    std::strcpy(fx.name, "Blue");
+    fx.generator                   = config::kSceneFxSolid;
+    fx.num_colors                  = 1;
+    fx.colors[0][2]                = 250;
+    const config::Effect fx_before = config::get_effect(0);
+    EXPECT_TRUE(config::set_effect(0, fx));
+
+    static uint8_t pix[512], fix[512];
+    std::memset(pix, 60, sizeof(pix));
+    std::memset(fix, 0, sizeof(fix));
+    fix[9] = 255;  // fixture 3 (Dim RGB): its dimmer full
+    dmx::write_universe_from_source(1, pix, sizeof(pix), kSrcA, dmx::kArtnetMergeTimeoutUs);
+    dmx::write_universe_from_source(9, fix, sizeof(fix), kSrcA, dmx::kArtnetMergeTimeoutUs);
+    dmx::swap_universes();
+    dmx::decode_pixels_for_channel(0);
+    const uint8_t* px = dmx::pixel_back_buffer(0);
+    EXPECT_EQ(px[0], 60);       // fixture 1 (RGB, no dimmer): its pixels as sent
+    EXPECT_EQ(px[20 * 3], 60);  // fixture 2 (RGB FX), Effect at 0: its pixels
+    EXPECT_EQ(px[40 * 3], 60);  // fixture 3 under its dimmer
+    fix[3 + 3] = 8;             // fixture 2's Effect channel: the first effect of the bank
+    fix[9]     = 0;             // fixture 3's dimmer down
+    dmx::write_universe_from_source(9, fix, sizeof(fix), kSrcA, dmx::kArtnetMergeTimeoutUs);
+    dmx::swap_universes();
+    dmx::decode_pixels_for_channel(0);
+    px = dmx::pixel_back_buffer(0);
+    EXPECT_EQ(px[0], 60);
+    EXPECT_EQ(px[20 * 3], 0);  // the effect: blue
+    EXPECT_EQ(px[20 * 3 + 2], 250);
+    EXPECT_EQ(px[39 * 3 + 2], 250);
+    EXPECT_EQ(px[40 * 3] + px[59 * 3 + 2], 0);
+
+    // Neither switch: the output shows nothing of its own and takes no universe.
+    c = config::get_channel(0);
+    config::set_dmx_modes(c, false, false);
+    config::set_channel(0, c);
+    apply_channels();
+    EXPECT_EQ(dmx::channel_universe_span(config::get_channel(0)), 0u);
+    EXPECT_EQ(dmx::fixture_patch(config::get_channel(0), at, 4), 0u);
+    dmx::decode_pixels_for_channel(0);
+    px = dmx::pixel_back_buffer(0);
+    EXPECT_EQ(px[0] + px[20 * 3 + 2] + px[59 * 3], 0);
+
+    config::set_effect(0, fx_before);
+    pixel_output();
+}
+
 TEST(control_mode_frees_the_universes_pixels_would_take) {
     // Eight outputs of 300 RGBW pixels need 8 × 3 universes; in control mode,
     // one fixture each on the 16-channel profile, they share a single one.
@@ -948,7 +1011,11 @@ TEST(control_mode_frees_the_universes_pixels_would_take) {
     EXPECT_EQ(next, 2);
     EXPECT_EQ(config::get_channel(7).universe_start, 1);
     EXPECT_EQ(config::get_channel(7).dmx_start, 7 * 16 + 1);
-    EXPECT_EQ(config::get_channel(3).packing, config::kPackControl);
+    // The legacy "control" layout became the two switches.
+    EXPECT_TRUE(!config::pixel_mapped(config::get_channel(3)));
+    EXPECT_TRUE(config::fixture_controlled(config::get_channel(3)));
+    EXPECT_EQ(config::fix_universe(config::get_channel(7)), 1);
+    EXPECT_EQ(config::fix_dmx_start(config::get_channel(7)), 7 * 16 + 1);
 
     // One frame drives the eight outputs: output 8's fixture in red at half.
     static uint8_t u[512];

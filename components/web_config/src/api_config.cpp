@@ -137,12 +137,20 @@ static cJSON* build_channels_json() {
             cJSON_AddItemToArray(pair, cJSON_CreateNumber(c.gaps[k].len));
             cJSON_AddItemToArray(jg, pair);
         }
-        cJSON_AddStringToObject(jc, "packing", config::packing_id(c.packing));
+        // What drives the output from the network, each on its own range:
+        // pixel mapping ("packing" is its layout, from universe_start /
+        // dmx_start) and fixture control (the fixtures on their DMX profiles,
+        // from fix_universe / fix_dmx_start).
+        cJSON_AddBoolToObject(jc, "pixel_map", config::pixel_mapped(c));
+        cJSON_AddStringToObject(jc, "packing", config::packing_id(config::pixel_layout(c)));
+        cJSON_AddBoolToObject(jc, "fixture_ctl", config::fixture_controlled(c));
+        cJSON_AddNumberToObject(jc, "fix_universe", config::fix_universe(c));
+        cJSON_AddNumberToObject(jc, "fix_dmx_start", config::fix_dmx_start(c));
         cJSON_AddNumberToObject(jc, "universes",
                                 static_cast<double>(dmx::channel_universe_span(c)));
-        // DMX control mode — the patch sheet: where each fixture sits on the
+        // Fixture control — the patch sheet: where each fixture sits on the
         // wire, [universe, address, channels, profile], in fixture order.
-        if (c.packing == config::kPackControl) {
+        if (config::fixture_controlled(c)) {
             dmx::FixtureAddress at[config::kMaxFixtures];
             const size_t n = dmx::fixture_patch(c, at, config::kMaxFixtures);
             cJSON* jpatch  = cJSON_AddArrayToObject(jc, "patch");
@@ -490,13 +498,29 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         c.wb_g = g ? static_cast<uint8_t>(g) : 255;
         c.wb_b = bl ? static_cast<uint8_t>(bl) : 255;
     }
+    if (json_u32(j, "fix_universe", 0, 32767, u))
+        config::set_fix_address(c, static_cast<uint16_t>(u), config::fix_dmx_start(c));
+    if (json_u32(j, "fix_dmx_start", 1, 512, u))
+        config::set_fix_address(c, config::fix_universe(c), static_cast<uint16_t>(u));
     if ((s = json_str(j, "packing"))) {
         const int p = config::packing_from_id(s);
-        if (p >= 0)
-            c.packing = static_cast<uint8_t>(p);
-        else
-            refuse(why, "packing: continuous|whole|fixture|colour|control");
+        // A body of before the two switches (an older backup, a script) names
+        // neither: its layout then says it all — pixel mapping alone, or
+        // "control": the fixtures alone, where the output is addressed.
+        const bool before = !cJSON_HasObjectItem(j, "pixel_map") &&
+                            !cJSON_HasObjectItem(j, "fixture_ctl");
+        if (p == config::kPackControl) {
+            config::set_fix_address(c, c.universe_start, c.dmx_start);
+            config::set_dmx_modes(c, false, true);
+        } else if (p >= 0) {
+            config::set_pixel_layout(c, static_cast<uint8_t>(p));
+            if (before) config::set_dmx_modes(c, true, false);
+        } else {
+            refuse(why, "packing: continuous|whole|fixture|colour");
+        }
     }
+    if (json_bool(j, "pixel_map", b)) config::set_dmx_modes(c, b, config::fixture_controlled(c));
+    if (json_bool(j, "fixture_ctl", b)) config::set_dmx_modes(c, config::pixel_mapped(c), b);
     apply_gaps_json(j, c);
     apply_fixtures_json(j, c, why);
 }
@@ -941,8 +965,14 @@ esp_err_t handle_autopatch(httpd_req_t* req) {
     const int packing = p && std::strcmp(p, "keep") != 0 ? config::packing_from_id(p) : -1;
     const bool bad_p  = p && std::strcmp(p, "keep") != 0 && packing < 0;
     o.packing         = static_cast<int8_t>(packing);
+    // "fix_base": where the fixtures' block starts (absent or -1: after the pixels).
+    const cJSON* fb   = cJSON_GetObjectItemCaseSensitive(j, "fix_base");
+    const bool bad_fb = fb && !cJSON_IsNull(fb) &&
+                        !(cJSON_IsNumber(fb) && fb->valuedouble >= -1 && fb->valuedouble <= 32767);
+    if (cJSON_IsNumber(fb) && !bad_fb) o.fix_base = static_cast<int32_t>(fb->valuedouble);
     cJSON_Delete(j);
     if (!ok) return send_err(req, 400, "base 0..32767");
+    if (bad_fb) return send_err(req, 400, "fix_base 0..32767 (-1 = after the pixels)");
     // "control" is an output's mode, not a pixel layout to give every output.
     if (bad_p || packing == config::kPackControl)
         return send_err(req, 400, "packing: keep|continuous|whole|fixture|colour");

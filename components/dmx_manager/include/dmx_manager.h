@@ -148,9 +148,10 @@ bool auto_patch_universes(uint16_t base, uint16_t* next_free = nullptr);
 // An enabled control universe follows (in the room left when compact).
 // *universes (if set) gets the universes the patch uses, control included.
 struct AutoPatch {
-    uint16_t base  = 0;
-    bool compact   = false;
-    int8_t packing = -1;
+    uint16_t base    = 0;
+    bool compact     = false;
+    int8_t packing   = -1;
+    int32_t fix_base = -1;  // first universe of the fixtures' block; -1 = after the pixels
 };
 bool auto_patch(const AutoPatch& opt, uint16_t* next_free = nullptr, size_t* universes = nullptr);
 

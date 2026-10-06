@@ -707,10 +707,16 @@ TEST(control_mode_output_and_its_patch_sheet) {
                    "\"fixtures\":[[1,20],[21,20,0,2],[41,20,1,1]]}")
                   .status,
               200);
-    EXPECT_EQ(config::get_channel(6).packing, config::kPackControl);
+    // "control" is the old name of "fixtures alone, at the output's address".
+    EXPECT_TRUE(!config::pixel_mapped(config::get_channel(6)));
+    EXPECT_TRUE(config::fixture_controlled(config::get_channel(6)));
     Json cfg(get("/api/config").body);
     const cJSON* ch = cJSON_GetArrayItem(cfg["channels"], 6);
-    EXPECT_STREQ(cJSON_GetObjectItem(ch, "packing")->valuestring, "control");
+    EXPECT_STREQ(cJSON_GetObjectItem(ch, "packing")->valuestring, "continuous");
+    EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(ch, "pixel_map")));
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(ch, "fixture_ctl")));
+    EXPECT_EQ(cJSON_GetObjectItem(ch, "fix_universe")->valueint, 40);
+    EXPECT_EQ(cJSON_GetObjectItem(ch, "fix_dmx_start")->valueint, 501);
     EXPECT_EQ(cJSON_GetObjectItem(ch, "universes")->valueint, 2);
     // [universe, address, channels, profile] per fixture, in their order.
     const cJSON* patch = cJSON_GetObjectItem(ch, "patch");
@@ -734,8 +740,60 @@ TEST(control_mode_output_and_its_patch_sheet) {
     EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"packing\":\"control\"}").status, 400);
     EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"compact\":true,\"packing\":\"whole\"}").status,
               200);
-    EXPECT_EQ(config::get_channel(6).packing, config::kPackControl);
+    EXPECT_TRUE(!config::pixel_mapped(config::get_channel(6)));
+    EXPECT_TRUE(config::fixture_controlled(config::get_channel(6)));
     EXPECT_EQ(post("/api/channel/6", "{\"packing\":\"sideways\"}").status, 400);
+
+    // Both at once: the pixels on one range, the fixtures' channels on another.
+    EXPECT_EQ(post("/api/channel/6",
+                   "{\"pixel_map\":true,\"fixture_ctl\":true,\"packing\":\"whole\","
+                   "\"universe_start\":1,\"dmx_start\":1,"
+                   "\"fix_universe\":10,\"fix_dmx_start\":101}")
+                  .status,
+              200);
+    {
+        Json mixed(get("/api/config").body);
+        const cJSON* m = cJSON_GetArrayItem(mixed["channels"], 6);
+        EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(m, "pixel_map")));
+        EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(m, "fixture_ctl")));
+        EXPECT_STREQ(cJSON_GetObjectItem(m, "packing")->valuestring, "whole");
+        EXPECT_EQ(cJSON_GetObjectItem(m, "universe_start")->valueint, 1);
+        EXPECT_EQ(cJSON_GetObjectItem(m, "universes")->valueint, 2);  // one of each
+        const cJSON* first = cJSON_GetArrayItem(cJSON_GetObjectItem(m, "patch"), 0);
+        EXPECT_EQ(cJSON_GetArrayItem(first, 0)->valueint, 10);
+        EXPECT_EQ(cJSON_GetArrayItem(first, 1)->valueint, 101);
+    }
+    // The auto-patch lays the blocks out: pixels, then fixtures — or the
+    // fixtures from a base of their own.
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"fix_base\":200}").status, 200);
+    EXPECT_EQ(config::fix_universe(config::get_channel(6)), 200);
+    EXPECT_EQ(config::fix_dmx_start(config::get_channel(6)), 1);
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"fix_base\":-1}").status, 200);
+    EXPECT_TRUE(config::fix_universe(config::get_channel(6)) < 200);
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"fix_base\":40000}").status, 400);
+    EXPECT_EQ(post("/api/autopatch", "{\"base\":0,\"fix_base\":\"x\"}").status, 400);
+    // Neither: no universe, and no patch sheet.
+    EXPECT_EQ(post("/api/channel/6", "{\"pixel_map\":false,\"fixture_ctl\":false}").status, 200);
+    {
+        Json off(get("/api/config").body);
+        const cJSON* m = cJSON_GetArrayItem(off["channels"], 6);
+        EXPECT_EQ(cJSON_GetObjectItem(m, "universes")->valueint, 0);
+        EXPECT_TRUE(cJSON_GetObjectItem(m, "patch") == nullptr);
+    }
+    // A body of before the switches — an older backup — names a layout only:
+    // pixel mapping alone, whatever the output was doing.
+    EXPECT_EQ(post("/api/channel/6", "{\"pixel_map\":false,\"fixture_ctl\":true}").status, 200);
+    EXPECT_EQ(post("/api/channel/6", "{\"packing\":\"fixture\"}").status, 200);
+    EXPECT_TRUE(config::pixel_mapped(config::get_channel(6)));
+    EXPECT_TRUE(!config::fixture_controlled(config::get_channel(6)));
+    EXPECT_EQ(config::pixel_layout(config::get_channel(6)), config::kPackPerFixture);
+    // ... and with a switch beside it, the layout is only the layout.
+    EXPECT_EQ(post("/api/channel/6", "{\"packing\":\"whole\",\"fixture_ctl\":true}").status, 200);
+    EXPECT_TRUE(config::pixel_mapped(config::get_channel(6)));
+    EXPECT_TRUE(config::fixture_controlled(config::get_channel(6)));
+    // Out of range: ignored.
+    EXPECT_EQ(post("/api/channel/6", "{\"fix_dmx_start\":0}").status, 200);
+    EXPECT_EQ(config::fix_dmx_start(config::get_channel(6)), 1);
     post("/api/restore", initial);
 }
 

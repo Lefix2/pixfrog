@@ -717,13 +717,35 @@ constexpr uint8_t kPackContinuous  = 0;  // byte after byte: a pixel may straddl
 constexpr uint8_t kPackWholePixels = 1;  // whole pixels only (170 RGB / 128 RGBW per universe)
 constexpr uint8_t kPackPerFixture  = 2;  // each fixture from slot 1 of a new universe, whole pixels
 constexpr uint8_t kPackFixtureColour = 3;  // one colour per fixture: 3 (RGBW: 4) channels a bar
-// DMX control mode: no pixel data at all. Each fixture takes the channels of
-// its DMX profile, one after the other from dmx_start; a fixture never
-// straddles two universes. An output without fixtures is one fixture.
+// Legacy: "DMX control mode" used to be a fifth layout value — no pixel data,
+// the fixtures on their profiles from (universe_start, dmx_start). It is now
+// two switches of its own (see the flags below); sanitize_channel converts a
+// stored 4, and the accessors read a raw one the old way.
 constexpr uint8_t kPackControl = 4;
 constexpr uint8_t kPackCount   = 5;
+// ChannelConfig::packing also carries what drives the output from the network,
+// each on its own address range:
+//   pixel mapping    every LED has its DMX channels, from (universe_start,
+//                    dmx_start), laid out as the low bits say — on unless
+//                    kChanNoPixelMap;
+//   fixture control  each fixture takes the channels of its DMX profile, one
+//                    after the other from the fixture address (fix_universe,
+//                    fix_dmx_start); a fixture never straddles two universes,
+//                    an output without fixtures is one fixture — kChanFixtureCtl.
+// Both: a fixture whose Effect channel is at 0 shows its pixels, under its
+// dimmer and shutter; above 0 it plays the effect of the bank. Neither: the
+// output takes no universe and only plays scenes. Zero — any blob written
+// before these bits — is pixel mapping alone, as it always was; a firmware
+// that does not know them reads an unknown layout, which it sanitizes to
+// continuous pixel mapping.
+constexpr uint8_t kPackLayoutMask = 0x07;
+constexpr uint8_t kChanFixtureCtl = 0x40;
+constexpr uint8_t kChanNoPixelMap = 0x80;
+// Ids of the layouts ("control" for a backup or a command of before the
+// switches). packing_id() takes the layout bits of a packing byte.
 inline const char* packing_id(uint8_t p) {
-    static const char* const kIds[] = { "continuous", "whole", "fixture", "colour", "control" };
+    static const char* const kIds[]  = { "continuous", "whole", "fixture", "colour", "control" };
+    p                               &= kPackLayoutMask;
     return p < kPackCount ? kIds[p] : "continuous";
 }
 inline int packing_from_id(const char* s) {
@@ -755,10 +777,55 @@ struct ChannelConfig {
     // Fixtures (normalized; zero-fill migration = none: the scenes then see
     // one strip, as before fixtures existed).
     Fixture fixtures[kMaxFixtures];
-    // How the pixels fill the DMX universes (kPack*). Zero-fill migration =
-    // continuous, the only layout before this field.
+    // How the pixels fill the DMX universes (kPack*), and the kChan* switches.
+    // Zero-fill migration = continuous pixel mapping, all there was before.
     uint8_t packing;
+    // The fixture address, 24 bits little-endian: universe << 9 | (slot - 1).
+    // These were the struct's tail padding: the record keeps its size, so an
+    // older firmware still loads it (see fix_universe / set_fix_address).
+    uint8_t fix_addr[3];
 };
+static_assert(sizeof(ChannelConfig) == 184, "ChannelConfig is an NVS record: its size is frozen");
+
+// The pixel layout (kPackContinuous .. kPackFixtureColour).
+inline uint8_t pixel_layout(const ChannelConfig& c) {
+    const uint8_t l = c.packing & kPackLayoutMask;
+    return l < kPackControl ? l : kPackContinuous;
+}
+inline bool legacy_control(const ChannelConfig& c) {
+    return (c.packing & kPackLayoutMask) == kPackControl;
+}
+inline bool pixel_mapped(const ChannelConfig& c) {
+    return !(c.packing & kChanNoPixelMap) && !legacy_control(c);
+}
+inline bool fixture_controlled(const ChannelConfig& c) {
+    return (c.packing & kChanFixtureCtl) != 0 || legacy_control(c);
+}
+// Where the fixtures' channels start (a raw legacy value: the channel's own).
+inline uint16_t fix_universe(const ChannelConfig& c) {
+    if (legacy_control(c)) return c.universe_start;
+    return static_cast<uint16_t>(((c.fix_addr[1] | (c.fix_addr[2] << 8)) >> 1) & 0x7FFF);
+}
+inline uint16_t fix_dmx_start(const ChannelConfig& c) {  // 1..512
+    if (legacy_control(c)) return c.dmx_start;
+    return static_cast<uint16_t>(((c.fix_addr[0] | (c.fix_addr[1] << 8)) & 0x1FF) + 1);
+}
+inline void set_fix_address(ChannelConfig& c, uint16_t universe, uint16_t dmx_start) {
+    const uint32_t slot = dmx_start >= 1 && dmx_start <= 512 ? dmx_start - 1u : 0u;
+    const uint32_t v    = (static_cast<uint32_t>(universe & 0x7FFF) << 9) | slot;
+    c.fix_addr[0]       = static_cast<uint8_t>(v);
+    c.fix_addr[1]       = static_cast<uint8_t>(v >> 8);
+    c.fix_addr[2]       = static_cast<uint8_t>(v >> 16);
+}
+inline void set_pixel_layout(ChannelConfig& c, uint8_t layout) {
+    c.packing = static_cast<uint8_t>((c.packing & ~kPackLayoutMask) |
+                                     (layout < kPackControl ? layout : kPackContinuous));
+}
+// Which of the two drive the output; the pixel layout and both addresses stay.
+inline void set_dmx_modes(ChannelConfig& c, bool pixels, bool fixtures) {
+    c.packing = static_cast<uint8_t>(pixel_layout(c) | (pixels ? 0 : kChanNoPixelMap) |
+                                     (fixtures ? kChanFixtureCtl : 0));
+}
 
 // Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
 // 0 would silently black a colour out. Called after every NVS load.
@@ -792,7 +859,15 @@ inline void sanitize_channel(ChannelConfig& c) {
         if (g.pos >= led::kMaxPixelsPerChannel) g.len = 0;
     led::normalize_gaps(c.gaps, led::kMaxPixelGaps);
     normalize_fixtures(c.fixtures, kMaxFixtures);
-    if (c.packing >= kPackCount) c.packing = kPackContinuous;
+    // A stored "control" layout becomes the two switches: no pixel mapping,
+    // the fixtures on their profiles where the channel was addressed.
+    if (legacy_control(c)) {
+        set_fix_address(c, c.universe_start, c.dmx_start);
+        c.packing = kPackContinuous | kChanNoPixelMap | kChanFixtureCtl;
+    }
+    c.packing &= kPackLayoutMask | kChanNoPixelMap | kChanFixtureCtl;
+    if ((c.packing & kPackLayoutMask) >= kPackControl)
+        c.packing = static_cast<uint8_t>(c.packing & ~kPackLayoutMask);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

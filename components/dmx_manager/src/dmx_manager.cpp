@@ -464,31 +464,26 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
         chans[i] = config::get_channel(i);
 
     logic::AutoPatchOptions o;
-    o.base    = opt.base;
-    o.compact = opt.compact;
-    o.packing = opt.packing;
-    uint16_t starts[config::kNumChannels], dmx[config::kNumChannels], slot_after = 0;
-    uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx,
-                                              &slot_after, &config::get_profiles());
-    // Sequential layout: the universes used are next - base (the cursor wraps
-    // past 0x7FFF, so the end is computed unmasked to see an overflow).
-    size_t used        = static_cast<size_t>((next - opt.base) & 0x7FFF);
+    o.base     = opt.base;
+    o.compact  = opt.compact;
+    o.packing  = opt.packing;
+    o.fix_base = opt.fix_base;
+    uint16_t starts[config::kNumChannels], dmx[config::kNumChannels];
+    size_t used   = 0;
+    uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx, nullptr,
+                                              &config::get_profiles(), &used);
+    // The blocks are sequential from their bases: an end past the last
+    // universe shows unmasked (the cursor itself wraps past 0x7FFF).
     const uint32_t end = static_cast<uint32_t>(opt.base) + used;
 
     bool all_persisted = true;
-    // The DMX control universe, when used, follows the last output: in the
-    // room left in its universe when compact, else from address 1 of the next.
+    // The DMX control universe, when used, is the third block: it opens the
+    // universe after the pixels and the fixtures.
     auto ctl = config::get_control();
     if (ctl.enabled && end <= kMaxUniverseNumber) {
-        const size_t foot = config::control_footprint(ctl);
-        if (opt.compact && slot_after > 0 && slot_after + foot <= kUniverseSize) {
-            ctl.universe = static_cast<uint16_t>((next - 1) & 0x7FFF);
-            ctl.address  = static_cast<uint16_t>(slot_after + 1);
-        } else {
-            ctl.universe = next++;
-            ctl.address  = 1;
-            ++used;
-        }
+        ctl.universe = next++;
+        ctl.address  = 1;
+        ++used;
         all_persisted &= config::set_control(ctl);
         mark_global_dirty();
     }
@@ -508,11 +503,11 @@ size_t channel_universe_span(const config::ChannelConfig& cc) {
 }
 
 size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_t cap) {
-    if (cc.packing != config::kPackControl) return 0;
+    if (!config::fixture_controlled(cc)) return 0;
     size_t n = 0;
     logic::for_each_fixture_patch(cc, config::get_profiles(), [&](const logic::FixturePatch& f) {
         if (n < cap)
-            out[n] = FixtureAddress{ static_cast<uint16_t>(cc.universe_start + f.uni_off),
+            out[n] = FixtureAddress{ static_cast<uint16_t>(config::fix_universe(cc) + f.uni_off),
                                      static_cast<uint16_t>(f.slot + 1), f.footprint, f.profile };
         ++n;
     });
@@ -1007,13 +1002,17 @@ namespace {
 // universes, or — in DMX control mode — its fixtures drawn from their channels.
 void decode_live(const config::ChannelConfig& cc, uint8_t* buf, uint64_t t) {
     auto universe = [](uint16_t u) { return universe_front_buffer_for(u); };
-    if (cc.packing == config::kPackControl) {
+    // Its pixels, then its fixtures over them — or alone on a dark strip. An
+    // output driven neither way shows nothing of its own (scenes still play).
+    const bool pixels = config::pixel_mapped(cc);
+    if (pixels)
+        logic::decode_pixels(buf, kMaxBytesPerChan, cc, universe);
+    else if (!config::fixture_controlled(cc))
+        std::memset(buf, 0, logic::channel_total_bytes(cc));
+    if (config::fixture_controlled(cc))
         logic::render_fixtures(
             buf, kMaxBytesPerChan, cc, config::get_profiles(), t, universe,
-            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); });
-        return;
-    }
-    logic::decode_pixels(buf, kMaxBytesPerChan, cc, universe);
+            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); }, pixels);
 }
 
 // One source into `buf`: scene `src` (with the desk's overrides) when it is a
