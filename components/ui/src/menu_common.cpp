@@ -104,14 +104,22 @@ void draw_chan_badge(int x, int y, int side, int number, Color family, bool fill
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-// Number of DMX universes a channel occupies — its real layout (packing,
-// dmx_start, the fixtures' profiles in DMX control mode); a disabled channel
-// none. Lets HOME show the real addressing span (U1-2, U8-10) instead of only
-// the start universe.
-int channel_universe_span(const config::ChannelConfig& cc) {
-    if (led::is_off(cc.protocol)) return 0;
-    const auto span = static_cast<int>(dmx::channel_universe_span(cc));
-    return span ? span : 1;
+// An output's universes for HOME: its pixels' real span (1, 8-10: layout and
+// dmx_start included), its fixtures' first universe (F21), both (3+F20) —
+// a dash when it listens to none.
+void format_ch_universes(const config::ChannelConfig& cc, char* buf, size_t cap) {
+    const size_t px = dmx::channel_pixel_span(cc), fx = dmx::channel_fixture_span(cc);
+    const unsigned u = cc.universe_start, f = config::fix_universe(cc);
+    if (px && fx)
+        std::snprintf(buf, cap, "%u+F%u", u, f);
+    else if (px > 1)
+        std::snprintf(buf, cap, "%u-%u", u, static_cast<unsigned>(u + px - 1));
+    else if (px)
+        std::snprintf(buf, cap, "%u", u);
+    else if (fx)
+        std::snprintf(buf, cap, "F%u", f);
+    else
+        std::snprintf(buf, cap, "-");
 }
 #endif
 #endif

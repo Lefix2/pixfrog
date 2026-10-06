@@ -308,9 +308,11 @@ fixtures, the dead LEDs and any overlap.
   (after the last one, as long as it; the first takes the strip as it is, and
   the strip grows under a fixture that passes its end), **Split in** *N* equal
   fixtures, and per fixture its first LED, length (both stop at its
-  neighbours), mounting direction and, in DMX control mode, its DMX profile.
-  The output's DMX layout, universe and address are under DMX → **Patch**
-  (§5.6), with the **Pixel map** switch — off: DMX control mode.
+  neighbours) and mounting direction.
+  What drives the output from the network is under DMX → **Patch** (§5.6):
+  the **Pixel map** switch with its layout, universe and address, the
+  **Fixtures** switch with the fixtures' universe and address and one row a
+  fixture for its DMX profile.
 
 ### 5.5b Fixture groups
 
@@ -354,11 +356,50 @@ Scenes on groups (`dmx::group_play / group_stop`, the render task draws them):
   the status; console `scene play <n> group <g>`, `scene group <n> <g|none>`,
   `scene part … [rev]`.
 
-### 5.6 DMX layout and auto-patch
+### 5.6 Output patch and auto-patch
 
-How a channel's pixels fill its universes is per channel
-(`ChannelConfig::packing`, `"packing"` in the API, `ch N packing` on the
-console), from `(universe_start, dmx_start)`:
+An output is driven from the network two ways, each a switch of its own and
+each on its own address range (`ChannelConfig::packing` carries both switches
+next to the pixel layout — web **Output patch** screen, DMX → **Patch** on the
+device):
+
+| switch | what it does | address | API / console |
+|---|---|---|---|
+| **Pixel mapping** (on by default) | every LED has its DMX channels | `(universe_start, dmx_start)` | `"pixel_map"` / `ch N pixel_map 0\|1` |
+| **Fixtures (DMX profiles)** | each fixture answers to the channels of its DMX profile, like a conventional luminaire | `(fix_universe, fix_dmx_start)` | `"fixture_ctl"`, `"fix_universe"`, `"fix_dmx_start"` / `ch N fixture_ctl 0\|1`, `fix_universe`, `fix_dmx` |
+
+- **Pixel mapping alone** — the pixel-mapped node it always was.
+- **Fixtures alone** — no pixel data: a handful of channels a fixture instead
+  of 3–4 a pixel. Eight outputs of 300 RGBW pixels take 24 universes
+  pixel-mapped, and one with a 16-channel fixture each.
+- **Both** — the pixels come from one range (a media server, a pixel mapper),
+  the fixtures' channels from another (the desk). Per fixture, per frame: the
+  **Effect channel at 0** shows its pixels, under the fixture's dimmer and
+  shutter; **above 0** the fixture plays that effect of the bank instead, as
+  it would alone. A profile without an Effect channel only dims and shutters
+  its pixels (its colour channels have nothing to colour). The fixtures'
+  universe missing or silent leaves the pixels as they come. LEDs in no
+  fixture keep their pixel data.
+- **Neither** — the output listens to no universe and takes none of the pool;
+  it only plays scenes.
+
+On the network side an output is its two ranges: sACN joins the multicast
+groups of both, and the pool maps both. Art-Net knows a port by one universe —
+its pixels', or its fixtures' when it has no pixel mapping: that is what
+ArtPollReply announces and what ArtAddress programs. On the device, HOME shows
+the pixels' span (`8-10`), the fixtures' universe (`F21`) or both (`3+F20`).
+Switching **Fixtures** on from the web or the device while their address sits
+inside some output's pixels — never set, it is universe 0 — moves it to the
+first universe after everything patched (the API and the console take the
+address as given).
+
+The dimmers multiply: the fixture's own, then the control universe's master,
+then the box's. The output is alive — no failsafe — while either of its ranges
+receives; a range that stops keeps its last frame (ARCHITECTURE §6.1: a
+universe that is not rewritten keeps its last value).
+
+**The pixel layout** — how the pixels fill their universes, `"packing"` in the
+API, `ch N packing` on the console:
 
 | packing | layout | 1024 px RGB |
 |---|---|---|
@@ -366,25 +407,28 @@ console), from `(universe_start, dmx_start)`:
 | `whole` | whole pixels only: 170 RGB / 128 RGBW per universe (xLights / Falcon / FPP "510 channels") | 7 universes |
 | `fixture` | each fixture (§5.5) from slot 1 of a universe of its own, whole pixels inside; pixels in no fixture get no data; no fixtures = `whole` | 1 + per fixture |
 | `colour` | one colour per fixture: 3 channels a bar (4 RGBW), bars in strip order, the bar lit with it — patch each bar as a plain RGB fixture; no fixtures = one colour for all | a few slots |
-| `control` | **DMX control mode**: no pixel data. Each fixture takes the channels of its DMX profile, one after the other | 3 channels with one RGB fixture |
 
-**DMX control mode** turns pixel mapping off for an output — the "Pixel by
-pixel control" switch of the web Output patch screen, "Pixel map" in the
-device's DMX menu, on by default — and drives its
-fixtures like conventional luminaires (the profiles, their functions and
-presets: SHOW_CONTROL "Fixture DMX profiles"):
+`control` was a fifth value before the two switches ("DMX control mode"): it
+is still read — a stored configuration, a backup, a script — as *fixtures
+alone, where the output is addressed*. Likewise a JSON body that names a
+`packing` and neither switch is a body of before them: its layout means pixel
+mapping alone.
 
-- The fixtures follow each other on the wire from `(universe_start,
-  dmx_start)`, in the order they are listed, each taking the footprint of its
-  profile. A fixture never straddles two universes: one that would starts the
-  next at slot 1.
+**The fixtures' channels** (the profiles, their functions and presets:
+SHOW_CONTROL "Fixture DMX profiles"):
+
+- The fixtures follow each other on the wire from `(fix_universe,
+  fix_dmx_start)`, in the order they are listed, each taking the footprint of
+  its profile. A fixture never straddles two universes: one that would starts
+  the next at slot 1.
 - An output without fixtures is one fixture covering the strip, on the first
-  profile. LEDs in no fixture stay dark. A fixture whose profile left the bank
-  uses the first.
+  profile. With fixtures alone, LEDs in no fixture stay dark. A fixture whose
+  profile left the bank uses the first.
 - Each frame, every fixture reads its channels and plays what they ask for:
-  its colour, steady (effect channel at 0), or an effect of the bank with the
-  desk's colours, speed, phaser and Block / Groups / Wings — at its dimmer,
-  through its shutter. All fixtures share the box's clock.
+  its colour, steady (effect channel at 0 — its pixels when the output is
+  pixel-mapped too), or an effect of the bank with the desk's colours, speed,
+  phaser and Block / Groups / Wings — at its dimmer, through its shutter. All
+  fixtures share the box's clock.
 - Everything above the network path is unchanged: a scene started on the
   output overrides the desk, the failsafe takes over on signal loss, the
   grand master, blackout and strobe apply after.
@@ -392,32 +436,35 @@ presets: SHOW_CONTROL "Fixture DMX profiles"):
   `"patch"` on the channel in `GET /api/config`, `patch=` in `ch N` on the
   console, and shown next to each fixture in the web Output patch screen.
 
-![A channel in DMX control mode in the web UI: each fixture with its profile and its address](img/web-channel-control.png)
+![An output driven both ways in the web UI: its pixels' address, then each fixture with its profile and its address](img/web-channel-control.png)
 
-The point is the universe count: eight outputs of 300 RGBW pixels take 24
-universes pixel-mapped, and one in control mode with a 16-channel fixture
-each.
+`logic::for_each_dmx_run` turns an output's pixels into runs (universe offset,
+slot, buffer offset, bytes) and `logic::for_each_fixture_patch` places its
+fixtures; decoding, the universe span (`channel_universe_span`: both ranges),
+the pool map and the sACN joins all follow them.
 
-`logic::channel_layout` turns a channel into runs (universe offset, slot,
-buffer offset, bytes); decoding, the universe span (`channel_universe_span`,
-which now counts `dmx_start` — a channel starting late used to lose its last
-universe), the pool map and the sACN joins all follow it.
+Auto-patch (`POST /api/autopatch {base, compact, packing, fix_base}`, console
+`autopatch <base> [compact] [continuous|whole|fixture|colour] [fix <universe>]`,
+web Auto-patch screen; the TFT/OLED menu keeps the aligned default) lays
+everything out in **three blocks, each opening a universe**:
 
-Auto-patch (`POST /api/autopatch {base, compact, packing}`, console
-`autopatch <base> [compact] [continuous|whole|fixture]`, web Auto-patch
-screen; the TFT/OLED menu keeps the aligned default):
+1. **the pixels** of every pixel-mapped output, from `base`;
+2. **the fixtures** of every output under fixture control — right after the
+   pixels, or from `fix_base` (web: "From universe"), a base of their own so
+   that adding LEDs later does not move the desk's patch;
+3. **the control universe**, when enabled, on the universe after.
+
+Inside the first two blocks:
 - **aligned** (default): every output opens a universe at slot 1.
 - **compact**: an output starts at the slot after the previous one, sharing
   its universe (a `whole` output skips to the next universe when not one pixel
-  fits; a `fixture` output always opens one). A shared universe takes one pool
-  slot feeding both outputs (`g_slot_chans` is a bit per channel), so activity
-  and failsafe follow every output on it.
-- `packing` other than `keep` is set on every output first — a pixel layout:
-  an output in DMX control mode keeps its mode. Such outputs chain like the
-  others; compact, one starts in the next universe when its first fixture
-  would not fit in what is left.
-- An enabled DMX control universe follows the outputs: in the room left in the
-  last universe when compact, else from slot 1 of the next.
+  fits; a `fixture` output always opens one; fixtures start in the next
+  universe when the first would not fit in what is left). A shared universe
+  takes one pool slot feeding both outputs (`g_slot_chans` is a bit per
+  channel), so activity and failsafe follow every output on it.
+- `packing` other than `keep` is set on every pixel-mapped output first.
+- An output driven neither way is skipped; one without pixel mapping has its
+  `(universe_start, dmx_start)` follow its fixtures' address.
 
 The reply carries `universes` against `pool` (72, §DMX pool): a patch needing
 more is flagged in the web UI and the console (`warn=pool_full`).

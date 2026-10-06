@@ -39,8 +39,8 @@ std::atomic<uint8_t*> g_uni_front{ nullptr };
 // receiver-task write. Without it the receiver can resolve the back bank, get
 // pre-empted by a swap, and finish its write into the bank the decode is now
 // reading — a torn frame, and a dirty bit the swap has already consumed. Held
-// only across one universe-sized memcpy, so the render task's worst-case wait
-// here is microseconds.
+// across one universe-sized memcpy by a writer, so the render task's worst-case
+// wait here is microseconds.
 SemaphoreHandle_t g_uni_swap_mux = nullptr;
 
 // One bit per pool slot, set once the receiver has written that slot into the
@@ -53,8 +53,7 @@ SemaphoreHandle_t g_uni_swap_mux = nullptr;
 //   - the first write to a slot after a swap seeds that slot from the front bank,
 //     so a packet shorter than the universe cannot leave a tail from two source
 //     frames ago.
-// Seeding on the receiver task rather than inside the swap is what keeps it
-// race-free: only the receiver ever writes the back bank.
+// Both run with g_uni_swap_mux held, so a seed cannot race the swap.
 // 32-bit words: read-modify-write atomics on the ESP32-P4 must be 32-bit.
 constexpr size_t kDirtyWords = (kNumUniverses + 31) / 32;
 std::atomic<uint32_t> g_uni_dirty[kDirtyWords]{};
@@ -68,6 +67,29 @@ bool any_dirty() {
 void clear_dirty() {
     for (auto& w : g_uni_dirty)
         w.store(0, std::memory_order_relaxed);
+}
+
+// One bit per pool slot: written before the last swap, so the back bank holds
+// its value from one source frame earlier. A slot nobody writes again would
+// come back with that older value at the next swap — two senders at different
+// rates, or a universe sent on change only, flickered between their last two
+// frames. swap_universes() brings such a slot level before presenting the
+// bank: one copy per slot after its last write, none while every universe
+// arrives every frame. Only touched with g_uni_swap_mux held.
+uint32_t g_uni_behind[kDirtyWords]{};
+
+// Call with g_uni_swap_mux held, before the flip.
+void level_back_bank(uint8_t* back, const uint8_t* front) {
+    for (size_t w = 0; w < kDirtyWords; ++w) {
+        const uint32_t dirty = g_uni_dirty[w].load(std::memory_order_acquire);
+        uint32_t stale       = g_uni_behind[w] & ~dirty;
+        g_uni_behind[w]      = dirty;
+        for (; stale; stale &= stale - 1) {
+            const size_t base = (w * 32 + static_cast<size_t>(__builtin_ctz(stale))) *
+                                kUniverseSize;
+            memcpy(back + base, front + base, kUniverseSize);
+        }
+    }
 }
 
 // Per-channel pixel buffers in internal SRAM, double-buffered.
@@ -442,31 +464,26 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
         chans[i] = config::get_channel(i);
 
     logic::AutoPatchOptions o;
-    o.base    = opt.base;
-    o.compact = opt.compact;
-    o.packing = opt.packing;
-    uint16_t starts[config::kNumChannels], dmx[config::kNumChannels], slot_after = 0;
-    uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx,
-                                              &slot_after, &config::get_profiles());
-    // Sequential layout: the universes used are next - base (the cursor wraps
-    // past 0x7FFF, so the end is computed unmasked to see an overflow).
-    size_t used        = static_cast<size_t>((next - opt.base) & 0x7FFF);
+    o.base     = opt.base;
+    o.compact  = opt.compact;
+    o.packing  = opt.packing;
+    o.fix_base = opt.fix_base;
+    uint16_t starts[config::kNumChannels], dmx[config::kNumChannels];
+    size_t used   = 0;
+    uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx, nullptr,
+                                              &config::get_profiles(), &used);
+    // The blocks are sequential from their bases: an end past the last
+    // universe shows unmasked (the cursor itself wraps past 0x7FFF).
     const uint32_t end = static_cast<uint32_t>(opt.base) + used;
 
     bool all_persisted = true;
-    // The DMX control universe, when used, follows the last output: in the
-    // room left in its universe when compact, else from address 1 of the next.
+    // The DMX control universe, when used, is the third block: it opens the
+    // universe after the pixels and the fixtures.
     auto ctl = config::get_control();
     if (ctl.enabled && end <= kMaxUniverseNumber) {
-        const size_t foot = config::control_footprint(ctl);
-        if (opt.compact && slot_after > 0 && slot_after + foot <= kUniverseSize) {
-            ctl.universe = static_cast<uint16_t>((next - 1) & 0x7FFF);
-            ctl.address  = static_cast<uint16_t>(slot_after + 1);
-        } else {
-            ctl.universe = next++;
-            ctl.address  = 1;
-            ++used;
-        }
+        ctl.universe = next++;
+        ctl.address  = 1;
+        ++used;
         all_persisted &= config::set_control(ctl);
         mark_global_dirty();
     }
@@ -481,16 +498,31 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
     return all_persisted;
 }
 
+size_t channel_pixel_span(const config::ChannelConfig& cc) {
+    return logic::pixel_universes_used(cc, &config::get_profiles());
+}
+
+size_t channel_fixture_span(const config::ChannelConfig& cc) {
+    return logic::fixture_universes_used(cc, &config::get_profiles());
+}
+
 size_t channel_universe_span(const config::ChannelConfig& cc) {
     return logic::channel_universes_used(cc, &config::get_profiles());
 }
 
+bool fixtures_clear_of_pixels(size_t ch, config::ChannelConfig& cc) {
+    return logic::fixtures_clear_of_pixels(
+        cc, ch, config::kNumChannels,
+        [](size_t i) -> const config::ChannelConfig& { return config::get_channel(i); },
+        &config::get_profiles());
+}
+
 size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_t cap) {
-    if (cc.packing != config::kPackControl) return 0;
+    if (!config::fixture_controlled(cc)) return 0;
     size_t n = 0;
     logic::for_each_fixture_patch(cc, config::get_profiles(), [&](const logic::FixturePatch& f) {
         if (n < cap)
-            out[n] = FixtureAddress{ static_cast<uint16_t>(cc.universe_start + f.uni_off),
+            out[n] = FixtureAddress{ static_cast<uint16_t>(config::fix_universe(cc) + f.uni_off),
                                      static_cast<uint16_t>(f.slot + 1), f.footprint, f.profile };
         ++n;
     });
@@ -985,13 +1017,17 @@ namespace {
 // universes, or — in DMX control mode — its fixtures drawn from their channels.
 void decode_live(const config::ChannelConfig& cc, uint8_t* buf, uint64_t t) {
     auto universe = [](uint16_t u) { return universe_front_buffer_for(u); };
-    if (cc.packing == config::kPackControl) {
+    // Its pixels, then its fixtures over them — or alone on a dark strip. An
+    // output driven neither way shows nothing of its own (scenes still play).
+    const bool pixels = config::pixel_mapped(cc);
+    if (pixels)
+        logic::decode_pixels(buf, kMaxBytesPerChan, cc, universe);
+    else if (!config::fixture_controlled(cc))
+        std::memset(buf, 0, logic::channel_total_bytes(cc));
+    if (config::fixture_controlled(cc))
         logic::render_fixtures(
             buf, kMaxBytesPerChan, cc, config::get_profiles(), t, universe,
-            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); });
-        return;
-    }
-    logic::decode_pixels(buf, kMaxBytesPerChan, cc, universe);
+            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); }, pixels);
 }
 
 // One source into `buf`: scene `src` (with the desk's overrides) when it is a
@@ -1542,7 +1578,9 @@ void swap_universes() {
     // so every universe of a frame goes out together.
     if (sync_mode() && !synced) return;
     xSemaphoreTake(g_uni_swap_mux, portMAX_DELAY);
-    g_uni_front.store(back_bank_locked(), std::memory_order_release);
+    uint8_t* back = back_bank_locked();
+    level_back_bank(back, g_uni_front.load(std::memory_order_relaxed));
+    g_uni_front.store(back, std::memory_order_release);
     clear_dirty();
     xSemaphoreGive(g_uni_swap_mux);
 }

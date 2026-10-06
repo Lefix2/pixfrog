@@ -263,8 +263,8 @@ static void test_auto_patch_compact_and_forced_packing() {
         EXPECT_EQ(uni[i], 150 * i / 512);
         EXPECT_EQ(dmx[i], 150 * i % 512 + 1);
     }
-    EXPECT_EQ(next, 3);  // 1200 B: universes 0-2
-    EXPECT_EQ(slot_after, 1200 % 512);
+    EXPECT_EQ(next, 3);        // 1200 B: universes 0-2
+    EXPECT_EQ(slot_after, 0);  // whatever comes next opens a universe
     // Whole pixels, compact: channel 3 starts at 451, 20 px fit before 512.
     o.packing = config::kPackWholePixels;
     compute_auto_patch(o, chans, 8, uni, dmx);
@@ -1952,6 +1952,8 @@ static void test_control_render_channel() {
     EXPECT_EQ(buf[0], 0x5A);
 }
 
+// The auto-patch in blocks: the pixel-mapped outputs first, then the fixtures
+// of the outputs under fixture control — each block opening a universe.
 static void test_control_auto_patch() {
     using namespace pixfrog::config;
     const ProfileBank bank = default_profiles();
@@ -1960,45 +1962,208 @@ static void test_control_auto_patch() {
         c             = fixture_chan(60);
         c.fixtures[0] = Fixture{};
     }
-    chans[0]             = control_chan();  // 13 channels
+    chans[0]             = control_chan();  // 13 channels (a raw legacy "control" layout)
     chans[1].packing     = kPackControl;    // no fixtures: one RGB fixture, 3 channels
     chans[3].packing     = kPackControl;
     chans[3].fixtures[0] = make_fixture(0, 60, false, 3);  // Full: 16 channels
-    uint16_t uni[4], dmx[4], after = 0;
+    uint16_t uni[4], dmx[4], after = 9;
+    size_t used = 0;
 
-    // Aligned: each output opens a universe, control or not.
+    // Aligned: the pixel output takes universe 20; the fixtures' block follows,
+    // every output's fixtures opening a universe.
     AutoPatchOptions o;
     o.base = 20;
-    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank), 24);
-    EXPECT_EQ(uni[0], 20);
-    EXPECT_EQ(uni[1], 21);
-    EXPECT_EQ(uni[2], 22);
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 24);
+    EXPECT_EQ(uni[2], 20);  // the 180 pixel channels
+    EXPECT_EQ(uni[0], 21);
+    EXPECT_EQ(uni[1], 22);
     EXPECT_EQ(uni[3], 23);
-    EXPECT_EQ(after, 16);
+    EXPECT_EQ(dmx[0] + dmx[1] + dmx[2] + dmx[3], 4);
+    EXPECT_EQ(after, 0);
+    EXPECT_EQ(used, 4u);
+    // The old value became the two switches, the fixtures at their own address.
+    EXPECT_TRUE(!pixel_mapped(chans[0]) && fixture_controlled(chans[0]));
+    EXPECT_TRUE(!legacy_control(chans[0]));
+    EXPECT_EQ(fix_universe(chans[0]), 21);
+    EXPECT_EQ(fix_dmx_start(chans[0]), 1);
+    EXPECT_EQ(chans[0].universe_start, 21);  // not pixel-mapped: its address mirrors it
+    EXPECT_TRUE(pixel_mapped(chans[2]) && !fixture_controlled(chans[2]));
 
-    // Compact: the control outputs follow each other inside a universe, and a
-    // layout asked for every output leaves them in control mode.
+    // Compact: the fixtures follow each other inside a universe, and a layout
+    // asked for every output only reaches the pixel-mapped one.
     o.compact = true;
     o.packing = kPackWholePixels;
-    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank), 21);
-    EXPECT_EQ(chans[0].packing, kPackControl);
-    EXPECT_EQ(chans[2].packing, kPackWholePixels);
-    EXPECT_EQ(uni[0], 20);
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 22);
+    EXPECT_EQ(pixel_layout(chans[2]), kPackWholePixels);
+    EXPECT_TRUE(!pixel_mapped(chans[0]));
+    EXPECT_EQ(uni[2], 20);
+    EXPECT_EQ(uni[0], 21);
     EXPECT_EQ(dmx[0], 1);
     EXPECT_EQ(dmx[1], 14);  // after the 13 channels of output 1
-    EXPECT_EQ(dmx[2], 17);  // the pixel output: 180 channels from there
-    EXPECT_EQ(dmx[3], 197);
-    EXPECT_EQ(after, 212);
+    EXPECT_EQ(uni[3], 21);
+    EXPECT_EQ(dmx[3], 17);  // after output 2's 3
+    EXPECT_EQ(used, 2u);
+
+    // A base of their own for the fixtures: adding LEDs no longer moves them.
+    o.fix_base = 100;
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 101);
+    EXPECT_EQ(uni[2], 20);
+    EXPECT_EQ(fix_universe(chans[0]), 100);
+    EXPECT_EQ(fix_universe(chans[3]), 100);
+    EXPECT_EQ(fix_dmx_start(chans[3]), 17);
+    EXPECT_EQ(used, 2u);  // one of pixels, one of fixtures
+    o.fix_base = -1;
+
+    // An output driven both ways sits in both blocks: its pixels at its
+    // address, its fixtures at its fixture address.
+    set_dmx_modes(chans[2], true, true);
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 22);
+    EXPECT_EQ(uni[2], 20);  // its pixels
+    EXPECT_EQ(dmx[2], 1);
+    EXPECT_EQ(fix_universe(chans[2]), 21);  // its one RGB fixture, between outputs 2 and 4
+    EXPECT_EQ(fix_dmx_start(chans[2]), 17);
+    EXPECT_EQ(fix_dmx_start(chans[3]), 20);
+    // ... and one driven neither way takes no room at all.
+    set_dmx_modes(chans[2], false, false);
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 21);
+    EXPECT_EQ(fix_universe(chans[0]), 20);  // the fixtures' block starts at the base
+    EXPECT_EQ(used, 1u);
+    EXPECT_EQ(channel_universes_used(chans[2], &bank), 0u);
 
     // A first fixture that would not fit in what is left opens the next
-    // universe: the output's address says where that fixture is.
-    chans[2].pixel_count   = 100;  // 300 channels: 17..316
-    chans[3].dmx_start     = 1;
-    ChannelConfig tight[2] = { chans[2], chans[3] };
-    tight[0].pixel_count   = 167;  // 501 channels: 11 left, the Full profile needs 16
+    // universe: the output's fixture address says where that fixture is.
+    ChannelConfig tight[2] = { chans[3], chans[3] };
+    for (uint16_t k = 0; k < 31; ++k)  // 31 Full fixtures: 496 channels
+        tight[0].fixtures[k] = make_fixture(k, 1, false, 3);
+    tight[0].fixtures[31] = make_fixture(31, 1, false, 0);  // + RGB: 499, 13 left
     EXPECT_EQ(compute_auto_patch(o, tight, 2, uni, dmx, &after, &bank), 22);
-    EXPECT_EQ(uni[1], 21);
-    EXPECT_EQ(dmx[1], 1);
+    EXPECT_EQ(fix_universe(tight[1]), 21);  // the Full profile needs 16
+    EXPECT_EQ(fix_dmx_start(tight[1]), 1);
+}
+
+// An output driven both ways: its pixels on one range, its fixtures' channels
+// on another. A fixture whose Effect channel is at 0 shows its pixels under
+// its dimmer and shutter; above 0 it plays the effect of the bank.
+static void test_pixels_plus_fixtures() {
+    using namespace pixfrog::config;
+    const ProfileBank bank = default_profiles();  // 2 = RGB FX: R G B Effect Speed Shutter
+    ChannelConfig cc       = fixture_chan(8);
+    cc.universe_start      = 1;
+    cc.dmx_start           = 1;
+    cc.fixtures[0]         = make_fixture(0, 4, false, 1);  // Dim RGB: Dimmer R G B
+    cc.fixtures[1]         = make_fixture(4, 4, false, 2);
+    set_dmx_modes(cc, true, true);
+    set_fix_address(cc, 10, 101);
+    EXPECT_EQ(fix_universe(cc), 10);
+    EXPECT_EQ(fix_dmx_start(cc), 101);
+    EXPECT_EQ(pixel_universes_used(cc, &bank), 1u);
+    EXPECT_EQ(fixture_universes_used(cc, &bank), 1u);
+    EXPECT_EQ(channel_universes_used(cc, &bank), 2u);
+    // Both ranges feed the output.
+    static uint16_t map[kMaxUniverseNumber + 1];
+    uint8_t slots[4];
+    size_t unmapped = 0;
+    EXPECT_EQ(build_universe_map(&cc, 1, map, slots, 4, &unmapped, &bank), 2);
+    EXPECT_EQ(map[1], 0);
+    EXPECT_EQ(map[10], 1);
+    EXPECT_EQ(slots[0] & slots[1], 1);
+    EXPECT_EQ(unmapped, 0u);
+
+    static uint8_t pix[512], fix[512];
+    for (int i = 0; i < 24; ++i)
+        pix[i] = static_cast<uint8_t>(100 + i);  // the eight pixels' data
+    std::memset(fix, 0, sizeof(fix));
+    auto get_uni = [&](uint16_t u) -> const uint8_t* {
+        return u == 1 ? pix : u == 10 ? fix : nullptr;
+    };
+    Effect solid{};
+    solid.generator    = kSceneFxSolid;
+    solid.num_colors   = 1;
+    solid.colors[0][2] = 200;
+    auto get_fx        = [&](size_t i, Effect& e) {
+        e = solid;
+        return i == 0;
+    };
+    auto render = [&](uint8_t* out) {
+        decode_pixels(out, 24, cc, get_uni);
+        render_fixtures(out, 24, cc, bank, 0, get_uni, get_fx, true);
+    };
+    uint8_t out[24];
+    // Fixture 1 (Dim RGB, no Effect channel): its pixels, at its dimmer — here 0.
+    // Fixture 2: Effect at 0, shutter open, no dimmer channel: its pixels as sent.
+    render(out);
+    EXPECT_EQ(out[0] + out[11], 0);
+    EXPECT_EQ(out[12], 112);
+    EXPECT_EQ(out[23], 123);
+    fix[100] = 255;  // fixture 1's dimmer up: its pixels, whatever its R G B say
+    fix[101] = 9;
+    render(out);
+    EXPECT_EQ(out[0], 100);
+    EXPECT_EQ(out[11], 111);
+    fix[100] = 128;  // ... and at half
+    render(out);
+    EXPECT_TRUE(out[0] >= 49 && out[0] <= 51);
+    // Fixture 2's Effect channel on the first effect: the effect, not the pixels.
+    fix[104 + 3] = 8;
+    render(out);
+    EXPECT_EQ(out[12], 0);
+    EXPECT_EQ(out[14], 200);
+    EXPECT_EQ(out[23], 200);
+    fix[104 + 3] = 16;  // an effect that is not in the bank: the pixels stay
+    render(out);
+    EXPECT_EQ(out[12], 112);
+    fix[104 + 3] = 0;
+    fix[104 + 5] = 255;  // shutter strobing at 25 Hz: dark in the second half of a period
+    decode_pixels(out, 24, cc, get_uni);
+    render_fixtures(out, 24, cc, bank, 30, get_uni, get_fx, true);
+    EXPECT_EQ(out[12] + out[23], 0);
+    EXPECT_TRUE(out[0] > 0);  // fixture 1 is not strobed
+    // The fixtures' universe missing: the pixels are left as they came.
+    auto only_pix = [&](uint16_t u) -> const uint8_t* { return u == 1 ? pix : nullptr; };
+    decode_pixels(out, 24, cc, only_pix);
+    render_fixtures(out, 24, cc, bank, 0, only_pix, get_fx, true);
+    EXPECT_EQ(out[0], 100);
+    EXPECT_EQ(out[23], 123);
+
+    // Fixture control switched on where pixels are patched — an address never
+    // set is universe 0: it moves past everything, once.
+    {
+        ChannelConfig rig[3]  = { fixture_chan(300), fixture_chan(60), fixture_chan(60) };
+        rig[0].universe_start = 0;  // 900 channels: universes 0-1
+        rig[1].universe_start = 2;
+        set_dmx_modes(rig[1], true, true);
+        set_fix_address(rig[1], 7, 1);  // its fixtures on universe 7
+        rig[2].protocol       = led::Protocol::Off;
+        rig[2].universe_start = 30;  // off: not counted
+        auto get              = [&](size_t i) -> const ChannelConfig& { return rig[i]; };
+        ChannelConfig edit    = rig[0];  // fixture address 0.1: inside its own pixels
+        EXPECT_TRUE(fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_universe(edit), 8);  // after output 2's fixtures
+        EXPECT_EQ(fix_dmx_start(edit), 1);
+        EXPECT_TRUE(!fixtures_clear_of_pixels(edit, 0, 3, get, &bank));  // clear already
+        set_fix_address(edit, 2, 40);                                    // inside output 2's pixels
+        EXPECT_TRUE(fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_universe(edit), 8);
+        set_fix_address(edit, 5, 40);  // a free universe: left alone, address and all
+        EXPECT_TRUE(!fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_dmx_start(edit), 40);
+        rig[1].universe_start = 32767;  // nothing past the last universe: it stops there
+        set_fix_address(edit, 32767, 1);
+        EXPECT_TRUE(fixtures_clear_of_pixels(edit, 0, 3, get, &bank));
+        EXPECT_EQ(fix_universe(edit), 32767);
+    }
+
+    // Neither: no run, no patch, no universe.
+    set_dmx_modes(cc, false, false);
+    EXPECT_EQ(pixel_layout(cc), kPackWholePixels * 0 + pixel_layout(cc));
+    EXPECT_EQ(channel_universes_used(cc, &bank), 0u);
+    EXPECT_EQ(build_universe_map(&cc, 1, map, slots, 4, &unmapped, &bank), 0);
+    // Fixtures alone, from their own address: the pixel address plays no part.
+    set_dmx_modes(cc, false, true);
+    EXPECT_EQ(pixel_universes_used(cc, &bank), 0u);
+    EXPECT_EQ(build_universe_map(&cc, 1, map, slots, 4, &unmapped, &bank), 1);
+    EXPECT_EQ(map[10], 0);
+    EXPECT_EQ(map[1], kNoSlot);
 }
 
 static void test_scene_all_effects_bounded() {
@@ -2661,6 +2826,7 @@ int main() {
     test_control_render_fixture();
     test_control_render_channel();
     test_control_auto_patch();
+    test_pixels_plus_fixtures();
     test_matricks_layout();
     test_matricks_expand_matches_reference();
     test_matricks_on_an_effect();

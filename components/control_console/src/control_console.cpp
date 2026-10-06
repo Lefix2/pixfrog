@@ -438,7 +438,13 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
     for (size_t k = 0; k < ng; ++k)
         printf("%s%u:%u", k ? "," : "", c.gaps[k].pos + 1u, static_cast<unsigned>(c.gaps[k].len));
     printf("%s\n", ng ? "" : "-");
-    printf("packing=%s\n", config::packing_id(c.packing));
+    // What drives it from the network: pixel mapping (packing = its layout, from
+    // universe / dmx_start) and fixture control (from fix_universe / fix_dmx).
+    printf("pixel_map=%d\n", config::pixel_mapped(c) ? 1 : 0);
+    printf("packing=%s\n", config::packing_id(config::pixel_layout(c)));
+    printf("fixture_ctl=%d\n", config::fixture_controlled(c) ? 1 : 0);
+    printf("fix_universe=%u\n", config::fix_universe(c));
+    printf("fix_dmx=%u\n", config::fix_dmx_start(c));
     printf("universes=%u\n", static_cast<unsigned>(dmx::channel_universe_span(c)));
     // first LED (1-based):count[:r][:pN], comma-separated; "-" = none
     const size_t nf = config::fixture_count(c.fixtures, config::kMaxFixtures);
@@ -450,8 +456,8 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
             printf(":p%u", config::fixture_profile(c.fixtures[k]));
     }
     printf("%s\n", nf ? "" : "-");
-    // DMX control mode — the patch sheet: universe.address+channels per fixture
-    if (c.packing == config::kPackControl) {
+    // Fixture control — the patch sheet: universe.address+channels per fixture
+    if (config::fixture_controlled(c)) {
         static dmx::FixtureAddress at[config::kMaxFixtures];  // off the console task's stack
         const size_t n = dmx::fixture_patch(c, at, config::kMaxFixtures);
         printf("patch=");
@@ -590,15 +596,33 @@ int cmd_ch(int argc, char** argv) {
             return err("gaps: pos:len[,pos:len...] (pos 1-based, max 8) or -");
     } else if (strcmp(key, "packing") == 0) {
         const int p = config::packing_from_id(val);
-        if (p < 0) return err("packing: continuous|whole|fixture|colour|control");
-        c.packing = static_cast<uint8_t>(p);
+        if (p < 0) return err("packing: continuous|whole|fixture|colour");
+        if (p == config::kPackControl) {  // as before the two switches: fixtures alone
+            config::set_fix_address(c, c.universe_start, c.dmx_start);
+            config::set_dmx_modes(c, false, true);
+        } else {
+            config::set_pixel_layout(c, static_cast<uint8_t>(p));
+        }
+    } else if (strcmp(key, "pixel_map") == 0 || strcmp(key, "fixture_ctl") == 0) {
+        if (!parse_u32_in(val, 0, 1, u)) return err("pixel_map, fixture_ctl: 0|1");
+        if (key[0] == 'p')
+            config::set_dmx_modes(c, u != 0, config::fixture_controlled(c));
+        else
+            config::set_dmx_modes(c, config::pixel_mapped(c), u != 0);
+    } else if (strcmp(key, "fix_universe") == 0) {
+        if (!parse_u32_in(val, 0, 32767, u)) return err("fix_universe: 0..32767");
+        config::set_fix_address(c, static_cast<uint16_t>(u), config::fix_dmx_start(c));
+    } else if (strcmp(key, "fix_dmx") == 0) {
+        if (!parse_u32_in(val, 1, 512, u)) return err("fix_dmx: 1..512");
+        config::set_fix_address(c, config::fix_universe(c), static_cast<uint16_t>(u));
     } else if (strcmp(key, "fixtures") == 0) {
         if (!parse_fixtures(val, c.fixtures))
             return err("fixtures: first:count[:r][:pN],... (first 1-based, r = reversed, "
                        "pN = DMX profile N; max 32, no overlap) or -");
     } else {
         return err("unknown key (protocol order universe dmx_start pixels brightness grouping "
-                   "invert clock_hz gamma_x10 wb gaps packing fixtures)");
+                   "invert clock_hz gamma_x10 wb gaps packing fixtures pixel_map fixture_ctl "
+                   "fix_universe fix_dmx)");
     }
 
     const bool persisted = config::set_channel(ch, c);
@@ -607,19 +631,23 @@ int cmd_ch(int argc, char** argv) {
     return ok();
 }
 
-// autopatch <base> [compact] [continuous|whole|fixture|colour]
+// autopatch <base> [compact] [continuous|whole|fixture|colour] [fix <universe>]
 int cmd_autopatch(int argc, char** argv) {
-    const char* usage =
-        "usage: autopatch <base_universe> [compact] [continuous|whole|fixture|colour]";
-    if (argc < 2 || argc > 4) return err(usage);
+    const char* usage = "usage: autopatch <base_universe> [compact] "
+                        "[continuous|whole|fixture|colour] [fix <universe>]";
+    if (argc < 2 || argc > 6) return err(usage);
     uint32_t base = 0;
     if (!parse_u32_in(argv[1], 0, 32767, base)) return err("base_universe: 0..32767");
     dmx::AutoPatch o;
     o.base = static_cast<uint16_t>(base);
     for (int i = 2; i < argc; ++i) {
         const int p = config::packing_from_id(argv[i]);
+        uint32_t fb = 0;
         if (strcmp(argv[i], "compact") == 0)
             o.compact = true;
+        else if (strcmp(argv[i], "fix") == 0 && i + 1 < argc &&
+                 parse_u32_in(argv[i + 1], 0, 32767, fb))
+            o.fix_base = static_cast<int32_t>(fb), ++i;  // where the fixtures' block starts
         else if (p >= 0 && p != config::kPackControl)  // a mode of an output, not a layout for all
             o.packing = static_cast<int8_t>(p);
         else
@@ -631,9 +659,12 @@ int cmd_autopatch(int argc, char** argv) {
     const bool persisted = dmx::auto_patch(o, &next, &universes);
     for (size_t i = 0; i < config::kNumChannels; ++i) {
         const auto& c = config::get_channel(i);
-        printf("ch%u=universe %u dmx %u %s\n", static_cast<unsigned>(i),
+        printf("ch%u=universe %u dmx %u %s", static_cast<unsigned>(i),
                static_cast<unsigned>(c.universe_start), static_cast<unsigned>(c.dmx_start),
-               config::packing_id(c.packing));
+               config::pixel_mapped(c) ? config::packing_id(config::pixel_layout(c)) : "-");
+        if (config::fixture_controlled(c))
+            printf(" fixtures %u.%u", config::fix_universe(c), config::fix_dmx_start(c));
+        printf("\n");
     }
     printf("next_free=%u\n", static_cast<unsigned>(next));
     printf("universes=%u/%u\n", static_cast<unsigned>(universes),

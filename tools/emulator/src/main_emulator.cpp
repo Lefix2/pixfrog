@@ -202,6 +202,24 @@ bool exec_cmd(const std::string& line) {
             std::printf("error: usage: set chan <idx> <proto> <uni> <pix>\n");
             std::fflush(stdout);
         }
+    } else if (line.rfind("set patch ", 0) == 0) {
+        // set patch <idx> <pixel_map> <fixture_ctl> [<fix_uni> [<fix_dmx>]] —
+        // what drives a channel from the network, and its fixtures' address.
+        int idx = 0, pm = 1, fc = 0;
+        unsigned fu = 0, fd = 1;
+        const int got = std::sscanf(line.c_str() + 10, "%d %d %d %u %u", &idx, &pm, &fc, &fu, &fd);
+        if (got >= 3 && idx >= 0 && idx < static_cast<int>(pixfrog::config::kNumChannels)) {
+            auto cc = pixfrog::config::get_channel(static_cast<size_t>(idx));
+            pixfrog::config::set_dmx_modes(cc, pm != 0, fc != 0);
+            if (got >= 4)
+                pixfrog::config::set_fix_address(cc, static_cast<uint16_t>(fu),
+                                                 static_cast<uint16_t>(fd));
+            pixfrog::config::set_channel(static_cast<size_t>(idx), cc);
+        } else {
+            std::printf(
+                "error: usage: set patch <idx> <pixel_map> <fixture_ctl> [<uni> [<dmx>]]\n");
+            std::fflush(stdout);
+        }
     } else if (line.rfind("set gaps ", 0) == 0) {
         // set gaps <idx> [<pos0>:<len> ...] — replace a channel's dead-pixel gaps
         // (0-based physical positions); no pairs clears them.
@@ -297,11 +315,17 @@ bool exec_cmd(const std::string& line) {
         while (pixfrog::config::num_scenes() > keep)
             pixfrog::config::delete_scene(pixfrog::config::num_scenes() - 1);
     } else if (line.rfind("dump chan ", 0) == 0) {
-        // dump chan <idx> — what the menu stored: pixels, layout, fixtures
-        // as [pos0, len, reversed, profile].
+        // dump chan <idx> — what the menu stored: pixels, universe, layout,
+        // the two switches, the fixtures' address and the fixtures as
+        // [pos0, len, reversed, profile].
         const auto& cc = pixfrog::config::get_channel(
             static_cast<size_t>(std::atoi(line.c_str() + 10)));
-        std::printf("{\"pixels\":%u,\"packing\":%u,\"fixtures\":[", cc.pixel_count, cc.packing);
+        std::printf("{\"pixels\":%u,\"uni\":%u,\"packing\":%u,\"pixel_map\":%d,\"fixture_ctl\":%d,"
+                    "\"fix\":[%u,%u],\"fixtures\":[",
+                    cc.pixel_count, cc.universe_start, pixfrog::config::pixel_layout(cc),
+                    pixfrog::config::pixel_mapped(cc) ? 1 : 0,
+                    pixfrog::config::fixture_controlled(cc) ? 1 : 0,
+                    pixfrog::config::fix_universe(cc), pixfrog::config::fix_dmx_start(cc));
         const size_t nf = pixfrog::config::fixture_count(cc.fixtures,
                                                          pixfrog::config::kMaxFixtures);
         for (size_t k = 0; k < nf; ++k)

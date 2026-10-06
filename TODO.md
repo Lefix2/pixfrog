@@ -51,6 +51,10 @@ on the one before.
 
 - [ ] ★ **GDTF export of a profile** — a native fixture file for GrandMA3, next
       to the OFL one.
+- [ ] **Patch overlap check** — the web Auto-patch table says "no overlap
+      detected" whatever the addresses: compute it on the box from the real
+      runs (pixels, fixtures, control universe) and flag the outputs that
+      share channels, in the API, the web patch screens and the console.
 - [ ] **Scene parts aimed at fixture groups** — on a group a scene plays its
       first part only; let each part target a group (across outputs, in the
       group's order) next to the parts on outputs, so one scene holds several

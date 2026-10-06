@@ -151,7 +151,7 @@ RECEIVERS = [
     sacn_sync(7),
     b"\1" + sacn_data(1, b"\1" * 9, opts=0x40),  # stream terminated
     b"\1" + sacn_data(4, b"\3" * 30, sc=0xDD),
-    # The control mode (full preset at address 400 of universe 1).
+    # Fixture control (full preset at address 400 of universe 1).
     b"\0" + art_dmx(1, bytes(399) + bytes([0x80, 0, 0, 12, 16, 60, 5, 120, 255, 0, 0, 0, 0, 255,
                                             20, 16])),
     b"\1" + sacn_data(1, bytes(399) + bytes([255, 255, 200, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -213,6 +213,13 @@ profile del 0
 ch 1 fixtures 1:20,21:20:r:p2,41:20:p1
 ch 1 packing control
 ch 1
+ch 1 pixel_map 1
+ch 1 fix_universe 9
+ch 1 fix_dmx 500
+ch 1
+ch 1 fixture_ctl 0
+ch 1 pixel_map 0
+autopatch 0 compact fix 40
 ch 1 fixtures -
 fx move 0 1
 fx del 8
@@ -285,6 +292,9 @@ WEB = [
     (R["GET /api/profile/2/fixture"], 0, ""),
     (R["/api/channel"], 1, '{"protocol":"WS2815","pixel_count":60,"packing":"control",'
                            '"dmx_start":500,"fixtures":[[1,20,0,2],[21,20,1,3]]}'),
+    (R["/api/channel"], 1, '{"pixel_map":true,"fixture_ctl":true,"packing":"colour",'
+                           '"fix_universe":9,"fix_dmx_start":500}'),
+    (R["/api/channel"], 2, '{"pixel_map":false,"fixture_ctl":false}'),
     # A backup from before the effect bank: scenes that carry their own look.
     (R["/api/restore"], 0, '{"backup_version":1,"scenes":[{"name":"Old","effect":1,"speed":60,'
                            '"colors":["#ff0000","#0000ff"],"mask":15,"fixture_mode":"mirror"}]}'),

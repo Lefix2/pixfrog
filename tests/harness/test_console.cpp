@@ -262,8 +262,31 @@ TEST(channel_fixtures_and_control_mode) {
 
     EXPECT_TRUE(run("ch 5 packing control"));
     EXPECT_TRUE(run("ch 5"));
-    EXPECT_TRUE(has("packing=control"));
+    EXPECT_TRUE(
+        has("pixel_map=0"));  // the old layout value: fixtures alone, at the output's address
+    EXPECT_TRUE(has("fixture_ctl=1"));
+    EXPECT_TRUE(has("fix_universe=30"));
+    EXPECT_TRUE(has("fix_dmx=1"));
     EXPECT_TRUE(has("patch=30.1+3,30.4+6,30.10+4"));
+    // Both at once: the pixels at the output's address, the fixtures at theirs.
+    EXPECT_TRUE(run("ch 5 pixel_map 1"));
+    EXPECT_TRUE(run("ch 5 fix_universe 44"));
+    EXPECT_TRUE(run("ch 5 fix_dmx 101"));
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("pixel_map=1"));
+    EXPECT_TRUE(has("packing=continuous"));
+    EXPECT_TRUE(has("universes=2"));
+    EXPECT_TRUE(has("patch=44.101+3,44.104+6,44.110+4"));
+    EXPECT_TRUE(run("ch 5 fixture_ctl 0"));
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_FALSE(has("patch="));
+    EXPECT_TRUE(has("universes=1"));
+    EXPECT_TRUE(run("ch 5 pixel_map 0"));  // neither: the output listens to no universe
+    EXPECT_TRUE(run("ch 5"));
+    EXPECT_TRUE(has("universes=0"));
+    EXPECT_TRUE(run("ch 5 fixture_ctl 1"));
+    EXPECT_TRUE(run("ch 5 fix_universe 30"));
+    EXPECT_TRUE(run("ch 5 fix_dmx 1"));
     EXPECT_TRUE(run("ch 5 fixtures -"));  // none: one fixture, the whole strip
     EXPECT_TRUE(run("ch 5"));
     EXPECT_TRUE(has("fixtures=-"));
@@ -271,10 +294,17 @@ TEST(channel_fixtures_and_control_mode) {
     for (const char* bad :
          { "ch 5 fixtures 1", "ch 5 fixtures 0:10", "ch 5 fixtures 1:0", "ch 5 fixtures 1:10:x",
            "ch 5 fixtures 1:10:p8", "ch 5 fixtures 1:10,5:10", "ch 5 fixtures 1020:10",
-           "ch 5 packing sideways", "autopatch 0 control" })
+           "ch 5 packing sideways", "ch 5 pixel_map 2", "ch 5 fixture_ctl x",
+           "ch 5 fix_universe 40000", "ch 5 fix_dmx 0", "ch 5 fix_dmx 513", "autopatch 0 control",
+           "autopatch 0 fix", "autopatch 0 fix 40000" })
         EXPECT_FALSE(run(bad));
-    EXPECT_TRUE(run("autopatch 0 compact whole"));  // control outputs keep their mode
-    EXPECT_EQ(config::get_channel(5).packing, config::kPackControl);
+    EXPECT_TRUE(run("autopatch 0 compact whole"));  // an output keeps its switches
+    EXPECT_TRUE(!config::pixel_mapped(config::get_channel(5)));
+    EXPECT_TRUE(config::fixture_controlled(config::get_channel(5)));
+    EXPECT_TRUE(has("fixtures "));                    // its line says where its fixtures went
+    EXPECT_TRUE(run("autopatch 0 compact fix 300"));  // the fixtures' block at its own base
+    EXPECT_EQ(config::fix_universe(config::get_channel(5)), 300);
+    EXPECT_EQ(config::fix_dmx_start(config::get_channel(5)), 1);
     config::set_channel(5, before);
     dmx::mark_channel_dirty(5);
     dmx::handle_pending_remaps();

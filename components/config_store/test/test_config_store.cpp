@@ -304,6 +304,86 @@ static void test_sanitize_clamps_clock_hz() {
     EXPECT_EQ(c.clock_hz, 4'000'000u);
 }
 
+// What drives an output from the network: two switches in the packing byte,
+// and a fixture address in what was the record's tail padding.
+static void test_dmx_modes_and_the_fixture_address() {
+    ChannelConfig c{};
+    // A blob of before the switches: pixel mapping alone.
+    EXPECT_TRUE(pixel_mapped(c) && !fixture_controlled(c));
+    EXPECT_EQ(fix_universe(c), 0);
+    EXPECT_EQ(fix_dmx_start(c), 1);
+
+    set_pixel_layout(c, kPackWholePixels);
+    set_dmx_modes(c, true, true);
+    set_fix_address(c, 32767, 512);
+    EXPECT_TRUE(pixel_mapped(c) && fixture_controlled(c));
+    EXPECT_EQ(pixel_layout(c), kPackWholePixels);
+    EXPECT_EQ(fix_universe(c), 32767);
+    EXPECT_EQ(fix_dmx_start(c), 512);
+    set_fix_address(c, 300, 17);
+    EXPECT_EQ(fix_universe(c), 300);
+    EXPECT_EQ(fix_dmx_start(c), 17);
+    set_fix_address(c, 300, 0);  // out of range: the first channel
+    EXPECT_EQ(fix_dmx_start(c), 1);
+    set_fix_address(c, 300, 600);
+    EXPECT_EQ(fix_dmx_start(c), 1);
+    // The switches leave the layout alone, the layout leaves the switches.
+    set_dmx_modes(c, false, false);
+    EXPECT_TRUE(!pixel_mapped(c) && !fixture_controlled(c));
+    EXPECT_EQ(pixel_layout(c), kPackWholePixels);
+    set_pixel_layout(c, kPackFixtureColour);
+    EXPECT_TRUE(!pixel_mapped(c) && !fixture_controlled(c));
+    EXPECT_TRUE(std::strcmp(packing_id(c.packing), "colour") == 0);
+    sanitize_channel(c);
+    EXPECT_TRUE(!pixel_mapped(c) && !fixture_controlled(c));
+    EXPECT_EQ(pixel_layout(c), kPackFixtureColour);
+
+    // The "control" layout of before the switches: fixtures alone, where the
+    // output was — read that way raw, and stored that way once sanitized.
+    ChannelConfig old{};
+    old.universe_start = 40;
+    old.dmx_start      = 501;
+    old.packing        = kPackControl;
+    EXPECT_TRUE(legacy_control(old));
+    EXPECT_TRUE(!pixel_mapped(old) && fixture_controlled(old));
+    EXPECT_EQ(fix_universe(old), 40);
+    EXPECT_EQ(fix_dmx_start(old), 501);
+    EXPECT_EQ(pixel_layout(old), kPackContinuous);
+    sanitize_channel(old);
+    EXPECT_TRUE(!legacy_control(old));
+    EXPECT_EQ(old.packing, kPackContinuous | kChanNoPixelMap | kChanFixtureCtl);
+    EXPECT_EQ(fix_universe(old), 40);
+    EXPECT_EQ(fix_dmx_start(old), 501);
+    old.universe_start = 7;  // its own address now: the pixel address no longer moves it
+    EXPECT_EQ(fix_universe(old), 40);
+
+    // The universe the output is known by on the network: its pixels', or its
+    // fixtures' when it has no pixel mapping.
+    ChannelConfig port{};
+    port.universe_start = 3;
+    set_fix_address(port, 20, 5);
+    EXPECT_EQ(port_universe(port), 3);
+    set_dmx_modes(port, true, true);
+    EXPECT_EQ(port_universe(port), 3);
+    set_port_universe(port, 4);
+    EXPECT_EQ(port.universe_start, 4);
+    EXPECT_EQ(fix_universe(port), 20);
+    set_dmx_modes(port, false, true);
+    EXPECT_EQ(port_universe(port), 20);
+    set_port_universe(port, 21);
+    EXPECT_EQ(fix_universe(port), 21);
+    EXPECT_EQ(fix_dmx_start(port), 5);
+    EXPECT_EQ(port.universe_start, 4);
+    set_dmx_modes(port, false, false);
+    EXPECT_EQ(port_universe(port), 4);
+
+    // Bits this firmware does not know, a layout past the last: dropped.
+    ChannelConfig odd{};
+    odd.packing = 0x38 | 6 | kChanFixtureCtl;
+    sanitize_channel(odd);
+    EXPECT_EQ(odd.packing, kPackContinuous | kChanFixtureCtl);
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 // Pre-palette scene record: the scene array was stored as one NVS blob of
@@ -730,6 +810,7 @@ int main() {
     test_migrate_zero_size_blob_all_zero();
     test_channel_migration_sanitizes_to_identity();
     test_sanitize_clamps_clock_hz();
+    test_dmx_modes_and_the_fixture_address();
     test_scene_v1_migration();
     test_scene_colour_accessors();
     test_scene_bank_load_all_layouts();

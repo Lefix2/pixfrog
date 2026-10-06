@@ -30,7 +30,7 @@ docs viewer hide any image that fails to load, so adding/replacing one is safe.
 | `web-control.png`           | PNG  | Web UI DMX control editor — `tools/screenshots`                | SHOW_CONTROL |
 | `web-effects.png`           | PNG  | Web UI effect editor (phaser, Block / Groups / Wings) — `tools/screenshots` | SHOW_CONTROL |
 | `web-profiles.png`          | PNG  | Web UI DMX profiles editor — `tools/screenshots`               | SHOW_CONTROL |
-| `web-channel-control.png`   | PNG  | Web UI channel editor, an output in DMX control mode — `tools/screenshots` | PROTOCOLS §5.6 |
+| `web-channel-control.png`   | PNG  | Web UI output patch, an output driven by its pixels and its fixtures' profiles — `tools/screenshots` | PROTOCOLS §5.6 |
 | `effects/effects-gallery.png` | PNG | The 11 generators, time → x, pixel → y — `tools/effects_gallery` | SHOW_CONTROL |
 | `effects/layers-gallery.png` | PNG | Dimmer phaser waveforms, invert, Block / Groups / Wings — `tools/effects_gallery` | SHOW_CONTROL |
 | `og-cover.png`              | PNG  | Social / link-preview cover (rendered from `og-cover.svg`)    | `og:image` |

@@ -490,6 +490,57 @@ TEST(artnet_socket_and_bind_failures_end_the_task) {
     EXPECT_EQ(pixels0()[0], 5);
 }
 
+// An output driven both ways listens on two address ranges: its pixels' and
+// its fixtures' groups are both joined. Without pixel mapping it is known on
+// the network by its fixtures' universe — what ArtPollReply shows and
+// ArtAddress programs.
+TEST(an_output_on_two_ranges_joins_both_and_keeps_one_port_address) {
+    auto g         = config::get_global();
+    g.sacn_enabled = true;
+    config::set_global(g);
+    const auto before = config::get_channel(0);
+    auto apply        = [](const config::ChannelConfig& c) {
+        config::set_channel(0, c);
+        dmx::mark_channel_dirty(0);
+        dmx::handle_pending_remaps();
+    };
+    auto joined = [](uint32_t universe) {
+        for (uint32_t grp : g_sacn_groups)
+            if (grp == (0xEFFF0000u | universe)) return true;
+        return false;
+    };
+    auto c = before;
+    config::set_dmx_modes(c, true, true);
+    config::set_fix_address(c, 40, 1);
+    apply(c);
+    pump_sacn();
+    EXPECT_EQ(g_sacn_groups.size(), 2);
+    EXPECT_TRUE(joined(1) && joined(40));
+    // The fixtures' universe reaches the output: sACN on 40 dims its pixels.
+    shim::net_push(kSacn, sacn_data(1, 100, { 80, 90, 100 }));
+    pump_sacn();
+    EXPECT_EQ(pixels0()[2], 100);  // RGB profile, no dimmer: the pixels as sent
+
+    config::set_dmx_modes(c, false, true);  // the fixtures alone
+    apply(c);
+    shim::advance_ms(6000);  // past the membership refresh period
+    pump_sacn();
+    EXPECT_EQ(g_sacn_groups.size(), 1);
+    EXPECT_TRUE(joined(40) && !joined(1));
+
+    Bytes p = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
+    p[13]   = 1;
+    p[100]  = 0x85;  // port 0: universe low nibble 5 — 40 (0x28) becomes 37 (0x25)
+    shim::net_push(kArt, p);
+    pump_artnet();
+    EXPECT_EQ(config::fix_universe(config::get_channel(0)), 37);
+    EXPECT_EQ(config::get_channel(0).universe_start, before.universe_start);
+    auto& sent = shim::net_sent();
+    EXPECT_EQ(sent.size(), 2);
+    if (!sent.empty()) EXPECT_EQ(sent[0].bytes[190], 5);  // SwOut of port 0
+    apply(before);
+}
+
 TEST(sacn_leaves_stale_groups_and_survives_join_failure) {
     auto g         = config::get_global();
     g.sacn_enabled = true;
