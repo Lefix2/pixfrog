@@ -199,12 +199,15 @@ enum class Screen : uint8_t {
 // cursor indices. Indexed by value into kNodes[].
 enum class NodeId : uint8_t {
     Main,
-    Inputs,
+    Show,    // master / blackout / strobe, what plays, signal loss
+    Looks,   // the scenes to edit
+    Rig,     // the outputs, their frame rate, the test patterns
+    Dmx,     // protocols, patch, control universe, auto-patch
+    Box,     // network, settings, about
+    Inputs,  // the reception protocols (PROTOCOLS)
     Network,
-    Output,
-    Playback,
     Settings,  // the box itself: screen, speaker, nerd stats
-    Channel,
+    Channel,   // one output: LED hardware, dead pixels, fixtures
     Scenes,
     Fseq,
     TestPattern,
@@ -217,6 +220,8 @@ enum class NodeId : uint8_t {
     SceneEdit,    // one scene: name, group, parts
     ScenePart,    // one part: outputs, effect, fixture mode, direction
     PartOutputs,  // its outputs, one toggle each
+    PatchList,    // the outputs, for their DMX patch
+    OutputPatch,  // one output's: pixel map, layout, universe, address, profiles
     Count,
 };
 
@@ -236,6 +241,11 @@ extern uint8_t g_part_index;
 extern char g_fix_title[12];
 extern char g_scene_title[12];
 extern char g_part_title[12];
+extern char g_patch_title[12];
+// The pixel layout an output had before it went to DMX control (RAM only: a
+// reboot gives it the continuous one back).
+uint8_t pixel_layout_before_control(uint8_t ch);
+void note_pixel_layout(uint8_t ch, uint8_t packing);
 // First LED past the strip of `cc`, dead LEDs included (physical, 0-based).
 uint16_t strip_end(const config::ChannelConfig& cc);
 // Short names of the DMX layouts and the fixture modes (value column).
@@ -286,7 +296,8 @@ enum class Field : uint8_t {
     ChGapPos,  // first dead LED of gap s.gap_index (1-based); chains to ChGapLen
     ChGapLen,  // its length; 0 removes the gap
     ChPacking,
-    FixFirst,  // fixture g_fix_index of the open channel: first LED (1-based)
+    ChPixelMap,  // pixel by pixel (a pixel layout) or DMX control
+    FixFirst,    // fixture g_fix_index of the open channel: first LED (1-based)
     FixLen,
     FixReversed,
     FixProfile,
@@ -521,9 +532,14 @@ uint8_t build_fseq(ListItem* items, OnClick* fns);
 uint8_t build_inputs(ListItem* items, OnClick* fns);
 uint8_t build_control(ListItem* items, OnClick* fns);
 uint8_t build_control_slot(ListItem* items, OnClick* fns);
-uint8_t build_output(ListItem* items, OnClick* fns);
+uint8_t build_show(ListItem* items, OnClick* fns);
+uint8_t build_looks(ListItem* items, OnClick* fns);
+uint8_t build_rig(ListItem* items, OnClick* fns);
+uint8_t build_dmx(ListItem* items, OnClick* fns);
+uint8_t build_box(ListItem* items, OnClick* fns);
+uint8_t build_patch_list(ListItem* items, OnClick* fns);
+uint8_t build_output_patch(ListItem* items, OnClick* fns);
 uint8_t build_settings(ListItem* items, OnClick* fns);
-uint8_t build_playback(ListItem* items, OnClick* fns);
 uint8_t build_network(ListItem* items, OnClick* fns);
 uint8_t build_channel(ListItem* items, OnClick* fns);
 void preview_gap_edit(uint16_t pos0, uint16_t len);

@@ -113,7 +113,7 @@
 <div id="pf-app" style="display:flex;flex:1;min-height:0;overflow:hidden;font-family:'Figtree',system-ui,-apple-system,sans-serif;color:var(--fg);background:var(--bg)">
 
   <!-- ───────────── SIDEBAR ───────────── -->
-  <aside style="width:236px;flex:none;background:var(--bg);border-right:1px solid var(--rule-2);display:flex;flex-direction:column;padding:18px 14px">
+  <aside style="width:236px;flex:none;background:var(--bg);border-right:1px solid var(--rule-2);display:flex;flex-direction:column;padding:18px 14px;overflow-y:auto">
     <div style="display:flex;align-items:center;gap:11px;padding:4px 6px 20px">
       <span style="width:14px;height:14px;border-radius:50%;border:3px solid var(--accent);box-shadow:0 0 12px rgba(63,212,99,.65);flex:none;margin-left:2px"></span>
       <div style="line-height:1.15">
@@ -122,22 +122,31 @@
       </div>
     </div>
 
-    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:6px 8px" data-i18n="CONTROL">CONTROL</div>
-    <div data-nav="dashboard" data-on style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--accent);background:rgba(63,212,99,.12);font-family:'DM Mono';font-size:13px;font-weight:600;border-left:2px solid var(--accent);margin-top:2px"><i data-lucide="layout-dashboard"></i><span data-i18n="Dashboard">Dashboard</span></div>
-    <div data-nav="scenes" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="palette"></i><span data-i18n="Scenes">Scenes</span></div>
-    <div data-nav="effects" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="wand-2"></i><span data-i18n="Effects">Effects</span></div>
-    <div data-nav="fseq" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="film"></i><span data-i18n="FSEQ sequences">FSEQ sequences</span></div>
+    <div data-nav="dashboard" data-on style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--accent);background:rgba(63,212,99,.12);font-family:'DM Mono';font-size:13px;font-weight:600;border-left:2px solid var(--accent);margin-top:2px"><i data-lucide="layout-dashboard"></i><span data-i18n="Dashboard">Dashboard</span></div>
 
-    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:18px 8px 6px" data-i18n="CONFIGURATION">CONFIGURATION</div>
-    <div data-nav="channels" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Channels">Channels</span></div>
-    <div data-nav="groups" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="layers"></i><span data-i18n="Groups">Groups</span></div>
-    <div data-nav="profiles" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="cable"></i><span data-i18n="DMX profiles">DMX profiles</span></div>
-    <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
-    <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i>ArtNet / sACN</div>
-    <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="DMX control">DMX control</span></div>
-    <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
-    <div data-nav="system" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="settings"></i><span data-i18n="System">System</span></div>
-    <div data-nav="diag" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="activity"></i><span data-i18n="Diagnostics">Diagnostics</span></div>
+    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="RIG">RIG</div>
+    <div data-nav="channels" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Outputs">Outputs</span></div>
+    <div data-nav="groups" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="layers"></i><span data-i18n="Groups">Groups</span></div>
+
+    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="LOOKS">LOOKS</div>
+    <div data-nav="effects" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="wand-2"></i><span data-i18n="Effects">Effects</span></div>
+    <div data-nav="scenes" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="palette"></i><span data-i18n="Scenes">Scenes</span></div>
+
+    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="DMX">DMX</div>
+    <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i><span data-i18n="Protocols">Protocols</span></div>
+    <div data-nav="profiles" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="cable"></i><span data-i18n="DMX profiles">DMX profiles</span></div>
+    <div data-nav="dmxpatch" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="list-plus"></i><span data-i18n="Output patch">Output patch</span></div>
+    <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Control universe">Control universe</span></div>
+    <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
+
+    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="PLAYBACK">PLAYBACK</div>
+    <div data-nav="fseq" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="film"></i><span data-i18n="Sequences">Sequences</span></div>
+    <div data-nav="auto" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="clock"></i><span data-i18n="Automations">Automations</span></div>
+
+    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="SETTINGS">SETTINGS</div>
+    <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
+    <div data-nav="system" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="settings"></i><span data-i18n="System">System</span></div>
+    <div data-nav="maint" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="hard-drive"></i><span data-i18n="Maintenance">Maintenance</span></div>
 
     <div style="margin-top:auto;background:rgba(237,238,234,.04);border:1px solid var(--line);border-radius:0;padding:11px 12px">
       <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600"><span data-live="side-dot" style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pf-pulse 2.4s infinite"></span><span data-live="side-link">Network link</span></div>
@@ -317,7 +326,6 @@
               <div id="pl-mount"></div>
               <div style="display:flex;flex-direction:column;gap:8px;font:500 12px 'DM Mono';color:var(--fg-2)">
                 <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="pl-loop" type="checkbox"/><span data-i18n="Start over after the last file">Start over after the last file</span></label>
-                <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="pl-auto" type="checkbox"/><span data-i18n="Play at boot (as soon as the card is mounted)">Play at boot (as soon as the card is mounted)</span></label>
               </div>
             </div>
           </div>
@@ -350,20 +358,26 @@
 
       <!-- ===== CHANNELS ===== -->
       <div data-screen="channels" style="display:none">
+        <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;margin-bottom:16px">
+          <label class="f-label" data-i18n="Frame rate (Hz)">Frame rate (Hz)</label>
+          <input class="field" id="s-refresh" type="number" min="20" max="120" step="1" value="60"/>
+          <div class="hint" style="margin-top:8px" data-i18n="One frame rate for the eight outputs: it bounds how many LEDs each can drive.">One frame rate for the eight outputs: it bounds how many LEDs each can drive.</div>
+        </div>
         <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
           <div id="chan-list-mount" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px"></div>
 
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)">
-              <div style="display:flex;align-items:center;gap:12px"><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Channel 1</h3><span data-chan-state style="font:500 10.5px 'DM Mono';letter-spacing:.04em;color:var(--accent);background:rgba(63,212,99,.12);border-radius:0;padding:4px 10px">Active</span></div>
+              <div style="display:flex;align-items:center;gap:12px"><label class="sw" style="cursor:pointer"><input id="cd-on" type="checkbox" aria-label="Enabled"/><span></span></label><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Channel 1</h3></div>
               <button class="btn-sec" data-action="identify-chan" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="zap" class="ic14 fg-accent"></i><span data-i18n="Identify">Identify</span></button>
             </div>
+            <div id="cd-offnote" class="hint" style="display:none" data-i18n="This output is off: switch it on to set it up.">This output is off: switch it on to set it up.</div>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 22px">
-              <div style="grid-column:span 2">
+              <div id="cd-row-proto" style="grid-column:span 2">
                 <label class="f-label-caps" data-i18n="LED PROTOCOL">LED PROTOCOL</label>
                 <select class="field field-text" id="cd-proto">
-                  <option value="WS2812B">WS2812B</option><option value="WS2815">WS2815</option><option value="SK6812">SK6812 (RGBW)</option><option value="APA102">APA102 (DATA+CLK)</option><option value="SK9822">SK9822 (DATA+CLK)</option><option value="LPD8806">LPD8806 (DATA+CLK)</option><option value="Off" data-i18n="Off">Off</option>
+                  <option value="WS2815">WS2815</option><option value="WS2812B">WS2812B</option><option value="WS2811">WS2811</option><option value="SK6812">SK6812 (RGBW)</option><option value="WS2814">WS2814 (RGBW)</option><option value="APA102">APA102 (DATA+CLK)</option><option value="SK9822">SK9822 (DATA+CLK)</option><option value="LPD8806">LPD8806 (DATA+CLK)</option>
                 </select>
               </div>
 
@@ -379,28 +393,9 @@
                   <div id="cd-lay-warn" style="display:none;margin-bottom:8px;font:500 11.5px 'DM Mono'"></div>
                   <div id="cd-gaps" style="display:flex;flex-direction:column;gap:6px"></div>
                 </div>
-                <div id="cd-row-pack">
-                  <label class="f-label-caps" data-i18n="DMX layout">DMX layout</label>
-                  <select class="field field-text" id="cd-pack"><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="colour" data-i18n="One colour per fixture (3 or 4 channels a bar)">One colour per fixture (3 or 4 channels a bar)</option><option value="control" data-i18n="DMX control: no pixel data, each fixture on its profile">DMX control: no pixel data, each fixture on its profile</option></select>
-                </div>
                 <div id="cd-row-order">
                   <label class="f-label-caps" data-i18n="Color order">Color order</label>
                   <select class="field field-text" id="cd-order"><option>RGB</option><option>GRB</option><option>BGR</option><option>RGBW</option><option>GRBW</option></select>
-                </div>
-                <div>
-                  <label class="f-label-caps"><span data-i18n="Art-Net address">Art-Net address</span> <span class="fg-4">net · sub · uni</span></label>
-                  <div style="display:flex;width:100%;align-items:center;gap:5px;background:var(--well);border:1px solid var(--line-3);border-radius:0;padding:7px 9px">
-                    <input id="cd-net" type="number" min="0" max="127" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
-                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
-                    <input id="cd-sub" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
-                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
-                    <input id="cd-uni" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
-                  </div>
-                  <div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="cd-uni-flat">0</span></div>
-                </div>
-                <div>
-                  <label class="f-label-caps" data-i18n="DMX start address">DMX start address</label>
-                  <input class="field" id="cd-dmx" type="number" value="1"/>
                 </div>
                 <div id="cd-row-bri">
                   <label class="f-label-caps"><span data-i18n="Max brightness">Max brightness</span> <span class="fg-4">(0–255)</span></label>
@@ -487,12 +482,6 @@
           </div>
 
           <div class="stack-16">
-            <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
-              <div style="display:flex;align-items:center;gap:9px"><i data-lucide="shield" class="ic20 fg-warn"></i><span style="font-size:14px;font-weight:700" data-i18n="Failsafe (signal loss)">Failsafe (signal loss)</span></div>
-              <div><label class="f-label" data-i18n="Trigger delay">Trigger delay</label><div style="display:flex;align-items:center;gap:9px"><input id="a-fsdelay" type="range" min="0" max="30" value="5" style="flex:1;accent-color:var(--accent)"/><span id="a-fsdelay-val" style="font:500 13px 'DM Mono';color:var(--accent);width:74px;text-align:right">5 s</span></div></div>
-              <div><label class="f-label" data-i18n="Behavior">Behavior</label><select class="field field-text" id="a-fsmode"><option value="1" data-i18n="Full blackout">Full blackout</option><option value="0" data-i18n="Hold last look">Hold last look</option><option value="2" data-i18n="Solid color">Solid color</option><option value="3" data-i18n="Play a scene">Play a scene</option></select></div>
-              <div id="a-fsscene-row" style="display:none"><label class="f-label" data-i18n="Failsafe scene">Failsafe scene</label><select class="field field-text" id="a-fsscene"></select></div>
-            </div>
             <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:13px">
               <span class="eyebrow" data-i18n="REAL-TIME STATISTICS">REAL-TIME STATISTICS</span>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
@@ -560,12 +549,9 @@
             <div class="card">
               <span class="eyebrow" data-i18n="GENERAL">GENERAL</span>
               <div class="grid-2">
-                <div><label class="f-label" data-i18n="Frame rate (Hz)">Frame rate (Hz)</label><input class="field" id="s-refresh" type="number" min="20" max="120" step="1" value="60"/></div>
                 <div><label class="f-label" data-i18n="Return to home (s)">Return to home (s)</label><input class="field" id="s-home" type="number" min="0" max="65535" value="0"/></div>
               </div>
               <div class="grid-2">
-                <div><label class="f-label" data-i18n="Boot scene">Boot scene</label><select class="field field-text" id="s-boot"><option value="0" data-i18n="None">None</option><option value="1">Scene 1</option><option value="2">Scene 2</option><option value="3">Scene 3</option><option value="4">Scene 4</option><option value="5">Scene 5</option><option value="6">Scene 6</option><option value="7">Scene 7</option><option value="8">Scene 8</option></select></div>
-                <div><label class="f-label" data-i18n="Scene fade (s)">Scene fade (s)</label><input class="field" id="s-fade" type="number" min="0" max="25.5" step="0.1" value="0"/></div>
                 <div><label class="f-label" data-i18n="Language">Language</label><select class="field field-text" id="s-lang"><option value="en">English</option><option value="fr">Français</option></select></div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px">
@@ -582,6 +568,78 @@
           </div>
 
           <div class="stack-16">
+            <div class="card" id="spk-card" style="display:none">
+              <span class="eyebrow" data-i18n="SPEAKER">SPEAKER</span>
+              <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:var(--fg-2)"><span data-i18n="Volume">Volume</span><input id="spk-vol" type="range" min="0" max="100" step="5" value="0" style="flex:1;accent-color:var(--accent)"/><span id="spk-vol-val" style="width:46px;text-align:right;color:var(--fg)">Off</span></label>
+              <div class="row-between-c" style="gap:12px"><span class="hint" data-live="audio-state">—</span><button class="btn-sec" data-action="audio-test" style="display:inline-flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="play" class="ic14"></i><span data-i18n="Play test sound">Play test sound</span></button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== AUTOMATIONS ===== -->
+      <div data-screen="auto" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1040px">
+          <div class="stack-16">
+            <div class="card">
+              <span class="eyebrow" data-i18n="AT STARTUP">AT STARTUP</span>
+              <div><label class="f-label" data-i18n="Boot scene">Boot scene</label><select class="field field-text" id="s-boot"><option value="0" data-i18n="None">None</option><option value="1">Scene 1</option><option value="2">Scene 2</option><option value="3">Scene 3</option><option value="4">Scene 4</option><option value="5">Scene 5</option><option value="6">Scene 6</option><option value="7">Scene 7</option><option value="8">Scene 8</option></select></div>
+              <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="pl-auto" type="checkbox"/><span data-i18n="Play the playlist at boot (as soon as the card is mounted)">Play the playlist at boot (as soon as the card is mounted)</span></label>
+            </div>
+            <div class="card">
+              <span class="eyebrow" data-i18n="BETWEEN SCENES">BETWEEN SCENES</span>
+              <div><label class="f-label" data-i18n="Scene fade (s)">Scene fade (s)</label><input class="field" id="s-fade" type="number" min="0" max="25.5" step="0.1" value="0"/></div>
+            </div>
+          </div>
+          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;gap:9px"><i data-lucide="shield" class="ic20 fg-warn"></i><span style="font-size:14px;font-weight:700" data-i18n="Failsafe (signal loss)">Failsafe (signal loss)</span></div>
+              <div><label class="f-label" data-i18n="Trigger delay">Trigger delay</label><div style="display:flex;align-items:center;gap:9px"><input id="a-fsdelay" type="range" min="0" max="30" value="5" style="flex:1;accent-color:var(--accent)"/><span id="a-fsdelay-val" style="font:500 13px 'DM Mono';color:var(--accent);width:74px;text-align:right">5 s</span></div></div>
+              <div><label class="f-label" data-i18n="Behavior">Behavior</label><select class="field field-text" id="a-fsmode"><option value="1" data-i18n="Full blackout">Full blackout</option><option value="0" data-i18n="Hold last look">Hold last look</option><option value="2" data-i18n="Solid color">Solid color</option><option value="3" data-i18n="Play a scene">Play a scene</option></select></div>
+              <div id="a-fsscene-row" style="display:none"><label class="f-label" data-i18n="Failsafe scene">Failsafe scene</label><select class="field field-text" id="a-fsscene"></select></div>
+            </div>
+        </div>
+      </div>
+
+      <!-- ===== OUTPUT PATCH ===== -->
+      <div data-screen="dmxpatch" style="display:none">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
+          <div id="patch-list-mount" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px"></div>
+          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)"><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Channel 1</h3><span data-dp-summary style="font:500 12px 'DM Mono';color:var(--fg-3)"></span></div>
+            <div id="dp-off" class="hint" style="display:none" data-i18n="This output is off: nothing to patch.">This output is off: nothing to patch.</div>
+            <div id="dp-fields" style="display:grid;grid-template-columns:1fr;gap:14px">
+              <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Pixel by pixel control">Pixel by pixel control</div><div class="hint" data-i18n="On: every LED has its DMX channels. Off: no pixel data — each fixture is driven by the channels of its DMX profile, and frees the universes.">On: every LED has its DMX channels. Off: no pixel data — each fixture is driven by the channels of its DMX profile, and frees the universes.</div></div><input id="cd-pixmap" type="checkbox" checked style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex:none"/></label>
+              <div id="cd-row-pack">
+                  <label class="f-label-caps" data-i18n="DMX layout">DMX layout</label>
+                  <select class="field field-text" id="cd-pack"><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="colour" data-i18n="One colour per fixture (3 or 4 channels a bar)">One colour per fixture (3 or 4 channels a bar)</option></select>
+                </div>
+              <div>
+                  <label class="f-label-caps"><span data-i18n="Art-Net address">Art-Net address</span> <span class="fg-4">net · sub · uni</span></label>
+                  <div style="display:flex;width:100%;align-items:center;gap:5px;background:var(--well);border:1px solid var(--line-3);border-radius:0;padding:7px 9px">
+                    <input id="cd-net" type="number" min="0" max="127" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
+                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
+                    <input id="cd-sub" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
+                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
+                    <input id="cd-uni" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
+                  </div>
+                  <div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="cd-uni-flat">0</span></div>
+                </div>
+              <div>
+                  <label class="f-label-caps" data-i18n="DMX start address">DMX start address</label>
+                  <input class="field" id="cd-dmx" type="number" value="1"/>
+                </div>
+              <div id="dp-row-fix" style="display:none">
+                <label class="f-label-caps"><span data-i18n="Fixture profiles">Fixture profiles</span> <span class="fg-4" data-i18n="one after the other from the start address">one after the other from the start address</span></label>
+                <div id="cd-patchfix" style="display:flex;flex-direction:column;gap:6px"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== MAINTENANCE ===== -->
+      <div data-screen="maint" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
             <div class="card">
               <span class="eyebrow">FIRMWARE</span>
               <div style="display:flex;align-items:center;gap:13px"><span style="width:42px;height:42px;border-radius:0;background:var(--well);border:1px solid var(--line-3);display:flex;align-items:center;justify-content:center;color:var(--warn);flex:none"><i data-lucide="cpu" class="ic22"></i></span><div style="flex:1"><div style="font-size:14px;font-weight:700" data-live="fw-name">pixfrog</div><div style="font:500 11.5px 'DM Mono';color:var(--fg-4);margin-top:2px" data-live="fw-sub">esp32-p4</div></div></div>
@@ -591,25 +649,25 @@
             </div>
             <div class="card">
               <span class="eyebrow">CONFIGURATION</span>
-              <div style="display:flex;gap:11px"><button class="btn-sec" data-action="export" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic16"></i><span data-i18n="Export JSON">Export JSON</span></button><button class="btn-sec" data-action="import" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="upload" class="ic16"></i><span data-i18n="Import JSON">Import JSON</span></button></div>
+              <div style="display:flex;flex-direction:column;gap:11px"><button class="btn-sec" data-action="import" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="upload" class="ic16"></i><span data-i18n="Import JSON">Import JSON</span></button><button class="btn-sec" data-action="export" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic16"></i><span data-i18n="Export JSON">Export JSON</span></button></div>
               <input id="restore-file" type="file" accept=".json,application/json" style="display:none"/>
             </div>
-            <div class="card" id="spk-card" style="display:none">
-              <span class="eyebrow" data-i18n="SPEAKER">SPEAKER</span>
-              <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:var(--fg-2)"><span data-i18n="Volume">Volume</span><input id="spk-vol" type="range" min="0" max="100" step="5" value="0" style="flex:1;accent-color:var(--accent)"/><span id="spk-vol-val" style="width:46px;text-align:right;color:var(--fg)">Off</span></label>
-              <div class="row-between-c" style="gap:12px"><span class="hint" data-live="audio-state">—</span><button class="btn-sec" data-action="audio-test" style="display:inline-flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="play" class="ic14"></i><span data-i18n="Play test sound">Play test sound</span></button></div>
-            </div>
-            <div style="background:var(--panel);border:1px solid var(--danger-line);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
-              <span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--danger)" data-i18n="DANGER ZONE">DANGER ZONE</span>
-              <div style="display:flex;gap:11px"><button class="btn-dng" data-reboot style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="rotate-cw" class="ic16"></i><span data-i18n="Reboot">Reboot</span></button><button class="btn-dng" data-reset style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="trash-2" class="ic16"></i><span data-i18n="Factory reset">Factory reset</span></button></div>
+        </div>
+
+        <div style="margin-top:14px;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px 20px;max-width:1060px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <span class="eyebrow" data-i18n="DEVICE LOGS">DEVICE LOGS</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="d-loglevel" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 9px;font:500 12px 'DM Mono'"><option value="error">error</option><option value="warn">warn</option><option value="info" selected>info</option><option value="debug">debug</option><option value="verbose">verbose</option><option value="none">none</option></select>
+              <label style="display:inline-flex;align-items:center;gap:6px;font:500 12px 'DM Mono';color:var(--fg-2);cursor:pointer"><input id="d-autolog" type="checkbox" checked style="accent-color:var(--accent)"/><span data-i18n="auto">auto</span></label>
+              <button class="btn-sec" data-action="logs-refresh" style="background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Refresh">Refresh</button>
+              <button class="btn-sec" data-action="logs-download" style="background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Download">Download</button>
             </div>
           </div>
+          <pre id="d-logs" style="margin:12px 0 0;max-height:360px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:0;padding:12px;font:500 11.5px 'DM Mono';color:#c9cbc3;white-space:pre-wrap;word-break:break-word">…</pre>
         </div>
-      </div>
 
-      <!-- ===== DIAGNOSTICS (stats for nerds + logs) ===== -->
-      <div data-screen="diag" style="display:none">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:14px;max-width:1060px">
+        <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:14px">
           <div class="card-sm">
             <span class="eyebrow" data-i18n="RENDER PIPELINE">RENDER PIPELINE</span>
             <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;font:500 12.5px 'DM Mono'">
@@ -654,23 +712,15 @@
           </div>
         </div>
 
-        <div style="margin-top:14px;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px 20px;max-width:1060px">
+        <div style="margin-top:14px;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px 20px">
           <span class="eyebrow" data-i18n="PER-CHANNEL CAPACITY">PER-CHANNEL CAPACITY</span>
           <div id="d-chans" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(116px,1fr));gap:8px;margin-top:12px"></div>
         </div>
 
-        <div style="margin-top:14px;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px 20px;max-width:1060px">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-            <span class="eyebrow" data-i18n="DEVICE LOGS">DEVICE LOGS</span>
-            <div style="display:flex;align-items:center;gap:8px">
-              <select id="d-loglevel" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 9px;font:500 12px 'DM Mono'"><option value="error">error</option><option value="warn">warn</option><option value="info" selected>info</option><option value="debug">debug</option><option value="verbose">verbose</option><option value="none">none</option></select>
-              <label style="display:inline-flex;align-items:center;gap:6px;font:500 12px 'DM Mono';color:var(--fg-2);cursor:pointer"><input id="d-autolog" type="checkbox" checked style="accent-color:var(--accent)"/><span data-i18n="auto">auto</span></label>
-              <button class="btn-sec" data-action="logs-refresh" style="background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Refresh">Refresh</button>
-              <button class="btn-sec" data-action="logs-download" style="background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Download">Download</button>
+          <div style="margin-top:14px;background:var(--panel);border:1px solid var(--danger-line);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+              <span style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--danger)" data-i18n="DANGER ZONE">DANGER ZONE</span>
+              <div style="display:flex;gap:11px"><button class="btn-dng" data-reboot style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="rotate-cw" class="ic16"></i><span data-i18n="Reboot">Reboot</span></button><button class="btn-dng" data-reset style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="trash-2" class="ic16"></i><span data-i18n="Factory reset">Factory reset</span></button></div>
             </div>
-          </div>
-          <pre id="d-logs" style="margin:12px 0 0;max-height:360px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:0;padding:12px;font:500 11.5px 'DM Mono';color:#c9cbc3;white-space:pre-wrap;word-break:break-word">…</pre>
-        </div>
       </div>
 
     </div>
@@ -873,7 +923,7 @@ var FR={
   'out':'sorties',
   'Stopped scene ':'Scène arrêtée ',
   'Drive the box from any desk: compose its DMX channels':'Pilotez le boîtier depuis n’importe quelle console : composez ses canaux DMX',
-  'Diagnostics':'Diagnostics','RENDER PIPELINE':'PIPELINE DE RENDU','MEMORY':'MÉMOIRE',
+  'RENDER PIPELINE':'PIPELINE DE RENDU','MEMORY':'MÉMOIRE',
   'RECEPTION':'RÉCEPTION','SYSTEM':'SYSTÈME','PER-CHANNEL CAPACITY':'CAPACITÉ PAR CANAL',
   'DEVICE LOGS':'LOGS DE L’APPAREIL','wire emit':'émission fil','frames':'trames',
   'underruns':'sous-débits','heap free':'heap libre','heap min':'heap min','PSRAM free':'PSRAM libre',
@@ -890,7 +940,7 @@ var FR={
   'Play .fseq sequences from the microSD card':'Lecture de séquences .fseq depuis la carte microSD',
   'Loop the file played':'Lire le fichier en boucle','PLAYLIST':'PLAYLIST',
   'Start over after the last file':'Reprendre au début après le dernier fichier',
-  'Play at boot (as soon as the card is mounted)':'Lire au démarrage (dès la carte montée)',
+  'Play the playlist at boot (as soon as the card is mounted)':'Lire la playlist au démarrage (dès la carte montée)',
   'Add to the playlist':'Ajouter à la playlist','Plays in a row':'Lectures d’affilée',
   'Move up':'Monter','Move down':'Descendre','Playlist saved':'Playlist enregistrée',
   'Empty — add files with the + of the list':'Vide — ajoutez des fichiers avec le + de la liste',
@@ -998,7 +1048,7 @@ var FR={
   'Fixture profile (OFL)':'Profil de fixture (OFL)','Save first: the file is made from the saved profile':'Enregistrez d’abord : le fichier est fait à partir du profil enregistré',
   'DMX control: no pixel data, each fixture on its profile':'Contrôle DMX : pas de données pixel, chaque fixture sur son profil','DMX profile':'Profil DMX',
   '{n} fixtures':'{n} fixtures','No fixture listed: the whole strip is one fixture, on profile 1':'Aucune fixture listée : tout le ruban est une fixture, sur le profil 1',
-  'PREVIEW':'APERÇU','LEDs in the preview':'LEDs de l’aperçu','Drawn by the box, as on a strip of that many LEDs — unsaved changes included.':'Dessiné par le boîtier, comme sur un ruban de ce nombre de LEDs — modifications non enregistrées comprises.','PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
+  'LOOKS':'LOOKS','RIG':'INSTALLATION','DMX':'DMX','PLAYBACK':'LECTURE','SETTINGS':'RÉGLAGES','Sequences':'Séquences','Automations':'Automatismes','Output patch':'Patch des sorties','Maintenance':'Maintenance','Protocols':'Protocoles','Control universe':'Univers de contrôle','What the box does on its own: at startup, between scenes, when the signal is lost':'Ce que le boîtier fait seul : au démarrage, entre les scènes, à la perte du signal','8 outputs · the LED hardware and the fixtures of each strip':'8 sorties · le matériel LED et les fixtures de chaque ruban','Ordered sets of fixtures, on any outputs':'Ensembles ordonnés de fixtures, sur n’importe quelles sorties','ArtNet 4 + sACN E1.31 reception · merge':'Réception ArtNet 4 + sACN E1.31 · fusion','Where each output sits in the universes: layout, universe, address':'Où chaque sortie se place dans les univers : layout, univers, adresse','Last: re-address every output, then the control universe':'En dernier : réadresse toutes les sorties, puis l’univers de contrôle','Language · screen · speaker · security':'Langue · écran · haut-parleur · sécurité','Firmware · configuration backup · telemetry & device logs · restart':'Firmware · sauvegarde de la configuration · télémétrie et logs · redémarrage','AT STARTUP':'AU DÉMARRAGE','BETWEEN SCENES':'ENTRE LES SCÈNES','One frame rate for the eight outputs: it bounds how many LEDs each can drive.':'Une fréquence d’images pour les huit sorties : elle borne le nombre de LEDs que chacune peut piloter.','This output is off: nothing to patch.':'Cette sortie est désactivée : rien à patcher.','This output is off: switch it on to set it up.':'Cette sortie est désactivée : activez-la pour la configurer.','Pixel by pixel control':'Contrôle pixel par pixel','On: every LED has its DMX channels. Off: no pixel data — each fixture is driven by the channels of its DMX profile, and frees the universes.':'Activé : chaque LED a ses canaux DMX. Désactivé : aucune donnée pixel — chaque fixture est pilotée par les canaux de son profil DMX, et libère les univers.','Fixture profiles':'Profils des fixtures','one after the other from the start address':'les unes après les autres depuis l’adresse de départ','universe':'univers','PREVIEW':'APERÇU','LEDs in the preview':'LEDs de l’aperçu','Drawn by the box, as on a strip of that many LEDs — unsaved changes included.':'Dessiné par le boîtier, comme sur un ruban de ce nombre de LEDs — modifications non enregistrées comprises.','PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
   'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
   'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
   'Scene added':'Scène ajoutée','Scene deleted':'Scène supprimée','Scene moved':'Scène déplacée','Scene duplicated':'Scène dupliquée',
@@ -1578,8 +1628,8 @@ function buildPatch(){
 }
 
 /* ─────────── navigation ─────────── */
-var TITLES={dashboard:'Dashboard',scenes:'Scenes',effects:'Effects',fseq:'FSEQ sequences',channels:'Channels',groups:'Groups',profiles:'DMX profiles',network:'Network',artnet:'ArtNet / sACN',patch:'Auto-patch',control:'DMX control',system:'System',diag:'Diagnostics'};
-var SUBS={profiles:'Up to 8 profiles · the DMX channels a fixture answers to',control:'Drive the box from any desk: compose its DMX channels',dashboard:'Live update · every 1 s',scenes:'Up to 30 scenes · each part plays an effect on its outputs',effects:'Up to 31 effects · 11 generators · up to 4 colors',fseq:'Play .fseq sequences from the microSD card',channels:'8 lines · 2 outputs (DATA + CLOCK) per channel',network:'IP addressing — applied after reboot',artnet:'ArtNet 4 + sACN E1.31 reception · merge & failsafe',patch:'Contiguous re-addressing of every channel',system:'General · security · firmware · maintenance',diag:'Stats for nerds · live telemetry & device logs'};
+var TITLES={dashboard:'Dashboard',fseq:'Sequences',auto:'Automations',effects:'Effects',scenes:'Scenes',channels:'Outputs',groups:'Groups',artnet:'Protocols',profiles:'DMX profiles',dmxpatch:'Output patch',control:'Control universe',patch:'Auto-patch',network:'Network',system:'System',maint:'Maintenance'};
+var SUBS={dashboard:'Live update · every 1 s',fseq:'Play .fseq sequences from the microSD card',auto:'What the box does on its own: at startup, between scenes, when the signal is lost',effects:'Up to 31 effects · 11 generators · up to 4 colors',scenes:'Up to 30 scenes · each part plays an effect on its outputs',channels:'8 outputs · the LED hardware and the fixtures of each strip',groups:'Ordered sets of fixtures, on any outputs',artnet:'ArtNet 4 + sACN E1.31 reception · merge',profiles:'Up to 8 profiles · the DMX channels a fixture answers to',dmxpatch:'Where each output sits in the universes: layout, universe, address',control:'Drive the box from any desk: compose its DMX channels',patch:'Last: re-address every output, then the control universe',network:'IP addressing — applied after reboot',system:'Language · screen · speaker · security',maint:'Firmware · configuration backup · telemetry & device logs · restart'};
 var curScreen='dashboard';
 function go(name){
   curScreen=name;
@@ -1591,7 +1641,7 @@ function go(name){
   var sc=document.getElementById('pf-scroll'); if(sc) sc.scrollTop=0;
   if(name==='fseq'){ loadFseq(); loadPlaylist(); }
   if(diagTimer){ clearInterval(diagTimer); diagTimer=null; }
-  if(name==='diag'){ pollDiag(); diagTimer=setInterval(pollDiag,1500); }
+  if(name==='maint'){ pollDiag(); diagTimer=setInterval(pollDiag,1500); }
   fxpRun(name==='effects');
 }
 function navStyle(el,active){
@@ -1608,14 +1658,13 @@ function selectChan(i){
   var c=CHANS[i]; if(!c) return; curChan=i;
   function v(id,val){ var e=el(id); if(e) e.value=val; }
   function k(id,val){ var e=el(id); if(e) e.checked=!!val; }
-  v('cd-proto',c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
+  k('cd-on',c.protoRaw!=='Off'); v('cd-proto',c.protoRaw==='Off'?PROTOCOLS[1]:c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
   var pe=el('cd-pix'); if(pe){ pe.max=1024; pe.min=1; }
   renderGaps(); updatePixWarn();
-  v('cd-order',c.order); v('cd-pack',c.pack||'continuous'); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
+  v('cd-order',c.order); k('cd-pixmap',c.pack!=='control'); v('cd-pack',c.pack==='control'?(c.packPx||'continuous'):(c.pack||'continuous')); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
   v('cd-clk',snapClk(c.clk)); v('cd-gam',c.gam); v('cd-wb',c.wb);
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
-  var ct=document.querySelector('[data-chan-title]'); if(ct) ct.textContent=t('Channel')+' '+c.n;
-  var stt=document.querySelector('[data-chan-state]'); if(stt){ stt.textContent=t(c.label); stt.style.color=c.txt; stt.style.background=c.chip; }
+  document.querySelectorAll('[data-chan-title]').forEach(function(ct){ ct.textContent=t('Output')+' '+c.n; });
   document.querySelectorAll('[data-chan]').forEach(function(r){
     var on=+r.getAttribute('data-chan')===i;
     r.style.borderColor=on?'rgba(63,212,99,.45)':'var(--line)';
@@ -1627,10 +1676,43 @@ function clampN(id,lo,hi){ var e=el(id); if(!e) return lo; var v=parseInt(e.valu
 function readUni(){ return (clampN('cd-net',0,127)<<8)|(clampN('cd-sub',0,15)<<4)|clampN('cd-uni',0,15); }
 function setUniFields(u){ u=u||0; var e; if((e=el('cd-net'))) e.value=(u>>8)&0x7F; if((e=el('cd-sub'))) e.value=(u>>4)&0x0F; if((e=el('cd-uni'))) e.value=u&0x0F; updateUniFlat(u); }
 function updateUniFlat(u){ if(u==null) u=readUni(); var f=el('cd-uni-flat'); if(f) f.textContent=u; }
+// The output patch panel: nothing for an output that is off; the pixel
+// layouts under the switch, or the fixtures' profiles when it is off.
+function updatePatchVis(){
+  var c=CHANS[curChan]; if(!c) return;
+  var off=c.protoRaw==='Off', ctl=c.pack==='control';
+  function disp(id,v){ var e=el(id); if(e) e.style.display=v; }
+  disp('dp-fields',off?'none':'grid'); disp('dp-off',off?'block':'none');
+  disp('cd-row-pack',ctl?'none':'block'); disp('dp-row-fix',ctl?'block':'none');
+  var sm=document.querySelector('[data-dp-summary]');
+  if(sm) sm.textContent=off?'':(c.proto+' · '+c.pixels+' LED · '+chanSpan(c)+' '+t(chanSpan(c)>1?'universes':'universe'));
+}
+// DMX control mode: each fixture of the output with its profile and where it
+// sits on the wire (ctlPatch, as the box computes it).
+function renderPatchFix(){
+  var m=el('cd-patchfix'), c=CHANS[curChan]; if(!m||!c) return;
+  if(c.pack!=='control'){ m.innerHTML=''; return; }
+  var patch=ctlPatch(c), fi=0, nf=0, phys=1;
+  var inp='background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 10px;font:500 13px \'DM Mono\'';
+  var rows=(c.lay||[]).map(function(it,k){
+    var from=phys; phys+=it.n; if(it.t!=='f') return '';
+    var pa=patch[fi++]; nf++;
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font:600 11px \'DM Mono\';color:var(--accent);width:28px">F'+nf+'</span>'
+      +'<span style="font:500 11px \'DM Mono\';color:var(--fg-5);min-width:90px">'+from+'–'+(phys-1)+'</span>'
+      +'<select data-lay-prof="'+k+'" title="'+esc(t('DMX profile'))+'" style="'+inp+';width:190px">'+PROFILES.map(function(pr,i){ return '<option value="'+i+'"'+(i===(it.p||0)?' selected':'')+'>'+(i+1)+' · '+esc(pr.name||'—')+' ('+pfFootprint(pr)+' ch)</option>'; }).join('')+'</select>'
+      +'<span data-lay-addr="'+k+'" style="font:500 12px \'DM Mono\';color:var(--accent)">U'+pa.uni+' · '+pa.addr+'</span></div>';
+  }).join('');
+  var last=patch[patch.length-1], chs=patch.reduce(function(a,r){ return a+r.foot; },0);
+  m.innerHTML=rows+'<div data-ctl-note class="hint" style="margin-top:8px">'+esc((nf?t('{n} fixtures').replace('{n}',nf):t('No fixture listed: the whole strip is one fixture, on profile 1'))
+    +' · '+chs+' ch · U'+patch[0].uni+' · '+patch[0].addr+' → U'+last.uni+' · '+(last.addr+last.foot-1))+'</div>';
+}
 function updateChanVis(){
-  var sel=el('cd-proto'); if(!sel) return;
-  var p=sel.value, off=p==='Off', clk=CLOCKED.indexOf(p)>=0;
+  var sel=el('cd-proto'), on=el('cd-on'); if(!sel||!on) return;
+  var p=sel.value, off=!on.checked, clk=CLOCKED.indexOf(p)>=0;
   var f=el('cd-fields'); if(f) f.style.display=off?'none':'grid';
+  var pr=el('cd-row-proto'); if(pr) pr.style.display=off?'none':'block';
+  var on2=el('cd-offnote'); if(on2) on2.style.display=off?'block':'none';
+  updatePatchVis();
   if(off) return;
   setOrderOptions(p);
   // Field rows stack label-over-input (block); only the invert toggle is a flex
@@ -1717,12 +1799,10 @@ function ctlPatch(c){
 function renderGaps(){
   var m=el('cd-gaps'), c=CHANS[curChan]; if(!m||!c) return;
   c.lay=c.lay||[];
-  var ctl=c.pack==='control', patch=ctl?ctlPatch(c):[], fi=0;
   var inp='background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 10px;font:500 13px \'DM Mono\'';
   var nf=0, phys=1;
   var rows=c.lay.map(function(it,k){
     var tag=it.t==='f'?('F'+(++nf)):it.t==='d'?'✕':'·', from=phys; phys+=it.n;
-    var pa=(ctl&&it.t==='f')?patch[fi++]:null;
     return '<div data-lay-row="'+k+'" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +'<span data-lay-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
       +'<span style="font:600 11px \'DM Mono\';color:'+(it.t==='f'?'var(--accent)':it.t==='d'?'var(--danger)':'var(--fg-4)')+';width:28px">'+tag+'</span>'
@@ -1732,9 +1812,6 @@ function renderGaps(){
       +(it.t==='f'?'<button class="btn-sec" data-lay-rev="'+k+'" title="'+esc(t('Mounted the other way round: the effects run through it backwards'))+'" style="width:30px;height:30px;border-radius:0;background:'+(it.rev?'rgba(63,212,99,.15)':'rgba(237,238,234,.04)')+';border:1px solid '+(it.rev?'var(--accent)':'var(--line-3)')+';color:'+(it.rev?'var(--accent)':'var(--fg-3)')+';cursor:pointer;font:600 13px \'DM Mono\'">⇄</button>':'<span style="width:30px"></span>')
       +'<span style="font:500 11px \'DM Mono\';color:var(--fg-5);min-width:90px">'+(it.n>1?from+'–'+(phys-1):from)+'</span>'
       +sqBtn('data-lay-del="'+k+'"','x','Remove')
-      +(pa?'<div style="flex-basis:100%;display:flex;align-items:center;gap:8px;padding-left:50px"><span style="font:500 11px \'DM Mono\';color:var(--fg-4)">DMX</span>'
-        +'<select data-lay-prof="'+k+'" title="'+esc(t('DMX profile'))+'" style="'+inp+';width:190px">'+PROFILES.map(function(pr,i){ return '<option value="'+i+'"'+(i===(it.p||0)?' selected':'')+'>'+(i+1)+' · '+esc(pr.name||'—')+' ('+pfFootprint(pr)+' ch)</option>'; }).join('')+'</select>'
-        +'<span data-lay-addr="'+k+'" style="font:500 12px \'DM Mono\';color:var(--accent)">U'+pa.uni+' · '+pa.addr+'</span></div>':'')
       +'</div>';
   }).join('');
   var btn='display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px \'DM Mono\';cursor:pointer';
@@ -1747,13 +1824,7 @@ function renderGaps(){
     +'<span class="fg-4">+</span><input id="lay-rep-k" type="number" min="0" max="16" value="'+(fx.length>1&&dd.length?dd[0].n:0)+'" title="'+esc(t('dead LEDs between'))+'" style="width:52px;'+inp+'"/>'
     +'<span style="font:500 11.5px \'DM Mono\';color:var(--fg-3)">'+esc(t('dead'))+'</span>'
     +sqBtn('data-lay-fill','wand-2','Replace the list with this pattern')+'</div>';
-  var note='';
-  if(ctl){
-    var last=patch[patch.length-1], chs=patch.reduce(function(a,r){ return a+r.foot; },0);
-    note='<div data-ctl-note class="hint" style="margin-top:8px">'+esc((nf?t('{n} fixtures').replace('{n}',nf):t('No fixture listed: the whole strip is one fixture, on profile 1'))
-      +' · '+chs+' ch · U'+patch[0].uni+' · '+patch[0].addr+' → U'+last.uni+' · '+(last.addr+last.foot-1))+'</div>';
-  }
-  m.innerHTML=rows+bar+note; createIcons(m); renderLayViz();
+  m.innerHTML=rows+bar; createIcons(m); renderLayViz(); renderPatchFix(); updatePatchVis();
   var pe=el('cd-pix'); if(pe){ pe.disabled=c.lay.length>0; pe.title=c.lay.length?t('Set by the list below'):''; if(c.lay.length) pe.value=layLive(c.lay); }
 }
 // "N fixtures of L LEDs, K dead LEDs between": replaces the list.
@@ -1799,10 +1870,14 @@ function pxLabel(c){
 function readChanEditor(){
   var c=CHANS[curChan]; if(!c) return;
   function nv(id){ var e=el(id); return e?parseInt(e.value,10)||0:0; }
-  c.protoRaw=el('cd-proto').value; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
+  // On / off is its own switch; "Off" stays the protocol the box stores.
+  c.protoRaw=el('cd-on').checked?el('cd-proto').value:'Off'; c.proto=c.protoRaw==='Off'?'—':c.protoRaw;
   c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx');
   if(!(c.lay&&c.lay.length)) c.pixels=Math.max(1,Math.min(nv('cd-pix'),1024));
-  c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp'); if(el('cd-pack')) c.pack=el('cd-pack').value;
+  c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
+  var pm=el('cd-pixmap');
+  if(pm&&!pm.checked){ if(c.pack!=='control') c.packPx=c.pack; c.pack='control'; }
+  else if(el('cd-pack')) c.pack=el('cd-pack').value;
   c.inv=el('cd-inv').checked; c.clk=nv('cd-clk'); c.gam=nv('cd-gam'); c.wb=el('cd-wb').value;
   (c.lay||[]).forEach(function(it,k){ var n=nv('cd-lay-n-'+k); if(n>=1) it.n=Math.min(n,1024); });
   if(c.lay&&c.lay.length){ c.pixels=Math.min(1024,layLive(c.lay)); var pe=el('cd-pix'); if(pe) pe.value=c.pixels; }
@@ -2015,7 +2090,7 @@ function applyChanStates(){
 }
 function renderLists(){
   var d=el('dash-chan-mount'); if(d){ d.innerHTML=CHANS.map(dashTile).join(''); createIcons(d); paintPreviews(); }
-  var l=el('chan-list-mount'); if(l){ l.innerHTML=CHANS.map(chanRow).join(''); createIcons(l); }
+  ['chan-list-mount','patch-list-mount'].forEach(function(id){ var l=el(id); if(l){ l.innerHTML=CHANS.map(chanRow).join(''); createIcons(l); } });
   var cur=CHANS[curChan]; if(cur){ document.querySelectorAll('[data-chan]').forEach(function(r){ var on=+r.getAttribute('data-chan')===curChan; r.style.borderColor=on?'rgba(63,212,99,.45)':'var(--line)'; r.style.background=on?'rgba(63,212,99,.07)':'var(--well)'; }); }
 }
 
@@ -2774,7 +2849,8 @@ function onInput(e){
   if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }
   if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }
   if(t.hasAttribute&&t.hasAttribute('data-lay-prof')){ var pc=CHANS[curChan], pk2=+t.getAttribute('data-lay-prof'); if(pc&&pc.lay&&pc.lay[pk2]){ pc.lay[pk2].p=parseInt(t.value,10)||0; markDirty('ch'+curChan); renderGaps(); } return; }
-  if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto') updateChanVis(); if(t.id==='cd-pack'||(CHANS[curChan].pack==='control'&&t.id.indexOf('cd-lay-')!==0)) renderGaps(); return; }
+  if(t.id==='cd-on'&&t.checked){ var ps=el('cd-proto'); if(ps) ps.selectedIndex=0; }
+  if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto'||t.id==='cd-on') updateChanVis(); if(t.id==='cd-pack'||t.id==='cd-pixmap'||(CHANS[curChan].pack==='control'&&t.id.indexOf('cd-lay-')!==0)) renderGaps(); else updatePatchVis(); return; }
   if(['n-ip','n-mask','n-gw','n-host','n-long','n-fallback','n-hub'].indexOf(t.id)>=0){ markDirty('network'); return; }
   if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }

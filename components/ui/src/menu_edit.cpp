@@ -594,6 +594,21 @@ void commit_edit() {
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
+    case Field::ChPixelMap: {
+        // Off: DMX control, the fixtures on their profiles. On again: the
+        // pixel layout the output had.
+        auto c = config::get_channel(s.edit.channel);
+        if (v) {
+            if (c.packing == config::kPackControl)
+                c.packing = pixel_layout_before_control(s.edit.channel);
+        } else if (c.packing != config::kPackControl) {
+            note_pixel_layout(s.edit.channel, c.packing);
+            c.packing = config::kPackControl;
+        }
+        config::set_channel(s.edit.channel, c);
+        dmx::mark_channel_dirty(s.edit.channel);
+        break;
+    }
     // One fixture of the open channel. The editors' ranges keep it clear of
     // its neighbours, so the list keeps its order and g_fix_index its fixture.
     case Field::FixFirst:

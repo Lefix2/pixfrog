@@ -25,24 +25,29 @@ struct Node {
 // Indexed by NodeId. Main's parent is a placeholder (back goes to Home).
 const Node kNodes[static_cast<uint8_t>(NodeId::Count)] = {
     { "MENU", NodeId::Main, build_main },
-    { "INPUTS", NodeId::Main, build_inputs },
-    { "NETWORK", NodeId::Main, build_network },
-    { "OUTPUT", NodeId::Main, build_output },
-    { "PLAYBACK", NodeId::Main, build_playback },
-    { "SETTINGS", NodeId::Main, build_settings },
-    { g_channel_title, NodeId::Main, build_channel },
-    { "SCENES", NodeId::Playback, build_scenes },
-    { "FSEQ", NodeId::Playback, build_fseq },
-    { "TEST PATTERN", NodeId::Playback, build_testpattern },
+    { "SHOW", NodeId::Main, build_show },
+    { "LOOKS", NodeId::Main, build_looks },
+    { "RIG", NodeId::Main, build_rig },
+    { "DMX", NodeId::Main, build_dmx },
+    { "BOX", NodeId::Main, build_box },
+    { "PROTOCOLS", NodeId::Dmx, build_inputs },
+    { "NETWORK", NodeId::Box, build_network },
+    { "SETTINGS", NodeId::Box, build_settings },
+    { g_channel_title, NodeId::Rig, build_channel },
+    { "SCENES", NodeId::Show, build_scenes },
+    { "FSEQ", NodeId::Show, build_fseq },
+    { "TEST PATTERN", NodeId::Rig, build_testpattern },
     { "DEAD PIXELS", NodeId::Channel, build_gaps },
-    { "DMX CONTROL", NodeId::Inputs, build_control },
+    { "CONTROL UNI", NodeId::Dmx, build_control },
     { g_ctl_slot_title, NodeId::Control, build_control_slot },
     { "FIXTURES", NodeId::Channel, build_fixtures },
     { g_fix_title, NodeId::Fixtures, build_fixture },
-    { "EDIT SCENES", NodeId::Playback, build_scene_list },
+    { "EDIT SCENES", NodeId::Looks, build_scene_list },
     { g_scene_title, NodeId::SceneList, build_scene_edit },
     { g_part_title, NodeId::SceneEdit, build_scene_part },
     { "OUTPUTS", NodeId::ScenePart, build_part_outputs },
+    { "PATCH", NodeId::Dmx, build_patch_list },
+    { g_patch_title, NodeId::PatchList, build_output_patch },
 };
 
 const Node& cur_node() {
@@ -241,12 +246,13 @@ void menu_debug_state(const char** screen_name, int* cursor, int* channel) {
     // Node names mirror the old per-screen names so the emulator agent API and
     // existing navigation scripts keep matching.
     static const char* const kNodeNames[] = {
-        "MainMenu",      "InputsMenu",      "NetworkMenu",     "OutputMenu",      "PlaybackMenu",
-        "SettingsMenu",  // keep aligned with NodeId — a missing entry reads as nullptr
-        "ChannelMenu",   "ScenesMenu",      "FSeqMenu",        "TestPatternMenu", "GapsMenu",
-        "ControlMenu",   "ControlSlotMenu", "FixturesMenu",    "FixtureMenu",     "SceneListMenu",
-        "SceneEditMenu", "ScenePartMenu",   "PartOutputsMenu",
+        "MainMenu",        "ShowMenu",        "LooksMenu",       "RigMenu",         "DmxMenu",
+        "BoxMenu",         "ProtocolsMenu",   "NetworkMenu",     "SettingsMenu",    "ChannelMenu",
+        "ScenesMenu",      "FSeqMenu",        "TestPatternMenu", "GapsMenu",        "ControlMenu",
+        "ControlSlotMenu", "FixturesMenu",    "FixtureMenu",     "SceneListMenu",   "SceneEditMenu",
+        "ScenePartMenu",   "PartOutputsMenu", "PatchListMenu",   "OutputPatchMenu",
     };
+
     static_assert(sizeof(kNodeNames) / sizeof(kNodeNames[0]) == static_cast<size_t>(NodeId::Count),
                   "one emulator name per menu node");
     if (screen_name) {

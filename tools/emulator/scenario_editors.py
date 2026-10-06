@@ -13,8 +13,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from crawl import Emu, goto, home  # noqa: E402
 
-MAIN_CH1, MAIN_INPUTS, MAIN_NETWORK, MAIN_OUTPUT, MAIN_PLAYBACK = 0, 8, 9, 10, 11
-MAIN_SETTINGS, MAIN_ABOUT = 12, 13
+# Main: Show, Looks, Rig, DMX, Box. Rig: outputs 1-8, Refresh, Test pattern.
+# DMX: Protocols, Patch, Control uni, Auto-patch. Box: Network, Settings, About.
+MAIN_SHOW, MAIN_RIG, MAIN_LOOKS, MAIN_DMX, MAIN_BOX, MAIN_BACK = 0, 1, 2, 3, 4, 5
+NETWORK, SETTINGS, ABOUT = [MAIN_BOX, 0], [MAIN_BOX, 1], [MAIN_BOX, 2]
+PATCH1 = [MAIN_DMX, 1, 0]  # output 1's patch: Pixel map, Layout, Uni, DMX
+CONTROL = [MAIN_DMX, 2]
 SETTINGS_STATS = 4  # after Bright, Idle dim, Dim after, Refresh px (no speaker here)
 
 
@@ -46,28 +50,28 @@ def main():
             emu.shot(os.devnull)
 
         # Text editor: walk to the end and validate (Name).
-        st = goto(emu, [0, MAIN_NETWORK, 5])
+        st = goto(emu, [0] + NETWORK + [5])
         expect(st["screen"] == "EditString", f"Name opens the text editor ({st})")
         emu.cmd("right")  # change the first character
         expect(click_until_leaves(emu, "EditString"), "text editor commits")
         # At the DONE position, rotate back once, then validate (Long).
-        goto(emu, [0, MAIN_NETWORK, 6])
+        goto(emu, [0] + NETWORK + [6])
         for _ in range(70):
             emu.cmd("click")
             if emu.state()["screen"] != "EditString":
                 break
         # IP editor: every octet, then commit (IP, then Mask with a step back).
-        st = goto(emu, [0, MAIN_NETWORK, 1])
+        st = goto(emu, [0] + NETWORK + [1])
         expect(st["screen"] == "EditIp", "IP opens the address editor")
         emu.cmd("right")
         expect(click_until_leaves(emu, "EditIp"), "IP editor commits")
-        goto(emu, [0, MAIN_NETWORK, 2])
+        goto(emu, [0] + NETWORK + [2])
         for _ in range(4):
             emu.cmd("click")
         emu.cmd("left")  # back from DONE to the last octet
         expect(click_until_leaves(emu, "EditIp"), "mask editor commits")
-        # Universe editor on channel 1 (net.sub.uni segments).
-        st = goto(emu, [0, MAIN_CH1, 1])
+        # Universe editor on output 1's patch (net.sub.uni segments).
+        st = goto(emu, [0] + PATCH1 + [2])
         expect(st["screen"] == "EditUni", f"Uni opens the universe editor ({st})")
         emu.cmd("right")
         for _ in range(3):
@@ -76,8 +80,8 @@ def main():
         expect(click_until_leaves(emu, "EditUni"), "universe editor commits")
 
         # Stats (under Settings) and About: a click returns to their menu.
-        for path, screen, back in (([0, MAIN_SETTINGS, SETTINGS_STATS], "Stats", "SettingsMenu"),
-                                   ([0, MAIN_ABOUT], "About", "MainMenu")):
+        for path, screen, back in (([0] + SETTINGS + [SETTINGS_STATS], "Stats", "SettingsMenu"),
+                                   ([0] + ABOUT, "About", "BoxMenu")):
             st = goto(emu, path)
             expect(st["screen"] == screen, f"{screen} opens")
             emu.cmd("click")
@@ -89,14 +93,14 @@ def main():
         expect(st["click"] == 1 and st["long"] == 0, f"HOME: a click confirms, no long sound ({st})")
         st = goto(emu, [0])
         expect(st["long"] == -1, "a long press in the menu cancels")
-        for _ in range(MAIN_ABOUT + 1):
+        for _ in range(MAIN_BACK):
             emu.cmd("right")
         expect(emu.state()["click"] == -1, "the [Back] row cancels")
-        st = goto(emu, [0, MAIN_SETTINGS, SETTINGS_STATS])
+        st = goto(emu, [0] + SETTINGS + [SETTINGS_STATS])
         expect(st["click"] == -1, "a click on Stats goes back: cancel")
         # Speaker: Volume appears in Settings, its gauge pitch follows the value.
         emu.cmd("set speaker 1")
-        st = goto(emu, [0, MAIN_SETTINGS, SETTINGS_STATS])
+        st = goto(emu, [0] + SETTINGS + [SETTINGS_STATS])
         expect(st["screen"] == "EditValue", f"Volume sits before Nerd stats ({st})")
         expect(st["gauge"] == 0.0, f"volume off: the gauge at its low bound ({st})")
         before = st["fp"]
@@ -105,7 +109,7 @@ def main():
         expect(abs(st["gauge"] - 0.05) < 1e-3 and st["fp"] != before, f"a step moves it ({st})")
         expect(st["click"] == 1, "committing confirms")
         emu.cmd("click")
-        st = goto(emu, [0, MAIN_SETTINGS, SETTINGS_STATS])  # back in: 5 % kept
+        st = goto(emu, [0] + SETTINGS + [SETTINGS_STATS])  # back in: 5 % kept
         expect(abs(st["gauge"] - 0.05) < 1e-3, f"the volume was saved ({st})")
         emu.cmd("left")
         emu.cmd("click")
@@ -113,7 +117,7 @@ def main():
 
         # FSEQ browser on a fake SD card: play a file, see it starred, stop.
         emu.cmd("set sd 3")
-        st = goto(emu, [0, MAIN_PLAYBACK, 2])  # Scenes, Edit scenes, FSEQ
+        st = goto(emu, [0, MAIN_SHOW, 5])  # Master, Blackout, Strobe, Fade, Scenes, FSEQ
         expect(st["screen"] == "FSeqMenu", "FSEQ node opens")
         emu.cmd("click")  # show1.fseq
         emu.shot(os.devnull)
@@ -123,11 +127,11 @@ def main():
         emu.cmd("set sd 0")
 
         # Show control rows: blackout on (HOME shows BO), master below 100 %.
-        goto(emu, [0, MAIN_OUTPUT, 4])  # Blackout: toggles on click
+        goto(emu, [0, MAIN_SHOW, 1])  # Blackout: toggles on click
         home(emu)
         emu.shot(os.devnull)
-        goto(emu, [0, MAIN_OUTPUT, 4])
-        st = goto(emu, [0, MAIN_OUTPUT, 3])  # Master
+        goto(emu, [0, MAIN_SHOW, 1])
+        st = goto(emu, [0, MAIN_SHOW, 0])  # Master
         expect(st["screen"] == "EditValue", "Master opens a value editor")
         emu.cmd("left")
         emu.cmd("click")
@@ -136,7 +140,7 @@ def main():
 
         # DMX control slots: the rows that follow the function — a master's
         # 16-bit switch, a colour's number.
-        ctl = [0, MAIN_INPUTS, 6]  # Enabled, Universe, Address, Preset, then the slots
+        ctl = [0] + CONTROL  # Enabled, Universe, Address, Preset, then the slots
         st = goto(emu, ctl + [4, 2])  # slot 1 is a master
         expect(st["screen"] == "EditValue", f"16-bit opens an editor ({st})")
         emu.cmd("left")

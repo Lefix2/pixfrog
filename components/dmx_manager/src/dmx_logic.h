@@ -625,20 +625,36 @@ inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint3
     const uint64_t leg    = static_cast<uint64_t>(span) * 256;
     const bool forward    = travel % (2 * leg) < leg;
     const uint32_t pos    = bounce256(travel, span);
-    const Rgb c           = p.c[(travel / leg) % p.n];
+    const uint32_t pass   = static_cast<uint32_t>(travel / leg);
+    const Rgb c           = p.c[pass % p.n];
+    const Rgb prev        = p.c[(pass + p.n - 1) % p.n];  // the pass before: its trail
     for (uint16_t i = 0; i < n; ++i) {
-        const int32_t x      = static_cast<int32_t>(i) * 256;
-        const int32_t behind = forward ? static_cast<int32_t>(pos) - x
-                                       : x - static_cast<int32_t>(pos);
-        const uint32_t ad    = static_cast<uint32_t>(behind < 0 ? -behind : behind);
-        uint32_t v           = 0;
-        if (ad <= half) {
+        const uint32_t x    = static_cast<uint32_t>(i) * 256;
+        const uint32_t dist = x > pos ? x - pos : pos - x;
+        uint32_t v          = 0;
+        Rgb col             = c;
+        if (dist <= half) {
             v = 255;
-        } else if (behind > 0 && ad - half < trail) {
-            v = 255 - (ad - half) * 255 / trail;
-            v = v * v / 255;
+        } else {
+            // The trail fades with the path the eye has run since it passed
+            // the pixel, so it follows the eye through a turn instead of
+            // vanishing there: a pixel ahead of the eye was passed on the
+            // way back, in the colour of that pass. Nothing before the first.
+            uint32_t behind = half + trail;  // dark
+            if (forward ? x <= pos : x >= pos) {
+                behind = dist;
+            } else if (pass > 0) {
+                behind = forward
+                           ? pos + x
+                           : (static_cast<uint32_t>(leg) - pos) + (static_cast<uint32_t>(leg) - x);
+                col    = prev;
+            }
+            if (behind - half < trail) {
+                v = 255 - (behind - half) * 255 / trail;
+                v = v * v / 255;
+            }
         }
-        set_px(d, bpp, i, scale_rgb(c, v));
+        set_px(d, bpp, i, scale_rgb(col, v));
     }
 }
 

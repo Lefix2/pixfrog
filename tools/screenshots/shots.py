@@ -43,22 +43,24 @@ WEB = [
     ("effects", "effects", '[data-fx-row="8"]'),
     ("fseq", "fseq", None),
     ("channels", "channels", None),
-    ("channel-control", "channels", '[data-chan="6"]'),  # an output in DMX control mode
+    # An output in DMX control mode, in the output patch.
+    ("channel-control", "dmxpatch", '#patch-list-mount [data-chan="6"]'),
+    ("auto", "auto", None),
+    ("maint", "maint", None),
     ("profiles", "profiles", '[data-pf-row="2"]'),
     ("control", "control", None),
     ("network", "network", None),
     ("artnet", "artnet", None),
     ("system", "system", None),
-    ("diag", "diag", None),
 ]
 
 # Device screens: (file stem, menu path from HOME — one cursor per level).
 DEVICE = [
     ("home", []),
     ("menu", [0]),
-    ("channel", [0, 0]),
-    ("scenes", [0, 11, 0]),
-    ("control", [0, 8, 6]),
+    ("channel", [0, 1, 0]),  # Rig → output 1
+    ("scenes", [0, 0, 4]),  # Show → Scenes
+    ("control", [0, 3, 2]),  # DMX → Control uni
 ]
 DEVICE_SEED = [
     "set chan 0 1 1 300", "set chan 1 1 3 300", "set chan 2 2 5 144", "set chan 3 4 7 120",

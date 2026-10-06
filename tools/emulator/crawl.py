@@ -18,11 +18,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Every NodeId (menu_debug_state names) plus the editor kinds must be reached.
 REQUIRED = {
-    "MainMenu", "InputsMenu", "NetworkMenu", "OutputMenu", "PlaybackMenu", "ChannelMenu",
-    "ScenesMenu", "FSeqMenu", "TestPatternMenu", "GapsMenu", "Stats", "About", "EditValue",
-    "EditString", "EditIp", "EditUni", "ControlMenu", "ControlSlotMenu", "SettingsMenu",
-    "FixturesMenu", "FixtureMenu", "SceneListMenu", "SceneEditMenu", "ScenePartMenu",
-    "PartOutputsMenu",
+    "MainMenu", "ShowMenu", "LooksMenu", "RigMenu", "DmxMenu", "BoxMenu", "ProtocolsMenu",
+    "NetworkMenu", "SettingsMenu", "ChannelMenu", "ScenesMenu", "FSeqMenu", "TestPatternMenu",
+    "GapsMenu", "Stats", "About", "EditValue", "EditString", "EditIp", "EditUni", "ControlMenu",
+    "ControlSlotMenu", "FixturesMenu", "FixtureMenu", "SceneListMenu", "SceneEditMenu",
+    "ScenePartMenu", "PartOutputsMenu", "PatchListMenu", "OutputPatchMenu",
 }
 TFT_ONLY = set()
 
@@ -30,15 +30,19 @@ TFT_ONLY = set()
 # before the crawl edits anything. Only static screens — nothing that shows uptime or live counters.
 GOLDEN = {
     "main_menu": [0],
-    "channel1": [0, 0],
-    "channel1_dead_px": [0, 0, 5],
-    "channel1_fixtures": [0, 0, 6],
-    "channel1_fixture2": [0, 0, 6, 1],
-    "output_menu": [0, 10],
-    "scenes_menu": [0, 11, 0],
-    "scene_edit": [0, 11, 1, 1],
-    "scene_part": [0, 11, 1, 1, 2],
-    "control_menu": [0, 8, 6],
+    "show_menu": [0, 0],
+    "rig_menu": [0, 1],
+    "channel1": [0, 1, 0],
+    "channel1_dead_px": [0, 1, 0, 2],
+    "channel1_fixtures": [0, 1, 0, 3],
+    "channel1_fixture2": [0, 1, 0, 3, 1],
+    "scenes_menu": [0, 0, 4],
+    "scene_edit": [0, 2, 0, 1],
+    "scene_part": [0, 2, 0, 1, 2],
+    "dmx_menu": [0, 3],
+    "patch_list": [0, 3, 1],
+    "output_patch1": [0, 3, 1, 0],
+    "control_menu": [0, 3, 2],
 }
 
 SEED = [

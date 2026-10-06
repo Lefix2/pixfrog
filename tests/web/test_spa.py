@@ -115,6 +115,45 @@ def drag(page, handle, target):
 
 # ── dashboard ────────────────────────────────────────────────────────────────
 
+# The sidebar: five groups, every screen in its group, each one opening.
+def test_the_menu_is_grouped_by_job(page):
+    groups = page.evaluate("""() => { const out = []; let cur = [''];
+        for (const el of document.querySelector('aside').children) {
+          if (el.hasAttribute('data-nav')) { if (cur.length === 1 && !out.length) out.push(cur); cur.push(el.getAttribute('data-nav')); }
+          else if (el.hasAttribute('data-i18n')) { cur = [el.getAttribute('data-i18n')]; out.push(cur); }
+        }
+        return out; }""")
+    # The dashboard on its own, then the groups in the order a rig is built:
+    # each screen only refers to what sits above it.
+    assert groups == [
+        ["", "dashboard"],
+        ["RIG", "channels", "groups"],
+        ["LOOKS", "effects", "scenes"],
+        ["DMX", "artnet", "profiles", "dmxpatch", "control", "patch"],  # auto-patch last
+        ["PLAYBACK", "fseq", "auto"],
+        ["SETTINGS", "network", "system", "maint"]]
+    titles = {"auto": "Automations", "dmxpatch": "Output patch", "maint": "Maintenance",
+              "channels": "Outputs", "artnet": "Protocols", "control": "Control universe"}
+    for g in groups:
+        for screen in g[1:]:
+            nav(page, screen)
+            expect(page.locator(f'[data-screen="{screen}"]')).to_be_visible()
+            if screen in titles:
+                expect(page.locator("[data-screen-title]")).to_have_text(titles[screen])
+    # What moved is where the tree says: startup, fades and signal loss
+    # together; firmware and backup under maintenance; the frame rate with the
+    # outputs; the DMX address with the patch.
+    for screen, ids in (("auto", ["s-boot", "pl-auto", "s-fade", "a-fsmode"]),
+                        ("maint", ["ota-file", "restore-file", "d-logs", "d-chans"]),  # telemetry and logs too
+                        ("channels", ["s-refresh", "cd-on", "cd-proto", "cd-pix", "cd-gaps"]),
+                        ("dmxpatch", ["cd-pixmap", "cd-pack", "cd-uni", "cd-dmx"]),
+                        ("system", ["s-lang", "s-bright", "s-home"])):
+        for i in ids:
+            assert page.evaluate(
+                "(a) => document.getElementById(a[1]).closest('[data-screen]').getAttribute('data-screen') === a[0]",
+                [screen, i]), f"#{i} is not on the {screen} screen"
+
+
 def test_dashboard_shows_the_channels(page):
     expect(page.locator("#dash-chan-mount > div")).to_have_count(8)
     expect(page.locator('[data-live="chan-count"]')).to_contain_text("/ 1")
@@ -509,13 +548,42 @@ def test_dmx_profiles_editor(page, device):
     assert len(device.get("/api/config")["profiles"]) == 4
 
 
+def test_an_output_is_switched_on_and_off_not_given_an_off_protocol(page, device):
+    device.post("/api/channel/1", {"protocol": "SK6812", "pixel_count": 30})
+    page.reload()
+    nav(page, "channels")
+    expect(page.locator("#cd-proto option[value='Off']")).to_have_count(0)  # on / off is the switch
+    expect(page.locator("#cd-proto option[value='WS2811']")).to_have_count(1)  # every protocol the box has
+    page.locator('#chan-list-mount [data-chan="1"]').click()
+    expect(page.locator("#cd-on")).to_be_checked()
+    expect(page.locator("#cd-proto")).to_have_value("SK6812")
+    page.locator("#cd-on").uncheck(force=True)
+    expect(page.locator("#cd-row-proto")).to_be_hidden()
+    expect(page.locator("#cd-fields")).to_be_hidden()
+    expect(page.locator("#cd-offnote")).to_be_visible()
+    save(page)
+    assert device.get("/api/config")["channels"][1]["protocol"] == "Off"
+    page.reload()
+    nav(page, "channels")
+    page.locator('#chan-list-mount [data-chan="1"]').click()
+    expect(page.locator("#cd-on")).not_to_be_checked()
+    page.locator("#cd-on").check(force=True)  # back on: the first protocol of the list, not the old one
+    expect(page.locator("#cd-proto")).to_have_value("WS2815")
+    expect(page.locator("#cd-pix")).to_have_value("30")
+    save(page)
+    c = device.get("/api/config")["channels"][1]
+    assert c["protocol"] == "WS2815" and c["pixel_count"] == 30
+
+
 def test_dmx_control_layout_gives_each_fixture_a_profile_and_an_address(page, device):
     device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 60, "universe_start": 1,
                                    "dmx_start": 1, "fixtures": [[1, 20], [21, 20], [41, 20]]})
     page.reload()
-    nav(page, "channels")
+    nav(page, "dmxpatch")
+    expect(page.locator("#cd-pixmap")).to_be_checked()  # pixel by pixel: the default
     expect(page.locator("[data-lay-prof]")).to_have_count(0)  # a pixel layout: no profile to pick
-    page.locator("#cd-pack").select_option("control")
+    page.locator("#cd-pixmap").uncheck()
+    expect(page.locator("#cd-pack")).to_be_hidden()  # no pixel layout to choose any more
     profs = page.locator("[data-lay-prof]")
     expect(profs).to_have_count(3)
     addr = page.locator("[data-lay-addr]")
@@ -535,6 +603,13 @@ def test_dmx_control_layout_gives_each_fixture_a_profile_and_an_address(page, de
     assert c["patch"] == [[1, 500, 6, 2], [1, 506, 3, 0], [2, 1, 16, 3]]
     nav(page, "patch")
     expect(page.locator("#patch-mount")).to_contain_text("DMX control")
+    # Pixel by pixel again: the output goes back to the pixel layout it had.
+    nav(page, "dmxpatch")
+    page.locator("#cd-pixmap").check()
+    expect(page.locator("#cd-pack")).to_have_value("continuous")
+    expect(page.locator("[data-lay-prof]")).to_have_count(0)
+    save(page)
+    assert device.get("/api/config")["channels"][0]["packing"] == "continuous"
 
 
 def test_a_fixture_keeps_its_profile_through_the_layout_editor(page, device):
@@ -565,7 +640,7 @@ def test_speaker_volume_and_test_button(page, device):
 
 
 def test_refresh_rate_input(page, device):
-    nav(page, "system")
+    nav(page, "channels")  # with the outputs: it bounds their LED counts
     page.locator("#s-refresh").fill("45")
     save(page)
     assert device.get("/api/config")["global"]["refresh_hz"] == 45
@@ -581,7 +656,7 @@ def test_french_translation(page):
 @pytest.mark.device_args("--password", "s3cret")
 def test_password_prompt_on_write(page, device):
     page.on("dialog", lambda d: d.accept("s3cret"))
-    nav(page, "system")
+    nav(page, "channels")
     page.locator("#s-refresh").fill("50")
     save(page)
     assert device.get("/api/config")["global"]["refresh_hz"] == 50
@@ -674,7 +749,7 @@ def test_auto_patch_places_the_control_universe_after_the_outputs(page, device):
 
 
 def test_auto_patch_compact_whole_pixels_and_per_output_layout(page, device):
-    nav(page, "channels")
+    nav(page, "dmxpatch")
     page.locator("#cd-pack").select_option("fixture")
     save(page)
     assert device.get("/api/config")["channels"][0]["packing"] == "fixture"
@@ -730,7 +805,7 @@ def test_zones_show_on_the_scene_list(page, device):
 
 
 def test_scene_fade_setting(page, device):
-    nav(page, "system")
+    nav(page, "auto")
     page.locator("#s-fade").fill("1.5")
     save(page)
     assert device.get("/api/config")["global"]["scene_fade_ms"] == 1500
@@ -801,7 +876,9 @@ def test_fseq_playlist_build_reorder_and_options(page, device):
     page.locator("#pl-loop").check()
     expect(page.locator("#pl-loop")).to_be_checked()
     assert _wait(lambda: _playlist(device)["loop"])
+    nav(page, "auto")  # what plays at startup sits with the automations
     page.locator("#pl-auto").check()
+    nav(page, "fseq")
     assert _wait(lambda: _playlist(device)["loop"] and _playlist(device)["autostart"])
     page.locator('[data-pl-del="0"]').click()
     assert _wait(lambda: [i["name"] for i in _playlist(device)["items"]] == ["show.fseq"])
@@ -992,7 +1069,7 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
         expect(pg.locator("[data-screen-title]")).to_have_text("Dashboard")
         expect(pg.locator('canvas[data-preview="0"]')).to_have_attribute("width", re.compile(r"[1-9]\d*"))
         for screen in ["scenes", "effects", "fseq", "channels", "groups", "profiles", "control", "network",
-                       "artnet", "system", "diag", "dashboard"]:
+                       "artnet", "system", "maint", "dashboard"]:
             nav(pg, screen)
             expect(pg.locator("[data-screen-title]")).not_to_have_text("")
         # The effect bank and the scenes' parts are editable on the simulated box.

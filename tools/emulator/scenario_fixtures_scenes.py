@@ -17,9 +17,10 @@ sys.path.insert(0, HERE)
 from crawl import Emu, goto  # noqa: E402
 from scenario_editors import click_until_leaves, expect  # noqa: E402
 
-CH1 = [0, 0]  # main menu → channel 1
-CH_LAYOUT, CH_FIXTURES = 3, 6
-SCENES = [0, 11, 1]  # main menu → Playback → Edit scenes
+CH1 = [0, 1, 0]  # main menu → Rig → output 1: Proto, Pixels, Dead px, Fixtures, …
+CH_FIXTURES = 3
+PATCH1 = [0, 3, 1, 0]  # main menu → DMX → Patch → output 1: Pixel map, Layout, Uni, DMX
+SCENES = [0, 2, 0]  # main menu → Looks → Scenes (to edit)
 
 
 def dump(emu, what):
@@ -79,15 +80,33 @@ def fixtures(emu):
     goto(emu, fx + [5])
     c = dump(emu, "chan 0")
     expect(c["pixels"] == 360 and c["fixtures"][5] == [300, 60, 0, 0], f"the strip grows ({c})")
-    # DMX control layout: each fixture then has a profile to pick.
-    pick(emu, CH1 + [CH_LAYOUT], 4)
-    expect(dump(emu, "chan 0")["packing"] == 4, "layout: DMX control")
-    pick(emu, fx + [0, 3], 2)
+    # The output's patch: a pixel layout, then Pixel map off = DMX control,
+    # where each fixture has a profile to pick; on again gives the layout back.
+    pick(emu, PATCH1 + [1], 1)
+    expect(dump(emu, "chan 0")["packing"] == 1, "layout: whole pixels")
+    pick(emu, PATCH1 + [0], -1)
+    expect(dump(emu, "chan 0")["packing"] == 4, "pixel map off: DMX control")
+    st = goto(emu, PATCH1 + [3])  # Pixel map, Uni, DMX, then F1…
+    expect(st["screen"] == "EditValue", f"a fixture row opens the profile picker ({st})")
+    for _ in range(2):
+        emu.cmd("right")
+    emu.cmd("click")
     expect(dump(emu, "chan 0")["fixtures"][0] == [0, 60, 0, 2], "fixture 1 on the third profile")
-    goto(emu, fx + [0, 4])  # [Delete]
+    pick(emu, PATCH1 + [0], 1)
+    expect(dump(emu, "chan 0")["packing"] == 1, "pixel map on: the layout it had")
+    pick(emu, PATCH1 + [0], 1)  # already on: nothing moves
+    expect(dump(emu, "chan 0")["packing"] == 1, "pixel map on twice: still the layout")
+    st = goto(emu, PATCH1[:-1] + [7])  # output 8 is off: nothing to patch, Back only
+    expect(st["screen"] == "OutputPatchMenu", f"the patch of an output that is off ({st})")
+    emu.cmd("click")
+    expect(emu.state()["screen"] == "PatchListMenu", "it only leads back")
+    st = goto(emu, PATCH1 + [4])  # output 1's Back row (Pixel map, Layout, Uni, DMX, Back)
+    expect(st["screen"] == "PatchListMenu", f"Back from the patch ({st})")
+    pick(emu, PATCH1 + [0], -1)
+    goto(emu, fx + [0, 3])  # [Delete]
     c = dump(emu, "chan 0")
     expect(len(c["fixtures"]) == 5 and c["fixtures"][0][0] == 70, f"fixture 1 deleted ({c})")
-    for back in (fx + [0, 5], fx + [7]):  # the Back rows: a fixture's, the list's
+    for back in (fx + [0, 4], fx + [7]):  # the Back rows: a fixture's, the list's
         st = goto(emu, back)
         expect(st["screen"] in ("FixturesMenu", "ChannelMenu"), f"Back climbs a level ({st})")
 
@@ -119,8 +138,9 @@ def fixtures(emu):
     st = goto(emu, fx + [0, 1])
     expect(st["screen"] == "EditValue" and st["gauge"] > 0.99, f"400 LEDs is the top ({st})")
     emu.cmd("longclick")
-    pick(emu, fx + [0, 3], 0)
+    pick(emu, PATCH1 + [3], 0)
     expect(dump(emu, "chan 0")["fixtures"] == [[0, 400, 0, 0]], "the first profile")
+    pick(emu, PATCH1 + [0], 1)  # pixel map back on for the rest
     # The list emptied from elsewhere while one of its fixtures is open: only
     # Back is left.
     goto(emu, fx + [0])
@@ -192,8 +212,8 @@ def scenes(emu):
     # Back rows, from the innermost menu out (scene 1 has outputs to spare, so
     # an [Add part] row sits before its Play / Stop / Delete / Back).
     for back, where in ((SCENES + [0, 2, 0, 8], "ScenePartMenu"), (SCENES + [0, 2, 5], "SceneEditMenu"),
-                        (SCENES + [0, 7], "SceneListMenu"), (SCENES + [9], "PlaybackMenu"),
-                        (CH1 + [5, 1], "ChannelMenu")):  # and the dead-pixel list's
+                        (SCENES + [0, 7], "SceneListMenu"), (SCENES + [9], "LooksMenu"),
+                        (CH1 + [2, 1], "ChannelMenu")):  # and the dead-pixel list's
         st = goto(emu, back)
         expect(st["screen"] == where, f"Back from {back} lands on {where} ({st})")
     expect(dump(emu, "scene 0")["count"] == 8, "Back deletes nothing")
