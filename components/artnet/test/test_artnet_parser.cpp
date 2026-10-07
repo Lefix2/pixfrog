@@ -113,21 +113,6 @@ static void test_dmx_universe_decomposition() {
     EXPECT_EQ(f.universe, 0x0235);
 }
 
-// ── universe_matches ────────────────────────────────────────────────────────
-
-static void test_universe_matches_exact() {
-    EXPECT_TRUE(universe_matches(0x0235, 2, 3));   // net=2, sub=3
-    EXPECT_TRUE(!universe_matches(0x0235, 2, 4));  // wrong subnet
-    EXPECT_TRUE(!universe_matches(0x0235, 3, 3));  // wrong net
-    EXPECT_TRUE(!universe_matches(0x0235, 0, 0));  // neither matches
-    EXPECT_TRUE(universe_matches(0x0000, 0, 0));   // default
-}
-
-static void test_universe_matches_high_bits_ignored() {
-    // High bit of net byte (0x80) should be masked off.
-    EXPECT_TRUE(universe_matches(0x0235, 0x82, 3));  // 0x82 & 0x7F == 2
-}
-
 // ── build_poll_reply ────────────────────────────────────────────────────────
 
 static void test_poll_reply_header_and_size() {
@@ -490,8 +475,6 @@ int main() {
     test_dmx_length_mismatch();
     test_dmx_valid_extract();
     test_dmx_universe_decomposition();
-    test_universe_matches_exact();
-    test_universe_matches_high_bits_ignored();
     test_poll_reply_header_and_size();
     test_poll_reply_disabled_port();
     test_poll_reply_net_subnet_masked();

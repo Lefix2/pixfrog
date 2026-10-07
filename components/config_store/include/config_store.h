@@ -48,8 +48,9 @@ struct GlobalConfig {
     uint32_t static_gateway;
 
     // ArtNet identity
-    uint8_t artnet_net;     // 0..127
-    uint8_t artnet_subnet;  // 0..15
+    // Unused: each output holds a full 15-bit Port-Address. Kept for the blob layout.
+    uint8_t artnet_net;
+    uint8_t artnet_subnet;
     char short_name[kArtnetNameShortMax];
     char long_name[kArtnetNameLongMax];
     bool artnet_poll_reply_unicast;  // false=broadcast (default), true=unicast to poller
@@ -820,17 +821,6 @@ inline void set_fix_address(ChannelConfig& c, uint16_t universe, uint16_t dmx_st
 inline void set_pixel_layout(ChannelConfig& c, uint8_t layout) {
     c.packing = static_cast<uint8_t>((c.packing & ~kPackLayoutMask) |
                                      (layout < kPackControl ? layout : kPackContinuous));
-}
-// The universe an output is known by on the network (ArtPollReply, ArtAddress):
-// its pixels', or its fixtures' when it has no pixel mapping.
-inline uint16_t port_universe(const ChannelConfig& c) {
-    return !pixel_mapped(c) && fixture_controlled(c) ? fix_universe(c) : c.universe_start;
-}
-inline void set_port_universe(ChannelConfig& c, uint16_t universe) {
-    if (!pixel_mapped(c) && fixture_controlled(c))
-        set_fix_address(c, universe, fix_dmx_start(c));
-    else
-        c.universe_start = universe;
 }
 // Which of the two drive the output; the pixel layout and both addresses stay.
 inline void set_dmx_modes(ChannelConfig& c, bool pixels, bool fixtures) {

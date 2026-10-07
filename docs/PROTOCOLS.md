@@ -451,8 +451,8 @@ web Auto-patch screen; the TFT/OLED menu keeps the aligned default) lays
 everything out in **three blocks, each opening a universe, ordered by how
 often they grow** — each block only ever pushes the ones after it:
 
-1. **the control universe**, when enabled: one universe, at `base`, which
-   nothing added later moves;
+1. **the control universe**, when enabled: one universe, at `base` (web: "First universe", net · sub · uni, the
+   lowest universe patched by default), which nothing added later moves;
 2. **the fixtures** of every output under fixture control — the desk's patch
    — right after it, or from `fix_base` (web: "From universe"), a base of
    their own;
@@ -530,15 +530,26 @@ stored with the retired protocol value (9) load as Off; a backup naming
 Both receivers feed the same universe pool; a channel maps `universe_start …
 universe_start + N-1` whichever protocol delivered the data.
 
-**ArtNet 4** (UDP 6454, always on): `ArtDmx` (filtered by configured
-net/subnet), `ArtPoll` → `ArtPollReply` (2 bind groups × 4 ports),
-`ArtSync` (sync mode, below), `ArtAddress` (remote names/net/subnet/SwOut,
-persisted + replied), `ArtIpProg`/`ArtIpProgReply` (remote IP, applied at
+**ArtNet 4** (UDP 6454, always on): `ArtDmx` (matched on the full 15-bit
+Port-Address), `ArtPoll` → `ArtPollReply`, `ArtSync` (sync mode, below),
+`ArtAddress` (remote names, a bind's Port-Address, merge mode; persisted +
+replied), `ArtIpProg`/`ArtIpProgReply` (remote IP, applied at
 once: the node answers on its new address), `ArtTrigger` global KeyShow (SubKey 1..8 plays standalone scene
 N-1, 0 stops), `ArtTimeCode` (slaves a *running* FSEQ playback to the desk
 clock — re-seeks beyond 100 ms drift, never auto-starts a file).
 `ArtNzs`/`ArtCommand` are validated and counted (`stats artnet_ctrl_rx`)
 but not consumed yet.
+
+There is no node-wide Net/Sub-Net: every output holds the full Port-Address
+of its ranges (`universe_start`, `fix_universe`), so one box can span several
+subnets, and the patch is moved with the auto-patch's first universe. The
+`ArtPollReply` follows the patch: **one bind per listened universe** (bind 1 =
+the first universe of the patch; each output's pixels, then its fixtures, the
+control universe last; `dmx::listened_universes`), each reply one output port
+with that universe's own Net, Sub-Net and SwOut. A box with nothing patched
+answers once with no port. `ArtAddress` on bind *n* re-addresses its universe
+from NetSwitch / SubSwitch / SwOut[0]: the outputs' ranges that start on it
+and the control universe move there, a universe inside a range is left alone.
 
 **sACN / E1.31** (UDP 5568, opt-in `sacn_enabled`): data packets matched on
 the flat universe number (no net/subnet concept), one IGMP join per

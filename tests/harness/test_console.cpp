@@ -748,8 +748,6 @@ TEST(global_keys_set_every_field) {
         "global dhcp 0",
         "global mask 255.255.0.0",
         "global gw 10.0.0.1",
-        "global net 3",
-        "global subnet 4",
         "global long_name A-long-box",
         "global reply_unicast 1",
         "global home_timeout_s 45",
@@ -769,8 +767,6 @@ TEST(global_keys_set_every_field) {
     EXPECT_FALSE(g.use_dhcp);
     EXPECT_EQ(g.static_mask, 0xFFFF0000u);
     EXPECT_EQ(g.static_gateway, 0x0A000001u);
-    EXPECT_EQ(g.artnet_net, 3);
-    EXPECT_EQ(g.artnet_subnet, 4);
     EXPECT_STREQ(g.long_name, "A-long-box");
     EXPECT_TRUE(g.artnet_poll_reply_unicast);
     EXPECT_EQ(g.home_timeout_s, 45);
@@ -788,8 +784,8 @@ TEST(global_keys_set_every_field) {
         "global dhcp maybe",
         "global mask 1.2.3",
         "global gw x",
-        "global net 128",
-        "global subnet 16",
+        "global net 3",  // no node-wide Net/Sub-Net: unknown keys
+        "global subnet 4",
         "global reply_unicast 2",
         "global home_timeout_s 70000",
         "global tft_brightness 5",

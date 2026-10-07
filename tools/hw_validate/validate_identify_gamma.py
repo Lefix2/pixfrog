@@ -33,7 +33,7 @@ def run(board: Board):
     c.check("gamma readback", board.kv(out, "gamma_x10") == "22")
     c.check("wb readback", board.kv(out, "wb") == "ffd0a0")
 
-    net_before = board.get("global", "net")
+    home_before = board.get("global", "home_timeout_s")
     code, bk = http("/api/backup")
     if code != 200:  # first TCP after a reboot can hit a cold NAT ARP entry
         time.sleep(2)
@@ -48,13 +48,14 @@ def run(board: Board):
     open("/tmp/pixfrog-backup.json", "w").write(bk)
 
     board.cmd("ch 0 gamma_x10 30")
-    board.cmd("global net 5" if net_before != "5" else "global net 6")
+    board.cmd("global home_timeout_s 45" if home_before != "45" else "global home_timeout_s 46")
     code, body = http("/api/restore", "-X", "POST", "-H", "Content-Type: application/json",
                       "--data-binary", "@/tmp/pixfrog-backup.json")
     c.check("restore accepted", code == 200 and '"ok":true' in body)
     time.sleep(0.3)
     c.check("restore brings gamma back", board.get("ch 0", "gamma_x10") == "22")
-    c.check("restore brings net back", board.get("global", "net") == net_before)
+    c.check("restore brings home_timeout_s back",
+            board.get("global", "home_timeout_s") == home_before)
 
     board.cmd("ch 0 gamma_x10 10")
     board.cmd("ch 0 wb ffffff")

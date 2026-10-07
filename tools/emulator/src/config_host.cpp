@@ -20,9 +20,7 @@ bool g_inited = false;
 
 GlobalConfig make_default_global() {
     GlobalConfig g{};
-    g.use_dhcp      = true;
-    g.artnet_net    = 0;
-    g.artnet_subnet = 0;
+    g.use_dhcp = true;
     std::strncpy(g.short_name, "pixfrog", kArtnetNameShortMax - 1);
     std::strncpy(g.long_name, "pixfrog LED controller", kArtnetNameLongMax - 1);
     g.artnet_poll_reply_unicast = false;

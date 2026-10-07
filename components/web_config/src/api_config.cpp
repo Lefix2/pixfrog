@@ -20,8 +20,6 @@ static cJSON* build_global_json() {
     cJSON_AddStringToObject(jg, "ip", ip);
     cJSON_AddStringToObject(jg, "mask", mask);
     cJSON_AddStringToObject(jg, "gw", gw);
-    cJSON_AddNumberToObject(jg, "net", g.artnet_net);
-    cJSON_AddNumberToObject(jg, "subnet", g.artnet_subnet);
     cJSON_AddStringToObject(jg, "short_name", g.short_name);
     cJSON_AddStringToObject(jg, "long_name", g.long_name);
     cJSON_AddBoolToObject(jg, "reply_unicast", g.artnet_poll_reply_unicast);
@@ -446,8 +444,6 @@ GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const c
         else
             g.ip_fallback = static_cast<uint8_t>(fb);
     }
-    if (json_u32(j, "net", 0, 127, u)) g.artnet_net = static_cast<uint8_t>(u);
-    if (json_u32(j, "subnet", 0, 15, u)) g.artnet_subnet = static_cast<uint8_t>(u);
     if ((s = json_str(j, "short_name"))) copy_name(g.short_name, sizeof(g.short_name), s);
     if ((s = json_str(j, "long_name"))) copy_name(g.long_name, sizeof(g.long_name), s);
     if (json_bool(j, "reply_unicast", b)) g.artnet_poll_reply_unicast = b;

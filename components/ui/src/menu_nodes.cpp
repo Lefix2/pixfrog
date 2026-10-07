@@ -419,46 +419,33 @@ uint8_t build_fseq(ListItem* items, OnClick* fns) {
 // protocols (sACN, FPP).
 
 uint8_t build_inputs(ListItem* items, OnClick* fns) {
-    static char vnet[8], vsub[8], vunicast[8], vsacn[8], vfpp[8];
+    static char vunicast[8], vsacn[8], vfpp[8];
     const auto& g = config::get_global();
-    std::snprintf(vnet, sizeof(vnet), "%u", g.artnet_net);
-    std::snprintf(vsub, sizeof(vsub), "%u", g.artnet_subnet);
     std::snprintf(vunicast, sizeof(vunicast), "%s", g.artnet_poll_reply_unicast ? "ON" : "OFF");
     std::snprintf(vsacn, sizeof(vsacn), "%s", g.sacn_enabled ? "ON" : "OFF");
     std::snprintf(vfpp, sizeof(vfpp), "%s", g.fpp_remote ? "ON" : "OFF");
 
-    items[0] = { "Net", vnet };
+    items[0] = { "Unicast", vunicast };
     fns[0]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::ArtnetNet, ValueKind::Int, g.artnet_net, 0, 127, 1, "Net", Screen::Menu);
-    };
-    items[1] = { "Sub", vsub };
-    fns[1]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::ArtnetSubnet, ValueKind::Int, g.artnet_subnet, 0, 15, 1, "Sub",
-                     Screen::Menu);
-    };
-    items[2] = { "Unicast", vunicast };
-    fns[2]   = [](uint8_t) {
         const auto& g = config::get_global();
         enter_edit(Field::ArtnetReplyUnicast, ValueKind::Bool, g.artnet_poll_reply_unicast ? 1 : 0,
                      0, 1, 1, "Unicast", Screen::Menu);
     };
-    items[3] = { "sACN", vsacn };
-    fns[3]   = [](uint8_t) {
+    items[1] = { "sACN", vsacn };
+    fns[1]   = [](uint8_t) {
         const auto& g = config::get_global();
         enter_edit(Field::ArtnetSacn, ValueKind::Bool, g.sacn_enabled ? 1 : 0, 0, 1, 1, "sACN",
                      Screen::Menu);
     };
-    items[4] = { "FPP", vfpp };
-    fns[4]   = [](uint8_t) {
+    items[2] = { "FPP", vfpp };
+    fns[2]   = [](uint8_t) {
         const auto& g = config::get_global();
         enter_edit(Field::ArtnetFpp, ValueKind::Bool, g.fpp_remote ? 1 : 0, 0, 1, 1, "FPP",
                      Screen::Menu);
     };
-    items[5] = back_item();
-    fns[5]   = [](uint8_t) { go_back(); };
-    return 6;
+    items[3] = back_item();
+    fns[3]   = [](uint8_t) { go_back(); };
+    return 4;
 }
 
 // ── DMX CONTROL NODE ─────────────────────────────────────────────────────────

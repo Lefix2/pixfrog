@@ -150,12 +150,12 @@ TEST(two_senders_merge_htp_third_dropped) {
     EXPECT_EQ(px[2], 0);
 }
 
-TEST(artpoll_answers_two_bind_replies) {
+TEST(artpoll_answers_one_bind_per_universe) {
     shim::net_push(kArt, art_header(artnet::parser::kOpPoll, 14));
     pump_artnet();
     auto& sent = shim::net_sent();
-    EXPECT_EQ(sent.size(), 2);  // bind 1 = channels 1-4, bind 2 = 5-8
-    if (sent.size() == 2) {
+    EXPECT_EQ(sent.size(), 1);  // output 1: universe 1
+    if (sent.size() == 1) {
         EXPECT_EQ(sent[0].ip, 0xFFFFFFFFu);  // broadcast by default
         EXPECT_EQ(sent[0].bytes.size(), artnet::parser::kPollReplySize);
         EXPECT_EQ(sent[0].bytes[9], 0x21);  // OpPollReply
@@ -168,7 +168,7 @@ TEST(artpoll_unicast_and_silent_without_ip) {
     config::set_global(g);
     shim::net_push(kArt, art_header(artnet::parser::kOpPoll, 14), 0x0A0000FE);
     pump_artnet();
-    EXPECT_EQ(shim::net_sent().size(), 2);
+    EXPECT_EQ(shim::net_sent().size(), 1);
     if (!shim::net_sent().empty()) EXPECT_EQ(shim::net_sent()[0].ip, 0x0A0000FEu);
     shim::net_sent().clear();
     artnet::set_local_ip(0);  // no address yet: nothing to advertise
@@ -180,15 +180,15 @@ TEST(artpoll_unicast_and_silent_without_ip) {
 TEST(artaddress_programs_names_universe_and_merge) {
     Bytes p = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
     std::memcpy(p.data() + 14, "desk-name", 9);
-    p[13]  = 1;     // bind 1 → channels 1-4
-    p[100] = 0x85;  // port 0 (channel 1): universe low nibble 5
+    p[13]  = 1;     // bind 1 → universe 1, output 1's
+    p[100] = 0x85;  // its SwOut: universe low nibble 5
     p[106] = 0x11;  // AcMergeLtp0
     shim::net_push(kArt, p);
     pump_artnet();
     EXPECT_STREQ(config::get_global().short_name, "desk-name");
     EXPECT_EQ(config::get_channel(0).universe_start & 0x0F, 5);
     EXPECT_EQ(config::get_global().merge_mode, config::kMergeLtp);
-    EXPECT_EQ(shim::net_sent().size(), 2);  // answered with ArtPollReply
+    EXPECT_EQ(shim::net_sent().size(), 1);  // answered with ArtPollReply
     auto g       = config::get_global();
     g.merge_mode = config::kMergeHtp;
     std::strcpy(g.short_name, "pixfrog");
@@ -408,6 +408,81 @@ TEST(sacn_joins_the_control_universe_group) {
 
 // ── Malformed packets, remote programming corners, socket failures ──────────
 
+// A patch over several subnets: each universe is announced with its own Net
+// and Sub-Net, never a node-wide one the box does not listen to.
+TEST(artpoll_announces_each_universe_with_its_own_net_and_subnet) {
+    const auto c0 = config::get_channel(0), c1 = config::get_channel(1);
+    auto a           = c0;
+    a.universe_start = 0x0100;  // 1·0·0
+    a.pixel_count    = 200;     // 600 bytes: 1·0·0 and 1·0·1
+    config::set_channel(0, a);
+    auto b           = c1;
+    b.protocol       = led::Protocol::WS2815;
+    b.universe_start = 0x0234;  // 2·3·4
+    config::set_channel(1, b);
+    control_on(0x0010);  // 0·1·0
+    shim::net_push(kArt, art_header(artnet::parser::kOpPoll, 14));
+    pump_artnet();
+    auto& sent = shim::net_sent();
+    EXPECT_EQ(sent.size(), 4);
+    const uint8_t want[4][4] = { { 1, 1, 0, 0 }, { 2, 1, 0, 1 }, { 3, 2, 3, 4 }, { 4, 0, 1, 0 } };
+    for (size_t i = 0; i < sent.size() && i < 4; ++i) {
+        const auto& r = sent[i].bytes;
+        EXPECT_EQ(r[211], want[i][0]);  // BindIndex
+        EXPECT_EQ(r[18], want[i][1]);   // NetSwitch
+        EXPECT_EQ(r[19], want[i][2]);   // SubSwitch
+        EXPECT_EQ(r[190], want[i][3]);  // SwOut[0]
+        EXPECT_EQ(r[173], 1);           // one port
+        EXPECT_EQ(r[174], 0x80);        // output, DMX512
+    }
+
+    // ArtAddress on bind 3 programs Net 5: output 2 moves to 5·3·4.
+    Bytes p = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
+    p[12]   = 0x80 | 5;
+    p[13]   = 3;
+    shim::net_push(kArt, p);
+    // On bind 4, a new Sub-Net and SwOut: the control universe moves to 0·7·9.
+    Bytes q = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
+    q[13]   = 4;
+    q[104]  = 0x80 | 7;
+    q[100]  = 0x80 | 9;
+    shim::net_push(kArt, q);
+    // Bind 2 is inside output 1's range, not where it starts: left alone.
+    Bytes r = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
+    r[13]   = 2;
+    r[100]  = 0x80 | 6;
+    shim::net_push(kArt, r);
+    // A bind past the last: names only.
+    Bytes z = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
+    z[13]   = 9;
+    z[12]   = 0x80 | 9;
+    shim::net_push(kArt, z);
+    pump_artnet();
+    EXPECT_EQ(config::get_channel(1).universe_start, 0x0534);
+    EXPECT_EQ(config::get_control().universe, 0x0079);
+    EXPECT_EQ(config::get_channel(0).universe_start, 0x0100);
+
+    // Nothing patched: one reply, no port, so the desk still finds the box.
+    control_off();
+    auto off     = a;
+    off.protocol = led::Protocol::Off;
+    config::set_channel(0, off);
+    auto off1     = b;
+    off1.protocol = led::Protocol::Off;
+    config::set_channel(1, off1);
+    shim::net_sent().clear();
+    shim::net_push(kArt, art_header(artnet::parser::kOpPoll, 14));
+    pump_artnet();
+    EXPECT_EQ(sent.size(), 1);
+    if (!sent.empty()) EXPECT_EQ(sent[0].bytes[173], 0);
+
+    config::set_channel(0, c0);
+    config::set_channel(1, c1);
+    dmx::mark_channel_dirty(0);
+    dmx::mark_channel_dirty(1);
+    dmx::handle_pending_remaps();
+}
+
 TEST(malformed_artnet_packets_are_counted_bad) {
     const auto before = dmx::get_stats().artnet_bad_packets;
     shim::net_push(kArt, art_header(artnet::parser::kOpDmx, 12));      // no DMX header
@@ -437,8 +512,8 @@ TEST(artnzs_and_artcommand_are_counted_control) {
 
 TEST(artaddress_switches_long_name_and_commands) {
     Bytes p = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
-    p[12]   = 0x80 | 3;  // program net 3
-    p[104]  = 0x80 | 7;  // program subnet 7
+    p[12]   = 0x80 | 3;  // bind 0 = bind 1, universe 1: Net 3
+    p[104]  = 0x80 | 7;  // Sub-Net 7
     std::memcpy(p.data() + 32, "A long desk name", 16);
     p[106] = artnet::parser::kAcCancelMerge;
     shim::net_push(kArt, p);
@@ -446,13 +521,8 @@ TEST(artaddress_switches_long_name_and_commands) {
     q[106]  = 0x90;  // a command we do not implement: logged, nothing changes
     shim::net_push(kArt, q);
     pump_artnet();
-    EXPECT_EQ(config::get_global().artnet_net, 3);
-    EXPECT_EQ(config::get_global().artnet_subnet, 7);
+    EXPECT_EQ(config::get_channel(0).universe_start, 0x0371);
     EXPECT_STREQ(config::get_global().long_name, "A long desk name");
-    auto g          = config::get_global();
-    g.artnet_net    = 0;
-    g.artnet_subnet = 0;
-    config::set_global(g);
 }
 
 TEST(artipprog_reset_to_defaults_and_dhcp) {
@@ -537,14 +607,14 @@ TEST(an_output_on_two_ranges_joins_both_and_keeps_one_port_address) {
 
     Bytes p = art_header(artnet::parser::kOpAddress, artnet::parser::kAddressSize);
     p[13]   = 1;
-    p[100]  = 0x85;  // port 0: universe low nibble 5 — 40 (0x28) becomes 37 (0x25)
+    p[100]  = 0x85;  // its SwOut: low nibble 5 — 40 (0x28) becomes 37 (0x25)
     shim::net_push(kArt, p);
     pump_artnet();
     EXPECT_EQ(config::fix_universe(config::get_channel(0)), 37);
     EXPECT_EQ(config::get_channel(0).universe_start, before.universe_start);
     auto& sent = shim::net_sent();
-    EXPECT_EQ(sent.size(), 2);
-    if (!sent.empty()) EXPECT_EQ(sent[0].bytes[190], 5);  // SwOut of port 0
+    EXPECT_EQ(sent.size(), 1);
+    if (!sent.empty()) EXPECT_EQ(sent[0].bytes[190], 5);  // SwOut of its one port
     apply(before);
 }
 

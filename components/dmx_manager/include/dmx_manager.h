@@ -90,6 +90,7 @@ void merge_cancel_all();
 // True if any of the channel's universes currently has two live sources.
 // Reported in ArtPollReply GoodOutputA bit 3 and chstat.
 bool is_channel_merging(size_t channel_index);
+bool is_universe_merging(uint16_t universe_number);
 
 // Note one ArtDmx packet was received. Used for stats only.
 void note_packet_rx();
@@ -175,6 +176,11 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free = nullptr, size_t* uni
 size_t channel_pixel_span(const config::ChannelConfig& cc);
 size_t channel_fixture_span(const config::ChannelConfig& cc);
 size_t channel_universe_span(const config::ChannelConfig& cc);
+
+// Every universe the outputs and the control universe listen to, once each, in
+// patch order (an output's pixels, then its fixtures; the control universe
+// last), at most `cap`. Universe 0 included (Art-Net; sACN has no universe 0).
+size_t listened_universes(uint16_t* out, size_t cap);
 
 // Fixture control being switched on for output `ch` (`cc`, its edited copy,
 // not stored yet): a fixture address inside some output's pixels — never set,

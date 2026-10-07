@@ -289,8 +289,6 @@ void print_global(const config::GlobalConfig& g) {
     printf("ip=%s\n", ip);
     printf("mask=%s\n", mask);
     printf("gw=%s\n", gw);
-    printf("net=%u\n", g.artnet_net);
-    printf("subnet=%u\n", g.artnet_subnet);
     printf("short_name=%s\n", g.short_name);
     printf("long_name=%s\n", g.long_name);
     printf("reply_unicast=%d\n", g.artnet_poll_reply_unicast ? 1 : 0);
@@ -363,12 +361,6 @@ int cmd_global(int argc, char** argv) {
     } else if (strcmp(key, "gw") == 0) {
         if (!parse_ip(val, g.static_gateway)) return err("gw: a.b.c.d");
         network_changed = true;
-    } else if (strcmp(key, "net") == 0) {
-        if (!parse_u32_in(val, 0, 127, u)) return err("net: 0..127");
-        g.artnet_net = static_cast<uint8_t>(u);
-    } else if (strcmp(key, "subnet") == 0) {
-        if (!parse_u32_in(val, 0, 15, u)) return err("subnet: 0..15");
-        g.artnet_subnet = static_cast<uint8_t>(u);
     } else if (strcmp(key, "short_name") == 0) {
         copy_str(g.short_name, sizeof(g.short_name), val);
     } else if (strcmp(key, "long_name") == 0) {
