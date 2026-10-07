@@ -981,6 +981,8 @@
    }
   ],
   "mem": {
+   "dma_free": 25165824,
+   "dma_largest": 16777216,
    "fb_bytes": 65664,
    "heap_free": 25165824,
    "heap_min": 24117248,

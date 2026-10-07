@@ -185,8 +185,9 @@ TEST(the_first_full_boot_starts_everything_on_dhcp) {
     shim::event_post(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got);  // a late lease, cable out
     EXPECT_EQ(ui::get_ip(), 0u);
     shim::event_post(ETH_EVENT, ETHERNET_EVENT_STOP);
-    shim::event_post(ETH_EVENT, 99);                                        // unknown: ignored
-    for (const char* t : { "render", "artnet_rx", "sacn_rx", "fpp_sync" })  // sd_mon: above
+    shim::event_post(ETH_EVENT, 99);  // unknown: ignored
+    for (const char* t :
+         { "render", "compose", "artnet_rx", "sacn_rx", "fpp_sync" })  // sd_mon: above
         EXPECT_TRUE(shim::task_created(t));
     EXPECT_FALSE(shim::task_created("ota_confirm"));  // a confirmed image
 }
@@ -221,7 +222,15 @@ TEST(the_render_task_puts_artnet_pixels_on_the_wire) {
     g_frame = 0;
     g_wire.clear();
     const int64_t t0 = shim::now_us();
-    EXPECT_TRUE(shim::run_task_for("render", 80, render_script));
+    // The pipeline, one frame at a time: compose (core 0) publishes a frame and
+    // composes the next, which waits for the encoder; render (core 1) encodes
+    // the published one and frees the fronts. On one host thread the two take
+    // turns — each watchdog kick is where the task gives the CPU back.
+    for (int f = 0; f < 80; ++f) {
+        EXPECT_TRUE(shim::run_task_for("compose", 2, nullptr, true));
+        EXPECT_TRUE(shim::run_task_for("render", 1, render_script, true));
+    }
+    EXPECT_EQ(g_frame, 80);  // one encoded frame per turn: nothing lost, nothing doubled
     EXPECT_EQ(g_wire.size(), 6u);
     if (g_wire.size() == 6) {
         EXPECT_EQ(g_wire[0], 0x22);  // GRB
@@ -230,13 +239,30 @@ TEST(the_render_task_puts_artnet_pixels_on_the_wire) {
     }
     EXPECT_EQ(g_cal_seen, 0);
     EXPECT_TRUE(g_cal_len >= 262144 && g_pix_len < 10000);  // the scope pattern went out
-    EXPECT_EQ(shim::wdt_resets(), 80);
+    EXPECT_EQ(shim::wdt_resets(), 3 * 80);
     // 80 frames at the configured rate span more than a second: FPS published,
     // and the stalled frame did not trigger a catch-up burst.
     const int64_t span_ms = (shim::now_us() - t0) / 1000;
     const uint32_t rate   = config::get_global().refresh_rate_hz;
     EXPECT_TRUE(dmx::get_stats().current_fps > 0);
     EXPECT_TRUE(span_ms >= static_cast<int64_t>(79 * 1000 / rate) + 400);
+}
+
+// Each side of the pipeline waits for the other: the encoder emits nothing
+// that was not composed, and compose publishes nothing while the encoder
+// still holds the fronts.
+TEST(the_frame_pipeline_waits_for_its_partner) {
+    const auto emitted = [] { return dmx::get_stats().frames_emitted; };
+    const uint64_t e0  = emitted();
+    EXPECT_TRUE(shim::run_task_for("render", 3, nullptr, true));  // nothing composed yet
+    EXPECT_EQ(emitted(), e0);
+    // Compose publishes one frame, then holds the next until it is encoded.
+    EXPECT_TRUE(shim::run_task_for("compose", 6, nullptr, true));
+    EXPECT_TRUE(shim::run_task_for("render", 3, nullptr, true));
+    EXPECT_EQ(emitted(), e0 + 1);
+    EXPECT_TRUE(shim::run_task_for("compose", 2, nullptr, true));
+    EXPECT_TRUE(shim::run_task_for("render", 3, nullptr, true));
+    EXPECT_EQ(emitted(), e0 + 2);
 }
 
 // No DHCP server: lwIP's AutoIP lands a 169.254 address (raised as GOT_IP).

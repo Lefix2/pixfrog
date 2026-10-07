@@ -169,7 +169,11 @@ bool create_unit(size_t samples) {
 
     esp_err_t err = parlio_new_tx_unit(&cfg, &g_unit);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "parlio_new_tx_unit: %s", esp_err_to_name(err));
+        // The DMA lists come from internal DMA-capable RAM, one block each.
+        ESP_LOGE(TAG, "parlio_new_tx_unit: %s (%zu B frame; internal DMA RAM free %u, largest %u)",
+                 esp_err_to_name(err), bytes,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
         destroy_unit();
         return false;
     }

@@ -395,8 +395,12 @@ const uint8_t* universe_front_buffer_for(uint16_t universe_number);
 // into pre-allocated SRAM, never null.
 uint8_t* pixel_back_buffer(size_t ch);
 
-// Swap front/back pixel buffers for channel `ch`. Atomic pointer swap.
+// Swap front/back pixel buffers for channel `ch`. Atomic pointer swap; the
+// pixel-count ruler's emit length (preview_emit_count) goes along.
 void swap_pixels(size_t ch);
+// Every output's at once: the frame decode composed becomes the one the
+// output stage encodes. Only while the encoder is not reading the fronts.
+void publish_pixels();
 
 // Read-only access to the front pixel buffer for channel `ch`.
 const uint8_t* pixel_front_buffer(size_t ch);

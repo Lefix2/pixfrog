@@ -45,7 +45,8 @@ Layout follows IDF conventions: `main/`, `components/`, `sdkconfig.defaults`, ro
 | `httpd`              | 0    | 5    | 8 kB  | TCP accept                    | **Opt-in.** Web SPA + REST API + OTA + backup/restore + live status (esp_http_server); mDNS `pixfrog-<mac4>.local` while running |
 | `web_push`           | 0    | 3    | 4 kB  | 200 ms tick                   | **Opt-in** (web). `/api/ws` frames: 5 Hz output preview, 1 Hz status |
 | `web_hub`            | 0    | 2    | 4 kB  | 1 s tick, browse every 15 s   | **Opt-in** (web). Sibling browse + election of the shared `pixfrog.local` alias |
-| `render_task`        | 1    | 20   | 6 kB  | refresh timer + `ArtSync`     | Swap universes, decode/generate pixels, encode full frame, kick DMA |
+| `compose_task`       | 0    | 9    | 4 kB  | refresh timer + `ArtSync`     | Frame N+1: apply remaps, swap universes, control universe, decode/generate every output's pixels, publish them |
+| `render_task`        | 1    | 20   | 4.5 kB | a composed frame             | Frame N: encode the published pixels, kick DMA, FPS |
 | `ui_task`            | 0    | 4    | 4 kB  | 33 ms tick                    | Boot splash, **time-polled** seesaw encoder (no IRQ — 4-wire harness), render display, persist NVS |
 | `idle_0` / `idle_1`  | 0/1  | 0    | 1 kB  | (FreeRTOS)                    | Power-save hooks                                  |
 
@@ -64,7 +65,22 @@ A frame is the interval between two LED renders — `1/refresh_rate`, any intege
 
 ![Frame lifecycle — render_task stages with GDMA and network in parallel](img/frame-pipeline.svg)
 
-When `render_task` wakes (t = 0), it runs, in order:
+A frame is made in two stages on the two cores, a frame apart:
+**`compose_task` (core 0) draws frame N+1 while `render_task` (core 1)
+encodes frame N**. Drawing and encoding each get a core, so a frame costs
+the longer of the two, not their sum. The pixel buffers are the hand-over:
+compose draws into the back buffers and, once the encoder has released the
+fronts (`g_fronts_free`), publishes every output at once
+(`dmx::publish_pixels()` — the pixel-count ruler's emit length travels with
+its frame) and signals `g_frame_ready`; render encodes from the fronts, then
+frees them. Everything the drawing keeps from frame to frame (effect clocks,
+look fades, the plays' snapshot, the control state) belongs to compose alone,
+as it belonged to the single render task before. Compose runs just under the
+receivers (priority 9 against 10), so a burst of universes is never held
+back by drawing. The latency grows by at most one encode: compose publishes
+as soon as the encoder is free.
+
+When `compose_task` wakes (t = 0), it runs, in order:
 
 1. Atomic swap `universe_front ↔ universe_back`.
 2. `dmx::update_show_control()`: evaluate the DMX control universe (if
@@ -73,7 +89,8 @@ When `render_task` wakes (t = 0), it runs, in order:
    FSEQ bands act when they change (FSEQ is posted to `fseq_player`, the render
    task never touches the SD card).
 3. Per channel, fill `pixel_back_buffer(ch)` from the **first matching source**
-   in a fixed priority chain, then `swap_pixels(ch)`:
+   in a fixed priority chain (published together by `publish_pixels()` once
+   the encoder is free):
    1. **Identify** — 2 Hz white blink (commissioning, auto-expires)
    2. **Pixel-count preview** — live ruler while the count is edited
    3. **The output's source** — each output plays its own scene or the live
@@ -90,29 +107,40 @@ When `render_task` wakes (t = 0), it runs, in order:
       into a 4 kB SRAM scratch buffer and is blended in.
    4. **Show control** — blackout / strobe gate, then the grand master
       (local × desk, 16-bit) scales the bytes. Identify and the ruler bypass it.
-4. `output::render_frame()`: encode every channel into a drained back buffer in a single pass (`led::encode_frame` — pure stores, no pre-zeroing; **gamma/white-balance LUT**, color order, brightness, grouping and invert applied inline per pixel) **while previous frames are still emitting from the other FBs** (PARLIO keeps two buffers mounted in its DMA loop; the third is the one being encoded — see §4.4), `esp_cache_msync(…, DIR_C2M)` on the written region, then hand the buffer to the DMA engine (PARLIO loop remount, or draw_bitmap on the legacy LCD_CAM path). Encode (CPU) and emission (DMA) overlap; the frame rate is bounded by max of the two, not their sum.
-5. `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
+4. *(render_task, core 1, once the frame is published)* `output::render_frame()`: encode every channel into a drained back buffer in a single pass (`led::encode_frame` — pure stores, no pre-zeroing; **gamma/white-balance LUT**, color order, brightness, grouping and invert applied inline per pixel) **while previous frames are still emitting from the other FBs** (PARLIO keeps two buffers mounted in its DMA loop; the third is the one being encoded — see §4.4), `esp_cache_msync(…, DIR_C2M)` on the written region, then hand the buffer to the DMA engine (PARLIO loop remount, or draw_bitmap on the legacy LCD_CAM path). Encode (CPU) and emission (DMA) overlap; the frame rate is bounded by max of the two, not their sum.
+5. *(compose_task)* `dmx::wait_for_sync_or_period(remaining)`: block until end-of-period **or** an ArtSync arrives.
 
-In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]`; an ArtSync calls `dmx::note_sync()`, which wakes `render_task` early via the semaphore.
+In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]` (it preempts compose); an ArtSync calls `dmx::note_sync()`, which wakes `compose_task` early via the semaphore.
 
 **What it costs, measured on the box** (`stats`, `/api/diag` → `render`, the
 Diagnostics page, NERD STATS): the time step 3 takes for every output — the
 effects, scenes, groups and fixtures drawn (`decode_us`, and the longest of
-the last second) — next to the encode, and each core's load over the last
-second (`cpu_load`: the share its idle task did not get, from FreeRTOS run
-time stats on the esp_timer clock). Core 1 runs `render_task` alone; core 0
-the receivers, the UI and FSEQ; the web server and audio float. The idle
+the last second; core 0) — next to the encode (core 1), and each core's load
+over the last second (`cpu_load`: the share its idle task did not get, from
+FreeRTOS run time stats on the esp_timer clock). Core 1 runs `render_task`
+alone; core 0 compose, the receivers, the UI and FSEQ; the web server and
+audio float. The idle
 task's run time only moves when it is switched out, so each core's figure is
-read from a task on that core (`render_task` for core 1, `cpu_load_task` for
-core 0). The console's `tasks` lists every task's share over half a second.
+read from a task on that core (`render_task` for core 1, `compose_task` for
+core 0). The console's `tasks` lists every task's share over half a second and
+the least stack each ever had free.
 
-Measured on the bench (fixture control, 32 fixtures an output, a sine
-phaser on each): drawing costs about 1.8 µs a pixel for fire, 1.4 µs for
-blobs, 1 µs for a plain colour; a crossfade draws both looks. With the
-encode at ~12.5 ms for 8 × 512 pixels, 60 Hz holds with pixel mapping and
-light looks but drops to ~48 fps on fire everywhere and ~39 fps while all
-256 fixtures crossfade; 8 × 1024 at 30 Hz holds 30 fps in every case (20 ms
-of drawing at worst). Core 0 stays at ~1 %.
+Drawing longer than the period leaves compose no wait: it then sleeps one tick
+anyway, so the UI, the console and the idle task (and its watchdog) still get
+core 0 — the frame rate drops instead.
+
+Measured on the bench (fixture control, 32 fixtures an output, a sine phaser
+on each; ms = drawing on core 0 / encode on core 1):
+
+| | plain | fire | 256 fixtures crossfading |
+|---|---|---|---|
+| 8 × 512 @ 60 Hz, one task (before) | 58 fps (4.1 + 12.2) | 48 fps (7.6 + 12.8) | 39 fps (12.5 + 12.6) |
+| 8 × 512 @ 60 Hz, pipeline | 61 fps (4.1 / 12.4) | 60 fps (8.4 / 12.7) | 61 fps (14.0 / 12.8) |
+| 8 × 1024 @ 30 Hz, pipeline | 30 fps (6.5 / 24.1) | 31 fps (14.6 / 24.9) | 31 fps (23.9 / 25.1) |
+
+Drawing on core 0 runs ~10 % slower than it did alone on core 1: the two
+cores share the PSRAM bus with the encoder's frame-buffer writes. A crossfade
+of every fixture at 60 Hz puts core 0 near 90 %.
 
 **Total wire-to-photon latency**: typically 2 frames (one frame of wait + one frame of emission). At 30 Hz that's ~66 ms; at 60 Hz, ~33 ms — well below human perception for lighting.
 
@@ -127,11 +155,16 @@ of drawing at worst). Core 0 stays at ~1 %.
 | Item                                     | Size      | Note                                            |
 |------------------------------------------|----------:|-------------------------------------------------|
 | FreeRTOS + lwIP + IDF drivers            | ~120 kB   | Measured on similar projects                    |
-| `pixel_buf[8]` (double-buffered, per channel) | 8 × 2 × 4 kB | 1024 px × 4 bytes RGBW worst case            |
 | All task stacks                          | ~30 kB    | cf. §3                                          |
 | General heap                             | ~330 kB   | Ethernet init, NVS, OLED                        |
 
-`pixel_buf` holds a channel's decoded DMX pixels before they're encoded into the PSRAM FB. It is double-buffered per channel (atomic front/back swap): the network decode writes the back buffer, swaps, and the encoder reads a stable front while the next decode runs.
+The scarce internal resource is **DMA-capable** RAM (~244 kB of the 284 kB
+heap): the output's DMA lists take one block of it at every frame-length
+change (~4 kB each for 8 × 512 pixels, two lists), and a live resize fails
+when no block is large enough. `status` (`dma_free`, `dma_largest`) and
+`/api/diag` show it.
+
+`pixel_buf` holds a channel's decoded DMX pixels before they're encoded into the PSRAM FB. It is double-buffered per channel (atomic front/back swap): compose writes the back buffers, publishes them all once the encoder is done with the fronts, and the encoder reads stable fronts while the next frame is drawn. They live in PSRAM: a frame touches ~12 kB of them against the encoder's ~0.5 MB of frame buffer (the encode measured 0.3 ms slower), and in internal RAM they took the 64 kB the DMA lists need.
 
 ### Octal PSRAM (32 MB)
 
@@ -139,6 +172,7 @@ of drawing at worst). Core 0 stays at ~1 %.
 |-----------------------------------|-----------:|-----------------------------------------------------|
 | `frame_buf[3]` (PSRAM)            | 3 × 2.6 MB | triple-buffered (PARLIO) so encode overlaps the two FBs in the DMA loop; allocated once at the cap (1024 px × 32 bits × 40 samples) and never resized, so nothing on the render path allocates. Legacy LCD_CAM sizes 2 FBs to the longest configured channel instead. |
 | `universe_pool[2][N]`             | 2 × 48 kB  | 48 universes × 512 bytes × 2 buffers                |
+| `pixel_buf[8]`                    | 8 × 2 × 4 kB | per channel, double-buffered: 1024 px × 4 bytes RGBW worst case |
 | Circular logs                     | 64 kB      | Post-mortem debug                                   |
 | Application headroom              | ~27 MB     | Future sequencer / FX engine / ...                  |
 

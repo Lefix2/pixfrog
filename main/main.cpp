@@ -7,7 +7,7 @@
 //   4. UI (OLED + encoder)               (ui)
 //   5. Network: Ethernet + lwIP (main::init_network), addressing (net)
 //   6. ArtNet UDP receiver               (artnet)
-//   7. render_task spawn
+//   7. frame pipeline: compose_task (core 0) + render_task (core 1)
 
 #include "driver/gpio.h"
 #include "esp_app_desc.h"
@@ -23,6 +23,7 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lwip/inet.h"
 #include "nvs_flash.h"
@@ -127,31 +128,26 @@ void init_network() {
     ESP_LOGI(TAG, "Ethernet started");
 }
 
-#if configGENERATE_RUN_TIME_STATS
-// Core 0's load, once a second. FreeRTOS only adds to the idle task's run
-// time when it is switched out, so the counter is read from a task running on
-// that core: idle has just made way for it. (Core 1's is read in render_task.)
-void cpu_load_task(void*) {
-    configRUN_TIME_COUNTER_TYPE idle = ulTaskGetIdleRunTimeCounterForCore(0);
-    int64_t at                       = esp_timer_get_time();
-    while (true) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        const configRUN_TIME_COUNTER_TYPE now_idle = ulTaskGetIdleRunTimeCounterForCore(0);
-        const int64_t now                          = esp_timer_get_time();
-        pixfrog::dmx::set_cpu_load(
-            0, pixfrog::dmx::cpu_load_pct(static_cast<uint32_t>(now_idle - idle),
-                                          static_cast<uint32_t>(now - at)));
-        idle = now_idle;
-        at   = now;
-    }
-}
-#endif
+// ── The frame pipeline ──────────────────────────────────────────────────────
+// compose_task (core 0) makes frame N+1 — universes swapped, the control
+// universe read, every output drawn (scenes, effects, groups, fixtures) into
+// the pixel back buffers — while render_task (core 1) encodes frame N from the
+// fronts and hands it to the DMA. Drawing and encoding each get a core, so a
+// frame costs the longer of the two instead of their sum. The fronts change
+// hands through two binary semaphores: compose publishes (swaps every output's
+// pixels) only once the encoder is done reading them, then says a frame is
+// ready. All the drawing state (clocks, fades, the plays' snapshot) stays with
+// one task, compose, as it stayed with render before.
+SemaphoreHandle_t g_frame_ready = nullptr;  // a composed frame waits in the fronts
+SemaphoreHandle_t g_fronts_free = nullptr;  // the encoder is done with the fronts
 
-void render_task(void*) {
-    // Subscribe the render task to the task watchdog. The render
-    // task is the canary for "the system is still meeting its real-time
-    // budget" — if it stops kicking the WDT, we'd rather panic-reset than
-    // ship dark/garbled frames silently.
+// The longest a pipeline task blocks before it kicks the watchdog and looks
+// again: a stalled partner shows as a frozen frame rate, not a reset.
+constexpr TickType_t kPipelineWaitTicks = pdMS_TO_TICKS(200);
+
+void compose_task(void*) {
+    // On the task watchdog too: a compose that stops is as dark as a render
+    // that stops.
     esp_task_wdt_add(nullptr);
 
     // Drift-corrected emission deadline (µs). Advancing it by exactly one period
@@ -161,15 +157,17 @@ void render_task(void*) {
     // rate can't climb above the configured setting (which sizes the DMA budget).
     int64_t next_frame_us = esp_timer_get_time();
 
-    // Rolling 1-second window FPS counter, with the longest decode of the
-    // window and each core's idle time at its start (the CPU load).
-    int64_t fps_window_start_us = esp_timer_get_time();
-    uint32_t decode_max_us      = 0;
-    uint32_t decode_max_last    = 0;  // the window before: the max shown while this one fills
+    // The longest decode of the window, and of the one before (shown while
+    // this one fills). Static: the host harness restarts the task body.
+    static int64_t window_start_us  = esp_timer_get_time();
+    static uint32_t decode_max_us   = 0;
+    static uint32_t decode_max_last = 0;
 #if configGENERATE_RUN_TIME_STATS
-    configRUN_TIME_COUNTER_TYPE idle_at = ulTaskGetIdleRunTimeCounterForCore(1);
+    // Core 0's load, read here on core 0: FreeRTOS only adds to the idle
+    // task's run time when it is switched out, and it just made way for us.
+    // (render_task reads core 1's.)
+    static configRUN_TIME_COUNTER_TYPE idle_at = ulTaskGetIdleRunTimeCounterForCore(0);
 #endif
-    uint32_t fps_frames_in_window = 0;
 
     while (true) {
         // Recompute the period every frame so a UI commit of
@@ -186,53 +184,40 @@ void render_task(void*) {
         // reads the bank just published.
         pixfrog::dmx::update_show_control();
 
-        // When the UI has selected a calibration pattern, the
-        // render loop emits that pattern instead of pixel data. This
-        // makes scope debugging persistent across many frames without
-        // requiring a recompile.
-        const int8_t cal_mode = pixfrog::output::get_calibration_mode();
-        if (cal_mode >= 0) {
-            pixfrog::output::emit_calibration_pattern(static_cast<uint8_t>(cal_mode));
-        } else {
-            // Decode each channel's universes into its pixel back
-            // buffer (DMX start offset, multi-universe spanning), then
-            // swap the front pointer so the output encoder sees the new
-            // pixels. Per-pixel transformations (color order, brightness,
-            // grouping, invert) are applied later by led::encode_channel
-            // during the frame encode.
+        // Decode each channel's universes into its pixel back buffer (DMX
+        // start offset, multi-universe spanning) — or the scene, the effects,
+        // the fixtures it shows. Per-pixel transformations (color order,
+        // brightness, grouping, invert) are applied later by
+        // led::encode_channel during the frame encode. A calibration pattern
+        // replaces the frame on the encoder's side: nothing to draw.
+        if (pixfrog::output::get_calibration_mode() < 0) {
             const int64_t decode_from = esp_timer_get_time();
-            for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch) {
+            for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch)
                 pixfrog::dmx::decode_pixels_for_channel(ch);
-                pixfrog::dmx::swap_pixels(ch);
-            }
             const auto decode_us = static_cast<uint32_t>(esp_timer_get_time() - decode_from);
             if (decode_us > decode_max_us) decode_max_us = decode_us;
             pixfrog::dmx::set_decode_time(
                 decode_us, decode_max_us > decode_max_last ? decode_max_us : decode_max_last);
-            pixfrog::output::render_frame();
         }
-
-        // Publish FPS once per second.
-        fps_frames_in_window++;
         const int64_t now_us = esp_timer_get_time();
-        if (now_us - fps_window_start_us >= 1'000'000) {
-            pixfrog::dmx::set_current_fps(fps_frames_in_window);
+        if (now_us - window_start_us >= 1'000'000) {
 #if configGENERATE_RUN_TIME_STATS
-            // Core 1's load, read here on core 1 (cpu_load_task does core 0).
-            const configRUN_TIME_COUNTER_TYPE idle = ulTaskGetIdleRunTimeCounterForCore(1);
+            const configRUN_TIME_COUNTER_TYPE idle = ulTaskGetIdleRunTimeCounterForCore(0);
             pixfrog::dmx::set_cpu_load(
-                1, pixfrog::dmx::cpu_load_pct(static_cast<uint32_t>(idle - idle_at),
-                                              static_cast<uint32_t>(now_us - fps_window_start_us)));
+                0, pixfrog::dmx::cpu_load_pct(static_cast<uint32_t>(idle - idle_at),
+                                              static_cast<uint32_t>(now_us - window_start_us)));
             idle_at = idle;
 #endif
-            decode_max_last      = decode_max_us;
-            decode_max_us        = 0;
-            fps_frames_in_window = 0;
-            fps_window_start_us  = now_us;
+            decode_max_last = decode_max_us;
+            decode_max_us   = 0;
+            window_start_us = now_us;
         }
 
-        // Kick the WDT before sleeping. If render_frame ever blocks
-        // past the WDT timeout (5 s default), we want a clean panic.
+        // Hand the frame over once the encoder has let go of the fronts.
+        while (xSemaphoreTake(g_fronts_free, kPipelineWaitTicks) != pdTRUE)
+            esp_task_wdt_reset();
+        pixfrog::dmx::publish_pixels();
+        xSemaphoreGive(g_frame_ready);
         esp_task_wdt_reset();
 
         // Pace to the next deadline. ArtSync wakes the wait early, but the loop
@@ -251,11 +236,72 @@ void render_task(void*) {
         // A slow frame that overran a whole interval must not spiral into a burst
         // of catch-up frames — resync the deadline to now instead.
         if (pace_us - next_frame_us > interval_us) next_frame_us = pace_us;
+        bool waited = false;
         while (pace_us < next_frame_us) {
             const TickType_t wait = pdMS_TO_TICKS((next_frame_us - pace_us + 999) / 1000);
             pixfrog::dmx::wait_for_sync_or_period(wait ? wait : 1);
             pace_us = esp_timer_get_time();
+            waited  = true;
         }
+        // Drawing longer than the period leaves no wait at all: give core 0 a
+        // tick anyway, or the UI, the console and the idle task (its watchdog)
+        // starve behind compose. The frame rate drops instead.
+        if (!waited) vTaskDelay(1);
+    }
+}
+
+void render_task(void*) {
+    // Subscribe the render task to the task watchdog. The render
+    // task is the canary for "the system is still meeting its real-time
+    // budget" — if it stops kicking the WDT, we'd rather panic-reset than
+    // ship dark/garbled frames silently.
+    esp_task_wdt_add(nullptr);
+
+    // Rolling 1-second window FPS counter, and core 1's idle time at its start
+    // (the CPU load). Static: the host harness restarts the task body.
+    static int64_t fps_window_start_us = esp_timer_get_time();
+#if configGENERATE_RUN_TIME_STATS
+    configRUN_TIME_COUNTER_TYPE idle_at = ulTaskGetIdleRunTimeCounterForCore(1);
+#endif
+    static uint32_t fps_frames_in_window = 0;
+
+    while (true) {
+        // The next composed frame. None for a while (compose stalled, or
+        // pacing a slow refresh): kick the watchdog and wait again.
+        if (xSemaphoreTake(g_frame_ready, kPipelineWaitTicks) == pdTRUE) {
+            // When the UI has selected a calibration pattern, the
+            // render loop emits that pattern instead of pixel data. This
+            // makes scope debugging persistent across many frames without
+            // requiring a recompile.
+            const int8_t cal_mode = pixfrog::output::get_calibration_mode();
+            if (cal_mode >= 0)
+                pixfrog::output::emit_calibration_pattern(static_cast<uint8_t>(cal_mode));
+            else
+                pixfrog::output::render_frame();
+            // Encoded: compose may publish the next frame into the fronts.
+            xSemaphoreGive(g_fronts_free);
+            fps_frames_in_window++;
+        }
+
+        // Publish FPS once per second.
+        const int64_t now_us = esp_timer_get_time();
+        if (now_us - fps_window_start_us >= 1'000'000) {
+            pixfrog::dmx::set_current_fps(fps_frames_in_window);
+#if configGENERATE_RUN_TIME_STATS
+            // Core 1's load, read here on core 1 (compose_task reads core 0's).
+            const configRUN_TIME_COUNTER_TYPE idle = ulTaskGetIdleRunTimeCounterForCore(1);
+            pixfrog::dmx::set_cpu_load(
+                1, pixfrog::dmx::cpu_load_pct(static_cast<uint32_t>(idle - idle_at),
+                                              static_cast<uint32_t>(now_us - fps_window_start_us)));
+            idle_at = idle;
+#endif
+            fps_frames_in_window = 0;
+            fps_window_start_us  = now_us;
+        }
+
+        // Kick the WDT. If render_frame ever blocks past the WDT timeout
+        // (5 s default), we want a clean panic.
+        esp_task_wdt_reset();
     }
 }
 
@@ -460,10 +506,20 @@ extern "C" void app_main() {
                                      pixfrog::dmx::kAllOutputs, 0);  // lit at once
     if (pixfrog::config::get_global().web_enabled) pixfrog::web::start();
 
-    xTaskCreatePinnedToCore(render_task, "render", 6144, nullptr, 20, nullptr, 1);
-#if configGENERATE_RUN_TIME_STATS
-    xTaskCreatePinnedToCore(cpu_load_task, "cpu_load", 2048, nullptr, 1, nullptr, 0);
-#endif
+    // The frame pipeline: compose on core 0, just under the receivers (Art-Net
+    // and sACN at 10, the EMAC and lwIP above) so a burst of universes is never
+    // held back by drawing; encode alone on core 1.
+    g_frame_ready = xSemaphoreCreateBinary();
+    g_fronts_free = xSemaphoreCreateBinary();
+    if (!g_frame_ready || !g_fronts_free) {
+        ESP_LOGE(TAG, "frame pipeline semaphores: out of memory");
+        return;
+    }
+    xSemaphoreGive(g_fronts_free);  // nothing encoding yet
+    // render only encodes now (~3 kB used on the bench): internal RAM is what
+    // the output's DMA lists need.
+    xTaskCreatePinnedToCore(render_task, "render", 4608, nullptr, 20, nullptr, 1);
+    xTaskCreatePinnedToCore(compose_task, "compose", 4096, nullptr, 9, nullptr, 0);
 
     pixfrog::console::start();
 

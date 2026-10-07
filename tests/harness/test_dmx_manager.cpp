@@ -382,17 +382,25 @@ TEST(frame_emit_time_is_the_longest_channel) {
 }
 
 TEST(pixel_preview_ruler_and_erase_tail) {
+    // The emit length is the output stage's once the frame is published.
+    auto composed = [] {
+        decode0();
+        dmx::publish_pixels();
+    };
+    const uint16_t before = dmx::preview_emit_count();
     dmx::set_pixel_preview(0, 20);
     decode0();
+    EXPECT_EQ(dmx::preview_emit_count(), before);  // composed, not published yet
+    dmx::publish_pixels();
     EXPECT_EQ(dmx::preview_emit_count(), 20);
     dmx::set_pixel_preview(0, 8);  // shrink: one frame blanks the dropped LEDs
-    decode0();
+    composed();
     EXPECT_EQ(dmx::preview_emit_count(), 20);
-    decode0();
+    composed();
     EXPECT_EQ(dmx::preview_emit_count(), 8);
     const led::PixelGap gaps[1] = { { 0, 2 } };
     dmx::set_preview_gaps(gaps, 1);
-    decode0();
+    composed();
     EXPECT_EQ(dmx::preview_emit_count(), 10);  // 8 live + 2 dead, physical
     dmx::clear_pixel_preview();
     EXPECT_EQ(dmx::pixel_preview_channel(), -1);

@@ -119,14 +119,17 @@ std::atomic<uint32_t> g_pixel_preview{ kPreviewOff };
 // dropped hold their last value until overwritten. `g_preview_erase` is the
 // extent the UI owes a black tail down to; the render task consumes it on the
 // next decode so exactly one frame carries the erase. `g_preview_emit` is the
-// physical LED count that frame emits (= max(count, erase)), published by
-// decode for the output stage to read back.
+// physical LED count that frame emits (= max(count, erase)): decode writes it
+// into `g_preview_emit_next`, and swapping the channel's pixels hands it to the
+// output stage with the frame it belongs to (decode runs a frame ahead of the
+// encode, on the other core).
 std::atomic<uint32_t> g_preview_erase{ 0 };  // RMW: 32-bit (see g_local_blackout)
 // Gap-edit override for the ruler (set from ui_task, read by render_task; a
 // torn copy costs one oddly-marked preview frame).
 led::PixelGap g_preview_gaps[led::kMaxPixelGaps]{};
 std::atomic<bool> g_preview_gaps_on{ false };
 std::atomic<uint16_t> g_preview_emit{ 0 };
+std::atomic<uint16_t> g_preview_emit_next{ 0 };
 
 // Scene per output (-1 = live input) and its crossfade: the source it fades
 // from (-1 = live), when it started and how long it lasts. Written by any
@@ -377,12 +380,16 @@ bool init() {
         g_dmx_strobe[i].store(0, std::memory_order_relaxed);
     }
     for (size_t i = 0; i < config::kNumChannels; ++i) {
+        // In PSRAM: a frame touches ~12 kB of them against the encoder's
+        // ~0.5 MB of frame buffer, and the 64 kB they took in internal RAM is
+        // what the output's DMA lists need, in one block, at every
+        // frame-length change (a live resize failed for want of it).
         g_chan_bufs[i].a = static_cast<uint8_t*>(
-            heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+            heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_SPIRAM));
         g_chan_bufs[i].b = static_cast<uint8_t*>(
-            heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+            heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_SPIRAM));
         if (!g_chan_bufs[i].a || !g_chan_bufs[i].b) {
-            ESP_LOGE(TAG, "SRAM alloc for channel %u failed", static_cast<unsigned>(i));
+            ESP_LOGE(TAG, "PSRAM alloc for channel %u failed", static_cast<unsigned>(i));
             return false;
         }
         g_chan_bufs[i].front.store(g_chan_bufs[i].a, std::memory_order_release);
@@ -1371,7 +1378,7 @@ bool decode_pixels_for_channel(size_t ch) {
         // The ruler is written in physical order (gaps painted in place), so
         // the output stage emits the physical count with no gap mapping.
         const uint32_t phys = led::physical_count(emit, gps, ngaps);
-        g_preview_emit.store(
+        g_preview_emit_next.store(
             static_cast<uint16_t>(phys < kMaxPixelsPerChan ? phys : kMaxPixelsPerChan),
             std::memory_order_relaxed);
         logic::fill_preview_pattern(dst, kMaxBytesPerChan, count, emit,
@@ -1756,8 +1763,16 @@ size_t output_preview(size_t ch, uint8_t* rgb, size_t max_samples) {
 
 void swap_pixels(size_t ch) {
     if (ch >= config::kNumChannels) return;
+    if (pixel_preview_channel() == static_cast<int>(ch))  // the ruler's length goes with its frame
+        g_preview_emit.store(g_preview_emit_next.load(std::memory_order_relaxed),
+                             std::memory_order_relaxed);
     uint8_t* new_front   = g_chan_bufs[ch].back;
     g_chan_bufs[ch].back = g_chan_bufs[ch].front.exchange(new_front, std::memory_order_acq_rel);
+}
+
+void publish_pixels() {
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch)
+        swap_pixels(ch);
 }
 
 Stats get_stats() {

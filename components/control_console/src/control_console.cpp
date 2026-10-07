@@ -184,6 +184,12 @@ int cmd_status(int, char**) {
     printf("persist_ok=%d\n", config::is_persistence_ok() ? 1 : 0);
     printf("fb_bytes=%u\n", static_cast<unsigned>(output::fb_bytes()));
     printf("heap_free=%u\n", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+    // The output's DMA lists come from here, in one block each, at every
+    // frame-length change: the largest block is what matters.
+    printf("dma_free=%u dma_largest=%u\n",
+           static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)),
+           static_cast<unsigned>(
+               heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)));
     printf("psram_free=%u\n", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
     return ok();
 }
@@ -214,19 +220,27 @@ int cmd_stats(int, char**) {
     return ok();
 }
 
-// tasks — each task's share of a core over half a second, like top:
-// "task=render core=1 prio=20 cpu=46" (core -1: either core).
+// tasks — each task's share of a core over half a second, like top, and the
+// least stack it ever had free (bytes): "task=render core=1 prio=20 cpu=46
+// stack_free=2100" (core -1: either core).
 int cmd_tasks(int argc, char**) {
     if (argc != 1) return err("usage: tasks");
 #if configUSE_TRACE_FACILITY && configGENERATE_RUN_TIME_STATS
     constexpr UBaseType_t kMax = 40;
-    static TaskStatus_t before[kMax], after[kMax];  // off the console task's stack
+    // In PSRAM, for the call only: internal RAM is what the DMA lists need.
+    auto* before = static_cast<TaskStatus_t*>(
+        heap_caps_malloc(2 * kMax * sizeof(TaskStatus_t), MALLOC_CAP_SPIRAM));
+    if (!before) return err("out of memory");
+    TaskStatus_t* after            = before + kMax;
     configRUN_TIME_COUNTER_TYPE t0 = 0, t1 = 0;
     const UBaseType_t n0 = uxTaskGetSystemState(before, kMax, &t0);
     vTaskDelay(pdMS_TO_TICKS(500));
     const UBaseType_t n1 = uxTaskGetSystemState(after, kMax, &t1);
     const auto window    = static_cast<uint32_t>(t1 - t0);
-    if (window == 0) return err("no run time measured");
+    if (window == 0) {
+        heap_caps_free(before);
+        return err("no run time measured");
+    }
     for (UBaseType_t i = 0; i < n1; ++i) {
         uint32_t ran = 0;
         for (UBaseType_t j = 0; j < n0; ++j)
@@ -238,10 +252,12 @@ int cmd_tasks(int argc, char**) {
 #else
         const int core = -1;
 #endif
-        printf("task=%s core=%d prio=%u cpu=%lu\n", after[i].pcTaskName, core,
+        printf("task=%s core=%d prio=%u cpu=%lu stack_free=%lu\n", after[i].pcTaskName, core,
                static_cast<unsigned>(after[i].uxCurrentPriority),
-               static_cast<unsigned long>(static_cast<uint64_t>(ran) * 100u / window));
+               static_cast<unsigned long>(static_cast<uint64_t>(ran) * 100u / window),
+               static_cast<unsigned long>(after[i].usStackHighWaterMark));
     }
+    heap_caps_free(before);
     return ok();
 #else
     return err("run time stats not built in");
