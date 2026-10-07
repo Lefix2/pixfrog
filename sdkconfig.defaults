@@ -68,6 +68,14 @@ CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
 CONFIG_ETH_ENABLED=y
 CONFIG_ETH_USE_ESP32_EMAC=y
 CONFIG_ETH_PHY_INTERFACE_RMII=y
+# EMAC receive ring sized for a desk's burst of universes. An ArtDmx frame is
+# ~560 B: in the 512 B default buffers it took two, and 20 of them held ~10
+# frames — a burst of 32 universes sent back to back lost half (bench,
+# 2026-10-07). 30 buffers of 640 B hold 30 frames: 92 % of that burst lands,
+# for ~11 kB of internal DMA RAM (the pixel buffers' move to PSRAM made room).
+# 30 is the Kconfig maximum.
+CONFIG_ETH_DMA_RX_BUFFER_NUM=30
+CONFIG_ETH_DMA_BUFFER_SIZE=640
 
 #
 # lwIP — tuned for UDP-heavy ArtNet ingest

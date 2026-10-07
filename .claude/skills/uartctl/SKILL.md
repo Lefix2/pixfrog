@@ -14,7 +14,7 @@ End-to-end pipeline check (universe → decoded pixels):
 ```bash
 ./tools/uartctl.sh -q "ch 0 universe 1" "dmxw 1 1 ff0000" "status" "pixr 0 0 3"   # expect data=ff0000
 ```
-`pixr` reflects an injection only after the **next render tick** (~16-33 ms) decodes
+`pixr` reflects an injection only after the **next frame is published** (compose draws a frame ahead, the encoder reads it: up to two frames; `tools/hw_validate/pixfrog_uart.py` waits 70 ms before each `pixr`) (~16-33 ms) decodes
 universes into pixels — a `pixr` issued back-to-back with `dmxw` reads the
 pre-injection buffer and prints zeros. Put any command (e.g. `status`) between
 them, or read twice.

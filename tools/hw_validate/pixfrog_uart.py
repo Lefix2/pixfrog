@@ -43,6 +43,11 @@ class Board:
 
     def cmd(self, c, deadline=5):
         """Send one console command, return everything up to OK/ERR."""
+        if c.startswith("pixr"):
+            # The pixels read are the ones the encoder took: compose draws a
+            # frame ahead and publishes once the encoder is free, so what was
+            # just asked for shows up to two frames later.
+            time.sleep(0.07)
         self.ser.reset_input_buffer()
         self.ser.write(c.encode() + b"\r\n")
         buf, t0 = b"", time.time()

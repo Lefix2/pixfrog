@@ -162,7 +162,10 @@ The scarce internal resource is **DMA-capable** RAM (~244 kB of the 284 kB
 heap): the output's DMA lists take one block of it at every frame-length
 change (~4 kB each for 8 × 512 pixels, two lists), and a live resize fails
 when no block is large enough. `status` (`dma_free`, `dma_largest`) and
-`/api/diag` show it.
+`/api/diag` show it. The EMAC's receive ring lives there too: 30 buffers of
+640 B, one ArtDmx frame each, so a desk's burst of universes sent back to back
+is absorbed (bench: 92 % of a 32-universe burst; half was lost with the
+default 20 × 512 B).
 
 `pixel_buf` holds a channel's decoded DMX pixels before they're encoded into the PSRAM FB. It is double-buffered per channel (atomic front/back swap): compose writes the back buffers, publishes them all once the encoder is done with the fronts, and the encoder reads stable fronts while the next frame is drawn. They live in PSRAM: a frame touches ~12 kB of them against the encoder's ~0.5 MB of frame buffer (the encode measured 0.3 ms slower), and in internal RAM they took the 64 kB the DMA lists need.
 
