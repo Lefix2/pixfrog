@@ -169,6 +169,21 @@ uint8_t* g_fix_snap[config::kNumChannels]{};  // PSRAM: what a fading fixture sh
 uint32_t g_fix_fade_start[config::kNumChannels][config::kMaxFixtures];
 uint16_t g_fix_fade_len[config::kNumChannels][config::kMaxFixtures];
 
+// ── Effect clocks (render task only) ──
+// Where each look is, kept from frame to frame so a speed change bends the
+// motion instead of jumping it (logic::FxClock). Two an output — the scene it
+// plays and the one it fades from — one a group play, and one a fixture under
+// fixture control (PSRAM, kMaxFixtures an output).
+logic::FxClock g_out_clock[config::kNumChannels][2];
+logic::FxClock g_play_clock[kMaxPlays];
+logic::FxClock* g_fix_clock[config::kNumChannels]{};
+// The frame's time, taken once at the swap: every output ticks its clocks at
+// the same instant, so outputs whose speed a desk rides together stay in step.
+// A channel decoded again before the next swap reads the timer.
+uint64_t g_frame_ms  = 0;
+uint32_t g_frame_seq = 0;
+uint32_t g_ch_seq[config::kNumChannels]{};
+
 // Local show values (web/TFT/UART/ArtTrigger).
 std::atomic<uint16_t> g_local_master[config::kNumChannels];
 // Read-modify-write atomics (exchange, fetch_*) must be 32-bit on the P4: a
@@ -403,10 +418,16 @@ bool init() {
         if (!g_fix_snap[o])
             g_fix_snap[o] = static_cast<uint8_t*>(
                 heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_SPIRAM));
+    for (size_t o = 0; o < config::kNumChannels; ++o)
+        if (!g_fix_clock[o])
+            g_fix_clock[o] = static_cast<logic::FxClock*>(
+                heap_caps_calloc(config::kMaxFixtures, sizeof(logic::FxClock), MALLOC_CAP_SPIRAM));
     bool all = g_play_mux != nullptr;
     for (auto* p : g_play_strip)
         all = all && p;
     for (auto* p : g_fix_snap)
+        all = all && p;
+    for (auto* p : g_fix_clock)
         all = all && p;
     if (!all) {
         ESP_LOGE(TAG, "alloc for the group scenes failed");
@@ -1015,7 +1036,7 @@ namespace {
 
 // The network's view of the output into `buf`: its pixels decoded from the
 // universes, or — in DMX control mode — its fixtures drawn from their channels.
-void decode_live(const config::ChannelConfig& cc, uint8_t* buf, uint64_t t) {
+void decode_live(size_t ch, const config::ChannelConfig& cc, uint8_t* buf, uint64_t t) {
     auto universe = [](uint16_t u) { return universe_front_buffer_for(u); };
     // Its pixels, then its fixtures over them — or alone on a dark strip. An
     // output driven neither way shows nothing of its own (scenes still play).
@@ -1027,8 +1048,24 @@ void decode_live(const config::ChannelConfig& cc, uint8_t* buf, uint64_t t) {
     if (config::fixture_controlled(cc))
         logic::render_fixtures(
             buf, kMaxBytesPerChan, cc, config::get_profiles(), t, universe,
-            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); }, pixels);
+            [](size_t index, config::Effect& e) { return config::copy_effect(index, e); }, pixels,
+            g_fix_clock[ch]);
 }
+
+// The clock of the look `key` on output `ch`: of its two, the one already on
+// it, else the one ticked longest ago (a look no longer drawn there).
+logic::FxClock& out_clock(size_t ch, uint32_t key) {
+    auto& c = g_out_clock[ch];
+    for (auto& k : c)
+        if (k.live && k.key == key) return k;
+    return c[0].at <= c[1].at ? c[0] : c[1];
+}
+
+// Clock keys: a scene with the desk's bank pick, and the failsafe scene.
+uint32_t scene_key(int src, int16_t bank) {
+    return (static_cast<uint32_t>(src + 1) << 8) | static_cast<uint8_t>(bank + 1);
+}
+constexpr uint32_t kFailsafeKey = 0x80000000u;
 
 // One source into `buf`: scene `src` (with the desk's overrides) when it is a
 // valid scene whose mask still holds the output, else the live path — FSEQ,
@@ -1048,8 +1085,10 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
                 config::copy_effect(static_cast<size_t>(g_ovr[ch].bank), picked))
                 effect = picked;
             logic::apply_effect_override(effect, g_ovr[ch]);
-            mode = logic::apply_mode_override(mode, g_ovr[ch]);
-            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, mode, t);
+            mode                   = logic::apply_mode_override(mode, g_ovr[ch]);
+            const uint32_t key     = scene_key(src, g_ovr[ch].bank);
+            const logic::FxTime at = logic::clock_tick(out_clock(ch, key), key, effect, t);
+            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, mode, at);
             return;
         }
     }
@@ -1058,7 +1097,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
     // Suppress the failsafe check while FSEQ is active so a seek/block-load
     // pause doesn't momentarily blackout channels that are being played back.
     if (g_fseq_active.load(std::memory_order_relaxed)) {
-        decode_live(cc, buf, t);
+        decode_live(ch, cc, buf, t);
         return;
     }
 
@@ -1075,7 +1114,9 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         uint8_t fx_mode;
         if (g.failsafe_mode == config::kFailsafeScene &&
             config::copy_scene_part(g.failsafe_scene, ch, effect, fx_mode)) {
-            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, fx_mode, t);
+            const uint32_t key     = kFailsafeKey | g.failsafe_scene;
+            const logic::FxTime at = logic::clock_tick(out_clock(ch, key), key, effect, t);
+            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, fx_mode, at);
             return;
         }
         const uint8_t mode = g.failsafe_mode == config::kFailsafeScene ? config::kFailsafeBlackout
@@ -1085,7 +1126,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         return;
     }
 
-    decode_live(cc, buf, t);
+    decode_live(ch, cc, buf, t);
 }
 
 }  // namespace
@@ -1095,6 +1136,8 @@ namespace {
 // Render task, once a frame: this frame's plays, owners and fade requests, the
 // fixture spans of every output, and each play's strip drawn once.
 void plays_frame_begin(uint64_t t) {
+    g_frame_ms = t;
+    ++g_frame_seq;
     {
         PlayLock lock;
         std::memcpy(g_plays_r, g_plays, sizeof(g_plays));
@@ -1131,9 +1174,11 @@ void plays_frame_begin(uint64_t t) {
         if (ovr.bank >= 0 && config::copy_effect(static_cast<size_t>(ovr.bank), picked))
             effect = picked;
         logic::apply_effect_override(effect, ovr);
-        mode         = logic::apply_mode_override(mode, ovr);
-        g_play_ok[p] = logic::render_group_strip(g_play_strip[p], kMaxStripPx * 3, g_play_lens[p],
-                                                 g.count, effect, mode, t) > 0;
+        mode           = logic::apply_mode_override(mode, ovr);
+        const auto key = (static_cast<uint32_t>(pl.group) << 16) | scene_key(pl.scene, ovr.bank);
+        g_play_ok[p]   = logic::render_group_strip(
+                           g_play_strip[p], kMaxStripPx * 3, g_play_lens[p], g.count, effect, mode,
+                           logic::clock_tick(g_play_clock[p], key, effect, t)) > 0;
     }
 }
 
@@ -1193,6 +1238,19 @@ void dim_groups(size_t ch, uint8_t* dst, uint8_t bpp) {
 
 }  // namespace
 
+namespace {
+
+// The time output `ch` draws its frame at: the swap's, once.
+uint64_t frame_ms(size_t ch) {
+    if (g_ch_seq[ch] != g_frame_seq) {
+        g_ch_seq[ch] = g_frame_seq;
+        return g_frame_ms;
+    }
+    return static_cast<uint64_t>(esp_timer_get_time() / 1000);
+}
+
+}  // namespace
+
 bool decode_pixels_for_channel(size_t ch) {
     if (ch >= config::kNumChannels) return false;
     uint8_t* dst = pixel_back_buffer(ch);
@@ -1233,7 +1291,7 @@ bool decode_pixels_for_channel(size_t ch) {
 
     // Effects and strobe: 64-bit ms, no wrap in a lifetime. The fade keeps a
     // 32-bit stamp — a difference, so its wrap is harmless.
-    const uint64_t t   = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+    const uint64_t t   = frame_ms(ch);
     const size_t bytes = static_cast<size_t>(cc.pixel_count) * led::bytes_per_pixel(cc.protocol);
     render_source(ch, cc, g_scene_out[ch].load(std::memory_order_acquire), dst, t);
 

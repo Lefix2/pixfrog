@@ -61,6 +61,13 @@ Speed runs 0–255, in steps of two generator units: 2 px/s per step for chase,
 scanner and stripes (up to 510 px/s), 20 °/s for rainbow. Solid is apart: its
 speed is a strobe frequency, 0–60 Hz, where 255 means "steady colour 2".
 
+A speed change — a desk riding its Speed or phaser Rate channel, an edit of
+the effect — bends the motion: the look carries on from where it is, at the
+new pace, instead of jumping to where it would be had it always run that fast.
+Each output, group play and fixture keeps its own position. Outputs playing the
+same look at a speed nobody rides stay in step; a scene started, or restarted
+after a stop, starts in step with them too.
+
 ### Dimmer phaser and invert
 
 An effect can carry a **dimmer phaser**: a waveform that dims what the
