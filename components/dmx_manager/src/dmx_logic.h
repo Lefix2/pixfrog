@@ -813,6 +813,82 @@ inline FxTime clock_tick(FxClock& c, uint32_t key, const config::Effect& e, uint
     return FxTime{ ms, c.gen, c.ph };
 }
 
+// Of the `n` clocks of one place, the one already on `key`, else the one
+// ticked longest ago (a look no longer drawn there).
+inline FxClock& clock_slot(FxClock* c, size_t n, uint32_t key) {
+    FxClock* oldest = &c[0];
+    for (size_t i = 0; i < n; ++i) {
+        if (c[i].live && c[i].key == key) return c[i];
+        if (c[i].at < oldest->at) oldest = &c[i];
+    }
+    return *oldest;
+}
+
+// ── Look transitions ────────────────────────────────────────────────────────
+// A discrete pick of the look — the Effect channel of a fixture, the desk's
+// Effect / Generator channels on an output or a group — crossfades from the
+// old look to the new over a time the desk sends, instead of cutting (0 =
+// cut, as a desk's "snap"). While that time is above 0 a new pick waits
+// kLookSettleFrames unchanged frames: a fader ridden through the bands would
+// otherwise start a fade at every band it crosses. A look is an opaque id,
+// equal for equal picks.
+constexpr uint8_t kLookSettleFrames = 3;
+
+struct LookFade {
+    int32_t shown   = 0;  // the look drawn (the fade's target)
+    int32_t from    = 0;  // the look it fades from
+    int32_t pending = 0;  // a pick waiting to settle
+    uint32_t start  = 0;  // ms
+    uint32_t last   = 0;  // ms of the last tick: one step a frame
+    uint16_t len    = 0;  // ms, 0 = no fade running
+    uint8_t settle  = 0;
+    bool init       = false;
+};
+
+// Feeds this frame's pick `look`, with the fade time the desk asks for;
+// returns the look to draw. Ticking twice in a frame (same `now`) counts once.
+inline int32_t look_tick(LookFade& f, int32_t look, uint16_t fade_ms, uint32_t now) {
+    if (!f.init) {
+        f         = LookFade{};
+        f.init    = true;
+        f.shown   = look;
+        f.pending = look;
+        f.last    = now;
+        return look;
+    }
+    const bool step = now != f.last;
+    f.last          = now;
+    if (f.len && now - f.start >= f.len) f.len = 0;
+    if (look == f.shown) {
+        f.pending = look;
+        f.settle  = 0;
+        return look;
+    }
+    if (fade_ms == 0) {  // a cut
+        f.shown = f.pending = look;
+        f.len               = 0;
+        f.settle            = 0;
+        return look;
+    }
+    if (look != f.pending) {
+        f.pending = look;
+        f.settle  = 1;
+    } else if (step && f.settle < kLookSettleFrames) {
+        ++f.settle;
+    }
+    if (f.settle < kLookSettleFrames) return f.shown;
+    f.from   = f.shown;
+    f.shown  = look;
+    f.start  = now;
+    f.len    = fade_ms;
+    f.settle = 0;
+    return look;
+}
+
+inline bool look_fading(const LookFade& f, uint32_t now) {
+    return f.init && f.len && now - f.start < f.len;
+}
+
 // ── Dimmer phaser ───────────────────────────────────────────────────────────
 // A dimmer layer over whatever the generator drew: a waveform travelling
 // along the run (Effect::ph_*), as on a desk's phaser.
@@ -2239,6 +2315,7 @@ struct FixtureFrame {
     uint8_t white        = 0;
     uint8_t shutter_hz10 = 0;                   // 0 = open
     int16_t bank         = -1;                  // -1 = no effect: colour 1, steady
+    uint16_t fx_fade_ms  = 0;                   // a change of `bank` crossfades this long
     int16_t color[config::kSceneColorsMax][3];  // -1 = not in the profile
     EffectOverride fx;                          // speed, param, phaser, MAtricks
     FixtureFrame() { std::memset(color, 0xFF, sizeof(color)); }
@@ -2294,6 +2371,7 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
         case config::FixFn::PhDecay:
             if (v) out.fx.ph_decay = envelope_from_dmx(v);
             break;
+        case config::FixFn::FxFade: out.fx_fade_ms = static_cast<uint16_t>(v * 100u); break;
         case config::FixFn::Block:
             if (v) out.fx.block = v;
             break;
@@ -2318,12 +2396,12 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
 // `over_pixels`: the output is pixel-mapped too and `d` holds the fixture's
 // pixels. With no effect asked for they stay, under the fixture's dimmer and
 // shutter (its colour channels mean nothing next to pixel data); an effect
-// replaces them. `clock`: the fixture's own (clock_tick), nullptr for the
-// wall clock.
+// replaces them. `clocks`: the fixture's two (clock_tick: the look it shows
+// and the one it fades from), nullptr for the wall clock.
 template <typename GetEffect>
 inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, const FixtureFrame& f,
                            bool reversed, uint64_t phase_ms, GetEffect get_effect,
-                           bool over_pixels = false, FxClock* clock = nullptr) {
+                           bool over_pixels = false, FxClock* clocks = nullptr) {
     const size_t total = static_cast<size_t>(n) * bpp;
     if (total > cap || bpp == 0 || n == 0) return;
     if (f.dimmer == 0 || !strobe_lit(phase_ms, f.shutter_hz10)) {
@@ -2354,9 +2432,10 @@ inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, cons
     apply_effect_override(e, f.fx);
     // The fixture's own clock, keyed by the effect it plays: its Speed channel
     // bends the motion instead of jumping it.
+    const auto key = static_cast<uint32_t>(f.bank + 1);
     fill_effect_run(d, cap, n, bpp, e,
-                    clock ? clock_tick(*clock, static_cast<uint32_t>(f.bank + 1), e, phase_ms)
-                          : wall_time(e, phase_ms));
+                    clocks ? clock_tick(clock_slot(clocks, 2, key), key, e, phase_ms)
+                           : wall_time(e, phase_ms));
     if (plain && bpp == 4 && f.white)
         for (uint16_t i = 0; i < n; ++i)
             d[static_cast<size_t>(i) * 4 + 3] = f.white;
@@ -2367,36 +2446,65 @@ inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, cons
     apply_master(d, total, f.dimmer);
 }
 
+// What a fixture under fixture control keeps from frame to frame: the clocks
+// of its looks and its effect transition (its FX fade channel).
+struct FixtureFx {
+    FxClock clock[2];  // the look it shows, the one it fades from
+    LookFade fade;     // keyed by its Effect channel's pick
+};
+
 // Renders the fixtures of a channel under fixture control, each from its
 // channels on the wire. `get_universe(number)` returns a 512-byte buffer or
 // nullptr. Alone (`over_pixels` false) the strip starts dark: the fixtures of
 // a missing universe and the pixels in no fixture stay so. Over a pixel-mapped
 // output (`over_pixels`: `dst` holds the decoded pixels) they are left as
 // they are, and each fixture keeps its pixels until its channels ask for an
-// effect (render_fixture). `clocks`: config::kMaxFixtures of them, one a
-// fixture in patch order; nullptr draws on the wall clock.
+// effect (render_fixture). `fx`: config::kMaxFixtures of them, one a fixture
+// in patch order — nullptr draws on the wall clock and cuts on every change.
+// `scratch` (dst_capacity bytes) is where a fading fixture draws the look it
+// leaves; without it a change cuts.
 template <typename GetUniverse, typename GetEffect>
 inline void render_fixtures(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
                             const config::ProfileBank& bank, uint64_t phase_ms,
                             GetUniverse get_universe, GetEffect get_effect,
-                            bool over_pixels = false, FxClock* clocks = nullptr) {
+                            bool over_pixels = false, FixtureFx* fx = nullptr,
+                            uint8_t* scratch = nullptr) {
     const uint8_t bpp  = led::bytes_per_pixel(cc.protocol);
     const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
     if (total > dst_capacity || total == 0) return;
     if (!over_pixels) std::memset(dst, 0, total);
-    size_t k = 0;  // the fixture's rank: its clock
+    const auto now = static_cast<uint32_t>(phase_ms);
+    size_t k       = 0;  // the fixture's rank: its state
     for_each_fixture_patch(cc, bank, [&](const FixturePatch& p) {
-        FxClock* clock = clocks ? &clocks[k] : nullptr;
+        FixtureFx* st = fx ? &fx[k] : nullptr;
         ++k;
         const uint8_t* src = get_universe(
             static_cast<uint16_t>(config::fix_universe(cc) + p.uni_off));
         const size_t at = static_cast<size_t>(p.first) * bpp;
         if (!src || at >= total) return;
         const size_t room = (total - at) / bpp;
+        const auto n      = static_cast<uint16_t>(p.count < room ? p.count : room);
+        uint8_t* d        = dst + at;
+        const size_t len  = static_cast<size_t>(n) * bpp;
         FixtureFrame frame;
         decode_fixture(bank.profiles[p.profile], src + p.slot, frame);
-        render_fixture(dst + at, total - at, static_cast<uint16_t>(p.count < room ? p.count : room),
-                       bpp, frame, p.reversed, phase_ms, get_effect, over_pixels, clock);
+        // The look it shows: its Effect pick once settled, faded from the last.
+        bool fading = false;
+        if (st) {
+            frame.bank = static_cast<int16_t>(
+                look_tick(st->fade, frame.bank, scratch ? frame.fx_fade_ms : 0, now));
+            fading = scratch && look_fading(st->fade, now);
+        }
+        if (fading) std::memcpy(scratch, d, len);  // the pixels under it, for the old look too
+        FxClock* clocks = st ? st->clock : nullptr;
+        render_fixture(d, total - at, n, bpp, frame, p.reversed, phase_ms, get_effect, over_pixels,
+                       clocks);
+        if (!fading) return;
+        FixtureFrame old = frame;
+        old.bank         = static_cast<int16_t>(st->fade.from);
+        render_fixture(scratch, dst_capacity, n, bpp, old, p.reversed, phase_ms, get_effect,
+                       over_pixels, clocks);
+        blend_into(d, scratch, len, fade_weight(now - st->fade.start, st->fade.len));
     });
 }
 

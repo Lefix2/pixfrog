@@ -2009,6 +2009,91 @@ static void test_control_render_fixture() {
     EXPECT_EQ(b[0], 0x5A);
 }
 
+// A pick of the look settles before it fades, cuts at fade 0, and counts
+// one step a frame however many times the frame ticks it.
+static void test_look_fade_settles_then_crossfades() {
+    LookFade f;
+    EXPECT_EQ(look_tick(f, 5, 1000, 100), 5);  // the first pick shows at once
+    EXPECT_TRUE(!look_fading(f, 100));
+    EXPECT_EQ(look_tick(f, 7, 1000, 116), 5);  // settling
+    EXPECT_EQ(look_tick(f, 7, 1000, 116), 5);  // the same frame again: no step
+    EXPECT_EQ(look_tick(f, 7, 1000, 132), 5);
+    EXPECT_EQ(look_tick(f, 7, 1000, 148), 7);  // the third frame: the fade starts
+    EXPECT_TRUE(look_fading(f, 148));
+    EXPECT_EQ(f.from, 5);
+    EXPECT_TRUE(look_fading(f, 1147));
+    EXPECT_TRUE(!look_fading(f, 1148));
+    EXPECT_EQ(look_tick(f, 9, 1000, 164), 7);  // a pick that comes back before settling...
+    EXPECT_EQ(look_tick(f, 7, 1000, 180), 7);  // ...is no change
+    EXPECT_EQ(look_tick(f, 9, 1000, 196), 7);
+    EXPECT_EQ(look_tick(f, 9, 1000, 212), 7);  // it restarted its count
+    EXPECT_EQ(look_tick(f, 3, 0, 228), 3);     // fade 0: a cut, the running fade dropped
+    EXPECT_TRUE(!look_fading(f, 228));
+}
+
+// A fixture's Effect channel crossfades over its FX fade channel.
+static void test_fixture_effect_fade() {
+    using namespace pixfrog::config;
+    ProfileBank bank{};
+    bank.count                = 1;
+    bank.profiles[0].count    = 2;
+    bank.profiles[0].slots[0] = profile_slot(FixFn::Bank);
+    bank.profiles[0].slots[1] = profile_slot(FixFn::FxFade);
+    ChannelConfig cc{};
+    cc.protocol    = led::Protocol::WS2815;
+    cc.pixel_count = 10;
+    cc.grouping    = 1;
+    cc.packing     = kChanNoPixelMap | kChanFixtureCtl;
+    set_fix_address(cc, 10, 1);
+    static uint8_t uni[512];
+    std::memset(uni, 0, sizeof(uni));
+    auto get_uni = [&](uint16_t u) -> const uint8_t* { return u == 10 ? uni : nullptr; };
+    auto get_fx  = [](size_t i, Effect& e) {
+        if (i > 1) return false;
+        e              = Effect{};
+        e.generator    = kSceneFxSolid;
+        e.num_colors   = 1;
+        e.colors[0][0] = i == 0 ? 255 : 0;  // red, then blue
+        e.colors[0][2] = i == 1 ? 255 : 0;
+        return true;
+    };
+    static FixtureFx st[kMaxFixtures];
+    static uint8_t buf[10 * 3], scratch[10 * 3];
+    auto frame = [&](uint8_t effect, uint8_t fade, uint64_t t) {
+        uni[0] = effect;
+        uni[1] = fade;
+        render_fixtures(buf, sizeof(buf), cc, bank, t, get_uni, get_fx, false, st, scratch);
+    };
+    frame(8, 10, 1000);  // effect 1, 1 s fades
+    EXPECT_EQ(buf[0], 255);
+    frame(16, 10, 1016);  // effect 2: settling
+    frame(16, 10, 1032);
+    EXPECT_EQ(buf[0], 255);
+    frame(16, 10, 1048);  // the fade starts, from red
+    EXPECT_EQ(buf[0], 255);
+    EXPECT_EQ(buf[2], 0);
+    frame(16, 10, 1548);  // half way
+    EXPECT_TRUE(buf[0] > 100 && buf[0] < 155);
+    EXPECT_TRUE(buf[2] > 100 && buf[2] < 155);
+    EXPECT_EQ(buf[9 * 3], buf[0]);  // the whole fixture
+    frame(16, 10, 2048);
+    EXPECT_EQ(buf[0], 0);
+    EXPECT_EQ(buf[2], 255);
+    // A fader ridden through the bands never settles: no fade, no flicker.
+    for (int i = 0; i < 10; ++i) {
+        frame(i & 1 ? 8 : 24, 10, 3000 + 16u * i);
+        EXPECT_EQ(buf[2], 255);
+    }
+    // Fade 0: a cut.
+    frame(8, 0, 4000);
+    EXPECT_EQ(buf[0], 255);
+    EXPECT_EQ(buf[2], 0);
+    // No scratch to draw the old look in: a cut too.
+    frame(16, 10, 5000);
+    render_fixtures(buf, sizeof(buf), cc, bank, 5016, get_uni, get_fx, false, st, nullptr);
+    EXPECT_EQ(buf[2], 255);
+}
+
 static void test_control_render_channel() {
     using namespace pixfrog::config;
     const ProfileBank bank = default_profiles();
@@ -2921,6 +3006,8 @@ int main() {
     test_control_decode_fixture();
     test_control_render_fixture();
     test_control_render_channel();
+    test_look_fade_settles_then_crossfades();
+    test_fixture_effect_fade();
     test_control_auto_patch();
     test_pixels_plus_fixtures();
     test_matricks_layout();

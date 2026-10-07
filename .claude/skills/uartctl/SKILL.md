@@ -8,7 +8,7 @@ description: Control the running firmware over UART — get/set any config field
 ```
 Handles the open-port auto-reset (syncs on the `pixfrog>` prompt, ~4 s), prints `key=value` lines per command, exit 1 on any `ERR`/timeout. `PORT=/dev/ttyACMx` overrides.
 
-Commands: `version status stats chstat` · `global [<key> <val>]` · `ch <n> [<key> <val>]` · `overlaps` (patch ranges sharing DMX channels) · `dmxw <uni> <slot> <hex>` · `dmxr <uni> [start len]` · `pixr <ch> [start len]` · `cal [-1..3]` (3 = GPIO bit-bang probe of the 16 bus pins, reboot to restore) · `loglevel <none..verbose>` · `factory-reset` · `reboot`. Key lists + ranges: AGENT.md "Control console (UART)".
+Commands: `version status stats chstat tasks` (`stats`: `render_decode_us`, `cpu0_load`/`cpu1_load` %; `tasks`: each task's share of a core over 0.5 s — the console's own output loads core 0 while it prints) · `global [<key> <val>]` · `ch <n> [<key> <val>]` · `overlaps` (patch ranges sharing DMX channels) · `dmxw <uni> <slot> <hex>` · `dmxr <uni> [start len]` · `pixr <ch> [start len]` · `cal [-1..3]` (3 = GPIO bit-bang probe of the 16 bus pins, reboot to restore) · `loglevel <none..verbose>` · `factory-reset` · `reboot`. Key lists + ranges: AGENT.md "Control console (UART)".
 
 End-to-end pipeline check (universe → decoded pixels):
 ```bash

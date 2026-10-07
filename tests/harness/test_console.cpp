@@ -58,6 +58,16 @@ TEST(status_version_stats_print_and_succeed) {
     EXPECT_TRUE(has("ip=192.168.2.50"));
     EXPECT_TRUE(run("stats"));
     EXPECT_TRUE(has("current_fps="));
+    EXPECT_TRUE(has("render_decode_max_us="));
+    dmx::set_cpu_load(0, 12);
+    dmx::set_cpu_load(1, dmx::kCpuLoadUnknown);
+    dmx::set_cpu_load(2, 50);  // no such core: ignored
+    EXPECT_TRUE(run("stats"));
+    EXPECT_TRUE(has("cpu0_load=12"));
+    EXPECT_TRUE(has("cpu1_load=-"));
+    EXPECT_FALSE(run("tasks"));  // the host build has no FreeRTOS run time stats
+    EXPECT_TRUE(has("run time stats not built in"));
+    EXPECT_FALSE(run("tasks now"));
     EXPECT_TRUE(run("chstat"));
 }
 

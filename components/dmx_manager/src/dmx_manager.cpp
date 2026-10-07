@@ -169,14 +169,23 @@ uint8_t* g_fix_snap[config::kNumChannels]{};  // PSRAM: what a fading fixture sh
 uint32_t g_fix_fade_start[config::kNumChannels][config::kMaxFixtures];
 uint16_t g_fix_fade_len[config::kNumChannels][config::kMaxFixtures];
 
-// ── Effect clocks (render task only) ──
+// ── Effect clocks and look transitions (render task only) ──
 // Where each look is, kept from frame to frame so a speed change bends the
-// motion instead of jumping it (logic::FxClock). Two an output — the scene it
-// plays and the one it fades from — one a group play, and one a fixture under
-// fixture control (PSRAM, kMaxFixtures an output).
-logic::FxClock g_out_clock[config::kNumChannels][2];
-logic::FxClock g_play_clock[kMaxPlays];
-logic::FxClock* g_fix_clock[config::kNumChannels]{};
+// motion instead of jumping it (logic::FxClock): four an output — the scene
+// it plays and the one it fades from, each maybe between two looks of the
+// desk — two a group play, and two a fixture under fixture control (PSRAM,
+// kMaxFixtures an output). The desk's Effect / Generator pick on an output or
+// a group, and a fixture's Effect channel, crossfade between looks
+// (logic::LookFade): the outputs' and groups' over the scene fade time, a
+// fixture's over its FX fade channel.
+logic::FxClock g_out_clock[config::kNumChannels][4];
+logic::FxClock g_play_clock[kMaxPlays][2];
+logic::FixtureFx* g_fix_fx[config::kNumChannels]{};
+logic::LookFade g_out_look[config::kNumChannels];
+logic::LookFade g_play_look[kMaxPlays];
+Play g_play_was[kMaxPlays];         // what each play slot drew last frame: a new play starts afresh
+uint8_t* g_fx_scratch   = nullptr;  // PSRAM, kMaxBytesPerChan: the look a fade leaves
+uint8_t* g_play_scratch = nullptr;  // PSRAM, kMaxStripPx RGB: the same for a group
 // The frame's time, taken once at the swap: every output ticks its clocks at
 // the same instant, so outputs whose speed a desk rides together stay in step.
 // A channel decoded again before the next swap reads the timer.
@@ -419,16 +428,23 @@ bool init() {
             g_fix_snap[o] = static_cast<uint8_t*>(
                 heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_SPIRAM));
     for (size_t o = 0; o < config::kNumChannels; ++o)
-        if (!g_fix_clock[o])
-            g_fix_clock[o] = static_cast<logic::FxClock*>(
-                heap_caps_calloc(config::kMaxFixtures, sizeof(logic::FxClock), MALLOC_CAP_SPIRAM));
+        if (!g_fix_fx[o])
+            g_fix_fx[o] = static_cast<logic::FixtureFx*>(heap_caps_calloc(
+                config::kMaxFixtures, sizeof(logic::FixtureFx), MALLOC_CAP_SPIRAM));
+    if (!g_fx_scratch)
+        g_fx_scratch = static_cast<uint8_t*>(
+            heap_caps_calloc(1, kMaxBytesPerChan, MALLOC_CAP_SPIRAM));
+    if (!g_play_scratch)
+        g_play_scratch = static_cast<uint8_t*>(
+            heap_caps_calloc(1, kMaxStripPx * 3, MALLOC_CAP_SPIRAM));
     bool all = g_play_mux != nullptr;
     for (auto* p : g_play_strip)
         all = all && p;
     for (auto* p : g_fix_snap)
         all = all && p;
-    for (auto* p : g_fix_clock)
+    for (auto* p : g_fix_fx)
         all = all && p;
+    all = all && g_fx_scratch && g_play_scratch;
     if (!all) {
         ESP_LOGE(TAG, "alloc for the group scenes failed");
         return false;
@@ -1084,23 +1100,53 @@ void decode_live(size_t ch, const config::ChannelConfig& cc, uint8_t* buf, uint6
         logic::render_fixtures(
             buf, kMaxBytesPerChan, cc, config::get_profiles(), t, universe,
             [](size_t index, config::Effect& e) { return config::copy_effect(index, e); }, pixels,
-            g_fix_clock[ch]);
+            g_fix_fx[ch], g_fx_scratch);
 }
 
-// The clock of the look `key` on output `ch`: of its two, the one already on
-// it, else the one ticked longest ago (a look no longer drawn there).
-logic::FxClock& out_clock(size_t ch, uint32_t key) {
-    auto& c = g_out_clock[ch];
-    for (auto& k : c)
-        if (k.live && k.key == key) return k;
-    return c[0].at <= c[1].at ? c[0] : c[1];
+// The desk's pick of a look on an output or a group — its Effect (bank) and
+// Generator channels — as a LookFade id, and back.
+int32_t desk_look(const logic::EffectOverride& o) {
+    return static_cast<uint8_t>(o.bank + 1) | (static_cast<uint8_t>(o.generator + 1) << 8);
+}
+logic::EffectOverride with_look(logic::EffectOverride o, int32_t look) {
+    o.bank      = static_cast<int16_t>((look & 0xFF) - 1);
+    o.generator = static_cast<int16_t>(((look >> 8) & 0xFF) - 1);
+    return o;
+}
+uint16_t look_fade_ms() {
+    const uint32_t ms = scene_fade_ms();
+    return static_cast<uint16_t>(ms < 0xFFFF ? ms : 0xFFFF);
 }
 
-// Clock keys: a scene with the desk's bank pick, and the failsafe scene.
-uint32_t scene_key(int src, int16_t bank) {
-    return (static_cast<uint32_t>(src + 1) << 8) | static_cast<uint8_t>(bank + 1);
+// Clock keys: a scene with the desk's look, and the failsafe scene.
+uint32_t scene_key(int src, int32_t look) {
+    return (static_cast<uint32_t>(src + 1) << 16) | static_cast<uint16_t>(look);
 }
 constexpr uint32_t kFailsafeKey = 0x80000000u;
+
+// Scene `src`'s part on output `ch` into `buf`, in the desk's `look` with its
+// other overrides; false when the scene has no part there.
+bool draw_scene(size_t ch, const config::ChannelConfig& cc, int src, int32_t look, uint8_t* buf,
+                uint64_t t) {
+    // A copy: a list edit (memmove) on another task cannot tear the part or
+    // the effect being drawn.
+    config::Effect effect;
+    uint8_t mode;
+    if (!config::copy_scene_part(static_cast<size_t>(src), ch, effect, mode)) return false;
+    const logic::EffectOverride o = with_look(g_ovr[ch], look);
+    // The desk's Bank channel: another effect of the bank on this output (a
+    // band past the bank keeps the scene's own).
+    config::Effect picked;
+    if (o.bank >= 0 && config::copy_effect(static_cast<size_t>(o.bank), picked)) effect = picked;
+    logic::apply_effect_override(effect, o);
+    mode                   = logic::apply_mode_override(mode, o);
+    const uint32_t key     = scene_key(src, look);
+    const logic::FxTime at = logic::clock_tick(logic::clock_slot(g_out_clock[ch], 4, key), key,
+                                               effect, t);
+    logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, led::bytes_per_pixel(cc.protocol),
+                                  effect, mode, at);
+    return true;
+}
 
 // One source into `buf`: scene `src` (with the desk's overrides) when it is a
 // valid scene whose mask still holds the output, else the live path — FSEQ,
@@ -1108,22 +1154,13 @@ constexpr uint32_t kFailsafeKey = 0x80000000u;
 void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t* buf, uint64_t t) {
     const uint8_t bpp = led::bytes_per_pixel(cc.protocol);
     if (src >= 0 && static_cast<size_t>(src) < config::num_scenes()) {
-        // A copy: a list edit (memmove) on another task cannot tear the part
-        // or the effect being drawn.
-        config::Effect effect;
-        uint8_t mode;
-        if (config::copy_scene_part(static_cast<size_t>(src), ch, effect, mode)) {
-            // The desk's Bank channel: another effect of the bank on this
-            // output (a band past the bank keeps the scene's own).
-            config::Effect picked;
-            if (g_ovr[ch].bank >= 0 &&
-                config::copy_effect(static_cast<size_t>(g_ovr[ch].bank), picked))
-                effect = picked;
-            logic::apply_effect_override(effect, g_ovr[ch]);
-            mode                   = logic::apply_mode_override(mode, g_ovr[ch]);
-            const uint32_t key     = scene_key(src, g_ovr[ch].bank);
-            const logic::FxTime at = logic::clock_tick(out_clock(ch, key), key, effect, t);
-            logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, mode, at);
+        const logic::LookFade& lf = g_out_look[ch];
+        if (draw_scene(ch, cc, src, lf.shown, buf, t)) {
+            const auto now = static_cast<uint32_t>(t);
+            if (logic::look_fading(lf, now) && g_fx_scratch &&
+                draw_scene(ch, cc, src, lf.from, g_fx_scratch, t))
+                logic::blend_into(buf, g_fx_scratch, static_cast<size_t>(cc.pixel_count) * bpp,
+                                  logic::fade_weight(now - lf.start, lf.len));
             return;
         }
     }
@@ -1150,7 +1187,8 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
         if (g.failsafe_mode == config::kFailsafeScene &&
             config::copy_scene_part(g.failsafe_scene, ch, effect, fx_mode)) {
             const uint32_t key     = kFailsafeKey | g.failsafe_scene;
-            const logic::FxTime at = logic::clock_tick(out_clock(ch, key), key, effect, t);
+            const logic::FxTime at = logic::clock_tick(logic::clock_slot(g_out_clock[ch], 4, key),
+                                                       key, effect, t);
             logic::fill_effect_on_channel(buf, kMaxBytesPerChan, cc, bpp, effect, fx_mode, at);
             return;
         }
@@ -1167,6 +1205,24 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
 }  // namespace
 
 namespace {
+
+// Play `p` along its group's strip into `strip`, in the desk's `look` with its
+// other overrides on the group: the scene's look, its first part's effect
+// and mode. False when the scene has no part.
+bool draw_play(size_t p, const Play& pl, size_t members, int32_t look, uint8_t* strip, uint64_t t) {
+    config::Effect effect;
+    uint8_t mode;
+    if (!config::copy_scene_look(static_cast<size_t>(pl.scene), effect, mode)) return false;
+    const logic::EffectOverride o = with_look(g_govr[pl.group], look);  // the desk, on this group
+    config::Effect picked;
+    if (o.bank >= 0 && config::copy_effect(static_cast<size_t>(o.bank), picked)) effect = picked;
+    logic::apply_effect_override(effect, o);
+    mode           = logic::apply_mode_override(mode, o);
+    const auto key = (static_cast<uint32_t>(pl.group) << 24) | scene_key(pl.scene, look);
+    return logic::render_group_strip(
+               strip, kMaxStripPx * 3, g_play_lens[p], members, effect, mode,
+               logic::clock_tick(logic::clock_slot(g_play_clock[p], 2, key), key, effect, t)) > 0;
+}
 
 // Render task, once a frame: this frame's plays, owners and fade requests, the
 // fixture spans of every output, and each play's strip drawn once.
@@ -1185,9 +1241,13 @@ void plays_frame_begin(uint64_t t) {
     for (size_t o = 0; o < config::kNumChannels; ++o)
         logic::fixture_spans_by_index(effective_channel(o), g_spans_r[o]);
     const auto& groups = config::get_groups();
+    const auto now     = static_cast<uint32_t>(t);
     for (size_t p = 0; p < kMaxPlays; ++p) {
         g_play_ok[p]  = false;
         const Play pl = g_plays_r[p];
+        if (pl.scene != g_play_was[p].scene || pl.group != g_play_was[p].group)
+            g_play_look[p] = logic::LookFade{};  // another play: no fade from the last one
+        g_play_was[p] = pl;
         if (pl.scene < 0 || pl.group < 0 || pl.group >= groups.count || !g_play_strip[p] ||
             static_cast<size_t>(pl.scene) >= config::num_scenes())
             continue;
@@ -1200,20 +1260,15 @@ void plays_frame_begin(uint64_t t) {
             g_play_lens[p][m]  = g_spans_r[r.output][r.fixture].count;
             at                += g_play_lens[p][m];
         }
-        // A group plays the scene's look: its first part's effect and mode.
-        config::Effect effect;
-        uint8_t mode;
-        if (!config::copy_scene_look(static_cast<size_t>(pl.scene), effect, mode)) continue;
-        const logic::EffectOverride& ovr = g_govr[pl.group];  // the desk, on this group
-        config::Effect picked;
-        if (ovr.bank >= 0 && config::copy_effect(static_cast<size_t>(ovr.bank), picked))
-            effect = picked;
-        logic::apply_effect_override(effect, ovr);
-        mode           = logic::apply_mode_override(mode, ovr);
-        const auto key = (static_cast<uint32_t>(pl.group) << 16) | scene_key(pl.scene, ovr.bank);
-        g_play_ok[p]   = logic::render_group_strip(
-                           g_play_strip[p], kMaxStripPx * 3, g_play_lens[p], g.count, effect, mode,
-                           logic::clock_tick(g_play_clock[p], key, effect, t)) > 0;
+        // The desk's look on this group, faded from the last over the scene
+        // fade time.
+        logic::LookFade& lf = g_play_look[p];
+        logic::look_tick(lf, desk_look(g_govr[pl.group]), look_fade_ms(), now);
+        g_play_ok[p] = draw_play(p, pl, g.count, lf.shown, g_play_strip[p], t);
+        if (g_play_ok[p] && logic::look_fading(lf, now) && g_play_scratch &&
+            draw_play(p, pl, g.count, lf.from, g_play_scratch, t))
+            logic::blend_into(g_play_strip[p], g_play_scratch, static_cast<size_t>(at) * 3,
+                              logic::fade_weight(now - lf.start, lf.len));
     }
 }
 
@@ -1328,6 +1383,9 @@ bool decode_pixels_for_channel(size_t ch) {
     // 32-bit stamp — a difference, so its wrap is harmless.
     const uint64_t t   = frame_ms(ch);
     const size_t bytes = static_cast<size_t>(cc.pixel_count) * led::bytes_per_pixel(cc.protocol);
+    // The desk's look on this output, faded from the last over the scene fade.
+    logic::look_tick(g_out_look[ch], desk_look(g_ovr[ch]), look_fade_ms(),
+                     static_cast<uint32_t>(t));
     render_source(ch, cc, g_scene_out[ch].load(std::memory_order_acquire), dst, t);
 
     // Crossfade from what the output showed before its last scene change.
@@ -1709,6 +1767,18 @@ Stats get_stats() {
 
 void set_current_fps(uint32_t fps) {
     g_stats.current_fps = fps;
+}
+void set_decode_time(uint32_t last_us, uint32_t max_us) {
+    g_stats.decode_us     = last_us;
+    g_stats.decode_max_us = max_us;
+}
+void set_cpu_load(int core, uint8_t pct) {
+    if (core == 0 || core == 1) g_stats.cpu_load[core] = pct;
+}
+uint8_t cpu_load_pct(uint32_t idle_us, uint32_t window_us) {
+    if (window_us == 0) return kCpuLoadUnknown;
+    if (idle_us >= window_us) return 0;
+    return static_cast<uint8_t>(100u - static_cast<uint64_t>(idle_us) * 100u / window_us);
 }
 void note_frame_emitted() {
     __atomic_add_fetch(&g_stats.frames_emitted, 1, __ATOMIC_RELAXED);

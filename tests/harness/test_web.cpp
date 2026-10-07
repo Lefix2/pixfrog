@@ -129,9 +129,20 @@ TEST(status_and_diag_report_the_rollback_until_acknowledged) {
     EXPECT_EQ(post("/api/rollback/ack").status, 200);
     Json s3(get("/api/status").body);
     EXPECT_TRUE(s3["rollback"] == nullptr);
+    dmx::set_decode_time(800, 1500);
+    dmx::set_cpu_load(0, dmx::kCpuLoadUnknown);
+    dmx::set_cpu_load(1, 37);
     Json d(get("/api/diag").body);
     const cJSON* sys = d["sys"];
     EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(sys, "last_rollback") != nullptr);
+    const cJSON* jr = d["render"];
+    EXPECT_EQ(cJSON_GetObjectItem(jr, "decode_max_us")->valueint, 1500);
+    const cJSON* cpu = cJSON_GetObjectItem(jr, "cpu_load");
+    EXPECT_TRUE(cJSON_IsNull(cJSON_GetArrayItem(cpu, 0)));  // not measured yet
+    EXPECT_EQ(cJSON_GetArrayItem(cpu, 1)->valueint, 37);
+    EXPECT_EQ(dmx::cpu_load_pct(250'000, 1'000'000), 75);
+    EXPECT_EQ(dmx::cpu_load_pct(1'200'000, 1'000'000), 0);  // idle past the window: rounding
+    EXPECT_EQ(dmx::cpu_load_pct(5, 0), dmx::kCpuLoadUnknown);
 }
 
 TEST(post_global_applies_and_validates) {

@@ -198,6 +198,11 @@ function but strobe, fade time and show file can aim at a group — "Top",
 | Strobe | 0 = off, 1–255 = 1–25 Hz |
 | Scene | bands of 8: 0–7 = none, 8–15 = scene 1, 16–23 = scene 2 … |
 | Effect (`bank`) | bands of 8: 0–7 = the effect the scene's part plays, 8–15 = effect 1 of the bank, 16–23 = effect 2 … — played on the slot's outputs in place of the scene's own, for as long as the fader stays there |
+
+A change of the Effect or Generator channel crossfades the outputs or the
+group to the new look over the scene fade time — the Fade channel when the
+mode has one, else the box's scene fade (Automations); 0 cuts. See
+[Effect transitions](#effect-transitions).
 | Speed / Param | 0 = the effect's own, 1–255 = override |
 | Generator (`effect`) | 0 = the effect's own generator, 1–255 spread over the 11 generators |
 | Red / Green / Blue (colour n) | overrides colour n of the effect an output plays; all three at 0 = the effect's own |
@@ -277,7 +282,32 @@ pixels, under its dimmer and shutter.
 | Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |
 | Phaser attack / decay | 0 = the effect's own, 1 = none (hard edge), 2–255 = the share of the lit part |
 | Block / Groups / Wings | 0 = the effect's own, 1 = off, 2–255 = N |
+| Effect fade (`fx_fade`) | 0 = an Effect change cuts, 1–255 = it crossfades over 0.1–25.5 s |
 | Spare | nothing; it keeps a channel free |
+
+### Effect transitions
+
+The Effect channel picks a look, an index: a desk "snaps" such a channel —
+it jumps to the new value instead of fading through the effects in
+between — and a fixture smooths the change itself when it has a transition
+channel. pixfrog does the same:
+
+- a profile with an **Effect fade** channel crossfades each fixture from the
+  look it shows to the new one over that time, both drawn and mixed for the
+  length of the fade (their animations keep running); 0, or no such channel,
+  cuts as before;
+- on the control universe, the Effect and Generator channels crossfade the
+  outputs or the group over the scene fade time;
+- while a fade time is set, a new pick must hold for 3 frames (50 ms at
+  60 Hz) before the fade starts: a fader ridden by hand through the bands
+  does not start one fade per band it crosses. A pick that comes back to
+  the look shown is no change;
+- a dip through black is the dimmer's job, as on a desk: fade it out, change
+  the effect, fade it in.
+
+The cost is a second effect drawn for each fixture while it fades; the
+Diagnostics page and `stats` show what drawing the effects takes per frame
+and each core's load (see below).
 
 ![The DMX profiles editor in the web UI: the channels of a profile, in order](img/web-profiles.png)
 

@@ -991,6 +991,12 @@
    "psram_total": 33554432
   },
   "render": {
+   "cpu_load": [
+    null,
+    null
+   ],
+   "decode_max_us": 0,
+   "decode_us": 0,
    "dma_underruns": 0,
    "encode_us": 1000,
    "fps": 60,
