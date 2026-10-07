@@ -22,14 +22,25 @@
   var T0 = Date.now();
   var FX_SOLID = 0;
   var saveTimer = null;
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify({ config: S.config, playlist: S.playlist, fseq_files: S.fseq_files, status: S.status, logs: S.logs, fixture: S.fixture, diag: S.diag })); } catch (e) {}
+  }
   function persist() {  // after a write: soon, once, and never in the way
     if (saveTimer) return;
-    saveTimer = setTimeout(function () {
-      saveTimer = null;
-      try { localStorage.setItem(STORE, JSON.stringify({ config: S.config, playlist: S.playlist, fseq_files: S.fseq_files, status: S.status, logs: S.logs, fixture: S.fixture, diag: S.diag })); } catch (e) {}
-    }, 300);
+    saveTimer = setTimeout(function () { saveTimer = null; save(); }, 300);
   }
-  function forget() { try { localStorage.removeItem(STORE); } catch (e) {} }
+  // A reload or a closed tab inside those 300 ms would lose the last write:
+  // what is pending is written at once on the way out.
+  window.addEventListener('pagehide', function () {
+    if (!saveTimer) return;
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    save();
+  });
+  function forget() {  // and nothing pending may write it back on the way out
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    try { localStorage.removeItem(STORE); } catch (e) {}
+  }
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
   function ok(extra) { return Object.assign({ ok: true }, extra || {}); }
