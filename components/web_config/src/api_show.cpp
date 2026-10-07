@@ -718,6 +718,7 @@ static const char* ofl_profile_base(const config::ProfileSlot& sl, char* buf, si
     case config::FixFn::Block: return "Block";
     case config::FixFn::Groups: return "Groups";
     case config::FixFn::Wings: return "Wings";
+    case config::FixFn::FxFade: return "Effect fade";
     default: return nullptr;
     }
 }
@@ -758,6 +759,12 @@ static cJSON* ofl_profile_channel(const config::ProfileSlot& sl) {
         cJSON_AddStringToObject(c, "color", "White");
         cJSON_AddItemToObject(ch, "capability", c);
         cJSON_Delete(caps);
+    } else if (sl.fn == static_cast<uint8_t>(config::FixFn::FxFade)) {
+        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+        cJSON* c = ofl_cap("Generic");
+        cJSON_AddStringToObject(c, "comment", "Effect change crossfade, value x 0.1 s");
+        ofl_range(caps, 1, 255, c);
+        cJSON_AddItemToObject(ch, "capabilities", caps);
     } else {  // Bank: band 0 is the plain colour, not "the scene's own"
         ofl_bank(caps, "No effect: colour 1, steady");
         cJSON_AddItemToObject(ch, "capabilities", caps);

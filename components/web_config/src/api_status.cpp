@@ -88,6 +88,13 @@ esp_err_t handle_get_diag(httpd_req_t* req) {
     cJSON_AddNumberToObject(jr, "encode_us", dc.encode_us);
     cJSON_AddNumberToObject(jr, "wait_us", dc.wait_us);
     cJSON_AddNumberToObject(jr, "submit_us", dc.submit_us);
+    cJSON_AddNumberToObject(jr, "decode_us", st.decode_us);
+    cJSON_AddNumberToObject(jr, "decode_max_us", st.decode_max_us);
+    // Each core's load over the last second, % (null until measured).
+    cJSON* jcpu = cJSON_AddArrayToObject(jr, "cpu_load");
+    for (const uint8_t l : st.cpu_load)
+        cJSON_AddItemToArray(jcpu, l == dmx::kCpuLoadUnknown ? cJSON_CreateNull()
+                                                             : cJSON_CreateNumber(l));
     cJSON_AddNumberToObject(jr, "frame_emit_us", static_cast<double>(dmx::frame_emit_us()));
     cJSON_AddNumberToObject(jr, "frames_emitted", static_cast<double>(st.frames_emitted));
     cJSON_AddNumberToObject(jr, "trans_done", dc.trans_done);

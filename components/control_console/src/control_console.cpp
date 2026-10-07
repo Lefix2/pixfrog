@@ -204,7 +204,48 @@ int cmd_stats(int, char**) {
     printf("render_wait_us=%lu\n", static_cast<unsigned long>(d.wait_us));
     printf("render_encode_us=%lu\n", static_cast<unsigned long>(d.encode_us));
     printf("render_submit_us=%lu\n", static_cast<unsigned long>(d.submit_us));
+    printf("render_decode_us=%lu\n", static_cast<unsigned long>(s.decode_us));
+    printf("render_decode_max_us=%lu\n", static_cast<unsigned long>(s.decode_max_us));
+    for (int core = 0; core < 2; ++core)
+        if (s.cpu_load[core] == dmx::kCpuLoadUnknown)
+            printf("cpu%d_load=-\n", core);
+        else
+            printf("cpu%d_load=%u\n", core, static_cast<unsigned>(s.cpu_load[core]));
     return ok();
+}
+
+// tasks — each task's share of a core over half a second, like top:
+// "task=render core=1 prio=20 cpu=46" (core -1: either core).
+int cmd_tasks(int argc, char**) {
+    if (argc != 1) return err("usage: tasks");
+#if configUSE_TRACE_FACILITY && configGENERATE_RUN_TIME_STATS
+    constexpr UBaseType_t kMax = 40;
+    static TaskStatus_t before[kMax], after[kMax];  // off the console task's stack
+    configRUN_TIME_COUNTER_TYPE t0 = 0, t1 = 0;
+    const UBaseType_t n0 = uxTaskGetSystemState(before, kMax, &t0);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    const UBaseType_t n1 = uxTaskGetSystemState(after, kMax, &t1);
+    const auto window    = static_cast<uint32_t>(t1 - t0);
+    if (window == 0) return err("no run time measured");
+    for (UBaseType_t i = 0; i < n1; ++i) {
+        uint32_t ran = 0;
+        for (UBaseType_t j = 0; j < n0; ++j)
+            if (before[j].xHandle == after[i].xHandle)
+                ran = static_cast<uint32_t>(after[i].ulRunTimeCounter - before[j].ulRunTimeCounter);
+#if configTASKLIST_INCLUDE_COREID
+        const int core = after[i].xCoreID == tskNO_AFFINITY ? -1
+                                                            : static_cast<int>(after[i].xCoreID);
+#else
+        const int core = -1;
+#endif
+        printf("task=%s core=%d prio=%u cpu=%lu\n", after[i].pcTaskName, core,
+               static_cast<unsigned>(after[i].uxCurrentPriority),
+               static_cast<unsigned long>(static_cast<uint64_t>(ran) * 100u / window));
+    }
+    return ok();
+#else
+    return err("run time stats not built in");
+#endif
 }
 
 int cmd_chstat(int, char**) {
@@ -1296,7 +1337,7 @@ int cmd_profile(int argc, char** argv) {
                 return err(
                     "slot: dimmer[+fine]|red[:n]|green[:n]|blue[:n]|white|shutter|bank|"
                     "speed|param|ph_wave|ph_rate|ph_spread|ph_width|ph_attack|ph_decay|block|"
-                    "groups|wings|none");
+                    "groups|wings|fx_fade|none");
         }
         if (count == 0) return err("slots: at least one");
         memcpy(p.slots, slots, sizeof(slots));
@@ -1628,6 +1669,7 @@ void start() {
     register_cmd("rollback", "Acknowledge the recorded OTA rollback: rollback ack", cmd_rollback);
     register_cmd("status", "Link, IP, MAC, FPS, cal mode, heap", cmd_status);
     register_cmd("stats", "DMX/ArtNet/DMA telemetry counters", cmd_stats);
+    register_cmd("tasks", "Each task's share of a core over half a second (like top)", cmd_tasks);
     register_cmd("chstat", "Per-channel activity + capacity flags", cmd_chstat);
     register_cmd("global", "global [<key> <value>] — get/set GlobalConfig", cmd_global);
     register_cmd("ch", "ch <n> [<key> <value>] — get/set ChannelConfig", cmd_ch);

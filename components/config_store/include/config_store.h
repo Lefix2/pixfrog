@@ -1215,6 +1215,7 @@ enum class FixFn : uint8_t {
     Wings    = 16,
     PhAttack = 17,  // 0 = the effect's own, 1 = none, 2..255 = override
     PhDecay  = 18,
+    FxFade   = 19,  // effect transition: 0 = cut, 1..255 = crossfade 0.1..25.5 s
     Count,
 };
 constexpr uint8_t kProfileArgColor = 0x03;  // Red/Green/Blue: colour 0..kSceneColorsMax-1
@@ -1225,7 +1226,7 @@ inline const char* fix_fn_id(uint8_t fn) {
     static const char* const kIds[] = { "none",    "dimmer",  "red",       "green",    "blue",
                                         "white",   "shutter", "bank",      "speed",    "param",
                                         "ph_wave", "ph_rate", "ph_spread", "ph_width", "block",
-                                        "groups",  "wings",   "ph_attack", "ph_decay" };
+                                        "groups",  "wings",   "ph_attack", "ph_decay", "fx_fade" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(FixFn::Count),
                   "one id per profile function");
     return fn < static_cast<uint8_t>(FixFn::Count) ? kIds[fn] : "none";

@@ -704,12 +704,15 @@
             <span class="eyebrow" data-i18n="RENDER PIPELINE">RENDER PIPELINE</span>
             <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;font:500 12.5px 'DM Mono'">
               <div class="row-between"><span class="fg-2">fps</span><span class="fg-accent" data-live="d-fps">—</span></div>
+              <div class="row-between"><span class="fg-2" data-i18n="effects">effects</span><span data-live="d-decode">—</span></div>
               <div class="row-between"><span class="fg-2">encode</span><span data-live="d-encode">—</span></div>
               <div class="row-between"><span class="fg-2">wait</span><span data-live="d-wait">—</span></div>
               <div class="row-between"><span class="fg-2">submit</span><span data-live="d-submit">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="wire emit">wire emit</span><span data-live="d-emit">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="frames">frames</span><span data-live="d-frames">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="underruns">underruns</span><span data-live="d-underruns">—</span></div>
+              <div class="row-between"><span class="fg-2" data-i18n="CPU core 0">CPU core 0</span><span data-live="d-cpu0">—</span></div>
+              <div class="row-between"><span class="fg-2" data-i18n="CPU core 1 (render)">CPU core 1 (render)</span><span data-live="d-cpu1">—</span></div>
             </div>
           </div>
           <div class="card-sm">
@@ -933,7 +936,7 @@ var FR={
   'Scene':'Scène',
   'Effect speed':'Vitesse de l’effet',
   'Effect parameter':'Paramètre de l’effet',
-  'Generator':'Générateur','Effect of the bank':'Effet de la banque','Phaser wave':'Onde du phaser','Phaser rate':'Cadence du phaser','Phaser spread':'Étalement du phaser','Phaser width':'Largeur du phaser','Phaser attack':'Attaque du phaser','Phaser decay':'Chute du phaser','ATTACK':'ATTAQUE','DECAY':'CHUTE','hard edge':'front raide','Attack and decay soften the edges of the lit part: the share of it spent fading in, and out.':'L’attaque et la chute adoucissent les fronts de la partie allumée : la part de celle-ci passée à monter, puis à descendre.',
+  'Generator':'Générateur','Effect of the bank':'Effet de la banque','Phaser wave':'Onde du phaser','Phaser rate':'Cadence du phaser','Phaser spread':'Étalement du phaser','Phaser width':'Largeur du phaser','Phaser attack':'Attaque du phaser','Phaser decay':'Chute du phaser','Effect fade':'Fondu d’effet','ATTACK':'ATTAQUE','DECAY':'CHUTE','hard edge':'front raide','Attack and decay soften the edges of the lit part: the share of it spent fading in, and out.':'L’attaque et la chute adoucissent les fronts de la partie allumée : la part de celle-ci passée à monter, puis à descendre.',
   'Colour red':'Couleur rouge',
   'Colour green':'Couleur verte',
   'Colour blue':'Couleur bleue',
@@ -1047,7 +1050,7 @@ var FR={
   'Contiguous auto-patch':'Auto-patch contigu',
   'Re-addresses everything in three blocks, each opening a universe: the pixels of every output, then the fixtures\' DMX profiles, then the control universe — no gap, no overlap, from universe 0.':'Réadresse tout en trois blocs, chacun ouvrant un univers : les pixels de chaque sortie, puis les profils DMX des fixtures, puis l’univers de contrôle — sans trou ni chevauchement, à partir de l’univers 0.',
   'Run auto-patch':'Lancer l’auto-patch','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
-  'Universes used':'Univers consommés','no overlap detected':'aucun chevauchement détecté',
+  'Universes used':'Univers consommés','effects':'effets','CPU core 0':'CPU cœur 0','CPU core 1 (render)':'CPU cœur 1 (rendu)','no overlap detected':'aucun chevauchement détecté',
   'GENERAL':'GÉNÉRAL','Frame rate (Hz)':'Cadence (Hz)','Return to home (s)':'Retour accueil (s)',
   'Screen brightness (%)':'Luminosité écran (%)','Dim when idle (%)':'Atténuation en veille (%)','Dim after (s)':'Atténuer après (s)',
   'Boot scene':'Scène au démarrage','None':'Aucune',
@@ -2170,6 +2173,8 @@ function pollDiag(){
     var r=d.render||{},m=d.mem||{},x=d.rx||{},s=d.sys||{};
     setLive('d-fps',r.fps);
     setLive('d-encode',r.encode_us!=null?(r.encode_us/1000).toFixed(2)+' ms':'—');
+    setLive('d-decode',r.decode_us!=null?(r.decode_us/1000).toFixed(2)+' ms · max '+((r.decode_max_us||0)/1000).toFixed(2)+' ms':'—');
+    var cl=r.cpu_load||[]; [0,1].forEach(function(k){ setLive('d-cpu'+k,cl[k]!=null?cl[k]+' %':'—'); document.querySelectorAll('[data-live="d-cpu'+k+'"]').forEach(function(x){ x.style.color=cl[k]>=85?'var(--danger)':cl[k]>=60?'var(--warn)':''; }); });
     setLive('d-wait',r.wait_us!=null?r.wait_us+' µs':'—');
     setLive('d-submit',r.submit_us!=null?(r.submit_us/1000).toFixed(2)+' ms':'—');
     setLive('d-emit',r.frame_emit_us!=null?(r.frame_emit_us/1000).toFixed(2)+' ms':'—');
@@ -2500,8 +2505,8 @@ var FIX_HINTS={strip:'The effect runs over the whole strip, fixtures ignored.',e
 /* ─────────── fixture DMX profiles ─────────── */
 // PROFILES[i] = {name, slots:[{fn, index, fine}]}. Mirrors config::FixFn (ids as the API names them).
 var PROFILES=[], curProfile=0, MAX_PROFILES=8, MAX_PF_SLOTS=24;
-var PF_FNS=['none','dimmer','red','green','blue','white','shutter','bank','speed','param','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings','ph_attack','ph_decay'];
-var PF_LABELS={none:'Spare',dimmer:'Dimmer',red:'Colour red',green:'Colour green',blue:'Colour blue',white:'White',shutter:'Shutter (strobe)',bank:'Effect of the bank',speed:'Effect speed',param:'Effect parameter',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings',ph_attack:'Phaser attack',ph_decay:'Phaser decay'};
+var PF_FNS=['none','dimmer','red','green','blue','white','shutter','bank','speed','param','ph_wave','ph_rate','ph_spread','ph_width','block','groups','wings','ph_attack','ph_decay','fx_fade'];
+var PF_LABELS={none:'Spare',dimmer:'Dimmer',red:'Colour red',green:'Colour green',blue:'Colour blue',white:'White',shutter:'Shutter (strobe)',bank:'Effect of the bank',speed:'Effect speed',param:'Effect parameter',ph_wave:'Phaser wave',ph_rate:'Phaser rate',ph_spread:'Phaser spread',ph_width:'Phaser width',block:'Block',groups:'Groups',wings:'Wings',ph_attack:'Phaser attack',ph_decay:'Phaser decay',fx_fade:'Effect fade'};
 // Mirrors config::profile_apply_preset.
 var PF_PRESETS={rgb:['RGB','red green blue'],dim_rgb:['Dim RGB','dimmer red green blue'],rgb_fx:['RGB FX','red green blue bank speed shutter'],
   full:['Full','dimmer+ shutter red green blue red:1 green:1 blue:1 bank speed param ph_wave ph_rate ph_spread ph_width']};

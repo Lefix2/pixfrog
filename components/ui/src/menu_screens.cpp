@@ -474,9 +474,14 @@ void dispatch_about(Event e) {
 void render_stats() {
     const auto st = dmx::get_stats();
     const auto& g = config::get_global();
-    char fps[12], hz[8];
+    char fps[12], hz[8], cpu[2][8];
     std::snprintf(fps, sizeof(fps), "%lu", static_cast<unsigned long>(st.current_fps));
     std::snprintf(hz, sizeof(hz), "%uHz", g.refresh_rate_hz);
+    for (int k = 0; k < 2; ++k)  // each core's load, "-" until measured
+        if (st.cpu_load[k] == dmx::kCpuLoadUnknown)
+            std::snprintf(cpu[k], sizeof(cpu[k]), "-");
+        else
+            std::snprintf(cpu[k], sizeof(cpu[k]), "%u%%", static_cast<unsigned>(st.cpu_load[k]));
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
     // fmt_count + the colour-TFT helpers only exist in the TFT build.
@@ -491,19 +496,25 @@ void render_stats() {
     canvas_clear(color::Black);
     draw_tft_header("NERD STATS");
     const int colW    = kTW / 2;
-    const int rowH    = (kTH - kHdrH) / 5;
+    const int rowH    = (kTH - kHdrH) / 6;
     const Color errc  = st.artnet_bad_packets ? color::BadCoral : color::DimGreen;
     const Color undc  = st.dma_underruns ? color::Orange : color::DimGreen;
     const Color sacnc = g.sacn_enabled ? color::GoodBright : color::DimGreen;
     const Color webc  = g.web_enabled ? color::GoodBright : color::DimGreen;
-    const char* lL[5] = { "FPS", "Frames", "ArtNet", "sACN rx", "Errors" };
-    const char* vL[5] = { fps, frames, artnet, sacnrx, errs };
-    const Color cL[5] = { color::Gold, color::Cream, color::Cream, color::Cream, errc };
-    const char* lR[5] = { "Refresh", "Net", "sACN", "Web", "Underrun" };
-    const char* vR[5] = { hz, g.use_dhcp ? "DHCP" : "STATIC", g.sacn_enabled ? "ON" : "OFF",
-                          g.web_enabled ? "ON" : "OFF", under };
-    const Color cR[5] = { color::Gold, color::Cream, sacnc, webc, undc };
-    for (int r = 0; r < 5; ++r) {
+    const char* lL[6] = { "FPS", "Frames", "ArtNet", "sACN rx", "Errors", "CPU 0" };
+    const char* vL[6] = { fps, frames, artnet, sacnrx, errs, cpu[0] };
+    const Color cL[6] = {
+        color::Gold, color::Cream, color::Cream, color::Cream, errc, color::Cream
+    };
+    const char* lR[6] = { "Refresh", "Net", "sACN", "Web", "Underrun", "CPU 1" };
+    const char* vR[6] = { hz,
+                          g.use_dhcp ? "DHCP" : "STATIC",
+                          g.sacn_enabled ? "ON" : "OFF",
+                          g.web_enabled ? "ON" : "OFF",
+                          under,
+                          cpu[1] };
+    const Color cR[6] = { color::Gold, color::Cream, sacnc, webc, undc, color::Cream };
+    for (int r = 0; r < 6; ++r) {
         const int ry   = kHdrH + r * rowH;
         const Color bg = (r & 1) ? color::RowAlt : color::Black;
         if (r & 1) canvas_fill_rect(0, ry, kTW, rowH, bg);
@@ -515,13 +526,14 @@ void render_stats() {
 #else
     canvas_clear(color::Black);
     draw_tft_header("NERD STATS");
-    const char* l[7] = { "FPS", "Frames", "ArtNet", "sACN", "Errors", "Underrun", "Refresh" };
-    const char* v[7] = { fps, frames, artnet, sacnrx, errs, under, hz };
+    const char* l[9] = { "FPS",      "Frames",  "ArtNet", "sACN", "Errors",
+                         "Underrun", "Refresh", "CPU 0",  "CPU 1" };
+    const char* v[9] = { fps, frames, artnet, sacnrx, errs, under, hz, cpu[0], cpu[1] };
     int y            = kHdrH + 6;
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 9; ++i) {
         canvas_draw_text(kIndent, y, l[i], color::DimGreen, color::Black, kTxtSc);
         draw_text_r(kTW - kIndent, y, v[i], color::Cream, color::Black);
-        y += 28;
+        y += (kTH - kHdrH - 6) / 9;
     }
 #endif
 #else
@@ -544,6 +556,8 @@ void render_stats() {
     draw_row(5, 0, ln);
     std::snprintf(ln, sizeof(ln), "Hz   :%s", hz);
     draw_row(6, 0, ln);
+    std::snprintf(ln, sizeof(ln), "CPU  :%s %s", cpu[0], cpu[1]);
+    draw_row(7, 0, ln);
 #endif
 }
 

@@ -127,6 +127,26 @@ void init_network() {
     ESP_LOGI(TAG, "Ethernet started");
 }
 
+#if configGENERATE_RUN_TIME_STATS
+// Core 0's load, once a second. FreeRTOS only adds to the idle task's run
+// time when it is switched out, so the counter is read from a task running on
+// that core: idle has just made way for it. (Core 1's is read in render_task.)
+void cpu_load_task(void*) {
+    configRUN_TIME_COUNTER_TYPE idle = ulTaskGetIdleRunTimeCounterForCore(0);
+    int64_t at                       = esp_timer_get_time();
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        const configRUN_TIME_COUNTER_TYPE now_idle = ulTaskGetIdleRunTimeCounterForCore(0);
+        const int64_t now                          = esp_timer_get_time();
+        pixfrog::dmx::set_cpu_load(
+            0, pixfrog::dmx::cpu_load_pct(static_cast<uint32_t>(now_idle - idle),
+                                          static_cast<uint32_t>(now - at)));
+        idle = now_idle;
+        at   = now;
+    }
+}
+#endif
+
 void render_task(void*) {
     // Subscribe the render task to the task watchdog. The render
     // task is the canary for "the system is still meeting its real-time
@@ -141,8 +161,14 @@ void render_task(void*) {
     // rate can't climb above the configured setting (which sizes the DMA budget).
     int64_t next_frame_us = esp_timer_get_time();
 
-    // Rolling 1-second window FPS counter.
-    int64_t fps_window_start_us   = esp_timer_get_time();
+    // Rolling 1-second window FPS counter, with the longest decode of the
+    // window and each core's idle time at its start (the CPU load).
+    int64_t fps_window_start_us = esp_timer_get_time();
+    uint32_t decode_max_us      = 0;
+    uint32_t decode_max_last    = 0;  // the window before: the max shown while this one fills
+#if configGENERATE_RUN_TIME_STATS
+    configRUN_TIME_COUNTER_TYPE idle_at = ulTaskGetIdleRunTimeCounterForCore(1);
+#endif
     uint32_t fps_frames_in_window = 0;
 
     while (true) {
@@ -174,10 +200,15 @@ void render_task(void*) {
             // pixels. Per-pixel transformations (color order, brightness,
             // grouping, invert) are applied later by led::encode_channel
             // during the frame encode.
+            const int64_t decode_from = esp_timer_get_time();
             for (size_t ch = 0; ch < pixfrog::config::kNumChannels; ++ch) {
                 pixfrog::dmx::decode_pixels_for_channel(ch);
                 pixfrog::dmx::swap_pixels(ch);
             }
+            const auto decode_us = static_cast<uint32_t>(esp_timer_get_time() - decode_from);
+            if (decode_us > decode_max_us) decode_max_us = decode_us;
+            pixfrog::dmx::set_decode_time(
+                decode_us, decode_max_us > decode_max_last ? decode_max_us : decode_max_last);
             pixfrog::output::render_frame();
         }
 
@@ -186,6 +217,16 @@ void render_task(void*) {
         const int64_t now_us = esp_timer_get_time();
         if (now_us - fps_window_start_us >= 1'000'000) {
             pixfrog::dmx::set_current_fps(fps_frames_in_window);
+#if configGENERATE_RUN_TIME_STATS
+            // Core 1's load, read here on core 1 (cpu_load_task does core 0).
+            const configRUN_TIME_COUNTER_TYPE idle = ulTaskGetIdleRunTimeCounterForCore(1);
+            pixfrog::dmx::set_cpu_load(
+                1, pixfrog::dmx::cpu_load_pct(static_cast<uint32_t>(idle - idle_at),
+                                              static_cast<uint32_t>(now_us - fps_window_start_us)));
+            idle_at = idle;
+#endif
+            decode_max_last      = decode_max_us;
+            decode_max_us        = 0;
             fps_frames_in_window = 0;
             fps_window_start_us  = now_us;
         }
@@ -420,6 +461,9 @@ extern "C" void app_main() {
     if (pixfrog::config::get_global().web_enabled) pixfrog::web::start();
 
     xTaskCreatePinnedToCore(render_task, "render", 6144, nullptr, 20, nullptr, 1);
+#if configGENERATE_RUN_TIME_STATS
+    xTaskCreatePinnedToCore(cpu_load_task, "cpu_load", 2048, nullptr, 1, nullptr, 0);
+#endif
 
     pixfrog::console::start();
 

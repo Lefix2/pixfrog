@@ -777,6 +777,58 @@ TEST(control_fade_fseq_and_scene_overrides) {
 // The desk rides the speed of a chase: the head carries on from where it is,
 // at the new pace. Worked out as time × speed it would jump to where the
 // chase would be had it always run that fast.
+// The desk's Effect channel on an output crossfades to the new look over the
+// scene fade time, once the pick has settled.
+TEST(the_desk_effect_pick_crossfades_over_the_scene_fade) {
+    reset_show();
+    one_channel(10);
+    solid_scene(0, 255, 0, 0, 0x01);  // red, effect 1
+    config::Effect blue{};
+    std::snprintf(blue.name, sizeof(blue.name), "Blue");
+    blue.generator    = config::kSceneFxSolid;
+    blue.num_colors   = 1;
+    blue.colors[0][2] = 255;
+    config::set_effect(1, blue);
+    auto c     = config::default_control();
+    c.enabled  = 1;
+    c.universe = kCtrlUni;
+    c.address  = 1;
+    c.count    = 3;
+    c.slots[0] = config::control_slot(config::CtlFn::Scene);
+    c.slots[1] = config::control_slot(config::CtlFn::Bank);
+    c.slots[2] = config::control_slot(config::CtlFn::Fade);
+    config::set_control(c);
+    dmx::mark_global_dirty();
+    dmx::handle_pending_remaps();
+    uint8_t u[3] = { 8, 0, 10 };  // scene 1, its own effect, 1 s fades
+    ctrl_frame(u, sizeof(u));
+    shim::advance_ms(1100);  // past the scene's own fade in
+    EXPECT_EQ(decode0()[0], 255);
+    u[1] = 16;  // effect 2 of the bank: blue
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(decode0()[0], 255);  // settling
+    shim::advance_ms(16);
+    EXPECT_EQ(decode0()[0], 255);
+    shim::advance_ms(16);
+    const uint8_t* px = decode0();  // settled: the fade starts from red
+    EXPECT_EQ(px[0], 255);
+    EXPECT_EQ(px[2], 0);
+    shim::advance_ms(500);
+    px = decode0();
+    EXPECT_TRUE(px[0] > 100 && px[0] < 155 && px[2] > 100 && px[2] < 155);
+    shim::advance_ms(600);
+    px = decode0();
+    EXPECT_EQ(px[0], 0);
+    EXPECT_EQ(px[2], 255);
+    u[2] = 0;  // no fade time: a cut
+    u[1] = 0;
+    ctrl_frame(u, sizeof(u));
+    shim::advance_ms(16);
+    EXPECT_EQ(decode0()[0], 255);
+    reset_show();
+    dmx::scene_stop();
+}
+
 TEST(a_speed_change_bends_the_motion_instead_of_jumping_it) {
     reset_show();
     one_channel(200);

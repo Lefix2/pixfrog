@@ -38,6 +38,8 @@ constexpr int64_t kArtnetMergeTimeoutUs = 10'000'000;  // Art-Net: ~10 s
 constexpr int64_t kSacnMergeTimeoutUs   = 2'500'000;   // E1.31 §6.7.1 data loss
 
 // Live telemetry counters; updated by render_task & receiver tasks with relaxed atomics.
+constexpr uint8_t kCpuLoadUnknown = 0xFF;
+
 struct Stats {
     uint64_t frames_emitted;
     uint64_t artnet_packets_rx;   // ArtDmx routed to a mapped universe
@@ -46,6 +48,14 @@ struct Stats {
     uint64_t sacn_packets_rx;     // sACN data packets routed to a mapped universe
     uint32_t dma_underruns;
     uint32_t current_fps;
+    // The render task's frame, over the last second: drawing every output
+    // (scenes, effects, fixtures, groups) before the encode — the last frame's
+    // and the longest.
+    uint32_t decode_us;
+    uint32_t decode_max_us;
+    // Each core's load over the last second, %: the time its idle task did
+    // not get. kCpuLoadUnknown until the first second is measured.
+    uint8_t cpu_load[2] = { kCpuLoadUnknown, kCpuLoadUnknown };
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -452,6 +462,14 @@ uint64_t frame_emit_us();
 
 Stats get_stats();
 void set_current_fps(uint32_t fps);
+void set_decode_time(uint32_t last_us, uint32_t max_us);
+// Core `core`'s load, %. Measured on that core: the idle task's run-time
+// counter only moves when it is switched out, so a task running there sees
+// it up to date.
+void set_cpu_load(int core, uint8_t pct);
+// A core's load in %, from what its idle task ran (`idle_us`) over a window of
+// `window_us`.
+uint8_t cpu_load_pct(uint32_t idle_us, uint32_t window_us);
 void note_frame_emitted();
 void note_dma_underrun();
 

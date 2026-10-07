@@ -95,6 +95,25 @@ When `render_task` wakes (t = 0), it runs, in order:
 
 In parallel on core 0 across the whole frame, `artnet_rx_task` drains UDP into `universe_pool[back]`; an ArtSync calls `dmx::note_sync()`, which wakes `render_task` early via the semaphore.
 
+**What it costs, measured on the box** (`stats`, `/api/diag` → `render`, the
+Diagnostics page, NERD STATS): the time step 3 takes for every output — the
+effects, scenes, groups and fixtures drawn (`decode_us`, and the longest of
+the last second) — next to the encode, and each core's load over the last
+second (`cpu_load`: the share its idle task did not get, from FreeRTOS run
+time stats on the esp_timer clock). Core 1 runs `render_task` alone; core 0
+the receivers, the UI and FSEQ; the web server and audio float. The idle
+task's run time only moves when it is switched out, so each core's figure is
+read from a task on that core (`render_task` for core 1, `cpu_load_task` for
+core 0). The console's `tasks` lists every task's share over half a second.
+
+Measured on the bench (fixture control, 32 fixtures an output, a sine
+phaser on each): drawing costs about 1.8 µs a pixel for fire, 1.4 µs for
+blobs, 1 µs for a plain colour; a crossfade draws both looks. With the
+encode at ~12.5 ms for 8 × 512 pixels, 60 Hz holds with pixel mapping and
+light looks but drops to ~48 fps on fire everywhere and ~39 fps while all
+256 fixtures crossfade; 8 × 1024 at 30 Hz holds 30 fps in every case (20 ms
+of drawing at worst). Core 0 stays at ~1 %.
+
 **Total wire-to-photon latency**: typically 2 frames (one frame of wait + one frame of emission). At 30 Hz that's ~66 ms; at 60 Hz, ~33 ms — well below human perception for lighting.
 
 **Consistency guarantee**: an ArtDmx received mid-encode lands in frame N+1, never half-and-half.
