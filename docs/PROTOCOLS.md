@@ -375,9 +375,11 @@ device):
 - **Both** — the pixels come from one range (a media server, a pixel mapper),
   the fixtures' channels from another (the desk). Per fixture, per frame: the
   **Effect channel at 0** shows its pixels, under the fixture's dimmer and
-  shutter; **above 0** the fixture plays that effect of the bank instead, as
-  it would alone. A profile without an Effect channel only dims and shutters
-  its pixels (its colour channels have nothing to colour). The fixtures'
+  shutter; at **1–7** the desk's plain colour (its R/G/B channels) replaces
+  them — the fixture is a plain RGB PAR, pixels or not; from **8** the
+  fixture plays that effect of the bank instead, as it would alone. A
+  profile without an Effect channel only dims and shutters its pixels (its
+  colour channels have nothing to colour). The fixtures'
   universe missing or silent leaves the pixels as they come. LEDs in no
   fixture keep their pixel data.
 - **Neither** — the output listens to no universe and takes none of the pool;

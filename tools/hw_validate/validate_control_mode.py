@@ -106,6 +106,11 @@ def run(board: Board):
     board.cmd("dmxw 2 7 00")
     board.cmd("status")
     c.check("Effect back at 0: its pixels again", px(board, 0, 20, 2) == [(32, 48, 64), (0, 0, 0)])
+    board.cmd("dmxw 2 4 0a141e03")  # R G B of fixture 2, Effect in the 1-7 band: the desk's plain colour
+    board.cmd("status")
+    c.check("Effect at 1-7: the desk's colour over the pixels", px(board, 0, 20, 2) == [(10, 20, 30)] * 2)
+    c.check("the other fixtures keep their pixels", px(board, 0, 0, 2) == [(32, 48, 64), (0, 0, 0)])
+    board.cmd("dmxw 2 4 00000000")
     board.cmd("dmxw 2 9 ff")  # fixture 2's shutter: strobing — dark part of the time
     seen = set()
     for _ in range(12):

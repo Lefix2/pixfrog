@@ -743,8 +743,15 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
                 nullptr);
     EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Red 2") != nullptr);
     const cJSON* bankch = cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Effect");
-    EXPECT_EQ(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(bankch, "capabilities")),
-              static_cast<int>(config::num_effects()) + 2);
+    // 0 = its own light, 1-7 = the plain colour, the effects, the rest.
+    const cJSON* bcaps = cJSON_GetObjectItemCaseSensitive(bankch, "capabilities");
+    EXPECT_EQ(cJSON_GetArraySize(bcaps), static_cast<int>(config::num_effects()) + 3);
+    EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetArrayItem(bcaps, 1), "dmxRange"), 0)
+                  ->valueint,
+              1);
+    EXPECT_EQ(cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetArrayItem(bcaps, 1), "dmxRange"), 1)
+                  ->valueint,
+              7);
     EXPECT_EQ(get("/api/profile/5/fixture").status, 404);
     EXPECT_EQ(get("/api/profile/0/nope").status, 404);
 

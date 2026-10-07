@@ -165,8 +165,13 @@ static cJSON* ofl_generic(const char* comment) {
 }
 
 // Bands of 8 over the effect bank: `none` names band 0.
-static void ofl_bank(cJSON* caps, const char* none) {
-    ofl_range(caps, 0, 7, ofl_generic(none));
+static void ofl_bank(cJSON* caps, const char* none, const char* colour = nullptr) {
+    if (colour) {
+        ofl_range(caps, 0, 0, ofl_generic(none));
+        ofl_range(caps, 1, 7, ofl_generic(colour));
+    } else {
+        ofl_range(caps, 0, 7, ofl_generic(none));
+    }
     const size_t n = config::num_effects();
     for (size_t i = 0; i < n; ++i) {
         cJSON* c = ofl_cap("Effect");
@@ -801,8 +806,10 @@ static cJSON* ofl_profile_channel(const config::ProfileSlot& sl) {
         cJSON_AddStringToObject(c, "comment", "Effect change crossfade, value x 0.1 s");
         ofl_range(caps, 1, 255, c);
         cJSON_AddItemToObject(ch, "capabilities", caps);
-    } else {  // Bank: band 0 is the plain colour, not "the scene's own"
-        ofl_bank(caps, "No effect: colour 1, steady");
+    } else {  // Bank: 0 = the fixture's own light (its pixels under pixel
+              // mapping), 1-7 = colour 1 steady either way, then the bank
+        ofl_bank(caps, "No effect: colour 1, steady (its pixels, under pixel mapping)",
+                 "Colour 1, steady");
         cJSON_AddItemToObject(ch, "capabilities", caps);
     }
     return ch;

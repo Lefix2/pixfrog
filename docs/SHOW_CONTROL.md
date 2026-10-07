@@ -268,7 +268,8 @@ mode of a conventional luminaire. The box keeps up to eight; each fixture of an
 output points at one (the first by default). They drive the fixtures of an
 output whose **Fixtures** switch is on (PROTOCOLS §5.6) — alone, or over the
 output's pixel mapping: the Effect channel at 0 then shows the fixture's
-pixels, under its dimmer and shutter.
+pixels, under its dimmer and shutter, and at 1–7 the desk's plain colour
+instead of them.
 
 | Function | Value |
 |---|---|
@@ -277,7 +278,7 @@ pixels, under its dimmer and shutter.
 | White | the white LED of an RGBW strip, when no effect plays |
 | Shutter (pro) | 0–31 closed · 32–63 open · 64–95 strobe 1–25 Hz · 96–127 open · 128–159 pulse 0.5–10 Hz · 160–191 open · 192–223 random strobe 1–20 flashes/s · 224–255 open (see below) |
 | Strobe | 0–9 = none, 10–255 = strobe 1–25 Hz — the LED fixtures' simple strobe |
-| Effect (`bank`) | bands of 8: 0–7 = no effect (colour 1, steady), 8–15 = effect 1 of the bank, 16–23 = effect 2 … |
+| Effect (`bank`) | bands of 8: 0 = the fixture's own light — colour 1, steady, or its pixels under pixel mapping; 1–7 = colour 1, steady, in both cases (the plain RGB fixture); 8–15 = effect 1 of the bank, 16–23 = effect 2 … |
 | Effect speed / parameter | 0 = the effect's own, 1–255 = override |
 | Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine … |
 | Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |

@@ -2354,7 +2354,19 @@ static void test_pixels_plus_fixtures() {
     fix[104 + 3] = 16;  // an effect that is not in the bank: the pixels stay
     render(out);
     EXPECT_EQ(out[12], 112);
-    fix[104 + 3] = 0;
+    // 1-7: the desk's plain colour, over the pixels — the RGB fixture it
+    // would be alone, whatever the bank holds.
+    fix[104 + 3] = 3;
+    fix[104]     = 10;
+    fix[105]     = 20;
+    fix[106]     = 30;
+    render(out);
+    EXPECT_EQ(out[12], 10);
+    EXPECT_EQ(out[13], 20);
+    EXPECT_EQ(out[23], 30);
+    EXPECT_TRUE(out[0] >= 49 && out[0] <= 51);  // fixture 1 keeps its pixels, at its half
+    fix[104] = fix[105] = fix[106] = 0;
+    fix[104 + 3]                   = 0;
     fix[104 + 5] = 255;  // shutter strobing at 25 Hz: dark in the second half of a period
     decode_pixels(out, 24, cc, get_uni);
     render_fixtures(out, 24, cc, bank, 30, get_uni, get_fx, true);

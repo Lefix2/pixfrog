@@ -2382,12 +2382,20 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
 // for — a colour, or an effect of the bank with the desk's overrides.
 
 // What one fixture's channels ask for.
+// What the Effect channel picks, beside an effect of the bank (0..):
+//   kBankNone   (0)    the fixture's own light — colour 1, steady; over pixel
+//                      mapping, its pixels as they come;
+//   kBankColour (1-7)  colour 1, steady, in both cases: the desk's plain RGB
+//                      fixture, pixels or not.
+constexpr int16_t kBankNone   = -1;
+constexpr int16_t kBankColour = -2;
+
 struct FixtureFrame {
     uint16_t dimmer = kMasterFull;  // full unless the profile has a dimmer
     uint8_t white   = 0;
     ShutterState shutter;                       // the pro Shutter channel (open without one)
     ShutterState strobe;                        // the manual Strobe channel
-    int16_t bank        = -1;                   // -1 = no effect: colour 1, steady
+    int16_t bank        = kBankNone;            // kBankNone, kBankColour or an effect
     uint16_t fx_fade_ms = 0;                    // a change of `bank` crossfades this long
     int16_t color[config::kSceneColorsMax][3];  // -1 = not in the profile
     EffectOverride fx;                          // speed, param, phaser, MAtricks
@@ -2419,7 +2427,10 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
         case config::FixFn::Shutter: out.shutter = shutter_from_dmx(v); break;
         case config::FixFn::Strobe: out.strobe = strobe_from_dmx(v); break;
         case config::FixFn::Bank:
-            if (dmx_band(v)) out.bank = static_cast<int16_t>(dmx_band(v) - 1);
+            if (dmx_band(v))
+                out.bank = static_cast<int16_t>(dmx_band(v) - 1);
+            else if (v)
+                out.bank = kBankColour;
             break;
         case config::FixFn::Speed:
             if (v) out.fx.speed = v;
@@ -2468,10 +2479,10 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
 // replaces the effect's unless its three channels are at 0. The phaser and
 // Block / Groups / Wings channels act either way.
 // `over_pixels`: the output is pixel-mapped too and `d` holds the fixture's
-// pixels. With no effect asked for they stay, under the fixture's dimmer and
-// shutter (its colour channels mean nothing next to pixel data); an effect
-// replaces them. `clocks`: the fixture's two (clock_tick: the look it shows
-// and the one it fades from), nullptr for the wall clock.
+// pixels. With the bank channel at 0 they stay, under the fixture's dimmer
+// and shutter (its colour channels mean nothing next to pixel data); at 1-7
+// (kBankColour) or on an effect, what the desk asks replaces them. `clocks`: the fixture's two
+// (clock_tick: the look it shows and the one it fades from), nullptr for the wall clock.
 template <typename GetEffect>
 inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, const FixtureFrame& f,
                            bool reversed, uint64_t phase_ms, GetEffect get_effect,
@@ -2489,7 +2500,7 @@ inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, cons
     }
     config::Effect e{};
     const bool plain = f.bank < 0 || !get_effect(static_cast<size_t>(f.bank), e);
-    if (plain && over_pixels) {
+    if (plain && over_pixels && f.bank != kBankColour) {
         apply_master(d, total, level);
         return;
     }
