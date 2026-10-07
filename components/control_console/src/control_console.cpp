@@ -24,6 +24,7 @@
 #include "fseq_player.h"
 #include "led_output.h"
 #include "led_protocols.h"
+#include "net.h"
 #include "sacn.h"
 #include "ui.h"
 #include "web_config.h"
@@ -392,7 +393,10 @@ int cmd_global(int argc, char** argv) {
     const bool persisted = config::set_global(g);
     dmx::mark_global_dirty();
     if (!persisted) printf("warn=not_persisted\n");
-    if (network_changed) printf("note=network_changes_apply_after_reboot\n");
+    if (network_changed) {  // live: the box re-addresses itself now
+        net::apply(g);
+        printf("note=network_applied\n");
+    }
 
     // Apply server states immediately (no reboot needed).
     if (strcmp(key, "web_enabled") == 0) {
@@ -775,12 +779,13 @@ int cmd_factory_reset(int, char**) {
     dmx::mark_global_dirty();
     for (size_t ch = 0; ch < config::kNumChannels; ++ch)
         dmx::mark_channel_dirty(ch);
-    // The defaults turn the opt-in services off: follow them now rather than
-    // at the next reboot (the network settings still need one).
+    // The defaults turn the opt-in services off and the box back on DHCP:
+    // follow them now rather than at the next reboot.
     sacn::stop();
     fpp::stop();
     web::stop();
-    printf("note=network_changes_apply_after_reboot\n");
+    net::apply(config::get_global());
+    printf("note=network_applied\n");
     return ok();
 }
 

@@ -12,6 +12,7 @@
 #include "led_output.h"
 #include "led_protocols.h"
 #include "menu_accel.h"
+#include "net.h"
 #include "sacn.h"
 #include "ui.h"
 #include "ui_internal.h"

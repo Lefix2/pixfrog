@@ -502,8 +502,8 @@ universe_start + N-1` whichever protocol delivered the data.
 **ArtNet 4** (UDP 6454, always on): `ArtDmx` (filtered by configured
 net/subnet), `ArtPoll` → `ArtPollReply` (2 bind groups × 4 ports),
 `ArtSync` (sync mode, below), `ArtAddress` (remote names/net/subnet/SwOut,
-persisted + replied), `ArtIpProg`/`ArtIpProgReply` (remote IP, reboot
-applies), `ArtTrigger` global KeyShow (SubKey 1..8 plays standalone scene
+persisted + replied), `ArtIpProg`/`ArtIpProgReply` (remote IP, applied at
+once: the node answers on its new address), `ArtTrigger` global KeyShow (SubKey 1..8 plays standalone scene
 N-1, 0 stops), `ArtTimeCode` (slaves a *running* FSEQ playback to the desk
 clock — re-seeks beyond 100 ms drift, never auto-starts a file).
 `ArtNzs`/`ArtCommand` are validated and counted (`stats artnet_ctrl_rx`)

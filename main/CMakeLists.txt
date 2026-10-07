@@ -13,6 +13,7 @@ idf_component_register(
         config_store
         dmx_manager
         artnet
+        net
         sacn
         led_output
         ui

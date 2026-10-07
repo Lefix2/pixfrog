@@ -11,6 +11,7 @@
 #include "dmx_manager.h"
 #include "fakes/fseq_fake.h"
 #include "fakes/modules_fake.h"
+#include "fakes/net_fake.h"
 #include "harness.h"
 #include "shim_control.h"
 
@@ -68,8 +69,18 @@ TEST(global_get_set_and_validation) {
     EXPECT_FALSE(run("global nope 1"));
     EXPECT_TRUE(run("global short_name stage-left"));
     EXPECT_STREQ(config::get_global().short_name, "stage-left");
+    // A network setting is applied live: the box re-addresses itself.
+    ::fake::reset_net();
     EXPECT_TRUE(run("global ip 10.0.0.9"));
-    EXPECT_TRUE(has("note=network_changes_apply_after_reboot"));
+    EXPECT_TRUE(has("note=network_applied"));
+    EXPECT_EQ(::fake::net().applies, 1);
+    EXPECT_EQ(::fake::net().last_ip, 0x0A000009u);
+    EXPECT_TRUE(run("global dhcp 1"));
+    EXPECT_EQ(::fake::net().applies, 2);
+    EXPECT_TRUE(::fake::net().last_dhcp);
+    EXPECT_TRUE(run("global long_name stage"));  // not a network setting
+    EXPECT_EQ(::fake::net().applies, 2);
+    EXPECT_FALSE(has("note=network_applied"));
     EXPECT_TRUE(run("global failsafe_color 112233"));
     EXPECT_EQ(config::get_global().failsafe_g, 0x22);
     EXPECT_TRUE(run("global"));

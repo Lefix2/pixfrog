@@ -14,6 +14,7 @@
 #include "dmx_manager.h"
 #include "fseq_player.h"
 #include "led_protocols.h"
+#include "net.h"
 
 namespace pixfrog::artnet {
 
@@ -231,9 +232,11 @@ void handle_ip_prog(const uint8_t* buf, size_t len, const sockaddr_in& from) {
             }
             config::set_global(g);
             dmx::mark_global_dirty();
-            ESP_LOGI(TAG, "ArtIpProg applied (cmd 0x%02X) — reboot to take effect", f.command);
+            ESP_LOGI(TAG, "ArtIpProg applied (cmd 0x%02X)", f.command);
         }
     }
+    // The desk expects the node on its new address right away.
+    if (f.command & 0x80) net::apply(g);
 
     if (g_sock < 0) return;
     uint8_t pkt[parser::kIpProgReplySize];

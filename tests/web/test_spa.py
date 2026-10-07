@@ -548,6 +548,33 @@ def test_dmx_profiles_editor(page, device):
     assert len(device.get("/api/config")["profiles"]) == 4
 
 
+def test_a_network_change_is_applied_at_once_and_the_page_follows(page, device):
+    nav(page, "network")
+    page.locator('[data-dhcp="0"]').click()
+    page.locator("#n-ip").fill("10.1.2.3")
+    page.locator("#n-mask").fill("255.255.255.0")
+    page.locator("#n-gw").fill("10.1.2.1")
+    save(page)
+    # The box re-addressed itself: the page says where and waits for it.
+    expect(page.locator("#pf-netmove")).to_be_visible()
+    expect(page.locator("#pf-netmove")).to_contain_text("http://10.1.2.3/")
+    expect(page.locator("[data-netmove-link]")).to_have_attribute("href", "http://10.1.2.3/")
+    page.locator("[data-netmove-stay]").click()
+    expect(page.locator("#pf-netmove")).to_have_count(0)
+    g = device.get("/api/config")["global"]
+    assert g["ip"] == "10.1.2.3" and not g["dhcp"]
+    # Back on DHCP: nowhere known to go, the screen will tell.
+    page.locator('[data-dhcp="1"]').click()
+    save(page)
+    expect(page.locator("#pf-netmove")).to_contain_text("DHCP")
+    page.locator("[data-netmove-stay]").click()
+    # Something else in the same group does not re-address the box.
+    page.locator("#n-long").fill("the box")
+    save(page)
+    expect(page.locator("#pf-netmove")).to_have_count(0)
+    expect(page.locator("footer")).to_contain_text("applied at once")
+
+
 def test_an_output_is_switched_on_and_off_not_given_an_off_protocol(page, device):
     device.post("/api/channel/1", {"protocol": "SK6812", "pixel_count": 30})
     page.reload()

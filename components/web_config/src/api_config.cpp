@@ -382,9 +382,11 @@ GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const c
     uint32_t u = 0;
     bool b     = false;
     const char* s;
+    // The addressing changed only when a value did: a page that saves its
+    // whole network group every time must not re-address the box every time.
     if (json_bool(j, "dhcp", b)) {
+        if (g.use_dhcp != b) fx.network = true;
         g.use_dhcp = b;
-        fx.network = true;
     }
     struct {
         const char* key;
@@ -400,8 +402,8 @@ GlobalApplied apply_global_json(const cJSON* j, config::GlobalConfig& g, const c
             refuse(why, a.msg);
             continue;
         }
-        *a.dst     = ip;
-        fx.network = true;
+        if (*a.dst != ip) fx.network = true;
+        *a.dst = ip;
     }
     // Read when the fallback is taken: no reboot needed.
     if ((s = json_str(j, "ip_fallback"))) {
@@ -732,6 +734,21 @@ static void restore_scenes(const cJSON* jfx, const cJSON* jsc) {
     heap_caps_free(w);
 }
 
+// "network": where the box now answers — its static address, or null while
+// it waits for a DHCP lease (its mDNS name, in /api/status, still finds it).
+void add_network_applied(cJSON* resp, const config::GlobalConfig& g) {
+    cJSON* n = cJSON_AddObjectToObject(resp, "network");
+    cJSON_AddBoolToObject(n, "applied", true);
+    cJSON_AddBoolToObject(n, "dhcp", g.use_dhcp || g.static_ip == 0);
+    if (!g.use_dhcp && g.static_ip != 0) {
+        char ip[16];
+        fmt_ip(ip, sizeof(ip), g.static_ip);
+        cJSON_AddStringToObject(n, "ip", ip);
+    } else {
+        cJSON_AddNullToObject(n, "ip");
+    }
+}
+
 esp_err_t handle_restore(httpd_req_t* req) {
     if (!require_auth(req)) return ESP_OK;
     // Full backup ≈ 3 kB + ~130 B per effect (31 max) + up to ~450 B per scene
@@ -791,8 +808,12 @@ esp_err_t handle_restore(httpd_req_t* req) {
     dmx::mark_global_dirty();
 
     // Same live side effects as POST /api/global: the receivers follow their
-    // flags now, not at the next reboot.
+    // flags, and the box its addressing, now — not at the next reboot.
     const config::GlobalConfig& g = config::get_global();
+    const bool network_changed = g.use_dhcp != before.use_dhcp || g.static_ip != before.static_ip ||
+                                 g.static_mask != before.static_mask ||
+                                 g.static_gateway != before.static_gateway;
+    if (network_changed) net::apply(g);
     if (g.sacn_enabled != before.sacn_enabled) {
         if (g.sacn_enabled)
             sacn::start();
@@ -806,9 +827,10 @@ esp_err_t handle_restore(httpd_req_t* req) {
             fpp::stop();
     }
 
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_sendstr(req,
-                              "{\"ok\":true,\"note\":\"network/web changes apply after reboot\"}");
+    cJSON* resp = cJSON_CreateObject();
+    cJSON_AddBoolToObject(resp, "ok", true);
+    if (network_changed) add_network_applied(resp, g);
+    return send_json(req, resp);
 }
 
 // A handler cannot stop the server it runs in (httpd_stop waits for it):
@@ -872,13 +894,15 @@ esp_err_t handle_post_global(httpd_req_t* req) {
         else
             fpp::stop();
     }
+    // The box re-addresses itself now: the page that asked must reconnect
+    // (the answer says where to; nowhere known with DHCP).
+    if (network_changed) net::apply(g);
 
     // Turning the web UI off from the web UI: this server stops right after
     // the answer (it used to keep serving until a reboot).
     cJSON* resp = cJSON_CreateObject();
     cJSON_AddBoolToObject(resp, "ok", true);
-    if (network_changed)
-        cJSON_AddStringToObject(resp, "note", "network_changes_apply_after_reboot");
+    if (network_changed) add_network_applied(resp, g);
     if (web_off) cJSON_AddBoolToObject(resp, "web_stopping", true);
     const esp_err_t r = send_json(req, resp);
     if (web_off && xTaskCreate(web_stop_task, "web_stop", 3072, nullptr, 5, nullptr) != pdPASS)

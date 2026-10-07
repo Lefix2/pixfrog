@@ -18,6 +18,7 @@ pixfrog_fuzz(fuzz_parsers fuzz_parsers.cpp)
 pixfrog_fuzz(fuzz_receivers
     fuzz_receivers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../harness/fakes/fseq_fake.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../harness/fakes/net_fake.cpp
     ${REPO}/components/artnet/src/artnet.cpp
     ${REPO}/components/sacn/src/sacn.cpp
     ${REPO}/components/dmx_manager/src/dmx_manager.cpp
@@ -28,6 +29,7 @@ pixfrog_fuzz(fuzz_console
     fuzz_console.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../harness/fakes/fseq_fake.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../harness/fakes/modules_fake.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../harness/fakes/net_fake.cpp
     ${REPO}/components/control_console/src/control_console.cpp
     ${REPO}/components/sacn/src/sacn.cpp
     ${REPO}/components/dmx_manager/src/dmx_manager.cpp

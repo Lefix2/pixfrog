@@ -270,7 +270,8 @@ the DMX node firmware (a separate project forked from this one).
 |----------------------|-----------------------------------------------------|-------------------------|
 | `led_output`     | 16-bit bus output: PARLIO TX loop (default) or legacy LCD_CAM; PSRAM FBs, gamma-LUT cache | IDF HAL, `led_protocols`, `dmx_manager` |
 | `led_protocols`      | Per-protocol encoders (NRZ, SPI-like) + gamma/WB LUT builder         | (free)        |
-| `artnet`             | UDP parser, Dmx/Poll/Sync/Address/IpProg/Trigger, replies | `lwip`, `dmx_manager` |
+| `net`                | The box's IP addressing: static / DHCP / Art-Net fallback, applied at boot and live on every change (web, console, menu, ArtIpProg); link and address events, published to `main` through one callback | `esp_netif`, `config_store` |
+| `artnet`             | UDP parser, Dmx/Poll/Sync/Address/IpProg/Trigger, replies | `lwip`, `dmx_manager`, `net` |
 | `sacn`               | E1.31 receiver: multicast joins, priority gate, sync | `lwip`, `dmx_manager`  |
 | `dmx_manager`        | Universe pool, 2-source HTP/LTP merge, channel mapping, capacity check, scenes/failsafe/identify state | `config_store` |
 | `fseq_player`        | microSD FSEQ show playback: SDMMC 4-bit + FAT mount/hot-plug, v2 zstd frame decode, pacing, inject into pool from the `fseq_universe` setting (byte 0's universe, default 1); ArtTimeCode / FPP seek hooks | `config_store`, `dmx_manager`, `sdmmc`, `fatfs` |
@@ -281,7 +282,7 @@ the DMX node firmware (a separate project forked from this one).
 | `control_console`    | UART0 REPL: full config, telemetry, DMX injection  | esp_console             |
 | `boards/<hw>.h`      | Pinout, hardware capabilities                      | (header-only)           |
 
-**Dependency rule**: `led_output` knows nothing about ArtNet; `artnet` knows nothing about LCD_CAM. They meet in `main.cpp` via `dmx_manager`, which owns the pointer dance.
+**Dependency rule**: `led_output` knows nothing about ArtNet; `artnet` knows nothing about LCD_CAM. They meet in `main.cpp` via `dmx_manager`, which owns the pointer dance. Likewise `net` knows nothing of the screen or Art-Net: `main.cpp` registers the publisher that hands them the address, so the surfaces that change a setting (`ui`, `control_console`, `web_config`, `artnet`) can call `net::apply()` without a cycle.
 
 ---
 
