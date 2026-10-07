@@ -730,12 +730,23 @@ static void test_profile_presets_and_sanitize() {
     EXPECT_EQ(profile_footprint(b.profiles[2]), 6);
     EXPECT_EQ(profile_footprint(b.profiles[3]), 16);  // 15 slots, a 16-bit dimmer
     EXPECT_EQ(b.profiles[3].count, 15);
-    // RGB FX: R, G, B, effect bank, effect speed, shutter.
+    // RGB FX: R, G, B, effect bank, effect speed, strobe.
     const Profile& fx = b.profiles[2];
     EXPECT_EQ(fx.slots[0].fn, static_cast<uint8_t>(FixFn::Red));
     EXPECT_EQ(fx.slots[3].fn, static_cast<uint8_t>(FixFn::Bank));
     EXPECT_EQ(fx.slots[4].fn, static_cast<uint8_t>(FixFn::Speed));
-    EXPECT_EQ(fx.slots[5].fn, static_cast<uint8_t>(FixFn::Shutter));
+    EXPECT_EQ(fx.slots[5].fn, static_cast<uint8_t>(FixFn::Strobe));
+    EXPECT_EQ(b.profiles[3].slots[1].fn,
+              static_cast<uint8_t>(FixFn::Shutter));  // Full: the pro one
+    EXPECT_EQ(b.format, kProfileFormat);
+    // A bank of before the split: its Shutter slots were the manual strobe.
+    ProfileBank old = b;
+    old.format      = 0;
+    migrate_profiles_format(old);
+    EXPECT_EQ(old.profiles[3].slots[1].fn, static_cast<uint8_t>(FixFn::Strobe));
+    EXPECT_EQ(old.format, kProfileFormat);
+    migrate_profiles_format(old);  // once only
+    EXPECT_EQ(old.profiles[2].slots[5].fn, static_cast<uint8_t>(FixFn::Strobe));
     EXPECT_EQ(b.profiles[3].slots[5].arg, 1);  // Full: the second colour's red
     for (uint8_t fn = 0; fn < static_cast<uint8_t>(FixFn::Count); ++fn)
         EXPECT_EQ(fix_fn_from_id(fix_fn_id(fn)), fn);

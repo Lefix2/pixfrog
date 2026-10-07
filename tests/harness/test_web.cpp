@@ -705,7 +705,8 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
              "{\"fn\":\"bank\"},{\"fn\":\"speed\"},{\"fn\":\"param\"},{\"fn\":\"ph_wave\"},"
              "{\"fn\":\"ph_rate\"},{\"fn\":\"ph_spread\"},{\"fn\":\"ph_width\"},"
              "{\"fn\":\"ph_attack\"},{\"fn\":\"ph_decay\"},"
-             "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"red\"}]}]}")
+             "{\"fn\":\"block\"},{\"fn\":\"groups\"},{\"fn\":\"wings\"},{\"fn\":\"red\"},"
+             "{\"fn\":\"strobe\"}]}]}")
             .status,
         200);
     Json all(get("/api/profile/0/fixture").body);
@@ -722,7 +723,22 @@ TEST(profile_endpoints_edit_the_bank_and_export_a_fixture) {
         }
         EXPECT_EQ(next, 256);
     }
-    EXPECT_EQ(channels, 19);
+    EXPECT_EQ(channels, 20);
+    // The pro shutter: its ladder, open by default (a desk's home lets the
+    // light out); the manual strobe: its dead band.
+    const cJSON* shut = cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Shutter");
+    EXPECT_EQ(cJSON_GetObjectItem(shut, "defaultValue")->valueint, 32);
+    const cJSON* sc = cJSON_GetObjectItem(shut, "capabilities");
+    EXPECT_EQ(cJSON_GetArraySize(sc), 8);
+    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(sc, 0), "shutterEffect")->valuestring,
+                 "Closed");
+    EXPECT_STREQ(cJSON_GetObjectItem(cJSON_GetArrayItem(sc, 4), "shutterEffect")->valuestring,
+                 "Pulse");
+    EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetArrayItem(sc, 6), "randomTiming")));
+    const cJSON* strobe = cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Strobe");
+    const cJSON* sr     = cJSON_GetObjectItem(
+        cJSON_GetArrayItem(cJSON_GetObjectItem(strobe, "capabilities"), 1), "dmxRange");
+    EXPECT_EQ(cJSON_GetArrayItem(sr, 0)->valueint, 10);
     EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Phaser attack") !=
                 nullptr);
     EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(all["availableChannels"], "Red 2") != nullptr);
@@ -1550,6 +1566,33 @@ TEST(channel_post_colour_order_and_numeric_bools) {
 
 // A backup taken before the effect bank: each scene carried its look and its
 // outputs. It comes back as one effect and one scene, at the same pace.
+// A backup of before the split (backup_version < 3, or none) meant the manual
+// strobe by "shutter"; today's means the pro shutter.
+TEST(restore_reads_an_older_shutter_as_the_strobe) {
+    const auto saved = config::get_profiles();
+    const char* body = "{\"backup_version\":%d,\"profiles\":[{\"name\":\"Bar\",\"slots\":[{\"fn\":"
+                       "\"dimmer\"},{\"fn\":\"shutter\"}]}]}";
+    char buf[192];
+    std::snprintf(buf, sizeof(buf), body, 2);
+    EXPECT_EQ(post("/api/restore", buf).status, 200);
+    EXPECT_EQ(config::get_profiles().profiles[0].slots[1].fn,
+              static_cast<uint8_t>(config::FixFn::Strobe));
+    std::snprintf(buf, sizeof(buf), body, 3);
+    EXPECT_EQ(post("/api/restore", buf).status, 200);
+    EXPECT_EQ(config::get_profiles().profiles[0].slots[1].fn,
+              static_cast<uint8_t>(config::FixFn::Shutter));
+    // The editor (POST /api/profiles) speaks today's names.
+    EXPECT_EQ(post("/api/profiles", "{\"profiles\":[{\"name\":\"Bar\",\"slots\":[{\"fn\":"
+                                    "\"strobe\"},{\"fn\":\"shutter\"}]}]}")
+                  .status,
+              200);
+    EXPECT_EQ(config::get_profiles().profiles[0].slots[0].fn,
+              static_cast<uint8_t>(config::FixFn::Strobe));
+    EXPECT_EQ(config::get_profiles().profiles[0].slots[1].fn,
+              static_cast<uint8_t>(config::FixFn::Shutter));
+    config::set_profiles(saved);
+}
+
 TEST(restore_converts_a_pre_bank_backup) {
     const std::string backup = get("/api/backup").body;
     const std::string old =
@@ -1577,7 +1620,7 @@ TEST(restore_converts_a_pre_bank_backup) {
     // Today's backup: both lists replaced, length included.
     EXPECT_EQ(post("/api/restore", backup).status, 200);
     Json back(get("/api/backup").body), want(backup);
-    EXPECT_EQ(back["backup_version"]->valueint, 2);
+    EXPECT_EQ(back["backup_version"]->valueint, 3);
     EXPECT_TRUE(cJSON_Compare(back["effects"], want["effects"], true));
     EXPECT_TRUE(cJSON_Compare(back["scenes"], want["scenes"], true));
     // An effect bank alone empties the scene list; a bad part leaves its scene bare.

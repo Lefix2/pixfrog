@@ -451,7 +451,9 @@ void init() {
 
     // Fixture DMX profiles: absent before they existed — the presets (an empty
     // bank reads as the presets too, see sanitize_profiles).
-    if (!nvs_load_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles)))
+    if (nvs_load_blob(h, kKeyProfiles, &g_profiles, sizeof(g_profiles)))
+        migrate_profiles_format(g_profiles);  // an older record: Shutter slots are Strobe
+    else
         g_profiles = ProfileBank{};
     sanitize_profiles(g_profiles);
 

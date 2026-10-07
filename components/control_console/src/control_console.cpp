@@ -1353,7 +1353,7 @@ int cmd_profile(int argc, char** argv) {
                 return err(
                     "slot: dimmer[+fine]|red[:n]|green[:n]|blue[:n]|white|shutter|bank|"
                     "speed|param|ph_wave|ph_rate|ph_spread|ph_width|ph_attack|ph_decay|block|"
-                    "groups|wings|fx_fade|none");
+                    "groups|wings|fx_fade|strobe|none");
         }
         if (count == 0) return err("slots: at least one");
         memcpy(p.slots, slots, sizeof(slots));

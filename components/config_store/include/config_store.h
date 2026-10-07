@@ -1196,13 +1196,14 @@ bool set_playlist(const FseqPlaylist& p);
 
 // Channel functions. Persisted: append only, never renumber.
 enum class FixFn : uint8_t {
-    None     = 0,  // spare channel
-    Dimmer   = 1,  // intensity (16-bit with kProfileArgFine); full when the profile has none
-    Red      = 2,  // colour `arg & 3` of the effect; all three at 0 = the effect's own
-    Green    = 3,
-    Blue     = 4,
-    White    = 5,  // the white LED of an RGBW strip, when no effect plays
-    Shutter  = 6,  // 0 = open, 1..255 = strobe 1..25 Hz
+    None    = 0,  // spare channel
+    Dimmer  = 1,  // intensity (16-bit with kProfileArgFine); full when the profile has none
+    Red     = 2,  // colour `arg & 3` of the effect; all three at 0 = the effect's own
+    Green   = 3,
+    Blue    = 4,
+    White   = 5,   // the white LED of an RGBW strip, when no effect plays
+    Shutter = 6,   // pro: 0-31 closed, 32-63 open, 64-95 strobe, 96-127 open, 128-159 pulse,
+                   // 160-191 open, 192-223 random strobe, 224-255 open (see dmx_logic)
     Bank     = 7,  // bands of 8: 0-7 = no effect (plain colour 1), 8-15 = effect 1 of the bank, ...
     Speed    = 8,  // 0 = the effect's own, 1..255 = override
     Param    = 9,
@@ -1216,17 +1217,22 @@ enum class FixFn : uint8_t {
     PhAttack = 17,  // 0 = the effect's own, 1 = none, 2..255 = override
     PhDecay  = 18,
     FxFade   = 19,  // effect transition: 0 = cut, 1..255 = crossfade 0.1..25.5 s
+    Strobe   = 20,  // manual: 0-9 none, 10-255 strobe 1..25 Hz (what Shutter was before v1)
     Count,
 };
 constexpr uint8_t kProfileArgColor = 0x03;  // Red/Green/Blue: colour 0..kSceneColorsMax-1
 constexpr uint8_t kProfileArgFine  = 0x80;  // Dimmer: coarse + fine channel
+
+// The manual strobe's dead band (CtlFn::Strobe, FixFn::Strobe): 0..9 = none.
+constexpr uint8_t kStrobeDeadBand = 10;
 
 // Lower-case ids (console, REST, backup) — indexed by FixFn.
 inline const char* fix_fn_id(uint8_t fn) {
     static const char* const kIds[] = { "none",    "dimmer",  "red",       "green",    "blue",
                                         "white",   "shutter", "bank",      "speed",    "param",
                                         "ph_wave", "ph_rate", "ph_spread", "ph_width", "block",
-                                        "groups",  "wings",   "ph_attack", "ph_decay", "fx_fade" };
+                                        "groups",  "wings",   "ph_attack", "ph_decay", "fx_fade",
+                                        "strobe" };
     static_assert(sizeof(kIds) / sizeof(kIds[0]) == static_cast<size_t>(FixFn::Count),
                   "one id per profile function");
     return fn < static_cast<uint8_t>(FixFn::Count) ? kIds[fn] : "none";
@@ -1252,9 +1258,13 @@ struct Profile {
     uint8_t reserved[3];
     ProfileSlot slots[kMaxProfileSlots];
 };
+// ProfileBank::format: 0 = written before the Shutter was split in two (its
+// slots then meant the manual strobe, now FixFn::Strobe); 1 = today.
+constexpr uint8_t kProfileFormat = 1;
 struct ProfileBank {
-    uint8_t count;  // profiles in use, 1..kMaxProfiles
-    uint8_t reserved[3];
+    uint8_t count;   // profiles in use, 1..kMaxProfiles
+    uint8_t format;  // kProfileFormat (was reserved: 0 in an older record)
+    uint8_t reserved[2];
     Profile profiles[kMaxProfiles];
 };
 static_assert(sizeof(Profile) == 68, "Profile is an NVS record: bytes only, no padding");
@@ -1298,11 +1308,11 @@ inline void profile_apply_preset(Profile& pr, ProfilePreset p) {
         add(FixFn::Dimmer);
         rgb(0);
         break;
-    case ProfilePreset::RgbFx:  // R, G, B, effect bank, effect speed, shutter
+    case ProfilePreset::RgbFx:  // R, G, B, effect bank, effect speed, strobe
         rgb(0);
         add(FixFn::Bank);
         add(FixFn::Speed);
-        add(FixFn::Shutter);
+        add(FixFn::Strobe);
         break;
     case ProfilePreset::Full:  // 16 channels
         add(FixFn::Dimmer, kProfileArgFine);
@@ -1322,9 +1332,20 @@ inline void profile_apply_preset(Profile& pr, ProfilePreset p) {
     pr.count = static_cast<uint8_t>(n);
 }
 
+// A bank written before the split: its Shutter slots were the manual strobe.
+inline void migrate_profiles_format(ProfileBank& b) {
+    if (b.format >= kProfileFormat) return;
+    for (auto& p : b.profiles)
+        for (auto& s : p.slots)
+            if (s.fn == static_cast<uint8_t>(FixFn::Shutter))
+                s.fn = static_cast<uint8_t>(FixFn::Strobe);
+    b.format = kProfileFormat;
+}
+
 inline ProfileBank default_profiles() {
     ProfileBank b{};
-    b.count = static_cast<uint8_t>(ProfilePreset::Count);
+    b.format = kProfileFormat;
+    b.count  = static_cast<uint8_t>(ProfilePreset::Count);
     for (uint8_t i = 0; i < b.count; ++i)
         profile_apply_preset(b.profiles[i], static_cast<ProfilePreset>(i));
     return b;
@@ -1339,6 +1360,7 @@ inline void sanitize_profiles(ProfileBank& b) {
         if (b.count == 0) b = default_profiles();
         if (b.count > kMaxProfiles) b.count = static_cast<uint8_t>(kMaxProfiles);
     }
+    b.format = kProfileFormat;  // a bank in hand is in today's format (loads migrate first)
     std::memset(b.reserved, 0, sizeof(b.reserved));
     for (size_t i = 0; i < kMaxProfiles; ++i) {
         Profile& p = b.profiles[i];

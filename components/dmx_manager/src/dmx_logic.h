@@ -1963,11 +1963,15 @@ inline uint32_t fade_weight(uint32_t elapsed_ms, uint32_t len_ms) {
     return (lin * lin * (3 * 256 - 2 * lin)) / (256u * 256u);  // smoothstep
 }
 
-// Strobe rate in tenths of Hz: DMX 0 = off, 1..255 = 1..25 Hz.
-constexpr uint8_t kStrobeMaxHz10 = 250;
+// The manual strobe (control universe Strobe, a profile's Strobe), in tenths
+// of Hz: 0-9 = none — the dead band of the LED fixtures' strobe channels, so a
+// fader resting near 0 does not flicker — then 10-255 = 1..25 Hz.
+constexpr uint8_t kStrobeMaxHz10  = 250;
+constexpr uint8_t kStrobeDeadBand = config::kStrobeDeadBand;
 inline uint8_t strobe_hz10_from_dmx(uint8_t v) {
-    if (v == 0) return 0;
-    return static_cast<uint8_t>(10 + (static_cast<uint32_t>(v) - 1) * (kStrobeMaxHz10 - 10) / 254);
+    if (v < kStrobeDeadBand) return 0;
+    return static_cast<uint8_t>(10 + (static_cast<uint32_t>(v) - kStrobeDeadBand) *
+                                         (kStrobeMaxHz10 - 10) / (255 - kStrobeDeadBand));
 }
 
 // Whether a strobing output is lit at `now_ms`: a short flash (≤ 30 ms, at
@@ -1977,6 +1981,74 @@ inline bool strobe_lit(uint64_t now_ms, uint8_t hz10) {
     const uint32_t period = 10000u / hz10;
     const uint32_t on     = period / 2 < 30 ? period / 2 : 30;
     return (now_ms % period) < on;
+}
+
+// ── A fixture's shutter ─────────────────────────────────────────────────────
+// What lets its light out, frame by frame, over whatever it draws. The pro
+// Shutter channel follows the ladder of the pixel bars that have one (Elation
+// SixBar, Ayrton MagicBlade): bands of 32, every effect between two "open"
+// bands so a fader passing from one to the next shows light, and closed at 0.
+// Rates rise with the value in each band.
+enum : uint8_t {
+    kShutterOpen = 0,
+    kShutterClosed,
+    kShutterStrobe,  // a short flash a period (strobe_lit)
+    kShutterPulse,   // a smooth swell and fall a period
+    kShutterRandom,  // a flash at a random moment of each period, each fixture its own
+};
+struct ShutterState {
+    uint8_t kind = kShutterOpen;
+    uint8_t hz10 = 0;  // the rate, tenths of Hz
+};
+
+inline uint8_t band_rate(uint8_t v, uint8_t lo_hz10, uint8_t hi_hz10) {  // v within a band of 32
+    return static_cast<uint8_t>(lo_hz10 + (v % 32u) * (hi_hz10 - lo_hz10) / 31u);
+}
+
+// The pro Shutter channel: 0-31 closed · 32-63 open · 64-95 strobe 1-25 Hz ·
+// 96-127 open · 128-159 pulse 0.5-10 Hz · 160-191 open · 192-223 random strobe
+// 1-20 flashes a second · 224-255 open.
+inline ShutterState shutter_from_dmx(uint8_t v) {
+    switch (v / 32) {
+    case 0: return ShutterState{ kShutterClosed, 0 };
+    case 2: return ShutterState{ kShutterStrobe, band_rate(v, 10, kStrobeMaxHz10) };
+    case 4: return ShutterState{ kShutterPulse, band_rate(v, 5, 100) };
+    case 6: return ShutterState{ kShutterRandom, band_rate(v, 10, 200) };
+    default: return ShutterState{};  // open
+    }
+}
+
+// The manual Strobe channel as a shutter state.
+inline ShutterState strobe_from_dmx(uint8_t v) {
+    const uint8_t hz10 = strobe_hz10_from_dmx(v);
+    return hz10 ? ShutterState{ kShutterStrobe, hz10 } : ShutterState{};
+}
+
+// How much light the shutter lets out at `now_ms`, 0..255. `seed` tells the
+// fixtures apart for the random strobe.
+inline uint8_t shutter_level(const ShutterState& s, uint64_t now_ms, uint32_t seed) {
+    switch (s.kind) {
+    case kShutterClosed: return 0;
+    case kShutterStrobe: return strobe_lit(now_ms, s.hz10) ? 255 : 0;
+    case kShutterPulse: {
+        if (s.hz10 == 0) return 255;
+        const uint32_t period = 10000u / s.hz10;
+        const uint32_t x      = static_cast<uint32_t>(now_ms % period) * 256u / period;
+        return kSin8[(x + 192u) & 255u];  // a raised cosine: dark, full, dark
+    }
+    case kShutterRandom: {
+        if (s.hz10 == 0) return 255;
+        // One flash per period, at a moment drawn for that period and fixture.
+        const uint32_t period = 10000u / s.hz10;
+        const uint32_t on     = period / 2 < 30 ? period / 2 : 30;
+        const uint64_t slot   = now_ms / period;
+        const uint32_t at     = hash32(static_cast<uint32_t>(slot) * 0x9E3779B9u ^ seed) %
+                            (period - on + 1);
+        const uint32_t t = static_cast<uint32_t>(now_ms % period);
+        return t >= at && t < at + on ? 255 : 0;
+    }
+    default: return 255;
+    }
 }
 
 // Band of 8 values: 0-7 = 0 ("none"), 8-15 = 1, ... (a fader held a little off
@@ -2311,11 +2383,12 @@ inline void evaluate_control(const config::ControlConfig& c, const uint8_t* dmx,
 
 // What one fixture's channels ask for.
 struct FixtureFrame {
-    uint16_t dimmer      = kMasterFull;  // full unless the profile has a dimmer
-    uint8_t white        = 0;
-    uint8_t shutter_hz10 = 0;                   // 0 = open
-    int16_t bank         = -1;                  // -1 = no effect: colour 1, steady
-    uint16_t fx_fade_ms  = 0;                   // a change of `bank` crossfades this long
+    uint16_t dimmer = kMasterFull;  // full unless the profile has a dimmer
+    uint8_t white   = 0;
+    ShutterState shutter;                       // the pro Shutter channel (open without one)
+    ShutterState strobe;                        // the manual Strobe channel
+    int16_t bank        = -1;                   // -1 = no effect: colour 1, steady
+    uint16_t fx_fade_ms = 0;                    // a change of `bank` crossfades this long
     int16_t color[config::kSceneColorsMax][3];  // -1 = not in the profile
     EffectOverride fx;                          // speed, param, phaser, MAtricks
     FixtureFrame() { std::memset(color, 0xFF, sizeof(color)); }
@@ -2343,7 +2416,8 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
                      [static_cast<size_t>(fn) - static_cast<size_t>(config::FixFn::Red)] = v;
             break;
         case config::FixFn::White: out.white = v; break;
-        case config::FixFn::Shutter: out.shutter_hz10 = strobe_hz10_from_dmx(v); break;
+        case config::FixFn::Shutter: out.shutter = shutter_from_dmx(v); break;
+        case config::FixFn::Strobe: out.strobe = strobe_from_dmx(v); break;
         case config::FixFn::Bank:
             if (dmx_band(v)) out.bank = static_cast<int16_t>(dmx_band(v) - 1);
             break;
@@ -2401,17 +2475,22 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
 template <typename GetEffect>
 inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, const FixtureFrame& f,
                            bool reversed, uint64_t phase_ms, GetEffect get_effect,
-                           bool over_pixels = false, FxClock* clocks = nullptr) {
+                           bool over_pixels = false, FxClock* clocks = nullptr, uint32_t seed = 0) {
     const size_t total = static_cast<size_t>(n) * bpp;
     if (total > cap || bpp == 0 || n == 0) return;
-    if (f.dimmer == 0 || !strobe_lit(phase_ms, f.shutter_hz10)) {
+    // The dimmer under the shutter and the strobe: a closed or dark fixture
+    // draws nothing at all.
+    const uint32_t lit = static_cast<uint32_t>(shutter_level(f.shutter, phase_ms, seed)) *
+                         shutter_level(f.strobe, phase_ms, seed) / 255u;
+    const auto level = static_cast<uint16_t>(static_cast<uint32_t>(f.dimmer) * lit / 255u);
+    if (level == 0) {
         std::memset(d, 0, total);
         return;
     }
     config::Effect e{};
     const bool plain = f.bank < 0 || !get_effect(static_cast<size_t>(f.bank), e);
     if (plain && over_pixels) {
-        apply_master(d, total, f.dimmer);
+        apply_master(d, total, level);
         return;
     }
     if (plain) {
@@ -2443,7 +2522,7 @@ inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, cons
         const Span whole{ 0, n, true, 0 };
         reverse_fixtures(d, bpp, &whole, 1);
     }
-    apply_master(d, total, f.dimmer);
+    apply_master(d, total, level);
 }
 
 // What a fixture under fixture control keeps from frame to frame: the clocks
@@ -2497,13 +2576,16 @@ inline void render_fixtures(uint8_t* dst, size_t dst_capacity, const config::Cha
         }
         if (fading) std::memcpy(scratch, d, len);  // the pixels under it, for the old look too
         FxClock* clocks = st ? st->clock : nullptr;
+        // Its address on the wire tells it apart: its own random strobe.
+        const uint32_t seed = hash32(
+            (static_cast<uint32_t>(config::fix_universe(cc) + p.uni_off) << 9) | p.slot);
         render_fixture(d, total - at, n, bpp, frame, p.reversed, phase_ms, get_effect, over_pixels,
-                       clocks);
+                       clocks, seed);
         if (!fading) return;
         FixtureFrame old = frame;
         old.bank         = static_cast<int16_t>(st->fade.from);
         render_fixture(scratch, dst_capacity, n, bpp, old, p.reversed, phase_ms, get_effect,
-                       over_pixels, clocks);
+                       over_pixels, clocks, seed);
         blend_into(d, scratch, len, fade_weight(now - st->fade.start, st->fade.len));
     });
 }

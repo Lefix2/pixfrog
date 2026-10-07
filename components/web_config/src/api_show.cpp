@@ -217,15 +217,15 @@ static cJSON* ofl_channel(const config::ControlSlot& sl) {
         ofl_range(caps, 128, 255, c);
         break;
     }
-    case config::CtlFn::Strobe: {
+    case config::CtlFn::Strobe: {  // 0-9: none, the LED fixtures' dead band
         cJSON* c = ofl_cap("ShutterStrobe");
         cJSON_AddStringToObject(c, "shutterEffect", "Open");
-        ofl_range(caps, 0, 0, c);
+        ofl_range(caps, 0, config::kStrobeDeadBand - 1, c);
         c = ofl_cap("ShutterStrobe");
         cJSON_AddStringToObject(c, "shutterEffect", "Strobe");
         cJSON_AddStringToObject(c, "speedStart", "1Hz");
         cJSON_AddStringToObject(c, "speedEnd", "25Hz");
-        ofl_range(caps, 1, 255, c);
+        ofl_range(caps, config::kStrobeDeadBand, 255, c);
         break;
     }
     case config::CtlFn::Scene: {
@@ -611,7 +611,8 @@ cJSON* build_profiles_json() {
     return jps;
 }
 
-bool apply_profiles_json(const cJSON* j, config::ProfileBank& b, const char** why) {
+bool apply_profiles_json(const cJSON* j, config::ProfileBank& b, const char** why,
+                         bool legacy_shutter) {
     auto fail = [&](const char* msg) {
         *why = msg;
         return false;
@@ -651,8 +652,10 @@ bool apply_profiles_json(const cJSON* j, config::ProfileBank& b, const char** wh
         std::memset(p.slots, 0, sizeof(p.slots));
         for (const cJSON* js = jslots->child; js; js = js->next) {
             const cJSON* jf = cJSON_GetObjectItemCaseSensitive(js, "fn");
-            const int fn    = cJSON_IsString(jf) ? config::fix_fn_from_id(jf->valuestring) : -1;
+            int fn          = cJSON_IsString(jf) ? config::fix_fn_from_id(jf->valuestring) : -1;
             if (fn < 0) return fail("slot fn: an unknown function");
+            if (legacy_shutter && fn == static_cast<int>(config::FixFn::Shutter))
+                fn = static_cast<int>(config::FixFn::Strobe);
             uint8_t arg     = 0;
             const cJSON* ix = cJSON_GetObjectItemCaseSensitive(js, "index");
             if (ix) {
@@ -706,6 +709,7 @@ static const char* ofl_profile_base(const config::ProfileSlot& sl, char* buf, si
         return buf;
     case config::FixFn::White: return "White";
     case config::FixFn::Shutter: return "Shutter";
+    case config::FixFn::Strobe: return "Strobe";
     case config::FixFn::Bank: return "Effect";
     case config::FixFn::Speed: return "Effect speed";
     case config::FixFn::Param: return "Effect parameter";
@@ -731,7 +735,7 @@ static bool control_twin(const config::ProfileSlot& sl, config::ControlSlot& out
     case config::FixFn::Red: fn = config::CtlFn::Red; break;
     case config::FixFn::Green: fn = config::CtlFn::Green; break;
     case config::FixFn::Blue: fn = config::CtlFn::Blue; break;
-    case config::FixFn::Shutter: fn = config::CtlFn::Strobe; break;
+    case config::FixFn::Strobe: fn = config::CtlFn::Strobe; break;
     case config::FixFn::Speed: fn = config::CtlFn::Speed; break;
     case config::FixFn::Param: fn = config::CtlFn::Param; break;
     case config::FixFn::PhWave: fn = config::CtlFn::PhWave; break;
@@ -754,7 +758,39 @@ static cJSON* ofl_profile_channel(const config::ProfileSlot& sl) {
     if (control_twin(sl, twin)) return ofl_channel(twin);
     cJSON* ch   = cJSON_CreateObject();
     cJSON* caps = cJSON_CreateArray();
-    if (sl.fn == static_cast<uint8_t>(config::FixFn::White)) {
+    if (sl.fn == static_cast<uint8_t>(config::FixFn::Shutter)) {
+        // The pro ladder (dmx::logic::shutter_from_dmx), open by default so a
+        // desk's "home" lets the light out.
+        struct Band {
+            int lo, hi;
+            const char* effect;
+            const char* from;
+            const char* to;
+            bool random;
+        };
+        static const Band kBands[] = {
+            { 0, 31, "Closed", nullptr, nullptr, false },
+            { 32, 63, "Open", nullptr, nullptr, false },
+            { 64, 95, "Strobe", "1Hz", "25Hz", false },
+            { 96, 127, "Open", nullptr, nullptr, false },
+            { 128, 159, "Pulse", "0.5Hz", "10Hz", false },
+            { 160, 191, "Open", nullptr, nullptr, false },
+            { 192, 223, "Strobe", "1Hz", "20Hz", true },
+            { 224, 255, "Open", nullptr, nullptr, false },
+        };
+        for (const Band& b : kBands) {
+            cJSON* c = ofl_cap("ShutterStrobe");
+            cJSON_AddStringToObject(c, "shutterEffect", b.effect);
+            if (b.from) {
+                cJSON_AddStringToObject(c, "speedStart", b.from);
+                cJSON_AddStringToObject(c, "speedEnd", b.to);
+            }
+            if (b.random) cJSON_AddBoolToObject(c, "randomTiming", true);
+            ofl_range(caps, b.lo, b.hi, c);
+        }
+        cJSON_AddNumberToObject(ch, "defaultValue", 32);
+        cJSON_AddItemToObject(ch, "capabilities", caps);
+    } else if (sl.fn == static_cast<uint8_t>(config::FixFn::White)) {
         cJSON* c = ofl_cap("ColorIntensity");
         cJSON_AddStringToObject(c, "color", "White");
         cJSON_AddItemToObject(ch, "capability", c);

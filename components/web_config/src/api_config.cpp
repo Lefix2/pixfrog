@@ -297,7 +297,8 @@ static void backup_filename(httpd_req_t* req, char* out, size_t cap) {
 
 esp_err_t handle_backup(httpd_req_t* req) {
     cJSON* root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "backup_version", 2);  // 2: effect bank, scenes of parts
+    // 2: effect bank, scenes of parts; 3: the profiles' Shutter split from Strobe
+    cJSON_AddNumberToObject(root, "backup_version", 3);
     cJSON_AddStringToObject(root, "firmware", esp_app_get_description()->version);
     cJSON_AddItemToObject(root, "global", build_global_json());
     cJSON_AddItemToObject(root, "channels", build_channels_json());
@@ -828,7 +829,10 @@ esp_err_t handle_restore(httpd_req_t* req) {
     if (cJSON_IsArray(jpr)) {
         static config::ProfileBank pb;
         const char* why = nullptr;
-        if (apply_profiles_json(jpr, pb, &why)) config::set_profiles(pb);
+        // Before version 3 a profile's "shutter" was today's manual "strobe".
+        const cJSON* jv   = cJSON_GetObjectItemCaseSensitive(j, "backup_version");
+        const bool legacy = !cJSON_IsNumber(jv) || jv->valuedouble < 3;
+        if (apply_profiles_json(jpr, pb, &why, legacy)) config::set_profiles(pb);
     }
     cJSON* jchs = cJSON_GetObjectItemCaseSensitive(j, "channels");
     if (cJSON_IsArray(jchs)) {
