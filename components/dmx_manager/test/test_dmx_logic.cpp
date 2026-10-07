@@ -2211,25 +2211,36 @@ static void test_control_auto_patch() {
     uint16_t uni[4], dmx[4], after = 9;
     size_t used = 0;
 
-    // Aligned: the pixel output takes universe 20; the fixtures' block follows,
-    // every output's fixtures opening a universe.
+    // Aligned, no control universe: the fixtures' block first — every
+    // output's fixtures opening a universe — then the pixels.
     AutoPatchOptions o;
     o.base = 20;
     EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 24);
-    EXPECT_EQ(uni[2], 20);  // the 180 pixel channels
-    EXPECT_EQ(uni[0], 21);
-    EXPECT_EQ(uni[1], 22);
-    EXPECT_EQ(uni[3], 23);
+    EXPECT_EQ(uni[0], 20);
+    EXPECT_EQ(uni[1], 21);
+    EXPECT_EQ(uni[3], 22);
+    EXPECT_EQ(uni[2], 23);  // the 180 pixel channels, last
     EXPECT_EQ(dmx[0] + dmx[1] + dmx[2] + dmx[3], 4);
     EXPECT_EQ(after, 0);
     EXPECT_EQ(used, 4u);
     // The old value became the two switches, the fixtures at their own address.
     EXPECT_TRUE(!pixel_mapped(chans[0]) && fixture_controlled(chans[0]));
     EXPECT_TRUE(!legacy_control(chans[0]));
-    EXPECT_EQ(fix_universe(chans[0]), 21);
+    EXPECT_EQ(fix_universe(chans[0]), 20);
     EXPECT_EQ(fix_dmx_start(chans[0]), 1);
-    EXPECT_EQ(chans[0].universe_start, 21);  // not pixel-mapped: its address mirrors it
+    EXPECT_EQ(chans[0].universe_start, 20);  // not pixel-mapped: its address mirrors it
     EXPECT_TRUE(pixel_mapped(chans[2]) && !fixture_controlled(chans[2]));
+
+    // With the control universe: the first block, one universe at the base,
+    // everything after it.
+    o.control        = true;
+    uint16_t ctl_uni = 0;
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used, &ctl_uni), 25);
+    EXPECT_EQ(ctl_uni, 20);
+    EXPECT_EQ(fix_universe(chans[0]), 21);
+    EXPECT_EQ(uni[2], 24);
+    EXPECT_EQ(used, 5u);
+    o.control = false;
 
     // Compact: the fixtures follow each other inside a universe, and a layout
     // asked for every output only reaches the pixel-mapped one.
@@ -2238,15 +2249,16 @@ static void test_control_auto_patch() {
     EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 22);
     EXPECT_EQ(pixel_layout(chans[2]), kPackWholePixels);
     EXPECT_TRUE(!pixel_mapped(chans[0]));
-    EXPECT_EQ(uni[2], 20);
-    EXPECT_EQ(uni[0], 21);
+    EXPECT_EQ(uni[0], 20);
     EXPECT_EQ(dmx[0], 1);
     EXPECT_EQ(dmx[1], 14);  // after the 13 channels of output 1
-    EXPECT_EQ(uni[3], 21);
+    EXPECT_EQ(uni[3], 20);
     EXPECT_EQ(dmx[3], 17);  // after output 2's 3
+    EXPECT_EQ(uni[2], 21);  // the pixels open the universe after
     EXPECT_EQ(used, 2u);
 
-    // A base of their own for the fixtures: adding LEDs no longer moves them.
+    // A base of their own for the fixtures: the pixels then follow the
+    // base, and adding fixtures no longer moves them.
     o.fix_base = 100;
     EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 101);
     EXPECT_EQ(uni[2], 20);
@@ -2254,21 +2266,25 @@ static void test_control_auto_patch() {
     EXPECT_EQ(fix_universe(chans[3]), 100);
     EXPECT_EQ(fix_dmx_start(chans[3]), 17);
     EXPECT_EQ(used, 2u);  // one of pixels, one of fixtures
+    o.fix_base = 10;      // ... or below them: the end is the pixels'
+    EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 21);
+    EXPECT_EQ(fix_universe(chans[0]), 10);
     o.fix_base = -1;
 
-    // An output driven both ways sits in both blocks: its pixels at its
-    // address, its fixtures at its fixture address.
+    // An output driven both ways sits in both blocks: its fixtures in the
+    // first, its pixels in the second.
     set_dmx_modes(chans[2], true, true);
     EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 22);
-    EXPECT_EQ(uni[2], 20);  // its pixels
-    EXPECT_EQ(dmx[2], 1);
-    EXPECT_EQ(fix_universe(chans[2]), 21);  // its one RGB fixture, between outputs 2 and 4
+    EXPECT_EQ(fix_universe(chans[2]), 20);  // its one RGB fixture, between outputs 2 and 4
     EXPECT_EQ(fix_dmx_start(chans[2]), 17);
     EXPECT_EQ(fix_dmx_start(chans[3]), 20);
-    // ... and one driven neither way takes no room at all.
+    EXPECT_EQ(uni[2], 21);  // its pixels
+    EXPECT_EQ(dmx[2], 1);
+    // ... and one driven neither way takes no room at all: parked after.
     set_dmx_modes(chans[2], false, false);
     EXPECT_EQ(compute_auto_patch(o, chans, 4, uni, dmx, &after, &bank, &used), 21);
     EXPECT_EQ(fix_universe(chans[0]), 20);  // the fixtures' block starts at the base
+    EXPECT_EQ(uni[2], 21);
     EXPECT_EQ(used, 1u);
     EXPECT_EQ(channel_universes_used(chans[2], &bank), 0u);
 

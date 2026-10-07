@@ -43,8 +43,8 @@ WEB = [
     ("effects", "effects", '[data-fx-row="8"]'),
     ("fseq", "fseq", None),
     ("channels", "channels", None),
-    # An output driven by its pixels and by its fixtures' profiles, in the output patch.
-    ("channel-control", "dmxpatch", '#patch-list-mount [data-chan="6"]'),
+    # An output driven by its fixtures' profiles, in the fixture patch.
+    ("channel-control", "fixpatch", '#fixpatch-list-mount [data-chan="6"]'),
     ("auto", "auto", None),
     ("maint", "maint", None),
     ("profiles", "profiles", '[data-pf-row="2"]'),
