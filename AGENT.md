@@ -85,7 +85,9 @@ behind the optional password):
 - config: `GET /api/config`, `POST /api/global`, `POST /api/channel/{0..7}[/identify]`
   (3 blinks), `POST /api/identify` (`{outputs:mask}`, default every configured
   output, blinked one after the other),
-  `POST /api/autopatch`, `GET /api/backup`, `POST /api/restore`
+  `POST /api/autopatch`, `GET /api/backup`, `POST /api/restore`; `GET /api/config`
+  carries `patch_clashes`, the saved ranges that share DMX channels (PROTOCOLS
+  §Auto-patch, overlap check)
 - effect bank: `POST /api/effect/{n}[/delete]` (`{name, generator, colors, speed, param}`;
   delete answers 409 while a scene plays the effect), `POST /api/effects/add|move`,
   `POST /api/effect/preview` (`{effect, index, pixels, frames, fps, t}` → frames × pixels × 3

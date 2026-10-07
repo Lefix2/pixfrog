@@ -624,6 +624,21 @@
   "identify_channel": -1,
   "link": true,
   "ota_partition": "ota_0",
+  "patch_clashes": [
+   {
+    "a": {
+     "output": 6,
+     "range": "fixtures"
+    },
+    "address": 1,
+    "b": {
+     "output": -1,
+     "range": "control"
+    },
+    "channels": 16,
+    "universe": 100
+   }
+  ],
   "playlist": {
    "autostart": false,
    "items": [

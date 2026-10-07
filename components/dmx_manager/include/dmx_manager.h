@@ -180,6 +180,26 @@ struct FixtureAddress {
 };
 size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_t cap);
 
+// The patch's overlaps: ranges of the saved settings that share DMX
+// channels, worked out from where they really sit — each output's pixel runs
+// (its layout and start address), its fixtures' channels (their profiles),
+// the control universe's. One entry per pair of owners, with the first
+// channel they share and how many they share in all. Owner o (< kNumChannels)
+// is output o's pixels, kNumChannels + o its fixtures, kPatchControl the
+// control universe. Returns how many were written; kMaxPatchClashes holds
+// every pair.
+constexpr uint8_t kPatchControl   = 2 * config::kNumChannels;
+constexpr size_t kMaxPatchClashes = (kPatchControl + 1u) * kPatchControl / 2u;
+struct PatchClash {
+    uint8_t a, b;  // owners, a < b
+    uint16_t universe;
+    uint16_t address;  // 1-based: the first shared channel
+    uint16_t channels;
+};
+size_t patch_clashes(PatchClash* out, size_t cap);
+// The outputs (bit o) with a range in some clash.
+uint8_t patch_clash_outputs(const PatchClash* c, size_t n);
+
 // Test injection (control_console): write `len` bytes at byte `offset` into
 // the universe's slot in BOTH banks. Writing both sides makes the data
 // persistent across the per-frame bank swap — same "stale data sticks"

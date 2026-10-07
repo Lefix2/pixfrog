@@ -516,6 +516,37 @@ TEST(identify_cal_loglevel_autopatch) {
     dmx::identify_stop();
 }
 
+TEST(overlaps_lists_the_ranges_that_share_channels) {
+    config::ChannelConfig saved[config::kNumChannels];
+    for (size_t i = 0; i < config::kNumChannels; ++i) {
+        saved[i]         = config::get_channel(i);
+        auto c           = saved[i];
+        c.protocol       = i < 2 ? led::Protocol::WS2815 : led::Protocol::Off;
+        c.pixel_count    = 10;
+        c.universe_start = 5;
+        c.dmx_start      = 1;
+        c.packing        = i == 1 ? config::kChanFixtureCtl : 0;
+        config::set_fix_address(c, 5, 25);
+        config::set_channel(i, c);
+    }
+    const config::ControlConfig ctl = config::get_control();
+    auto on                         = ctl;
+    on.enabled                      = 1;
+    on.universe                     = 5;
+    on.address                      = 1;
+    config::set_control(on);
+    EXPECT_TRUE(run("overlaps"));
+    EXPECT_TRUE(has("overlaps=5"));  // each pair once, an output's own two ranges too
+    EXPECT_TRUE(has("overlap=ch0 pixels,ch1 pixels,U5.1+30"));
+    EXPECT_TRUE(has("overlap=ch0 pixels,control,U5.1+"));
+    EXPECT_TRUE(has("overlap=ch1 pixels,ch1 fixtures,U5.25+"));
+    EXPECT_FALSE(run("overlaps now"));
+    for (size_t i = 0; i < config::kNumChannels; ++i)
+        config::set_channel(i, saved[i]);
+    config::set_control(ctl);
+    EXPECT_TRUE(run("overlaps"));
+}
+
 TEST(rollback_reporting_and_ack) {
     EXPECT_TRUE(run("version"));
     EXPECT_TRUE(has("last_rollback=none"));

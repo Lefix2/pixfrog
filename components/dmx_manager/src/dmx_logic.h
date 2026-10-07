@@ -1619,6 +1619,128 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
     return static_cast<uint16_t>(end & 0x7FFF);
 }
 
+// ── Patch overlap check ─────────────────────────────────────────────────────
+//
+// Where every range of the patch really sits — each output's pixel runs (its
+// layout and start address), its fixtures' channels (their profiles), the
+// control universe's — and which of them share DMX channels. Two ranges on
+// the same channels both read the same data: an output that mirrors another,
+// or a patch mistake. Ranges are laid on one axis, universe × 512 + slot, so
+// a range that runs on into the next universe stays one interval.
+
+// Who owns a range: output o's pixels are o, its fixtures kNumChannels + o,
+// the control universe kPatchControl.
+constexpr uint8_t kPatchControl = 2 * config::kNumChannels;
+inline bool patch_owner_is_fixtures(uint8_t owner) {
+    return owner >= config::kNumChannels && owner < kPatchControl;
+}
+inline uint8_t patch_owner_output(uint8_t owner) {
+    return static_cast<uint8_t>(owner % config::kNumChannels);
+}
+
+struct PatchRange {
+    uint32_t first, end;  // universe × 512 + slot, end excluded
+    uint8_t owner;
+};
+
+// One pair of owners on the same channels: the first channel they share and
+// how many they share in all.
+struct PatchClash {
+    uint8_t a, b;       // owners, a < b
+    uint16_t universe;  // the first shared channel
+    uint16_t slot;      // 0-based
+    uint16_t channels;
+};
+
+// Ranges per output at most: its pixel runs and its fixtures.
+constexpr size_t kMaxPatchRanges = config::kNumChannels * (kMaxDmxRuns + config::kMaxFixtures) + 1;
+
+// Every pair of owners at most: what find_patch_clashes may report.
+constexpr size_t kMaxPatchClashes = (kPatchControl + 1u) * kPatchControl / 2u;
+
+// Lists the patch's ranges into `out` (up to `cap`): runs of one owner that
+// follow each other are joined. `get_chan(o)` gives output o's settings.
+// Returns how many there are.
+template <typename GetChan>
+inline size_t collect_patch_ranges(GetChan get_chan, size_t n, const config::ProfileBank& profiles,
+                                   const config::ControlConfig& control, PatchRange* out,
+                                   size_t cap) {
+    size_t k = 0;
+    auto add = [&](uint8_t owner, uint32_t first, uint32_t len) {
+        if (len == 0) return;
+        if (k > 0 && out[k - 1].owner == owner && out[k - 1].end == first) {
+            out[k - 1].end += len;
+            return;
+        }
+        if (k < cap) out[k++] = PatchRange{ first, first + len, owner };
+    };
+    for (size_t o = 0; o < n && o < config::kNumChannels; ++o) {
+        const config::ChannelConfig& cc = get_chan(o);
+        if (cc.protocol == led::Protocol::Off) continue;
+        const auto px = static_cast<uint8_t>(o);
+        const auto fx = static_cast<uint8_t>(config::kNumChannels + o);
+        for_each_dmx_run(cc, [&](const DmxRun& r) {
+            add(px, (static_cast<uint32_t>(cc.universe_start) + r.uni_off) * kUniverseSize + r.slot,
+                r.bytes);
+        });
+        if (config::fixture_controlled(cc))
+            for_each_fixture_patch(cc, profiles, [&](const FixturePatch& f) {
+                add(fx,
+                    (static_cast<uint32_t>(config::fix_universe(cc)) + f.uni_off) * kUniverseSize +
+                        f.slot,
+                    f.footprint);
+            });
+    }
+    if (control.enabled) {
+        const uint32_t at = control.address > 0 ? control.address - 1u : 0u;
+        add(kPatchControl, static_cast<uint32_t>(control.universe) * kUniverseSize + at,
+            static_cast<uint32_t>(config::control_footprint(control)));
+    }
+    return k;
+}
+
+// The clashes among `r[0..n)` (sorted in place) into `out`, one per pair of
+// owners, up to `cap` (kMaxPatchClashes holds them all). Returns how many
+// were written.
+inline size_t find_patch_clashes(PatchRange* r, size_t n, PatchClash* out, size_t cap) {
+    for (size_t i = 1; i < n; ++i) {  // insertion sort: the list is mostly in order already
+        const PatchRange v = r[i];
+        size_t j           = i;
+        for (; j > 0 && r[j - 1].first > v.first; --j)
+            r[j] = r[j - 1];
+        r[j] = v;
+    }
+    size_t pairs = 0;
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = i + 1; j < n && r[j].first < r[i].end; ++j) {
+            if (r[j].owner == r[i].owner) continue;
+            const uint32_t from = r[j].first;
+            const uint32_t to   = r[j].end < r[i].end ? r[j].end : r[i].end;
+            const uint8_t a     = r[i].owner < r[j].owner ? r[i].owner : r[j].owner;
+            const uint8_t b     = r[i].owner < r[j].owner ? r[j].owner : r[i].owner;
+            size_t c            = 0;
+            while (c < pairs && !(out[c].a == a && out[c].b == b))
+                ++c;
+            if (c < pairs) {
+                // Already met: the first shared channel stays the lowest.
+                const uint32_t at = static_cast<uint32_t>(out[c].universe) * kUniverseSize +
+                                    out[c].slot;
+                if (from < at) {
+                    out[c].universe = static_cast<uint16_t>(from / kUniverseSize);
+                    out[c].slot     = static_cast<uint16_t>(from % kUniverseSize);
+                }
+                const uint32_t sum = out[c].channels + (to - from);
+                out[c].channels    = static_cast<uint16_t>(sum < 0xFFFF ? sum : 0xFFFF);
+                continue;
+            }
+            if (pairs < cap)
+                out[pairs++] = PatchClash{ a, b, static_cast<uint16_t>(from / kUniverseSize),
+                                           static_cast<uint16_t>(from % kUniverseSize),
+                                           static_cast<uint16_t>(to - from) };
+        }
+    return pairs;
+}
+
 // ── 2-source merge (HTP/LTP) ────────────────────────────────────────────────
 //
 // Art-Net nodes must merge up to two concurrent senders per universe: HTP

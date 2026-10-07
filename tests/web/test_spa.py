@@ -834,6 +834,33 @@ def test_control_overlap_and_overflow_warnings(page, device):
     expect(page.locator("#ct-warn")).to_contain_text("past DMX channel 512")
 
 
+def test_patch_overlaps_come_from_the_box(page, device):
+    # Outputs 1 and 2 on the same channels 21-30 of U5, the desk on output 1's.
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 10, "universe_start": 5, "dmx_start": 1})
+    device.post("/api/channel/1", {"protocol": "WS2815", "pixel_count": 10, "universe_start": 5, "dmx_start": 21})
+    device.post("/api/control", {"enabled": True, "universe": 5, "address": 1})
+    clashes = device.get("/api/config")["patch_clashes"]
+    assert {"a": {"output": 0, "range": "pixels"}, "b": {"output": 1, "range": "pixels"},
+            "universe": 5, "address": 21, "channels": 10} in clashes
+    page.reload()
+    nav(page, "patch")
+    expect(page.locator("#patch-overlap")).to_contain_text("overlaps")
+    expect(page.locator("#patch-mount [data-clash]")).to_have_count(3)  # both outputs, the desk
+    nav(page, "dmxpatch")
+    expect(page.locator("#dp-clash")).to_contain_text("Output 2 pixels share 10 ch from U5 · 21")
+    nav(page, "control")
+    expect(page.locator("#ct-warn")).to_contain_text("The control channels overlap Output 1 pixels")
+    # Moved apart: nothing shared any more.
+    device.post("/api/channel/1", {"dmx_start": 31})
+    device.post("/api/control", {"enabled": True, "universe": 6, "address": 1})
+    page.reload()
+    nav(page, "patch")
+    expect(page.locator("#patch-overlap")).to_have_text("no overlap detected")
+    expect(page.locator("#patch-mount [data-clash]")).to_have_count(0)
+    nav(page, "dmxpatch")
+    expect(page.locator("#dp-clash")).to_be_hidden()
+
+
 def test_auto_patch_places_the_control_universe_after_the_outputs(page, device):
     navs = page.locator("aside div[data-nav]").evaluate_all("els => els.map(e => e.dataset.nav)")
     assert navs.index("patch") == navs.index("control") + 1  # below DMX control

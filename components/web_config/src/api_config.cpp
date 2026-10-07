@@ -208,6 +208,37 @@ static void apply_gaps_json(const cJSON* jc, config::ChannelConfig& c) {
 
 // ── GET /api/config ─────────────────────────────────────────────────────────
 
+// The patch's overlaps (dmx::patch_clashes): [{"a": {"output", "range"},
+// "b": …, "universe", "address", "channels"}], one per pair of ranges that
+// share DMX channels. "range" is pixels, fixtures or control (output -1).
+static cJSON* patch_owner_json(uint8_t owner) {
+    cJSON* j = cJSON_CreateObject();
+    if (owner >= dmx::kPatchControl) {
+        cJSON_AddNumberToObject(j, "output", -1);
+        cJSON_AddStringToObject(j, "range", "control");
+    } else {
+        cJSON_AddNumberToObject(j, "output", owner % config::kNumChannels);
+        cJSON_AddStringToObject(j, "range", owner < config::kNumChannels ? "pixels" : "fixtures");
+    }
+    return j;
+}
+
+static cJSON* build_patch_clashes_json() {
+    static dmx::PatchClash clashes[dmx::kMaxPatchClashes];  // off the httpd stack
+    const size_t n = dmx::patch_clashes(clashes, dmx::kMaxPatchClashes);
+    cJSON* arr     = cJSON_CreateArray();
+    for (size_t i = 0; i < n; ++i) {
+        cJSON* j = cJSON_CreateObject();
+        cJSON_AddItemToObject(j, "a", patch_owner_json(clashes[i].a));
+        cJSON_AddItemToObject(j, "b", patch_owner_json(clashes[i].b));
+        cJSON_AddNumberToObject(j, "universe", clashes[i].universe);
+        cJSON_AddNumberToObject(j, "address", clashes[i].address);
+        cJSON_AddNumberToObject(j, "channels", clashes[i].channels);
+        cJSON_AddItemToArray(arr, j);
+    }
+    return arr;
+}
+
 esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "link", ui::is_link_up());
@@ -226,6 +257,7 @@ esp_err_t handle_get_config(httpd_req_t* req) {
     cJSON_AddItemToObject(root, "playlist", build_playlist_json());
     cJSON_AddItemToObject(root, "groups", build_groups_json());
     cJSON_AddItemToObject(root, "profiles", build_profiles_json());
+    cJSON_AddItemToObject(root, "patch_clashes", build_patch_clashes_json());
     return send_json(req, root);
 }
 

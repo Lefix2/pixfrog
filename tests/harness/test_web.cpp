@@ -213,6 +213,58 @@ TEST(post_channel_updates_and_ignores_bad_fields) {
 
 // Fixtures: [first LED, count] pairs like the gaps; two sharing an LED are
 // refused whole, the stored list kept.
+// GET /api/config lists the ranges of the saved patch that share channels.
+TEST(the_patch_overlaps_are_listed_in_the_config) {
+    config::ChannelConfig saved[config::kNumChannels];
+    for (size_t i = 0; i < config::kNumChannels; ++i) {
+        saved[i]         = config::get_channel(i);
+        auto c           = saved[i];
+        c.protocol       = i < 2 ? led::Protocol::WS2815 : led::Protocol::Off;
+        c.pixel_count    = 10;
+        c.universe_start = 5;
+        c.dmx_start      = 1;
+        c.packing        = 0;
+        config::set_channel(i, c);
+    }
+    const config::ControlConfig ctl = config::get_control();
+    auto off                        = ctl;
+    off.enabled                     = 0;
+    config::set_control(off);
+    Json cfg(get("/api/config").body);
+    const cJSON* pc = cfg["patch_clashes"];
+    EXPECT_EQ(cJSON_GetArraySize(pc), 1);
+    const cJSON* c0 = cJSON_GetArrayItem(pc, 0);
+    EXPECT_EQ(cJSON_GetObjectItem(cJSON_GetObjectItem(c0, "a"), "output")->valueint, 0);
+    EXPECT_TRUE(
+        std::string(cJSON_GetObjectItem(cJSON_GetObjectItem(c0, "b"), "range")->valuestring) ==
+        "pixels");
+    EXPECT_EQ(cJSON_GetObjectItem(cJSON_GetObjectItem(c0, "b"), "output")->valueint, 1);
+    EXPECT_EQ(cJSON_GetObjectItem(c0, "universe")->valueint, 5);
+    EXPECT_EQ(cJSON_GetObjectItem(c0, "address")->valueint, 1);
+    EXPECT_EQ(cJSON_GetObjectItem(c0, "channels")->valueint, 30);
+    // The control universe on output 2's channels: a second pair.
+    auto on     = off;
+    on.enabled  = 1;
+    on.universe = 5;
+    on.address  = 30;
+    config::set_control(on);
+    Json both(get("/api/config").body);
+    EXPECT_EQ(cJSON_GetArraySize(both["patch_clashes"]), 3);  // with each output
+    const cJSON* cc = cJSON_GetArrayItem(both["patch_clashes"], 1);
+    EXPECT_TRUE(
+        std::string(cJSON_GetObjectItem(cJSON_GetObjectItem(cc, "b"), "range")->valuestring) ==
+        "control");
+    EXPECT_EQ(cJSON_GetObjectItem(cJSON_GetObjectItem(cc, "b"), "output")->valueint, -1);
+    // Output 2 moved past output 1, the desk elsewhere: nothing shared.
+    config::set_control(off);
+    EXPECT_EQ(post("/api/channel/1", "{\"dmx_start\":31}").status, 200);
+    Json clear(get("/api/config").body);
+    EXPECT_EQ(cJSON_GetArraySize(clear["patch_clashes"]), 0);
+    for (size_t i = 0; i < config::kNumChannels; ++i)
+        config::set_channel(i, saved[i]);
+    config::set_control(ctl);
+}
+
 TEST(channel_fixtures_round_trip_and_overlaps_are_refused) {
     EXPECT_EQ(post("/api/channel/4", "{\"pixel_count\":295,\"gaps\":[[60,1],[120,1]],"
                                      "\"fixtures\":[[1,59],[61,59],[121,59]]}")

@@ -469,6 +469,24 @@ Inside the first two blocks:
 The reply carries `universes` against `pool` (72, §DMX pool): a patch needing
 more is flagged in the web UI and the console (`warn=pool_full`).
 
+**Overlap check.** Whatever placed them — the auto-patch or a hand-typed
+address — the box checks where the saved ranges really sit and reports those
+that share DMX channels (`dmx::patch_clashes`). The ranges are each output's
+pixel runs (its layout and start address, across universes), its fixtures'
+channels (their profiles) and the control universe's channels; an output's
+own two ranges count too. Two ranges side by side in one universe (compact)
+do not clash. One entry per pair, with the first shared channel and how many
+they share in all:
+- REST: `GET /api/config` → `"patch_clashes": [{"a": {"output": 0, "range":
+  "pixels"}, "b": {"output": -1, "range": "control"}, "universe": 5,
+  "address": 1, "channels": 6}]` (`range`: pixels, fixtures or control).
+- Console: `overlaps` → `overlaps=<n>`, then `overlap=ch0 pixels,control,U5.1+6`
+  per pair.
+- Web: the Auto-patch table marks the ranges (⚠) and its footer counts the
+  overlaps; Output patch lists the current output's; Control universe warns
+  when its channels are taken. While patch edits are unsaved the check is the
+  saved settings', and says so.
+
 ---
 
 ## 6. Verification
