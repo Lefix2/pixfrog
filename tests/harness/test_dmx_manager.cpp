@@ -774,6 +774,57 @@ TEST(control_fade_fseq_and_scene_overrides) {
     EXPECT_EQ(dmx::scene_fade_ms(), 0u);
 }
 
+// The desk rides the speed of a chase: the head carries on from where it is,
+// at the new pace. Worked out as time × speed it would jump to where the
+// chase would be had it always run that fast.
+TEST(a_speed_change_bends_the_motion_instead_of_jumping_it) {
+    reset_show();
+    one_channel(200);
+    config::Effect e{};
+    std::snprintf(e.name, sizeof(e.name), "Chase");
+    e.generator    = config::kSceneFxChase;
+    e.num_colors   = 1;
+    e.colors[0][0] = 255;
+    e.speed        = 50;  // 100 generator units: 0.1 px a ms
+    e.param        = 1;
+    config::set_effect(0, e);
+    config::set_scene(0, config::make_scene(e.name, 0x01, 0));
+    enable_control(config::ControlPreset::Full);
+    auto head = [] {
+        const uint8_t* px = decode0();
+        for (int i = 0; i < 200; ++i)
+            if (px[i * 3]) return i;
+        return -1;
+    };
+    shim::set_time_us(1'000'000'000);  // 1000 s: 100 000 px travelled, a whole number of laps
+    uint8_t u[16]{};
+    u[0] = u[1] = 0xFF;
+    u[4]        = 8;  // scene 1
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(head(), 0);
+    shim::advance_ms(100);
+    EXPECT_EQ(head(), 10);
+    u[5] = 250;  // the desk's speed: 500 units, five times faster
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(head(), 10);  // where it was (time × speed: pixel 50)
+    shim::advance_ms(100);
+    EXPECT_EQ(head(), 60);  // 50 px in 100 ms
+    u[5] = 0;               // back to the effect's own speed
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(head(), 60);
+    shim::advance_ms(100);
+    EXPECT_EQ(head(), 70);
+
+    // Another scene starts on the wall clock, in step with any other output
+    // playing that look from scratch.
+    EXPECT_TRUE(config::set_scene(1, config::make_scene("Chase 2", 0x01, 0)));
+    u[4] = 16;
+    ctrl_frame(u, sizeof(u));
+    EXPECT_EQ(head(), (1'000'300 / 10) % 200);
+    reset_show();
+    dmx::scene_stop();
+}
+
 // The desk's Bank channel plays another effect of the bank on the outputs of
 // its group, whatever the scene's part says; the phaser channels dim it.
 TEST(control_bank_and_phaser_act_on_the_playing_scene) {

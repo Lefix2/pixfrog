@@ -1348,6 +1348,44 @@ static void test_phaser_waveforms() {
     EXPECT_EQ(phaser_level(kPhaserRampUp, q, 255), 64);             // 255 = the whole cycle
 }
 
+// An effect clock integrates its rates: with none changed it is the wall
+// clock, a change carries on from where the look is, another look restarts
+// on the wall clock.
+static void test_fx_clock_bends_on_a_speed_change() {
+    using namespace pixfrog::config;
+    Effect e{};
+    e.generator = kSceneFxChase;
+    e.speed     = 10;  // rate 20
+    e.ph_rate   = 4;
+    FxClock c;
+    FxTime t = clock_tick(c, 1, e, 1000);
+    EXPECT_EQ(t.gen, 20000u);
+    EXPECT_EQ(t.ph, 4000u);
+    t = clock_tick(c, 1, e, 1500);
+    EXPECT_EQ(t.gen, wall_time(e, 1500).gen);  // a speed nobody rides is the wall clock
+    EXPECT_EQ(t.ph, wall_time(e, 1500).ph);
+    e.speed   = 100;  // rate 200
+    e.ph_rate = 40;
+    t         = clock_tick(c, 1, e, 1516);  // the frame of the change: the old pace up to it
+    EXPECT_EQ(t.gen, 30000u + 16u * 20u);
+    EXPECT_EQ(t.ph, 6000u + 16u * 4u);
+    t = clock_tick(c, 1, e, 1532);  // then the new one
+    EXPECT_EQ(t.gen, 30320u + 16u * 200u);
+    EXPECT_EQ(t.ph, 6064u + 16u * 40u);
+    EXPECT_EQ(t.ms, 1532u);
+    t = clock_tick(c, 1, e, 1532);  // the same instant twice does not move it
+    EXPECT_EQ(t.gen, 33520u);
+    t = clock_tick(c, 2, e, 2000);  // another look: the wall clock
+    EXPECT_EQ(t.gen, 400000u);
+    EXPECT_EQ(t.ph, 80000u);
+    e.speed = 10;
+    clock_tick(c, 2, e, 2016);
+    t = clock_tick(c, 2, e, 2016 + kFxClockIdleMs + 1);  // undrawn a while: the wall clock
+    EXPECT_EQ(t.gen, wall_time(e, 2016 + kFxClockIdleMs + 1).gen);
+    t = clock_tick(c, 2, e, 100);  // a clock set back: the wall clock
+    EXPECT_EQ(t.gen, 2000u);
+}
+
 static void test_phaser_dimmer_rate_spread_and_floor() {
     using namespace pixfrog::config;
     Effect e{};
@@ -2819,6 +2857,7 @@ int main() {
     test_effect_speed_counts_double();
     test_phaser_waveforms();
     test_phaser_dimmer_rate_spread_and_floor();
+    test_fx_clock_bends_on_a_speed_change();
     test_effect_dimmer_layers();
     test_effect_dimmer_invert();
     test_control_layout();

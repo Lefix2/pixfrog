@@ -63,8 +63,6 @@ on the one before.
       TFT / OLED; the effect bank (generator, colours, speed, phaser, Block /
       Groups / Wings) is still web / console only. A scene's part picks its
       effect by name, so a look cannot be tuned from the box.
-- [ ] **Smooth live speed changes** — the phase is `time × speed`, so riding a
-      speed fader makes the pattern jump; accumulate the phase per fixture.
 
 ## FSEQ / standalone playback
 

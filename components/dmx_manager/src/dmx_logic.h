@@ -359,7 +359,19 @@ inline size_t downsample_rgb(const uint8_t* px, uint32_t count, uint8_t bpp, uin
 //
 // Parametric effects rendered straight into the channel's pixel back buffer
 // (canonical RGB(W) order; colour order / brightness apply at encode time).
-// `phase_ms` is wall-clock so animation speed is refresh-rate independent.
+// They are drawn at an FxTime: animation speed is refresh-rate independent.
+
+// Where an effect is at one frame. A generator moves at its rate (units a
+// millisecond, effect_rate) and the phaser at ph_rate; their positions are
+// the integrals of those rates over time. Worked out as time × speed instead,
+// every speed change would make the pattern jump: the whole past would be
+// replayed at the new speed. With a speed that never changed both are the
+// same, so outputs playing the same look stay in step.
+struct FxTime {
+    uint64_t ms;   // wall clock: twinkle and fire drift on it besides their rate
+    uint64_t gen;  // the generator's position, rate × ms
+    uint64_t ph;   // the phaser's, ph_rate × ms
+};
 
 // Integer HSV→RGB, h in [0,360), s/v fixed at max — enough for a wheel.
 inline void hue_to_rgb(uint32_t h360, uint8_t* r, uint8_t* g, uint8_t* b) {
@@ -538,19 +550,19 @@ inline uint32_t bounce256(uint64_t travel256, uint32_t span) {
 namespace fx {
 
 inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                  uint64_t t) {
-    const uint64_t pos = static_cast<uint64_t>(t) * speed * 60 % 255000;
+                  const FxTime& t) {
+    const uint64_t pos = t.gen * 60 % 255000;
     const bool flash   = pos < static_cast<uint64_t>(speed) * 1000;
     const Rgb c        = flash ? (p.n > 1 ? p.c[1] : Rgb{ 0, 0, 0 }) : p.c[0];
     for (uint16_t i = 0; i < n; ++i)
         set_px(d, bpp, i, c);
 }
 
-inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                  uint8_t param, uint64_t t) {
+inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
+                  const FxTime& t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint16_t width = param ? param : 1;
-    const uint32_t head  = (static_cast<uint64_t>(t) * speed / 1000) % n;
+    const uint32_t head  = (t.gen / 1000) % n;
     for (uint8_t k = 0; k < p.n; ++k) {
         const uint32_t h = head + static_cast<uint32_t>(k) * n / p.n;
         for (uint16_t w = 0; w < width && w < n; ++w)
@@ -558,10 +570,9 @@ inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_
     }
 }
 
-inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint32_t speed, uint8_t param,
-                    uint64_t t) {
+inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint8_t param, const FxTime& t) {
     const uint32_t repeats = param ? param : 1;
-    const uint32_t offset  = (static_cast<uint64_t>(t) * speed / 100) % 360;
+    const uint32_t offset  = (t.gen / 100) % 360;
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t hue = static_cast<uint32_t>(i) * 360 * repeats / n + offset;
         uint8_t r, g, b;
@@ -570,8 +581,8 @@ inline void rainbow(uint8_t* d, uint16_t n, uint8_t bpp, uint32_t speed, uint8_t
     }
 }
 
-inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                  uint8_t param, uint64_t t) {
+inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
+                  const FxTime& t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
     const uint32_t count = param ? (param > 16 ? 16 : param) : 3;
     const uint32_t span  = n > 1 ? n - 1u : 1u;
@@ -582,7 +593,7 @@ inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_
         const uint32_t h = hash32(k * 0x9E3779B9u + 1);
         // 0.6×..1.4× the nominal speed, so blobs overtake and cross each other.
         const uint32_t vel    = 96 + (h & 127);
-        const uint64_t travel = static_cast<uint64_t>(t) * speed * vel * 256 / (160 * 1000);
+        const uint64_t travel = t.gen * vel * 256 / (160 * 1000);
         const uint32_t pos    = bounce256(travel + (h >> 8) % (2 * span * 256), span);
         const Rgb c           = p.c[k % p.n];
         const uint32_t lo     = pos > r256 ? (pos - r256) / 256 : 0;
@@ -596,10 +607,10 @@ inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_
     }
 }
 
-inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                     uint8_t param, uint64_t t) {
+inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
+                     const FxTime& t) {
     const uint32_t repeats = param ? param : 1;
-    const uint32_t offset  = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000);
+    const uint32_t offset  = static_cast<uint32_t>(t.gen * 256 / 1000);
     for (uint16_t i = 0; i < n; ++i)
         set_px(
             d, bpp, i,
@@ -607,18 +618,16 @@ inline void gradient(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint
                               offset));
 }
 
-inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                 uint64_t t) {
-    const Rgb c = palette_at(p,
-                             static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 256 / 1000));
+inline void fade(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, const FxTime& t) {
+    const Rgb c = palette_at(p, static_cast<uint32_t>(t.gen * 256 / 1000));
     for (uint16_t i = 0; i < n; ++i)
         set_px(d, bpp, i, c);
 }
 
-inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                    uint8_t param, uint64_t t) {
+inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
+                    const FxTime& t) {
     const uint32_t density = param ? param : 64;
-    const uint64_t ticks   = t * (speed + 4u) / 64;  // 64-bit: no wrap in a lifetime
+    const uint64_t ticks   = (t.gen + 4u * t.ms) / 64;  // 64-bit: no wrap in a lifetime
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t h      = hash32(i * 2654435761u ^ 0x5bd1e995u);
         const uint32_t period = 512 + (h & 1023);
@@ -634,11 +643,10 @@ inline void twinkle(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint3
     }
 }
 
-inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                 uint64_t t) {
+inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, const FxTime& t) {
     // The noise coordinate wraps at 2^32 (every ~6 days at full speed): one
     // reseed of a chaotic field, invisible in flames.
-    const uint32_t y    = static_cast<uint32_t>(t * (speed + 8u) / 32);
+    const uint32_t y    = static_cast<uint32_t>((t.gen + 8u * t.ms) / 32);
     const uint32_t span = n > 1 ? n - 1u : 1u;
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t u    = static_cast<uint32_t>(i) * 65535u / span;  // 0 at the base
@@ -653,13 +661,13 @@ inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t
     }
 }
 
-inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                    uint8_t param, uint64_t t) {
+inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
+                    const FxTime& t) {
     const uint32_t span   = n > 1 ? n - 1u : 1u;
     const uint32_t width  = param ? param : (n / 20 ? n / 20 : 1);
     const uint32_t half   = width * 128;
     const uint32_t trail  = width * 4 * 256;
-    const uint64_t travel = static_cast<uint64_t>(t) * speed * 256 / 1000;
+    const uint64_t travel = t.gen * 256 / 1000;
     const uint64_t leg    = static_cast<uint64_t>(span) * 256;
     const bool forward    = travel % (2 * leg) < leg;
     const uint32_t pos    = bounce256(travel, span);
@@ -696,10 +704,10 @@ inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint3
     }
 }
 
-inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                 uint8_t param, uint64_t t) {
+inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
+                 const FxTime& t) {
     const uint32_t waves = param ? param : 2;
-    const uint32_t shift = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed * 512 / 1000);
+    const uint32_t shift = static_cast<uint32_t>(t.gen * 512 / 1000);
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t pos = static_cast<uint32_t>(static_cast<uint64_t>(i) * 65536u * waves / n) -
                              shift;
@@ -708,12 +716,12 @@ inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t
     }
 }
 
-inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_t speed,
-                    uint8_t param, uint64_t t) {
+inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
+                    const FxTime& t) {
     const uint32_t width  = param ? param : 4;
     const uint32_t bands  = p.n > 1 ? p.n : 2;  // a lone colour alternates with black
     const uint32_t period = width * bands;
-    const uint32_t shift  = static_cast<uint32_t>(static_cast<uint64_t>(t) * speed / 1000 % period);
+    const uint32_t shift  = static_cast<uint32_t>(t.gen / 1000 % period);
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t band = (i + period - shift) % period / width;
         set_px(d, bpp, i, band < p.n ? p.c[band] : Rgb{ 0, 0, 0 });
@@ -723,33 +731,40 @@ inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint3
 }  // namespace fx
 
 // Renders one frame of `generator` (kSceneFx*) on a run of `pixel_count`
-// pixels at wall-clock time `phase_ms` (animation speed is refresh-rate
-// independent), `rate` being the speed in the generator's own units. 64-bit
-// time: a 32-bit ms clock wraps after 49.7 days, and every effect would jump at
-// that instant on a permanent install. Canonical RGB(W) order; colour order
+// pixels at `t`, `rate` being the speed in the generator's own units (solid
+// reads it: its strobe's flash length). 64-bit positions: a 32-bit ms clock
+// wraps after 49.7 days, and every effect would jump at that instant on a
+// permanent install. Canonical RGB(W) order; colour order
 // and brightness apply at encode time.
 inline void fill_generator(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
                            uint8_t bytes_per_pixel, uint8_t generator, const Palette& p,
-                           uint32_t rate, uint8_t param, uint64_t phase_ms) {
+                           uint32_t rate, uint8_t param, const FxTime& t) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
-    const uint32_t s  = rate;
     const uint8_t k   = param;
     const uint16_t n  = pixel_count;
     const uint8_t bpp = bytes_per_pixel;
     switch (generator) {
-    case config::kSceneFxChase: fx::chase(dst, n, bpp, p, s, k, phase_ms); break;
-    case config::kSceneFxRainbow: fx::rainbow(dst, n, bpp, s, k, phase_ms); break;
-    case config::kSceneFxBlobs: fx::blobs(dst, n, bpp, p, s, k, phase_ms); break;
-    case config::kSceneFxGradient: fx::gradient(dst, n, bpp, p, s, k, phase_ms); break;
-    case config::kSceneFxFade: fx::fade(dst, n, bpp, p, s, phase_ms); break;
-    case config::kSceneFxTwinkle: fx::twinkle(dst, n, bpp, p, s, k, phase_ms); break;
-    case config::kSceneFxFire: fx::fire(dst, n, bpp, p, s, phase_ms); break;
-    case config::kSceneFxScanner: fx::scanner(dst, n, bpp, p, s, k, phase_ms); break;
-    case config::kSceneFxWave: fx::wave(dst, n, bpp, p, s, k, phase_ms); break;
-    case config::kSceneFxStripes: fx::stripes(dst, n, bpp, p, s, k, phase_ms); break;
-    default: fx::solid(dst, n, bpp, p, s, phase_ms); break;
+    case config::kSceneFxChase: fx::chase(dst, n, bpp, p, k, t); break;
+    case config::kSceneFxRainbow: fx::rainbow(dst, n, bpp, k, t); break;
+    case config::kSceneFxBlobs: fx::blobs(dst, n, bpp, p, k, t); break;
+    case config::kSceneFxGradient: fx::gradient(dst, n, bpp, p, k, t); break;
+    case config::kSceneFxFade: fx::fade(dst, n, bpp, p, t); break;
+    case config::kSceneFxTwinkle: fx::twinkle(dst, n, bpp, p, k, t); break;
+    case config::kSceneFxFire: fx::fire(dst, n, bpp, p, t); break;
+    case config::kSceneFxScanner: fx::scanner(dst, n, bpp, p, k, t); break;
+    case config::kSceneFxWave: fx::wave(dst, n, bpp, p, k, t); break;
+    case config::kSceneFxStripes: fx::stripes(dst, n, bpp, p, k, t); break;
+    default: fx::solid(dst, n, bpp, p, rate, t); break;
     }
+}
+
+// The same at wall-clock `phase_ms`, the rate as it is.
+inline void fill_generator(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                           uint8_t bytes_per_pixel, uint8_t generator, const Palette& p,
+                           uint32_t rate, uint8_t param, uint64_t phase_ms) {
+    fill_generator(dst, dst_capacity, pixel_count, bytes_per_pixel, generator, p, rate, param,
+                   FxTime{ phase_ms, phase_ms * rate, 0 });
 }
 
 // The generator rate of an effect: Effect::speed counts double (twice the top
@@ -757,6 +772,45 @@ inline void fill_generator(uint8_t* dst, size_t dst_capacity, uint16_t pixel_cou
 // own scale — its speed is a strobe frequency, 255 meaning steady colour 2.
 inline uint32_t effect_rate(const config::Effect& e) {
     return e.generator == config::kSceneFxSolid ? e.speed : 2u * e.speed;
+}
+
+// `e` at wall-clock `ms` with its speeds as they are: a look nobody rides.
+inline FxTime wall_time(const config::Effect& e, uint64_t ms) {
+    return FxTime{ ms, ms * effect_rate(e), ms * e.ph_rate };
+}
+
+// The positions of what one place draws (an output, a group, a fixture),
+// kept from frame to frame so a speed change carries on from where the look
+// is. `key` names the look drawn there: another one — or the same one again
+// after kFxClockIdleMs undrawn, a scene stopped and restarted — starts on the
+// wall clock, in step with every other place playing it.
+struct FxClock {
+    uint64_t gen    = 0;
+    uint64_t ph     = 0;
+    uint64_t at     = 0;  // ms of the last tick
+    uint32_t key    = 0;
+    uint16_t rate   = 0;
+    uint8_t ph_rate = 0;
+    bool live       = false;
+};
+
+// Advances `c` to `ms` at the rates it ran at since its last tick, then takes
+// `e`'s: the frame after a change already moves at the new speed.
+inline constexpr uint64_t kFxClockIdleMs = 1000;  // longer than any frame
+inline FxTime clock_tick(FxClock& c, uint32_t key, const config::Effect& e, uint64_t ms) {
+    if (!c.live || c.key != key || ms < c.at || ms - c.at > kFxClockIdleMs) {
+        c.gen = ms * effect_rate(e);
+        c.ph  = ms * e.ph_rate;
+    } else {
+        c.gen += (ms - c.at) * c.rate;
+        c.ph  += (ms - c.at) * c.ph_rate;
+    }
+    c.at      = ms;
+    c.key     = key;
+    c.rate    = static_cast<uint16_t>(effect_rate(e));
+    c.ph_rate = e.ph_rate;
+    c.live    = true;
+    return FxTime{ ms, c.gen, c.ph };
 }
 
 // ── Dimmer phaser ───────────────────────────────────────────────────────────
@@ -823,14 +877,18 @@ inline uint8_t phaser_level(uint8_t wave, uint32_t phase, uint8_t width, uint8_t
     }
 }
 
-// The phaser's dimmer (0..255) for pixel `i` of a run of `n` at `phase_ms`.
+// The phaser's dimmer (0..255) for pixel `i` of a run of `n` at `t`.
 // ph_rate counts 1/20 Hz (3 BPM a step), ph_spread 1/16 cycle along the run.
-inline uint8_t phaser_dimmer(const config::Effect& e, uint32_t i, uint32_t n, uint64_t phase_ms) {
-    const uint32_t time  = static_cast<uint32_t>(phase_ms * e.ph_rate * 4096 / 1250);
+inline uint8_t phaser_dimmer(const config::Effect& e, uint32_t i, uint32_t n, const FxTime& t) {
+    const uint32_t time  = static_cast<uint32_t>(t.ph * 4096 / 1250);
     const uint32_t along = n ? i * e.ph_spread * 4096u / n : 0;
     const uint32_t phase = (e.flags & config::kEffectPhaserReverse) ? time + along : time - along;
     const uint32_t level = phaser_level(e.ph_wave, phase, e.ph_width, e.ph_attack, e.ph_decay);
     return static_cast<uint8_t>(e.ph_low + (255u - e.ph_low) * level / 255);
+}
+
+inline uint8_t phaser_dimmer(const config::Effect& e, uint32_t i, uint32_t n, uint64_t phase_ms) {
+    return phaser_dimmer(e, i, n, wall_time(e, phase_ms));
 }
 
 // Applies the effect's dimmer layers to the `n` pixels the generator just
@@ -839,7 +897,7 @@ inline uint8_t phaser_dimmer(const config::Effect& e, uint32_t i, uint32_t n, ui
 // 1). The invert is worked out from the generator's pixel, so a pixel the
 // phaser dimmed to black still knows its hue.
 inline void apply_effect_dimmer(uint8_t* d, uint16_t n, uint8_t bpp, const config::Effect& e,
-                                uint64_t phase_ms) {
+                                const FxTime& t) {
     const bool phaser = e.ph_wave != config::kPhaserNone && e.ph_wave < config::kPhaserWaveCount;
     const bool invert = (e.flags & config::kEffectDimmerInvert) != 0;
     if (!phaser && !invert) return;
@@ -850,7 +908,7 @@ inline void apply_effect_dimmer(uint8_t* d, uint16_t n, uint8_t bpp, const confi
     if (e.generator == config::kSceneFxRainbow) ref = 255;
     for (uint16_t i = 0; i < n; ++i) {
         uint8_t* px        = d + static_cast<size_t>(i) * bpp;
-        const uint32_t dim = phaser ? phaser_dimmer(e, i, n, phase_ms) + 1u : 256u;
+        const uint32_t dim = phaser ? phaser_dimmer(e, i, n, t) + 1u : 256u;
         if (!invert) {
             for (uint8_t k = 0; k < 3; ++k)
                 px[k] = static_cast<uint8_t>(px[k] * dim >> 8);
@@ -930,20 +988,28 @@ inline void expand_matricks(uint8_t* d, uint32_t n, uint8_t bpp, const Matricks&
     }
 }
 
-// Renders one frame of `effect` on a run of `pixel_count` pixels: the
+// Renders one frame of `effect` on a run of `pixel_count` pixels at `t`: the
 // generator and the dimmer layers on the virtual run, then Block / Groups /
 // Wings spread it over the pixels.
 inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
                             uint8_t bytes_per_pixel, const config::Effect& effect,
-                            uint64_t phase_ms) {
+                            const FxTime& t) {
     const size_t total = static_cast<size_t>(pixel_count) * bytes_per_pixel;
     if (total > dst_capacity || bytes_per_pixel == 0 || pixel_count == 0) return;
     const Matricks m = matricks_for(effect, pixel_count);
     const auto drawn = static_cast<uint16_t>(m.active ? m.virt : pixel_count);
     fill_generator(dst, dst_capacity, drawn, bytes_per_pixel, effect.generator,
-                   effect_palette(effect), effect_rate(effect), effect.param, phase_ms);
-    apply_effect_dimmer(dst, drawn, bytes_per_pixel, effect, phase_ms);
+                   effect_palette(effect), effect_rate(effect), effect.param, t);
+    apply_effect_dimmer(dst, drawn, bytes_per_pixel, effect, t);
     expand_matricks(dst, pixel_count, bytes_per_pixel, m);
+}
+
+// The same at wall-clock `phase_ms`, its speeds as they are.
+inline void fill_effect_run(uint8_t* dst, size_t dst_capacity, uint16_t pixel_count,
+                            uint8_t bytes_per_pixel, const config::Effect& effect,
+                            uint64_t phase_ms) {
+    fill_effect_run(dst, dst_capacity, pixel_count, bytes_per_pixel, effect,
+                    wall_time(effect, phase_ms));
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -1092,10 +1158,16 @@ inline void fill_on_channel(uint8_t* dst, size_t dst_capacity, const config::Cha
 // Renders `effect` on channel `cc`, spread over its fixtures as `mode` says.
 inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
                                    const config::ChannelConfig& cc, uint8_t bpp,
-                                   const config::Effect& effect, uint8_t mode, uint64_t phase_ms) {
+                                   const config::Effect& effect, uint8_t mode, const FxTime& t) {
     fill_on_channel(dst, dst_capacity, cc, bpp, mode, [&](uint8_t* d, size_t cap, uint16_t n) {
-        fill_effect_run(d, cap, n, bpp, effect, phase_ms);
+        fill_effect_run(d, cap, n, bpp, effect, t);
     });
+}
+
+inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
+                                   const config::ChannelConfig& cc, uint8_t bpp,
+                                   const config::Effect& effect, uint8_t mode, uint64_t phase_ms) {
+    fill_effect_on_channel(dst, dst_capacity, cc, bpp, effect, mode, wall_time(effect, phase_ms));
 }
 
 // ── Scenes on groups ────────────────────────────────────────────────────────
@@ -1146,7 +1218,7 @@ inline void fixture_spans_by_index(const config::ChannelConfig& cc,
 // Returns the strip length, 0 when it does not fit `cap` bytes.
 inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* lens, size_t n,
                                    const config::Effect& effect, uint8_t fixture_mode,
-                                   uint64_t phase_ms) {
+                                   const FxTime& t) {
     constexpr uint8_t bpp = 3;
     uint32_t total        = 0;
     for (size_t i = 0; i < n; ++i)
@@ -1158,13 +1230,13 @@ inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* l
         uint32_t at = 0;
         for (size_t i = 0; i < n; at += lens[i++]) {
             fill_effect_run(strip + static_cast<size_t>(at) * bpp, cap - at * bpp, lens[i], bpp,
-                            effect, phase_ms);
+                            effect, t);
             if (rev) reverse_px(strip + static_cast<size_t>(at) * bpp, bpp, lens[i]);
         }
         return total;
     }
     if (mode != config::kFixtureModeMirror) {
-        fill_effect_run(strip, cap, static_cast<uint16_t>(total), bpp, effect, phase_ms);
+        fill_effect_run(strip, cap, static_cast<uint16_t>(total), bpp, effect, t);
         if (rev) reverse_px(strip, bpp, total);
         return total;
     }
@@ -1174,7 +1246,7 @@ inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* l
     uint32_t hlen     = 0;
     for (size_t i = 0; i < half; ++i)
         hlen += lens[i];
-    fill_effect_run(strip, cap, static_cast<uint16_t>(hlen), bpp, effect, phase_ms);
+    fill_effect_run(strip, cap, static_cast<uint16_t>(hlen), bpp, effect, t);
     if (rev) reverse_px(strip, bpp, hlen);
     uint32_t offs[config::kMaxGroupMembers + 1];
     offs[0] = 0;
@@ -1189,6 +1261,13 @@ inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* l
         }
     }
     return total;
+}
+
+inline uint32_t render_group_strip(uint8_t* strip, size_t cap, const uint16_t* lens, size_t n,
+                                   const config::Effect& effect, uint8_t fixture_mode,
+                                   uint64_t phase_ms) {
+    return render_group_strip(strip, cap, lens, n, effect, fixture_mode,
+                              wall_time(effect, phase_ms));
 }
 
 // One member's slice (`count` RGB pixels) into its fixture's span of an
@@ -2117,11 +2196,12 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
 // `over_pixels`: the output is pixel-mapped too and `d` holds the fixture's
 // pixels. With no effect asked for they stay, under the fixture's dimmer and
 // shutter (its colour channels mean nothing next to pixel data); an effect
-// replaces them.
+// replaces them. `clock`: the fixture's own (clock_tick), nullptr for the
+// wall clock.
 template <typename GetEffect>
 inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, const FixtureFrame& f,
                            bool reversed, uint64_t phase_ms, GetEffect get_effect,
-                           bool over_pixels = false) {
+                           bool over_pixels = false, FxClock* clock = nullptr) {
     const size_t total = static_cast<size_t>(n) * bpp;
     if (total > cap || bpp == 0 || n == 0) return;
     if (f.dimmer == 0 || !strobe_lit(phase_ms, f.shutter_hz10)) {
@@ -2150,7 +2230,11 @@ inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, cons
         if (k + 1 > config::effect_num_colors(e)) e.num_colors = static_cast<uint8_t>(k + 1);
     }
     apply_effect_override(e, f.fx);
-    fill_effect_run(d, cap, n, bpp, e, phase_ms);
+    // The fixture's own clock, keyed by the effect it plays: its Speed channel
+    // bends the motion instead of jumping it.
+    fill_effect_run(d, cap, n, bpp, e,
+                    clock ? clock_tick(*clock, static_cast<uint32_t>(f.bank + 1), e, phase_ms)
+                          : wall_time(e, phase_ms));
     if (plain && bpp == 4 && f.white)
         for (uint16_t i = 0; i < n; ++i)
             d[static_cast<size_t>(i) * 4 + 3] = f.white;
@@ -2167,17 +2251,21 @@ inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, cons
 // a missing universe and the pixels in no fixture stay so. Over a pixel-mapped
 // output (`over_pixels`: `dst` holds the decoded pixels) they are left as
 // they are, and each fixture keeps its pixels until its channels ask for an
-// effect (render_fixture).
+// effect (render_fixture). `clocks`: config::kMaxFixtures of them, one a
+// fixture in patch order; nullptr draws on the wall clock.
 template <typename GetUniverse, typename GetEffect>
 inline void render_fixtures(uint8_t* dst, size_t dst_capacity, const config::ChannelConfig& cc,
                             const config::ProfileBank& bank, uint64_t phase_ms,
                             GetUniverse get_universe, GetEffect get_effect,
-                            bool over_pixels = false) {
+                            bool over_pixels = false, FxClock* clocks = nullptr) {
     const uint8_t bpp  = led::bytes_per_pixel(cc.protocol);
     const size_t total = static_cast<size_t>(cc.pixel_count) * bpp;
     if (total > dst_capacity || total == 0) return;
     if (!over_pixels) std::memset(dst, 0, total);
+    size_t k = 0;  // the fixture's rank: its clock
     for_each_fixture_patch(cc, bank, [&](const FixturePatch& p) {
+        FxClock* clock = clocks ? &clocks[k] : nullptr;
+        ++k;
         const uint8_t* src = get_universe(
             static_cast<uint16_t>(config::fix_universe(cc) + p.uni_off));
         const size_t at = static_cast<size_t>(p.first) * bpp;
@@ -2186,7 +2274,7 @@ inline void render_fixtures(uint8_t* dst, size_t dst_capacity, const config::Cha
         FixtureFrame frame;
         decode_fixture(bank.profiles[p.profile], src + p.slot, frame);
         render_fixture(dst + at, total - at, static_cast<uint16_t>(p.count < room ? p.count : room),
-                       bpp, frame, p.reversed, phase_ms, get_effect, over_pixels);
+                       bpp, frame, p.reversed, phase_ms, get_effect, over_pixels, clock);
     });
 }
 
