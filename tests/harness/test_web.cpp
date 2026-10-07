@@ -137,6 +137,8 @@ TEST(status_and_diag_report_the_rollback_until_acknowledged) {
     EXPECT_TRUE(cJSON_GetObjectItemCaseSensitive(sys, "last_rollback") != nullptr);
     const cJSON* jr = d["render"];
     EXPECT_EQ(cJSON_GetObjectItem(jr, "decode_max_us")->valueint, 1500);
+    EXPECT_TRUE(cJSON_IsNumber(cJSON_GetObjectItem(d["mem"], "dma_free")));
+    EXPECT_TRUE(cJSON_IsNumber(cJSON_GetObjectItem(d["mem"], "dma_largest")));
     const cJSON* cpu = cJSON_GetObjectItem(jr, "cpu_load");
     EXPECT_TRUE(cJSON_IsNull(cJSON_GetArrayItem(cpu, 0)));  // not measured yet
     EXPECT_EQ(cJSON_GetArrayItem(cpu, 1)->valueint, 37);

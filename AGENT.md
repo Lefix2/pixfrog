@@ -15,7 +15,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 - **C++17**, no exceptions, no RTTI. Don't add `try`/`catch` or `dynamic_cast`.
 - **No designated initializers** (`{.field = …}`) outside of `main.cpp` and IDF struct fills — they're a GCC extension under `-std=c++17` and break `-Wpedantic` host builds.
 - **Comments**: don't restate what the code does. Only write a comment when WHY is non-obvious (hidden invariant, datasheet quirk, workaround). PR descriptions are not stored in code.
-- **No allocation on the hot path**. Everything `render_task` / ISR touches is allocated at boot.
+- **No allocation on the hot path**. Everything `compose_task` / `render_task` / ISR touches is allocated at boot.
 - **ISRs are `IRAM_ATTR`** and only `xSemaphoreGiveFromISR` / increment a counter.
 - **Atomic pointer swaps** for cross-thread data, not mutexes. See `dmx_manager` for the pattern.
 - **Read-modify-write atomics are 32-bit** (`exchange`, `fetch_*`, `compare_exchange_*`): on
@@ -23,8 +23,8 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
   8/16-bit atomics are fine for plain load/store. `tools/lint_atomics.py` (CI) enforces it.
 - **Config writes take the config lock** (every `config::set_*` does); a read-modify-write
   wraps `get → change → set` in `config::ScopedLock`. Never hold it around a service
-  start/stop (`web::stop` waits for httpd handlers that may want the lock). `render_task`
-  never takes it: what an output plays is read with `config::copy_scene_part()` (seqlock
+  start/stop (`web::stop` waits for httpd handlers that may want the lock). The frame pipeline
+  (`compose_task`, `render_task`) never takes it: what an output plays is read with `config::copy_scene_part()` (seqlock
   over the effect and scene banks). See ARCHITECTURE §6.
 
 ## Module map
@@ -45,7 +45,7 @@ Firmware for an 8-channel ArtNet → LED driver on ESP32-P4. Each channel drives
 | `components/ui`                | Display drivers (NV3007 default; ST7789 / SSD1306 alternates), canvas, seesaw encoder, menu FSM, backlight PWM |
 | `components/control_console`   | UART0 command server: full config get/set, telemetry, DMX injection |
 | `components/audio`             | ES8311 codec + speaker (boards with the R52 mod, docs/HARDWARE.md §2.7): synthesized UI sounds, volume |
-| `main/main.cpp`                | Boot orchestration + `render_task`                      |
+| `main/main.cpp`                | Boot orchestration + the frame pipeline (`compose_task` core 0, `render_task` core 1) |
 | `tools/fontgen`                | Host tool: TTF → `font_data.cpp` (anti-aliased TFT font) |
 | `tools/oledfont`               | Host tool: hand-drawn 5×7 → `font_oled.cpp` (crisp 1bpp OLED font) |
 | `tools/splashgen`              | Host tool: `frog-anim.svg` → `splash_anim.cpp` (TFT frog anim)|
@@ -208,7 +208,7 @@ Fonts and splash are **generated**; regenerate instead of editing the tables
   rule. ArtNet UDP is the only default listener; sACN (UDP 5568) and the web
   UI (TCP 80) exist but are strictly opt-in (`sacn_enabled` / `web_enabled`,
   both default off — no socket while disabled).
-- Don't write to NVS from `render_task` or ISRs — only from `ui_task`.
+- Don't write to NVS from the frame pipeline tasks or ISRs — only from `ui_task`.
 - Don't put a frame-buffer-sized allocation in SRAM — that lives in PSRAM.
 - Don't sleep in ISRs, don't `printf` in ISRs, don't grab mutexes in ISRs.
 - Don't add a comment block to "summarize" what a function does when the name + types already say it.

@@ -720,6 +720,7 @@
             <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;font:500 12.5px 'DM Mono'">
               <div class="row-between"><span class="fg-2" data-i18n="heap free">heap free</span><span data-live="d-heap">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="heap min">heap min</span><span data-live="d-heapmin">—</span></div>
+              <div class="row-between"><span class="fg-2" data-i18n="DMA RAM free (largest)">DMA RAM free (largest)</span><span data-live="d-dma">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="PSRAM free">PSRAM free</span><span data-live="d-psram">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="frame buffer">frame buffer</span><span data-live="d-fb">—</span></div>
             </div>
@@ -967,7 +968,7 @@ var FR={
   'RENDER PIPELINE':'PIPELINE DE RENDU','MEMORY':'MÉMOIRE',
   'RECEPTION':'RÉCEPTION','SYSTEM':'SYSTÈME','PER-CHANNEL CAPACITY':'CAPACITÉ PAR CANAL',
   'DEVICE LOGS':'LOGS DE L’APPAREIL','wire emit':'émission fil','frames':'trames',
-  'underruns':'sous-débits','heap free':'heap libre','heap min':'heap min','PSRAM free':'PSRAM libre',
+  'underruns':'sous-débits','DMA RAM free (largest)':'RAM DMA libre (plus grand bloc)','heap free':'heap libre','heap min':'heap min','PSRAM free':'PSRAM libre',
   'frame buffer':'frame buffer','ArtNet ctrl':'ArtNet ctrl','bad packets':'paquets invalides',
   'uptime':'uptime','firmware':'firmware','partition':'partition','last reset':'dernier reset',
   'auto':'auto','Refresh':'Rafraîchir','Download':'Télécharger','Log level: ':'Niveau de log : ',
@@ -2180,6 +2181,7 @@ function pollDiag(){
     setLive('d-emit',r.frame_emit_us!=null?(r.frame_emit_us/1000).toFixed(2)+' ms':'—');
     setLive('d-frames',nf(r.frames_emitted)); setLive('d-underruns',nf(r.dma_underruns));
     setLive('d-heap',fmtKB(m.heap_free)); setLive('d-heapmin',fmtKB(m.heap_min));
+    setLive('d-dma',m.dma_free!=null?fmtKB(m.dma_free)+' ('+fmtKB(m.dma_largest)+')':'—');
     setLive('d-psram',fmtKB(m.psram_free)+' / '+fmtKB(m.psram_total)); setLive('d-fb',fmtKB(m.fb_bytes));
     setLive('d-art',nf(x.artnet_rx)); setLive('d-artctrl',nf(x.artnet_ctrl_rx));
     setLive('d-sacn',nf(x.sacn_rx)); setLive('d-bad',nf(x.bad_rx));

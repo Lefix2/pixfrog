@@ -114,6 +114,14 @@ esp_err_t handle_get_diag(httpd_req_t* req) {
     cJSON* jm = cJSON_CreateObject();
     cJSON_AddNumberToObject(jm, "heap_free", static_cast<double>(esp_get_free_heap_size()));
     cJSON_AddNumberToObject(jm, "heap_min", static_cast<double>(esp_get_minimum_free_heap_size()));
+    // Internal DMA-capable RAM: the output's DMA lists take one block of it at
+    // every frame-length change.
+    cJSON_AddNumberToObject(
+        jm, "dma_free",
+        static_cast<double>(heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)));
+    cJSON_AddNumberToObject(jm, "dma_largest",
+                            static_cast<double>(heap_caps_get_largest_free_block(
+                                MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)));
     cJSON_AddNumberToObject(jm, "psram_free",
                             static_cast<double>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
     cJSON_AddNumberToObject(jm, "psram_total",

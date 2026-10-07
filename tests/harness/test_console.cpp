@@ -56,6 +56,7 @@ TEST(status_version_stats_print_and_succeed) {
     EXPECT_TRUE(run("status"));
     EXPECT_TRUE(has("link=1"));
     EXPECT_TRUE(has("ip=192.168.2.50"));
+    EXPECT_TRUE(has("dma_free="));  // status, above: the output's DMA lists come from there
     EXPECT_TRUE(run("stats"));
     EXPECT_TRUE(has("current_fps="));
     EXPECT_TRUE(has("render_decode_max_us="));
