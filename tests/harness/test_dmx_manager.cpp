@@ -426,29 +426,33 @@ TEST(auto_patch_lays_channels_out_contiguously) {
     EXPECT_EQ(config::get_channel(1).universe_start, 12);
     EXPECT_EQ(config::get_channel(2).universe_start, 14);
     EXPECT_EQ(next, 16);
-    // An enabled control universe follows the outputs, from address 1.
+    // An enabled control universe is the first block: at the base, from
+    // address 1, the outputs after it.
     auto ctl    = config::get_control();
     ctl.enabled = 1;
     ctl.address = 40;
     config::set_control(ctl);
     EXPECT_TRUE(dmx::auto_patch_universes(10, &next));
-    EXPECT_EQ(config::get_control().universe, 16);
+    EXPECT_EQ(config::get_control().universe, 10);
     EXPECT_EQ(config::get_control().address, 1);
+    EXPECT_EQ(config::get_channel(0).universe_start, 11);
+    EXPECT_EQ(config::get_channel(2).universe_start, 15);
     EXPECT_EQ(next, 17);
-    // Nowhere left past the last universe: the control universe stays put.
+    // At the top of the range: the control universe takes the base, the
+    // outputs wrap past it (the cursor rolls over).
     for (size_t ch = 1; ch < 3; ++ch) {
         auto c     = config::get_channel(ch);
         c.protocol = led::Protocol::Off;
         config::set_channel(ch, c);
     }
     EXPECT_TRUE(dmx::auto_patch_universes(dmx::kMaxUniverseNumber - 1, &next));
-    EXPECT_EQ(config::get_control().universe, 16);
+    EXPECT_EQ(config::get_control().universe, dmx::kMaxUniverseNumber - 1);
     ctl.enabled = 0;
     config::set_control(ctl);
 }
 
 // Compact: channels follow each other inside a universe and share it; the
-// control universe is a block of its own, on the universe after. Data on the
+// control universe is the first block, on the base universe. Data on the
 // shared universe makes both outputs active and each decodes its own slots.
 TEST(compact_auto_patch_shares_universes) {
     config::ChannelConfig saved[3];
@@ -472,30 +476,30 @@ TEST(compact_auto_patch_shares_universes) {
     uint16_t next = 0;
     size_t used   = 0;
     EXPECT_TRUE(dmx::auto_patch(o, &next, &used));
-    EXPECT_EQ(config::get_channel(1).universe_start, 10);
+    EXPECT_EQ(config::get_control().universe, 10);  // the first block: the base
+    EXPECT_EQ(config::get_control().address, 1);
+    EXPECT_EQ(config::get_channel(1).universe_start, 11);
     EXPECT_EQ(config::get_channel(1).dmx_start, 151);
     EXPECT_EQ(config::get_channel(2).dmx_start, 301);
-    EXPECT_EQ(config::get_control().universe, 11);  // its own block, after the pixels
-    EXPECT_EQ(config::get_control().address, 1);
     EXPECT_EQ(next, 12);
     EXPECT_EQ(used, 2u);
     dmx::handle_pending_remaps();
     uint8_t u[512]{};
     u[150] = 77;  // channel 1's first byte
-    dmx::write_universe_from_source(10, u, sizeof(u), 1, dmx::kArtnetMergeTimeoutUs);
-    dmx::note_universe_activity(10);
+    dmx::write_universe_from_source(11, u, sizeof(u), 1, dmx::kArtnetMergeTimeoutUs);
+    dmx::note_universe_activity(11);
     EXPECT_TRUE(dmx::is_channel_active(0));
     EXPECT_TRUE(dmx::is_channel_active(1));
-    EXPECT_EQ(dmx::channel_for_universe(10), 0);  // the lowest it feeds
+    EXPECT_EQ(dmx::channel_for_universe(11), 0);  // the lowest it feeds
     dmx::swap_universes();
     dmx::decode_pixels_for_channel(1);
     EXPECT_EQ(dmx::pixel_back_buffer(1)[0], 77);
-    dmx::note_universe_terminated(10);  // every output it feeds
+    dmx::note_universe_terminated(11);  // every output it feeds
     // Whole pixels on every channel, aligned: each opens a universe.
     o.compact = false;
     o.packing = config::kPackWholePixels;
     EXPECT_TRUE(dmx::auto_patch(o, &next));
-    EXPECT_EQ(config::get_channel(1).universe_start, 11);
+    EXPECT_EQ(config::get_channel(1).universe_start, 12);
     EXPECT_EQ(config::get_channel(1).packing, config::kPackWholePixels);
     for (size_t ch = 0; ch < 3; ++ch) {
         config::set_channel(ch, saved[ch]);

@@ -162,11 +162,20 @@
       return ok({ outputs: mask });
     }
     if (p === '/api/autopatch') {
-      // A sketch of the box's layout, in its blocks: the pixels of every
-      // output (aligned; whole pixels unless continuous), then one universe
-      // for the fixtures of each output under fixture control (compact
-      // placement is the box's job, not the demo's).
+      // A sketch of the box's layout, in its blocks — the control universe,
+      // one universe for the fixtures of each output under fixture control,
+      // then the pixels of every output (aligned; whole pixels unless
+      // continuous; compact placement is the box's job, not the demo's).
       var uni = body.base || 0, used = 0;
+      if (S.config.control.enabled) { S.config.control.universe = uni++; S.config.control.address = 1; used++; }
+      var fixUni = body.fix_base >= 0 ? body.fix_base : uni, own = body.fix_base >= 0;
+      S.config.channels.forEach(function (c) {
+        if (c.protocol === 'Off' || !c.fixture_ctl) return;
+        c.fix_universe = fixUni++;
+        c.fix_dmx_start = 1;
+        used += 1;
+      });
+      if (!own) uni = fixUni;
       S.config.channels.forEach(function (c) {
         if (body.packing && body.packing !== 'keep') c.packing = body.packing;
         var b = bpp(c.protocol), span = 0;
@@ -175,19 +184,10 @@
           c.dmx_start = 1;
           span = c.packing === 'continuous' || !c.packing ? Math.ceil(c.pixel_count * b / 512)
                                                           : Math.ceil(c.pixel_count / Math.floor(512 / b));
-        }
-        c.universes = span;
+        } else if (c.protocol !== 'Off' && c.fixture_ctl) { c.universe_start = c.fix_universe; c.dmx_start = 1; }
+        c.universes = span + (c.protocol !== 'Off' && c.fixture_ctl ? 1 : 0);
         uni += span;
         used += span;
-      });
-      if (body.fix_base >= 0) uni = body.fix_base;
-      S.config.channels.forEach(function (c) {
-        if (c.protocol === 'Off' || !c.fixture_ctl) return;
-        c.fix_universe = uni++;
-        c.fix_dmx_start = 1;
-        if (c.pixel_map === false) { c.universe_start = c.fix_universe; c.dmx_start = 1; }
-        c.universes += 1;
-        used += 1;
       });
       return ok({ next_free: uni, universes: used, pool: 72 });
     }

@@ -1573,86 +1573,64 @@ inline size_t channel_universes_used(const config::ChannelConfig& cc,
 
 // ── Auto-patch ──────────────────────────────────────────────────────────────
 //
-// Lays the outputs out from a flat 15-bit `base` universe (the cursor rolls
+// Lays everything out from a flat 15-bit `base` universe (the cursor rolls
 // through subnet/net boundaries naturally), in blocks that each open a
-// universe — a media server and a desk seldom share one:
-//   1. the pixel-mapped outputs, one after the other:
+// universe, ordered by how often they grow — each block only ever pushes the
+// ones after it:
+//   1. the control universe, when `control`: one universe, at `base`, never
+//      moves;
+//   2. the fixtures of the outputs under fixture control — the desk's patch:
+//      aligned, every output's fixtures open a universe; compact, they follow
+//      the previous output's. A fixture never straddles two universes. From
+//      `fix_base` when given (a universe of their own), else right after the
+//      control universe;
+//   3. the pixel-mapped outputs — the media server's, the block that grows
+//      with every LED added — one after the other:
 //        aligned   every output opens a universe (dmx_start 1)
 //        compact   an output starts at the slot after the previous one,
 //                  sharing its universe; a whole-pixel output skips to the
 //                  next universe when not even one pixel fits, a per-fixture
 //                  one always opens one.
-//      `packing` >= 0 is applied to each of them first (-1 = each keeps its own);
-//   2. the fixtures of the outputs under fixture control, from `fix_base` when
-//      given (so that adding LEDs does not move the desk's patch), else from
-//      the universe after the pixels: aligned, every output's fixtures open a
-//      universe; compact, they follow the previous output's. A fixture never
-//      straddles two universes.
-// The control universe is the caller's third block. A disabled / 0-pixel
-// output takes no room. out_uni/out_dmx receive each output's address — its
-// pixels', or its fixtures' when it is not pixel-mapped (its own address then
-// mirrors that one). Returns the first universe nothing uses after the
-// blocks; *slot_after (if set) is 0: the next block opens a universe;
-// *universes (if set) how many the two blocks take.
+//      `packing` >= 0 is applied to each of them first (-1 = each keeps its own).
+// A disabled / 0-pixel output takes no room. out_uni/out_dmx receive each
+// output's address — its pixels', or its fixtures' when it is not pixel-mapped
+// (its own address then mirrors that one); an output driven neither way is
+// parked at the first free universe. *control_uni (if set) receives the
+// control universe's. Returns the first universe nothing uses after the
+// blocks; *slot_after (if set) is 0: whatever comes next opens a universe;
+// *universes (if set) how many the blocks take.
 struct AutoPatchOptions {
     uint16_t base    = 0;
     bool compact     = false;
     int8_t packing   = -1;
     int32_t fix_base = -1;
+    bool control     = false;
 };
 
 inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelConfig* chans,
                                    size_t n, uint16_t* out_uni, uint16_t* out_dmx,
                                    uint16_t* slot_after                = nullptr,
                                    const config::ProfileBank* profiles = nullptr,
-                                   size_t* universes                   = nullptr) {
-    uint32_t cur_uni = o.base, cur_slot = 0;
+                                   size_t* universes = nullptr, uint16_t* control_uni = nullptr) {
     auto lit = [](const config::ChannelConfig& c) {
         return led::bytes_per_pixel(c.protocol) != 0 && c.pixel_count != 0;
     };
-    // Block 1: the pixels.
     for (size_t i = 0; i < n; ++i) {
         auto& c = chans[i];
         if (config::legacy_control(c)) {  // a raw old value: the two switches
             config::set_fix_address(c, c.universe_start, c.dmx_start);
             c.packing = config::kPackContinuous | config::kChanNoPixelMap | config::kChanFixtureCtl;
         }
-        const bool pixels = config::pixel_mapped(c);
-        // The layout asked for is a pixel layout: nothing to lay out on an
-        // output that is not pixel-mapped.
-        if (o.packing >= 0 && pixels) config::set_pixel_layout(c, static_cast<uint8_t>(o.packing));
-        const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(c.protocol));
-        if (!lit(c) || !pixels) {  // takes no room here: parked at the next free one
-            out_uni[i]       = static_cast<uint16_t>((cur_slot ? cur_uni + 1 : cur_uni) & 0x7FFF);
-            out_dmx[i]       = 1;
-            c.universe_start = out_uni[i];
-            c.dmx_start      = 1;
-            continue;
-        }
-        const uint8_t layout = config::pixel_layout(c);
-        const bool opens     = !o.compact || layout == config::kPackPerFixture ||
-                           (layout == config::kPackWholePixels && kUniverseSize - cur_slot < bpp);
-        if (opens && cur_slot > 0) {
-            ++cur_uni;
-            cur_slot = 0;
-        }
-        out_uni[i]       = static_cast<uint16_t>(cur_uni & 0x7FFF);
-        out_dmx[i]       = static_cast<uint16_t>(cur_slot + 1);
-        c.universe_start = out_uni[i];
-        c.dmx_start      = out_dmx[i];
-        DmxRun last{};
-        last_dmx_run(c, &last, profiles);
-        cur_uni  = cur_uni + last.uni_off;
-        cur_slot = static_cast<uint32_t>(last.slot) + last.bytes;
-        if (cur_slot >= kUniverseSize) {
-            ++cur_uni;
-            cur_slot = 0;
-        }
     }
-    uint32_t end = cur_slot ? cur_uni + 1 : cur_uni;
-    size_t used  = end - o.base;
+    // Block 1: the control universe.
+    uint32_t cur = o.base;
+    if (o.control) {
+        if (control_uni) *control_uni = static_cast<uint16_t>(cur & 0x7FFF);
+        ++cur;
+    }
+    size_t used = o.control ? 1 : 0;
     // Block 2: the fixtures.
-    const uint32_t fix_first = o.fix_base >= 0 ? static_cast<uint32_t>(o.fix_base) : end;
+    const uint32_t fix_first = o.fix_base >= 0 ? static_cast<uint32_t>(o.fix_base) : cur;
     uint32_t fix_uni = fix_first, fix_slot = 0;
     bool any = false;
     for (size_t i = 0; i < n && profiles; ++i) {
@@ -1671,10 +1649,6 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
         }
         config::set_fix_address(c, static_cast<uint16_t>(fix_uni & 0x7FFF),
                                 static_cast<uint16_t>(fix_slot + 1));
-        if (!config::pixel_mapped(c)) {  // its address is its fixtures'
-            out_uni[i] = c.universe_start = config::fix_universe(c);
-            out_dmx[i] = c.dmx_start = config::fix_dmx_start(c);
-        }
         FixturePatch last{};
         for_each_fixture_patch(c, *profiles, [&](const FixturePatch& f) { last = f; });
         fix_uni  += last.uni_off;
@@ -1688,6 +1662,54 @@ inline uint16_t compute_auto_patch(const AutoPatchOptions& o, config::ChannelCon
     if (any) {
         const uint32_t fix_end  = fix_slot ? fix_uni + 1 : fix_uni;
         used                   += fix_end - fix_first;
+        if (o.fix_base < 0) cur = fix_end;  // in order: the pixels follow
+    }
+    // Block 3: the pixels.
+    const uint32_t pix_first = cur;
+    uint32_t cur_slot        = 0;
+    for (size_t i = 0; i < n; ++i) {
+        auto& c           = chans[i];
+        const bool pixels = config::pixel_mapped(c);
+        // The layout asked for is a pixel layout: nothing to lay out on an
+        // output that is not pixel-mapped.
+        if (o.packing >= 0 && pixels) config::set_pixel_layout(c, static_cast<uint8_t>(o.packing));
+        const uint32_t bpp = static_cast<uint32_t>(led::bytes_per_pixel(c.protocol));
+        if (!lit(c) || !pixels) {
+            if (lit(c) && config::fixture_controlled(c)) {  // its address is its fixtures'
+                out_uni[i] = c.universe_start = config::fix_universe(c);
+                out_dmx[i] = c.dmx_start = config::fix_dmx_start(c);
+            } else {  // takes no room: parked at the next free one
+                out_uni[i]       = static_cast<uint16_t>((cur_slot ? cur + 1 : cur) & 0x7FFF);
+                out_dmx[i]       = 1;
+                c.universe_start = out_uni[i];
+                c.dmx_start      = 1;
+            }
+            continue;
+        }
+        const uint8_t layout = config::pixel_layout(c);
+        const bool opens     = !o.compact || layout == config::kPackPerFixture ||
+                           (layout == config::kPackWholePixels && kUniverseSize - cur_slot < bpp);
+        if (opens && cur_slot > 0) {
+            ++cur;
+            cur_slot = 0;
+        }
+        out_uni[i]       = static_cast<uint16_t>(cur & 0x7FFF);
+        out_dmx[i]       = static_cast<uint16_t>(cur_slot + 1);
+        c.universe_start = out_uni[i];
+        c.dmx_start      = out_dmx[i];
+        DmxRun last{};
+        last_dmx_run(c, &last, profiles);
+        cur      = cur + last.uni_off;
+        cur_slot = static_cast<uint32_t>(last.slot) + last.bytes;
+        if (cur_slot >= kUniverseSize) {
+            ++cur;
+            cur_slot = 0;
+        }
+    }
+    uint32_t end  = cur_slot ? cur + 1 : cur;
+    used         += end - pix_first;
+    if (any && o.fix_base >= 0) {  // the fixtures' own block may lie past the pixels
+        const uint32_t fix_end = fix_slot ? fix_uni + 1 : fix_uni;
         if (fix_end > end) end = fix_end;
     }
     if (universes) *universes = used;

@@ -512,22 +512,20 @@ bool auto_patch(const AutoPatch& opt, uint16_t* next_free, size_t* universes) {
     o.compact  = opt.compact;
     o.packing  = opt.packing;
     o.fix_base = opt.fix_base;
+    // The DMX control universe, when used, is the first block: one universe
+    // at the base, which nothing added later moves.
+    auto ctl         = config::get_control();
+    o.control        = ctl.enabled;
+    uint16_t ctl_uni = ctl.universe;
     uint16_t starts[config::kNumChannels], dmx[config::kNumChannels];
     size_t used   = 0;
     uint16_t next = logic::compute_auto_patch(o, chans, config::kNumChannels, starts, dmx, nullptr,
-                                              &config::get_profiles(), &used);
-    // The blocks are sequential from their bases: an end past the last
-    // universe shows unmasked (the cursor itself wraps past 0x7FFF).
-    const uint32_t end = static_cast<uint32_t>(opt.base) + used;
+                                              &config::get_profiles(), &used, &ctl_uni);
 
     bool all_persisted = true;
-    // The DMX control universe, when used, is the third block: it opens the
-    // universe after the pixels and the fixtures.
-    auto ctl = config::get_control();
-    if (ctl.enabled && end <= kMaxUniverseNumber) {
-        ctl.universe = next++;
-        ctl.address  = 1;
-        ++used;
+    if (ctl.enabled) {
+        ctl.universe   = ctl_uni;
+        ctl.address    = 1;
         all_persisted &= config::set_control(ctl);
         mark_global_dirty();
     }

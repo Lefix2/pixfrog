@@ -147,21 +147,24 @@ void handle_pending_remaps();
 // A disabled / 0-pixel channel consumes no universes. Persists each channel to
 // NVS and marks it dirty so the LUT rebuilds next frame. Returns false if any
 // NVS write failed (cache still updated); `*next_free` (if non-null) gets the
-// first universe past the last channel. An enabled DMX control universe is
-// placed right after the last channel (address 1) and counts in `next_free`.
-// Console/web/ui context only.
+// first universe past the last block. An enabled DMX control universe is the
+// first block, at `base`, and counts in `next_free`. Console/web/ui context only.
 bool auto_patch_universes(uint16_t base, uint16_t* next_free = nullptr);
 
-// The full auto-patch: `compact` starts each channel at the slot after the
-// previous one (sharing its universe) instead of a fresh universe; `packing`
-// >= 0 (config::kPack*) is set on every channel first, -1 keeps each one's.
-// An enabled control universe follows (in the room left when compact).
-// *universes (if set) gets the universes the patch uses, control included.
+// The full auto-patch, in blocks that each open a universe — the control
+// universe (when enabled, at `base`), the fixtures of the outputs under
+// fixture control (from `fix_base` when given), the pixel-mapped outputs —
+// ordered by how often they grow. `compact` starts each output at the slot
+// after the previous one (sharing its universe) instead of a fresh universe;
+// `packing` >= 0 (config::kPack*) is set on every pixel-mapped output first,
+// -1 keeps each one's. *universes (if set) gets the universes the patch uses,
+// control included.
 struct AutoPatch {
-    uint16_t base    = 0;
-    bool compact     = false;
-    int8_t packing   = -1;
-    int32_t fix_base = -1;  // first universe of the fixtures' block; -1 = after the pixels
+    uint16_t base  = 0;
+    bool compact   = false;
+    int8_t packing = -1;
+    int32_t fix_base =
+        -1;  // first universe of the fixtures' block; -1 = after the control universe
 };
 bool auto_patch(const AutoPatch& opt, uint16_t* next_free = nullptr, size_t* universes = nullptr);
 

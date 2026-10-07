@@ -356,12 +356,12 @@ Scenes on groups (`dmx::group_play / group_stop`, the render task draws them):
   the status; console `scene play <n> group <g>`, `scene group <n> <g|none>`,
   `scene part … [rev]`.
 
-### 5.6 Output patch and auto-patch
+### 5.6 Fixture patch, pixel patch and auto-patch
 
 An output is driven from the network two ways, each a switch of its own and
 each on its own address range (`ChannelConfig::packing` carries both switches
-next to the pixel layout — web **Output patch** screen, DMX → **Patch** on the
-device):
+next to the pixel layout — web **Fixture patch** and **Pixel patch** screens,
+one a block of the patch sheet, DMX → **Patch** on the device):
 
 | switch | what it does | address | API / console |
 |---|---|---|---|
@@ -436,7 +436,7 @@ SHOW_CONTROL "Fixture DMX profiles"):
   grand master, blackout and strobe apply after.
 - The patch sheet — universe, address and channel count per fixture — is
   `"patch"` on the channel in `GET /api/config`, `patch=` in `ch N` on the
-  console, and shown next to each fixture in the web Output patch screen.
+  console, and shown next to each fixture in the web Fixture patch screen.
 
 ![An output driven both ways in the web UI: its pixels' address, then each fixture with its profile and its address](img/web-channel-control.png)
 
@@ -448,15 +448,20 @@ the pool map and the sACN joins all follow them.
 Auto-patch (`POST /api/autopatch {base, compact, packing, fix_base}`, console
 `autopatch <base> [compact] [continuous|whole|fixture|colour] [fix <universe>]`,
 web Auto-patch screen; the TFT/OLED menu keeps the aligned default) lays
-everything out in **three blocks, each opening a universe**:
+everything out in **three blocks, each opening a universe, ordered by how
+often they grow** — each block only ever pushes the ones after it:
 
-1. **the pixels** of every pixel-mapped output, from `base`;
-2. **the fixtures** of every output under fixture control — right after the
-   pixels, or from `fix_base` (web: "From universe"), a base of their own so
-   that adding LEDs later does not move the desk's patch;
-3. **the control universe**, when enabled, on the universe after.
+1. **the control universe**, when enabled: one universe, at `base`, which
+   nothing added later moves;
+2. **the fixtures** of every output under fixture control — the desk's patch
+   — right after it, or from `fix_base` (web: "From universe"), a base of
+   their own;
+3. **the pixels** of every pixel-mapped output — the media server's, the
+   block that grows with every LED added — after the fixtures (after the
+   control universe when the fixtures have a base of their own).
 
-Inside the first two blocks:
+The web Auto-patch screen is the patch sheet: one line a range, under a
+header per block, sorted by universe. Inside the last two blocks:
 - **aligned** (default): every output opens a universe at slot 1.
 - **compact**: an output starts at the slot after the previous one, sharing
   its universe (a `whole` output skips to the next universe when not one pixel
@@ -485,7 +490,7 @@ they share in all:
 - Console: `overlaps` → `overlaps=<n>`, then `overlap=ch0 pixels,control,U5.1+6`
   per pair.
 - Web: the Auto-patch table marks the ranges (⚠) and its footer counts the
-  overlaps; Output patch lists the current output's; Control universe warns
+  overlaps; Fixture patch and Pixel patch list the current output's; Control universe warns
   when its channels are taken. While patch edits are unsaved the check is the
   saved settings', and says so.
 

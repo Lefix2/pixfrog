@@ -136,10 +136,10 @@ def test_the_menu_is_grouped_by_job(page):
         ["", "dashboard"],
         ["RIG", "channels", "groups"],
         ["LOOKS", "effects", "scenes"],
-        ["DMX", "artnet", "profiles", "dmxpatch", "control", "patch"],  # auto-patch last
+        ["DMX", "artnet", "control", "profiles", "fixpatch", "pixpatch", "patch"],  # the blocks' order, auto-patch last
         ["PLAYBACK", "fseq", "auto"],
         ["SETTINGS", "network", "system", "maint"]]
-    titles = {"auto": "Automations", "dmxpatch": "Output patch", "maint": "Maintenance",
+    titles = {"auto": "Automations", "fixpatch": "Fixture patch", "pixpatch": "Pixel patch", "maint": "Maintenance",
               "channels": "Outputs", "artnet": "Protocols", "control": "Control universe"}
     for g in groups:
         for screen in g[1:]:
@@ -153,7 +153,8 @@ def test_the_menu_is_grouped_by_job(page):
     for screen, ids in (("auto", ["s-boot", "pl-auto", "s-fade", "a-fsmode"]),
                         ("maint", ["ota-file", "restore-file", "d-logs", "d-chans"]),  # telemetry and logs too
                         ("channels", ["s-refresh", "cd-on", "cd-proto", "cd-pix", "cd-gaps"]),
-                        ("dmxpatch", ["cd-pixmap", "cd-pack", "cd-uni", "cd-dmx", "cd-fixctl", "cd-funi", "cd-fdmx"]),
+                        ("pixpatch", ["cd-pixmap", "cd-pack", "cd-uni", "cd-dmx"]),
+                        ("fixpatch", ["cd-fixctl", "cd-funi", "cd-fdmx"]),
                         ("system", ["s-lang", "s-bright", "s-home"])):
         for i in ids:
             assert page.evaluate(
@@ -614,20 +615,20 @@ def test_the_two_switches_of_an_output_pixels_and_fixtures(page, device):
                                    "dmx_start": 1, "fixtures": [[1, 20], [21, 20], [41, 20]]})
     device.post("/api/channel/0", {"fix_universe": 1})  # an address inside the output's pixels
     page.reload()
-    nav(page, "dmxpatch")
+    nav(page, "pixpatch")
     expect(page.locator("#cd-pixmap")).to_be_checked()  # pixel mapping alone: the default
+    nav(page, "fixpatch")
     expect(page.locator("#cd-fixctl")).not_to_be_checked()
     expect(page.locator("#cd-fdmx")).to_be_hidden()  # each switch opens its own parameters
     expect(page.locator("[data-lay-prof]")).to_have_count(0)
-    expect(page.locator("#dp-mode-note")).to_be_hidden()
+    expect(page.locator('[data-screen="fixpatch"] [data-dp-note]')).to_be_hidden()
 
     # Both: the pixels keep their range, the fixtures get one of their own —
     # past the pixels, where the address they had would have sat on them.
     page.locator("#cd-fixctl").check()
-    expect(page.locator("#cd-pack")).to_be_visible()
     expect(page.locator("#cd-fdmx")).to_be_visible()
     expect(page.locator("#cd-funi-flat")).to_have_text("2")
-    expect(page.locator("#dp-mode-note")).to_contain_text("Effect channel is at 0")
+    expect(page.locator('[data-screen="fixpatch"] [data-dp-note]')).to_contain_text("Effect channel is at 0")
     profs = page.locator("[data-lay-prof]")
     expect(profs).to_have_count(3)
     addr = page.locator("[data-lay-addr]")
@@ -639,7 +640,7 @@ def test_the_two_switches_of_an_output_pixels_and_fixtures(page, device):
     expect(page.locator("[data-ctl-note]")).to_contain_text("3 fixtures · 25 ch · U2 · 1 → U2 · 25")
     page.locator("#cd-fdmx").fill("500")  # the Full fixture would straddle: it opens universe 3
     expect(page.locator("[data-lay-addr]").nth(2)).to_have_text("U3 · 1")
-    expect(page.locator("[data-dp-summary]")).to_contain_text("3 universes")
+    expect(page.locator("[data-dp-summary]").first).to_contain_text("3 universes")
     save(page)
     c = device.get("/api/config")["channels"][0]
     assert c["pixel_map"] and c["fixture_ctl"] and c["packing"] == "continuous"
@@ -649,29 +650,32 @@ def test_the_two_switches_of_an_output_pixels_and_fixtures(page, device):
     assert c["fixtures"] == [[1, 20, 0, 2], [21, 20], [41, 20, 0, 3]]
     # The box computes the same addresses as the page.
     assert c["patch"] == [[2, 500, 6, 2], [2, 506, 3, 0], [3, 1, 16, 3]]
-    expect(page.locator("#patch-list-mount")).to_contain_text("U1 + FX U2")
+    expect(page.locator("#fixpatch-list-mount")).to_contain_text("U1 + FX U2")
     nav(page, "patch")
     expect(page.locator("#patch-mount")).to_contain_text("pixels")
     expect(page.locator("#patch-mount")).to_contain_text("U2–U3")
     expect(page.locator("#patch-mount")).to_contain_text("3 fixtures")
 
     # Fixtures alone: no pixel data, and no pixel parameters.
-    nav(page, "dmxpatch")
+    nav(page, "pixpatch")
     page.locator("#cd-pixmap").uncheck()
     expect(page.locator("#cd-pack")).to_be_hidden()
     expect(page.locator("#cd-dmx")).to_be_hidden()
-    expect(page.locator("#dp-mode-note")).to_be_hidden()
-    expect(page.locator("[data-lay-prof]")).to_have_count(3)
+    expect(page.locator('[data-screen="pixpatch"] [data-dp-note]')).to_be_hidden()
     save(page)
     c = device.get("/api/config")["channels"][0]
     assert not c["pixel_map"] and c["fixture_ctl"] and c["universes"] == 2
-    expect(page.locator("#patch-list-mount")).to_contain_text("FX U2")
+    expect(page.locator("#pixpatch-list-mount")).to_contain_text("FX U2")
 
-    # Neither: the output listens to no universe.
+    # Neither: the output listens to no universe — both screens say so.
+    nav(page, "fixpatch")
+    expect(page.locator("[data-lay-prof]")).to_have_count(3)
     page.locator("#cd-fixctl").uncheck()
-    expect(page.locator("#dp-mode-note")).to_contain_text("only plays scenes")
+    expect(page.locator('[data-screen="fixpatch"] [data-dp-note]')).to_contain_text("only plays scenes")
+    nav(page, "pixpatch")
+    expect(page.locator('[data-screen="pixpatch"] [data-dp-note]')).to_contain_text("only plays scenes")
     expect(page.locator("[data-lay-prof]")).to_have_count(0)
-    expect(page.locator("[data-dp-summary]")).to_contain_text("scenes only")
+    expect(page.locator("[data-dp-summary]").first).to_contain_text("scenes only")
     save(page)
     c = device.get("/api/config")["channels"][0]
     assert not c["pixel_map"] and not c["fixture_ctl"] and c["universes"] == 0
@@ -680,7 +684,7 @@ def test_the_two_switches_of_an_output_pixels_and_fixtures(page, device):
     expect(page.locator("#patch-mount")).to_contain_text("scenes only")
 
     # Pixel mapping again: the output goes back to the layout and the address it had.
-    nav(page, "dmxpatch")
+    nav(page, "pixpatch")
     page.locator("#cd-pixmap").check()
     expect(page.locator("#cd-pack")).to_have_value("continuous")
     expect(page.locator("#cd-uni-flat")).to_have_text("1")
@@ -689,7 +693,7 @@ def test_the_two_switches_of_an_output_pixels_and_fixtures(page, device):
     assert c["pixel_map"] and c["packing"] == "continuous" and c["universes"] == 1
 
 
-def test_auto_patch_lays_the_fixtures_block_after_the_pixels_or_at_its_own_base(page, device):
+def test_auto_patch_lays_the_fixtures_block_before_the_pixels_or_at_its_own_base(page, device):
     device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 60, "fixture_ctl": True})
     device.post("/api/channel/1", {"protocol": "WS2815", "pixel_count": 50, "pixel_map": False,
                                    "fixture_ctl": True})
@@ -699,8 +703,8 @@ def test_auto_patch_lays_the_fixtures_block_after_the_pixels_or_at_its_own_base(
     page.locator('[data-action="autopatch"]').click()
     expect(page.locator('[data-live="save-state"]')).to_contain_text("universes")
     chans = device.get("/api/config")["channels"]
-    assert chans[0]["universe_start"] == 0 and chans[0]["fix_universe"] == 1  # pixels, then fixtures
-    assert chans[1]["fix_universe"] == 2  # each output's fixtures open a universe
+    assert chans[0]["fix_universe"] == 0 and chans[1]["fix_universe"] == 1  # the fixtures first, a universe each
+    assert chans[0]["universe_start"] == 2  # then the pixels
     page.locator("#ap-fix").select_option("base")
     expect(page.locator("#ap-fixbase")).to_be_visible()
     page.locator("#ap-fixbase").fill("40")
@@ -708,7 +712,7 @@ def test_auto_patch_lays_the_fixtures_block_after_the_pixels_or_at_its_own_base(
     expect(page.locator("#patch-mount")).to_contain_text("U40")
     chans = device.get("/api/config")["channels"]
     assert [c["fix_universe"] for c in chans[:2]] == [40, 41]
-    assert chans[0]["universe_start"] == 0
+    assert chans[0]["universe_start"] == 0  # the pixels from the base, the fixtures elsewhere
     expect(page.locator("#patch-mount")).to_contain_text("U41")
 
 
@@ -846,8 +850,8 @@ def test_patch_overlaps_come_from_the_box(page, device):
     nav(page, "patch")
     expect(page.locator("#patch-overlap")).to_contain_text("overlaps")
     expect(page.locator("#patch-mount [data-clash]")).to_have_count(3)  # both outputs, the desk
-    nav(page, "dmxpatch")
-    expect(page.locator("#dp-clash")).to_contain_text("Output 2 pixels share 10 ch from U5 · 21")
+    nav(page, "pixpatch")
+    expect(page.locator('[data-screen="pixpatch"] [data-dp-clash]')).to_contain_text("Output 2 pixels share 10 ch from U5 · 21")
     nav(page, "control")
     expect(page.locator("#ct-warn")).to_contain_text("The control channels overlap Output 1 pixels")
     # Moved apart: nothing shared any more.
@@ -857,26 +861,30 @@ def test_patch_overlaps_come_from_the_box(page, device):
     nav(page, "patch")
     expect(page.locator("#patch-overlap")).to_have_text("no overlap detected")
     expect(page.locator("#patch-mount [data-clash]")).to_have_count(0)
-    nav(page, "dmxpatch")
-    expect(page.locator("#dp-clash")).to_be_hidden()
+    nav(page, "pixpatch")
+    expect(page.locator('[data-screen="pixpatch"] [data-dp-clash]')).to_be_hidden()
 
 
-def test_auto_patch_places_the_control_universe_after_the_outputs(page, device):
+def test_auto_patch_places_the_control_universe_first(page, device):
     navs = page.locator("aside div[data-nav]").evaluate_all("els => els.map(e => e.dataset.nav)")
-    assert navs.index("patch") == navs.index("control") + 1  # below DMX control
+    assert navs.index("patch") == navs.index("pixpatch") + 1  # the blocks' order, auto-patch last
     device.post("/api/control", {"enabled": True, "universe": 300, "address": 40})
     page.reload()
     nav(page, "patch")
     page.locator('[data-action="autopatch"]').click()
     expect(page.locator("#patch-mount")).to_contain_text("DMX control")
     cfg = device.get("/api/config")
-    end = max(c["universe_start"] for c in cfg["channels"] if c["protocol"] != "Off")
-    assert cfg["control"]["universe"] > end and cfg["control"]["address"] == 1
-    expect(page.locator("#patch-mount")).to_contain_text(f'U{cfg["control"]["universe"]}')
+    first = min(c["universe_start"] for c in cfg["channels"] if c["protocol"] != "Off")
+    assert cfg["control"]["universe"] == 0 and cfg["control"]["address"] == 1  # the first block, at the base
+    assert first == 1
+    # The sheet reads by block, each sorted by universe: the control universe on top.
+    rows = page.locator("#patch-mount").inner_text()
+    assert rows.index("CONTROL UNIVERSE") < rows.index("PIXELS")
+    expect(page.locator("#patch-mount")).to_contain_text("U0")
 
 
 def test_auto_patch_compact_whole_pixels_and_per_output_layout(page, device):
-    nav(page, "dmxpatch")
+    nav(page, "pixpatch")
     page.locator("#cd-pack").select_option("fixture")
     save(page)
     assert device.get("/api/config")["channels"][0]["packing"] == "fixture"
