@@ -995,7 +995,7 @@ TEST(control_mode_drives_each_fixture_from_its_profile) {
     u[9] = 128;
     px   = frame(1, u, sizeof(u));
     EXPECT_TRUE(px[40 * 3] >= 19 && px[40 * 3] <= 21);
-    u[8] = 1;  // 1 Hz
+    u[8] = 10;  // the strobe at 1 Hz (0-9: none)
     align_ms(1000);
     shim::advance_ms(500);
     px = frame(1, u, sizeof(u));
@@ -1132,6 +1132,7 @@ TEST(control_mode_frees_the_universes_pixels_would_take) {
     static uint8_t u[512];
     std::memset(u, 0, sizeof(u));
     u[7 * 16]     = 0x80;  // dimmer coarse
+    u[7 * 16 + 2] = 32;    // the pro shutter open (0-31: closed)
     u[7 * 16 + 3] = 200;   // colour 1 red
     dmx::write_universe_from_source(1, u, sizeof(u), kSrcA, dmx::kArtnetMergeTimeoutUs);
     dmx::swap_universes();

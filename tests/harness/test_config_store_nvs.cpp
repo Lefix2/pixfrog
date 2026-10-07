@@ -465,6 +465,23 @@ TEST(fixture_profiles_default_persist_and_reset) {
     EXPECT_EQ(get_profiles().count, 4);
 }
 
+// A bank written before the Shutter was split: its "shutter" slots were the
+// manual strobe, and they come back as such.
+TEST(an_older_profile_bank_keeps_its_strobe) {
+    fresh_boot();
+    ProfileBank old          = default_profiles();
+    old.format               = 0;
+    old.profiles[0].count    = 2;
+    old.profiles[0].slots[0] = profile_slot(FixFn::Dimmer);
+    old.profiles[0].slots[1] = profile_slot(FixFn::Shutter);
+    shim::nvs_put_raw(kNs, "profiles", &old, sizeof(old));
+    init();  // reboot on the older record
+    EXPECT_EQ(get_profiles().profiles[0].slots[1].fn, static_cast<uint8_t>(FixFn::Strobe));
+    EXPECT_EQ(get_profiles().format, kProfileFormat);
+    reset_to_defaults();
+    init();
+}
+
 TEST(web_password_hash_and_check) {
     fresh_boot();
     EXPECT_FALSE(web_password_set());

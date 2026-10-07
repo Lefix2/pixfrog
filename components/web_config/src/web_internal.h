@@ -110,7 +110,10 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
 cJSON* build_playlist_json();  // api_fseq.cpp
 cJSON* build_groups_json();    // api_config.cpp
 cJSON* build_profiles_json();  // api_show.cpp
-bool apply_profiles_json(const cJSON* j, config::ProfileBank& b, const char** why);
+// `legacy_shutter`: a backup from before the Shutter was split (backup_version
+// < 3), whose "shutter" slots meant today's manual "strobe".
+bool apply_profiles_json(const cJSON* j, config::ProfileBank& b, const char** why,
+                         bool legacy_shutter = false);
 // One body buffer for the large POSTs (groups, profiles), in PSRAM, allocated
 // once: the server runs one handler at a time. nullptr when out of memory.
 constexpr size_t kBigBodyMax = 12288;

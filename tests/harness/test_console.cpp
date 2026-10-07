@@ -335,7 +335,7 @@ TEST(channel_fixtures_and_control_mode) {
 TEST(profile_commands_edit_the_bank) {
     EXPECT_TRUE(run("profile"));
     EXPECT_TRUE(has("profiles=4"));
-    EXPECT_TRUE(has("profile2 name=RGB FX footprint=6 slots=red,green,blue,bank,speed,shutter"));
+    EXPECT_TRUE(has("profile2 name=RGB FX footprint=6 slots=red,green,blue,bank,speed,strobe"));
     EXPECT_TRUE(has("profile3 name=Full footprint=16 slots=dimmer+fine,shutter,red,green,blue,"
                     "red:1,green:1,blue:1,bank,speed,param,ph_wave,ph_rate,ph_spread,ph_width"));
     EXPECT_TRUE(run("profile add Bars"));

@@ -736,7 +736,7 @@
      },
      {
       "fine": false,
-      "fn": "shutter",
+      "fn": "strobe",
       "index": 0
      }
     ]
@@ -1345,14 +1345,14 @@
      {
       "dmxRange": [
        0,
-       0
+       9
       ],
       "shutterEffect": "Open",
       "type": "ShutterStrobe"
      },
      {
       "dmxRange": [
-       1,
+       10,
        255
       ],
       "shutterEffect": "Strobe",

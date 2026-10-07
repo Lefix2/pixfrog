@@ -1832,6 +1832,57 @@ static void test_control_layout() {
     EXPECT_EQ(for_each_fixture_patch(cc, ProfileBank{}, [](const FixturePatch&) {}), 0);
 }
 
+// The pro Shutter's ladder, the manual Strobe's dead band, and what each lets
+// out over time.
+static void test_shutter_and_strobe() {
+    EXPECT_EQ(shutter_from_dmx(0).kind, kShutterClosed);
+    EXPECT_EQ(shutter_from_dmx(31).kind, kShutterClosed);
+    EXPECT_EQ(shutter_from_dmx(32).kind, kShutterOpen);
+    EXPECT_EQ(shutter_from_dmx(64).kind, kShutterStrobe);
+    EXPECT_EQ(shutter_from_dmx(64).hz10, 10);   // 1 Hz at the bottom of the band
+    EXPECT_EQ(shutter_from_dmx(95).hz10, 250);  // 25 Hz at the top
+    EXPECT_EQ(shutter_from_dmx(100).kind, kShutterOpen);
+    EXPECT_EQ(shutter_from_dmx(128).kind, kShutterPulse);
+    EXPECT_EQ(shutter_from_dmx(128).hz10, 5);
+    EXPECT_EQ(shutter_from_dmx(159).hz10, 100);
+    EXPECT_EQ(shutter_from_dmx(170).kind, kShutterOpen);
+    EXPECT_EQ(shutter_from_dmx(192).kind, kShutterRandom);
+    EXPECT_EQ(shutter_from_dmx(223).hz10, 200);
+    EXPECT_EQ(shutter_from_dmx(255).kind, kShutterOpen);
+
+    EXPECT_EQ(strobe_hz10_from_dmx(0), 0);
+    EXPECT_EQ(strobe_hz10_from_dmx(9), 0);  // the dead band: a fader near 0 does not flicker
+    EXPECT_EQ(strobe_hz10_from_dmx(10), 10);
+    EXPECT_EQ(strobe_hz10_from_dmx(255), 250);
+    EXPECT_EQ(strobe_from_dmx(5).kind, kShutterOpen);
+    EXPECT_EQ(strobe_from_dmx(10).kind, kShutterStrobe);
+
+    const ShutterState open{}, closed{ kShutterClosed, 0 };
+    EXPECT_EQ(shutter_level(open, 123, 0), 255);
+    EXPECT_EQ(shutter_level(closed, 123, 0), 0);
+    const ShutterState pulse{ kShutterPulse, 10 };  // 1 Hz: dark, full at half, dark
+    EXPECT_TRUE(shutter_level(pulse, 0, 0) <= 1);
+    EXPECT_TRUE(shutter_level(pulse, 500, 0) >= 254);
+    EXPECT_TRUE(shutter_level(pulse, 250, 0) > 100 && shutter_level(pulse, 250, 0) < 160);
+    // Random strobe at 2 Hz: one 30 ms flash a period, at a moment of its own
+    // for each fixture.
+    const ShutterState rnd{ kShutterRandom, 20 };
+    auto lit_ms = [&](uint32_t seed, uint32_t from, uint32_t to) {
+        uint32_t n = 0;
+        for (uint32_t t = from; t < to; ++t)
+            n += shutter_level(rnd, t, seed) ? 1 : 0;
+        return n;
+    };
+    EXPECT_EQ(lit_ms(1, 0, 500), 30u);  // each period, one flash
+    EXPECT_EQ(lit_ms(1, 0, 5000), 300u);
+    uint32_t together = 0;  // two fixtures do not flash in step
+    for (uint32_t t = 0; t < 5000; ++t)
+        together += shutter_level(rnd, t, 1) && shutter_level(rnd, t, 2) ? 1 : 0;
+    EXPECT_TRUE(together < 150);
+    EXPECT_EQ(shutter_level(ShutterState{ kShutterRandom, 0 }, 7, 1), 255);
+    EXPECT_EQ(shutter_level(ShutterState{ kShutterPulse, 0 }, 7, 1), 255);
+}
+
 static void test_control_decode_fixture() {
     using namespace pixfrog::config;
     Profile p{};
@@ -1854,8 +1905,8 @@ static void test_control_decode_fixture() {
     EXPECT_EQ(f.color[0][1], 20);
     EXPECT_EQ(f.color[0][2], 30);
     EXPECT_EQ(f.white, 77);
-    EXPECT_EQ(f.shutter_hz10, 10);  // 1 = 1 Hz
-    EXPECT_EQ(f.bank, 2);           // band 3
+    EXPECT_EQ(f.shutter.kind, kShutterClosed);  // 1: the pro shutter's closed band
+    EXPECT_EQ(f.bank, 2);                       // band 3
     EXPECT_EQ(f.fx.speed, 90);
     EXPECT_EQ(f.fx.param, 5);
     EXPECT_EQ(f.fx.ph_wave, kPhaserSin);
@@ -1881,11 +1932,12 @@ static void test_control_decode_fixture() {
     EXPECT_EQ(f.color[2][1], -1);  // not in the profile
     EXPECT_EQ(f.color[1][0], -1);
 
-    // Everything at 0: dark dimmer, open shutter, no effect, nothing overridden.
+    // Everything at 0: dark dimmer, closed (pro) shutter, no effect, nothing
+    // overridden.
     const uint8_t zero[19] = {};
     decode_fixture(p, zero, f);
     EXPECT_EQ(f.dimmer, 0);
-    EXPECT_EQ(f.shutter_hz10, 0);
+    EXPECT_EQ(f.shutter.kind, kShutterClosed);
     EXPECT_EQ(f.bank, -1);
     EXPECT_EQ(f.fx.speed + f.fx.param + f.fx.ph_wave + f.fx.ph_rate + f.fx.block, -5);
     EXPECT_EQ(f.color[0][0], 0);  // in the profile, at 0
@@ -1939,13 +1991,24 @@ static void test_control_render_fixture() {
     render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
     EXPECT_EQ(b[0] + b[1] + b[2], 0);
     f.dimmer = kMasterFull;
-    // The shutter strobes: lit at the start of a period, dark after the flash.
-    f.shutter_hz10 = 10;  // 1 Hz
+    // The strobe: lit at the start of a period, dark after the flash.
+    f.strobe = ShutterState{ kShutterStrobe, 10 };  // 1 Hz
     render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
     EXPECT_EQ(b[0], 100);
     render_fixture(b, sizeof(b), 4, 3, f, false, 500, bank);
     EXPECT_EQ(b[0], 0);
-    f.shutter_hz10 = 0;
+    f.strobe = ShutterState{};
+    // A closed shutter darkens the fixture whatever its dimmer; a pulse at its
+    // crest is full, at its trough dark.
+    f.shutter = ShutterState{ kShutterClosed, 0 };
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 0);
+    f.shutter = ShutterState{ kShutterPulse, 10 };  // 1 Hz
+    render_fixture(b, sizeof(b), 4, 3, f, false, 500, bank);
+    EXPECT_EQ(b[0], 100);
+    render_fixture(b, sizeof(b), 4, 3, f, false, 0, bank);
+    EXPECT_EQ(b[0], 0);
+    f.shutter = ShutterState{};
     // RGBW: the white channel lights the white LED, the generators leave it at 0.
     f.white = 66;
     render_fixture(b, sizeof(b), 4, 4, f, false, 0, bank);
@@ -2561,7 +2624,7 @@ static void test_show_crossfade_weight_and_blend() {
 
 static void test_show_strobe() {
     EXPECT_EQ(strobe_hz10_from_dmx(0), 0);
-    EXPECT_EQ(strobe_hz10_from_dmx(1), 10);     // 1 Hz
+    EXPECT_EQ(strobe_hz10_from_dmx(10), 10);    // 1 Hz, past the 0-9 dead band
     EXPECT_EQ(strobe_hz10_from_dmx(255), 250);  // 25 Hz
     EXPECT_TRUE(strobe_lit(12345, 0));          // off = steady
     // 10 Hz: 100 ms period, 30 ms flash.
@@ -2744,7 +2807,7 @@ static void test_control_evaluate() {
     u[10] = 0x00;  // master fine → 0x8000
     u[11] = 255;   // group master full
     u[12] = 200;   // blackout outputs 5-8
-    u[13] = 1;     // strobe 1 Hz
+    u[13] = 10;    // strobe 1 Hz (0-9: none)
     u[14] = 17;    // scene band 2
     u[15] = 255;   // colour 2 red
     u[16] = 0;     // colour 2 blue
@@ -3004,6 +3067,7 @@ int main() {
     test_effect_dimmer_invert();
     test_control_layout();
     test_control_decode_fixture();
+    test_shutter_and_strobe();
     test_control_render_fixture();
     test_control_render_channel();
     test_look_fade_settles_then_crossfades();

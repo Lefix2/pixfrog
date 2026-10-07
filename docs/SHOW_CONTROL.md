@@ -195,7 +195,7 @@ function but strobe, fade time and show file can aim at a group — "Top",
 |---|---|
 | Master | intensity; 16-bit with the fine channel next |
 | Blackout | ≥ 128 = dark |
-| Strobe | 0 = off, 1–255 = 1–25 Hz |
+| Strobe | 0–9 = off (a fader resting near 0 does not flicker), 10–255 = 1–25 Hz |
 | Scene | bands of 8: 0–7 = none, 8–15 = scene 1, 16–23 = scene 2 … |
 | Effect (`bank`) | bands of 8: 0–7 = the effect the scene's part plays, 8–15 = effect 1 of the bank, 16–23 = effect 2 … — played on the slot's outputs in place of the scene's own, for as long as the fader stays there |
 
@@ -275,7 +275,8 @@ pixels, under its dimmer and shutter.
 | Dimmer | intensity; 16-bit with the fine channel next. A profile without a dimmer is at full |
 | Red / Green / Blue (colour n) | colour n of the effect the fixture plays; all three at 0 = the effect's own. With no effect, colour 1 is the fixture's colour |
 | White | the white LED of an RGBW strip, when no effect plays |
-| Shutter | 0 = open, 1–255 = strobe 1–25 Hz |
+| Shutter (pro) | 0–31 closed · 32–63 open · 64–95 strobe 1–25 Hz · 96–127 open · 128–159 pulse 0.5–10 Hz · 160–191 open · 192–223 random strobe 1–20 flashes/s · 224–255 open (see below) |
+| Strobe | 0–9 = none, 10–255 = strobe 1–25 Hz — the LED fixtures' simple strobe |
 | Effect (`bank`) | bands of 8: 0–7 = no effect (colour 1, steady), 8–15 = effect 1 of the bank, 16–23 = effect 2 … |
 | Effect speed / parameter | 0 = the effect's own, 1–255 = override |
 | Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine … |
@@ -284,6 +285,35 @@ pixels, under its dimmer and shutter.
 | Block / Groups / Wings | 0 = the effect's own, 1 = off, 2–255 = N |
 | Effect fade (`fx_fade`) | 0 = an Effect change cuts, 1–255 = it crossfades over 0.1–25.5 s |
 | Spare | nothing; it keeps a channel free |
+
+### Shutter and strobe
+
+A profile can take either, or both (they multiply):
+
+- **Strobe** — the simple strobe channel of the LED PARs and pixel bars
+  (Chauvet COLORband PiX, most of the Open Fixture Library's colour
+  changers): 0–9 none, then slow to fast. A desk at 0 shows the light.
+- **Shutter** — the pro shutter of the moving heads and the pro pixel bars,
+  on the ladder of the Elation SixBar and the Ayrton MagicBlade: bands of 32,
+  every effect between two open bands (a fader crossing from one to the next
+  shows light), rates rising within each band, **closed at 0**. The OFL
+  export declares 32 (open) as the channel's default, so a desk's "home"
+  opens it.
+  - *Pulse*: a smooth swell and fall, the whole fixture at once.
+  - *Random strobe*: one flash at a random moment of each period, each
+    fixture on its own draw (told apart by its address) — a "paparazzi"
+    crackle over whatever look it plays.
+
+A flash lasts 30 ms (half the period above 16 Hz), the stage strobe's short
+burst. A closed shutter, a dark dimmer or a strobe between flashes skips the
+fixture's drawing altogether.
+
+Why this split: of the 634 shutter/strobe channels of the Open Fixture
+Library (505 fixtures, 2026-10), the LED colour changers and pixel bars put
+"no strobe / open" at 0 (69 % and 56 %) while 64 % of the moving heads put
+"closed" there; random strobe (30 %) and pulse (16 %) are the next effects
+after strobe itself. Profiles saved before this split meant the simple
+strobe by "Shutter": they load (and their backups restore) as **Strobe**.
 
 ### Effect transitions
 
@@ -317,7 +347,7 @@ Presets, as starting points:
 |---|---|
 | RGB (3 ch) | red, green, blue |
 | Dim RGB (4 ch) | dimmer, red, green, blue |
-| RGB FX (6 ch) | red, green, blue, effect, effect speed, shutter |
+| RGB FX (6 ch) | red, green, blue, effect, effect speed, strobe |
 | Full (16 ch) | dimmer 16-bit, shutter, colour 1 RGB, colour 2 RGB, effect, speed, parameter, phaser wave, rate, spread, width |
 
 Edit them:
