@@ -129,6 +129,30 @@ Scenes stored by an older firmware are converted at the first boot: each
 becomes one effect and one single-part scene, at the same position and the
 same pace. A backup taken before the effect bank restores the same way.
 
+### Files: an effect, a bank, a show
+
+Looks travel between boxes — and from the online demo — as JSON files built
+in the page, next to the whole-box backup (Maintenance):
+
+| File | Holds | Where |
+|---|---|---|
+| `<name>.effect.json` — `{"pixfrog":"effect","effect":{…}}` | one effect, as `POST /api/effect/<n>` takes it | Effects → the card's **Export**; **Import** (↑) adds it to the bank |
+| `<box>.effects.json` — `{"pixfrog":"effects","effects":[…]}` | the whole bank | Effects → **Export the whole bank** (↓); **Import** adds as many as fit |
+| `<box>.show.json` — `{"pixfrog":"show", effects, scenes, groups, profiles, control}` | the looks only: nothing of the outputs, the network or the credentials | Maintenance → **Export show** / **Import show** |
+
+A show file is the sections a backup has minus the rig, so `POST /api/restore`
+takes it as it is: effects, scenes, groups, DMX profiles and the control
+universe are replaced, the outputs and the network untouched. Its scenes
+name outputs 1-8 and its groups the fixtures of those outputs: it is meant
+for a box whose rig is already set up as the show expects. **Import** on the
+Effects screen also takes a show or a backup, and adds their effects.
+
+The online demo (`tools/demo`, the site's *Try the interface*) is a box in
+the browser that keeps everything set in it and draws the effects with the
+firmware's own engine (`preview.wasm`, built from `dmx_logic.h` by
+`tools/demo/build_wasm.sh`): a show prepared there exports as above and
+imports on the box.
+
 ## Scene zones and crossfades
 
 Each output plays its own scene or the live input. Starting a scene claims the

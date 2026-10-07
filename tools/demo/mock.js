@@ -3,14 +3,33 @@
 // Loaded before the SPA. Answers what the SPA asks a real box: fetch() and
 // XMLHttpRequest on /api/..., the /api/ws WebSocket, the two downloads. The
 // state starts from tools/demo/snapshot.json (the firmware's own answers,
-// captured from the host build) and lives in this page: changes stick until
-// a reload, nothing leaves the browser.
+// captured from the host build) and lives in this browser: every change is
+// kept in localStorage, so a show prepared here survives a reload and leaves
+// as a configuration or show file (Maintenance) to import on a box. Nothing
+// leaves the browser. The effects are drawn by the firmware's own engine,
+// compiled to WebAssembly (preview.wasm, tools/demo/preview_wasm.cpp).
 (function () {
   'use strict';
   var SNAP = window.PF_SNAPSHOT;
-  var S = JSON.parse(JSON.stringify(SNAP));  // the box's state
+  var STORE = 'pf-demo-box';
+  var S = (function () {  // the box's state: what this browser kept, else the snapshot
+    try {
+      var kept = JSON.parse(localStorage.getItem(STORE) || 'null');
+      if (kept && kept.config && kept.config.version === SNAP.config.version) return kept;
+    } catch (e) {}
+    return JSON.parse(JSON.stringify(SNAP));
+  })();
   var T0 = Date.now();
   var FX_SOLID = 0;
+  var saveTimer = null;
+  function persist() {  // after a write: soon, once, and never in the way
+    if (saveTimer) return;
+    saveTimer = setTimeout(function () {
+      saveTimer = null;
+      try { localStorage.setItem(STORE, JSON.stringify({ config: S.config, playlist: S.playlist, fseq_files: S.fseq_files, status: S.status, logs: S.logs, fixture: S.fixture, diag: S.diag })); } catch (e) {}
+    }, 300);
+  }
+  function forget() { try { localStorage.removeItem(STORE); } catch (e) {} }
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
   function ok(extra) { return Object.assign({ ok: true }, extra || {}); }
@@ -83,6 +102,11 @@
   function bpp(proto) { return proto === 'Off' ? 0 : (proto === 'SK6812' ? 4 : 3); }
 
   function route(method, path, body) {
+    var r = routeOnce(method, path, body);
+    if (method !== 'GET') persist();
+    return r;
+  }
+  function routeOnce(method, path, body) {
     var q = path.indexOf('?');
     var p = q >= 0 ? path.slice(0, q) : path;
     var m;
@@ -258,7 +282,7 @@
       if (body.playlist) S.playlist = clone(body.playlist);
       return ok();
     }
-    if (p === '/api/factory-reset') { S = clone(SNAP); return ok({ rebooting: true }); }
+    if (p === '/api/factory-reset') { S = clone(SNAP); forget(); return ok({ rebooting: true }); }
     if (p === '/api/ota') return bad(400, t('demo: no firmware update on a simulated box'));
     if (p === '/api/reboot' || p === '/api/rollback/ack' || p === '/api/loglevel' ||
         p === '/api/audio/test') return ok();
@@ -299,7 +323,54 @@
     var i = Math.floor(h * 6) % 6, f = h * 6 - Math.floor(h * 6), q = 1 - f;
     return [[1, f, 0], [q, 1, 0], [0, 1, f], [0, q, 1], [f, 0, 1], [1, 0, q]][i].map(function (x) { return x * 255; });
   }
-  // One pixel of an effect, roughly: the demo has no firmware to draw it.
+  // The firmware's effect engine (preview.wasm, next to the page). Until it
+  // has loaded, or without WebAssembly, the rough drawing below stands in.
+  var W = null;
+  (function loadEngine() {
+    if (typeof WebAssembly === 'undefined' || typeof fetch === 'undefined') return;
+    var src = (document.currentScript && document.currentScript.src) || 'mock.js';
+    fetch(src.replace(/[^\/]*$/, 'preview.wasm')).then(function (r) {
+      if (!r.ok) throw new Error('no engine');
+      return r.arrayBuffer();
+    }).then(function (buf) { return WebAssembly.instantiate(buf, {}); })
+      .then(function (res) { W = res.instance.exports; })
+      .catch(function () { W = null; });
+  })();
+  function wStr(s) {
+    var bytes = new TextEncoder().encode(String(s).slice(0, 30) + '\0');
+    new Uint8Array(W.memory.buffer).set(bytes, W.pf_str());
+  }
+  // The API's effect JSON into the engine, as apply_effect_json reads it.
+  function wEffect(fx) {
+    fx = fx || {};
+    W.pf_effect_begin(fx.generator | 0, fx.speed | 0, fx.param | 0);
+    (fx.colors || ['#ffffff']).slice(0, 4).forEach(function (c, i) { W.pf_effect_color(i, parseInt(String(c).replace('#', ''), 16) || 0); });
+    var ph = fx.phaser || {}, mx = fx.matricks || {};
+    var wave = 0;
+    if (ph.wave) { wStr(ph.wave); wave = Math.max(0, W.pf_wave_from_id()); }
+    W.pf_effect_phaser(wave, ph.rate | 0, ph.spread | 0, ph.width | 0, ph.low | 0, ph.attack | 0, ph.decay | 0, ph.reverse ? 1 : 0);
+    W.pf_effect_matricks(fx.invert ? 1 : 0, mx.block | 0, mx.groups | 0, mx.wings | 0);
+  }
+  function wOut(n) { return new Uint8Array(W.memory.buffer, W.pf_out(), n * 3); }
+  // `n` pixels of an effect at `t` ms, as the box draws them (null without the engine).
+  function renderEffect(fx, n, t) {
+    if (!W) return null;
+    wEffect(fx);
+    return wOut(W.pf_render(n, t));
+  }
+  // Output `o` playing effect `fx` in `mode` (each / strip / chain / mirror),
+  // over its fixtures, as the box draws it.
+  function renderStrip(c, fx, mode, reverse, t) {
+    if (!W) return null;
+    wEffect(fx);
+    W.pf_strip_begin(c.pixel_count);
+    (c.fixtures || []).forEach(function (f, i) { W.pf_strip_fixture(i, f[0], f[1], f[2] ? 1 : 0); });
+    wStr(mode || 'each');
+    var m = W.pf_fixture_mode_from_id();
+    return wOut(W.pf_render_strip(m < 0 ? 0 : m, reverse ? 1 : 0, t));
+  }
+  window.pfDemoRender = function (fx, n, t) { var px = renderEffect(fx, n, t); return px ? Array.from(px) : null; };
+  // One pixel of an effect, roughly: the stand-in while the engine loads.
   function fxPixel(fx, k, n, now) {
     var cols = (fx && fx.colors && fx.colors.length ? fx.colors : ['#000000']).map(hex);
     if (!fx || fx.generator === FX_SOLID) return cols[0];
@@ -312,11 +383,14 @@
     var fx = Object.assign({}, S.config.effects[body.index] || { generator: FX_SOLID, colors: ['#ffffff'] }, body.effect || {});
     var n = Math.min(144, Math.max(1, body.pixels || 60)), frames = Math.min(60, Math.max(1, body.frames || 30));
     var fps = body.fps || 30, t0 = body.t || 0, out = new Uint8Array(frames * n * 3), at = 0;
-    for (var f = 0; f < frames; ++f)
+    for (var f = 0; f < frames; ++f) {
+      var t = t0 + Math.floor(f * 1000 / fps), px = renderEffect(fx, n, t);
+      if (px) { out.set(px, at); at += n * 3; continue; }
       for (var k = 0; k < n; ++k) {
-        var rgb = fxPixel(fx, k, n, t0 + f * 1000 / fps);
+        var rgb = fxPixel(fx, k, n, t);
         out[at++] = rgb[0]; out[at++] = rgb[1]; out[at++] = rgb[2];
       }
+    }
     return out;
   }
   // What output `o` shows now, as up to 64 RGB samples (the firmware's
@@ -336,9 +410,17 @@
     var si = sh.scenes[o], sc = si >= 0 ? S.config.scenes[si] : null;
     var part = sc ? sc.parts.filter(function (pt) { return pt.mask & (1 << o); })[0] : null;
     var fx = part ? S.config.effects[part.effect] : null;
+    // The scene as the box draws it over the output's fixtures, downsampled
+    // to the samples the box sends (an average a sample); the stand-in while
+    // the engine loads.
+    var strip = sc ? renderStrip(c, fx, part && part.fixture_mode, part && part.reverse, now - T0) : null;
     for (k = 0; k < n; ++k) {
       var rgb;
-      if (sc) {
+      if (strip) {
+        var a = Math.floor(k * c.pixel_count / n), b = Math.floor((k + 1) * c.pixel_count / n), sum = [0, 0, 0];
+        for (var q = a; q < b; ++q) { sum[0] += strip[q * 3]; sum[1] += strip[q * 3 + 1]; sum[2] += strip[q * 3 + 2]; }
+        rgb = sum.map(function (x) { return x / (b - a); });
+      } else if (sc) {
         rgb = fxPixel(fx, k, n, now);
       } else {
         rgb = hsv(((k / n) * 0.6 + o / 8 + now / 9000) % 1);
@@ -458,9 +540,14 @@
     var fr = S.config.global.lang === 1;
     var b = document.createElement('div');
     b.id = 'pf-demo-banner';
-    b.textContent = fr ? 'Démo — boîtier simulé dans votre navigateur. Rien n\'est enregistré ni envoyé ; un rechargement repart de zéro.'
-                       : 'Demo — a simulated box running in your browser. Nothing is saved or sent; reloading starts over.';
+    var txt = fr ? 'Démo — boîtier simulé dans votre navigateur. Vos réglages restent dans ce navigateur, rien n\'est envoyé : préparez le show, exportez-le (Maintenance) et importez-le sur le boîtier.'
+                 : 'Demo — a simulated box in your browser. Your settings stay in this browser, nothing is sent: prepare the show, export it (Maintenance) and import it on the box.';
+    b.innerHTML = '<span>' + txt + '</span> <button id="pf-demo-reset" style="margin-left:10px;background:#08170d;color:#e8b23a;border:0;border-radius:0;padding:3px 9px;font:600 12px Figtree,system-ui,sans-serif;cursor:pointer">' + (fr ? 'Repartir de zéro' : 'Start over') + '</button>';
     b.style.cssText = 'flex:none;padding:7px 16px;background:#e8b23a;color:#08170d;font:600 12.5px Figtree,system-ui,sans-serif;text-align:center';
     document.body.insertBefore(b, document.body.firstChild);
+    b.querySelector('#pf-demo-reset').onclick = function () {
+      if (!confirm(fr ? 'Oublier les réglages gardés dans ce navigateur et repartir du boîtier de démonstration ?' : 'Forget the settings kept in this browser and start from the demo box again?')) return;
+      forget(); location.reload();
+    };
   });
 })();

@@ -278,9 +278,14 @@
       <div data-screen="effects" style="display:none">
         <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 2px 8px">
-              <span class="eyebrow"><span data-i18n="EFFECTS">EFFECTS</span> <span class="fg-2" id="fx-count">0 / 31</span></span>
-              <button class="btn-pri" data-action="fx-add" style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New effect">New effect</span></button>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 2px 8px;flex-wrap:wrap">
+              <span class="eyebrow" style="white-space:nowrap"><span data-i18n="EFFECTS">EFFECTS</span> <span class="fg-2" id="fx-count">0 / 31</span></span>
+              <span style="display:inline-flex;align-items:center;margin-left:auto">
+              <button class="btn-sec" data-action="fx-import" data-i18n-title="Import effects from a file (one, a bank, a show)" title="Import effects from a file (one, a bank, a show)" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-right:6px"><i data-lucide="upload" class="ic14"></i></button>
+              <button class="btn-sec" data-action="fx-export-all" data-i18n-title="Export the whole bank" title="Export the whole bank" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-right:6px"><i data-lucide="download" class="ic14"></i></button>
+              <input id="fx-file" type="file" accept=".json,application/json" style="display:none"/>
+              <button class="btn-pri" data-action="fx-add" style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New effect" style="white-space:nowrap">New effect</span></button>
+              </span>
             </div>
             <div id="fx-list-mount" style="display:flex;flex-direction:column;gap:6px"></div>
           </div>
@@ -673,6 +678,10 @@
               <span class="eyebrow">CONFIGURATION</span>
               <div style="display:flex;flex-direction:column;gap:11px"><button class="btn-sec" data-action="import" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="upload" class="ic16"></i><span data-i18n="Import JSON">Import JSON</span></button><button class="btn-sec" data-action="export" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic16"></i><span data-i18n="Export JSON">Export JSON</span></button></div>
               <input id="restore-file" type="file" accept=".json,application/json" style="display:none"/>
+              <div class="hint" style="margin-top:4px" data-i18n="The whole box: outputs, network, looks, credentials.">The whole box: outputs, network, looks, credentials.</div>
+              <div style="display:flex;flex-direction:column;gap:11px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><button class="btn-sec" data-action="show-import" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:10px 14px;font:500 13px 'DM Mono';cursor:pointer"><i data-lucide="upload" class="ic16"></i><span data-i18n="Import show">Import show</span></button><button class="btn-sec" data-action="show-export" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:10px 14px;font:500 13px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic16"></i><span data-i18n="Export show">Export show</span></button></div>
+              <input id="show-file" type="file" accept=".json,application/json" style="display:none"/>
+              <div class="hint" style="margin-top:4px" data-i18n="A show is the looks only — effects, scenes, groups, DMX profiles, control universe — prepared elsewhere (the online demo) and brought to a box already set up. Its scenes name outputs 1-8 and its groups the fixtures of those outputs.">A show is the looks only — effects, scenes, groups, DMX profiles, control universe — prepared elsewhere (the online demo) and brought to a box already set up. Its scenes name outputs 1-8 and its groups the fixtures of those outputs.</div>
             </div>
         </div>
 
@@ -1038,7 +1047,7 @@ var FR={
   'INTERFACE SECURITY':'SÉCURITÉ DE L’INTERFACE','Protect with a password':'Protéger par mot de passe',
   'HTTP Basic auth on writes':'Authentification HTTP Basic sur les écritures','User':'Utilisateur','New password':'Nouveau mot de passe',
   'FIRMWARE':'FIRMWARE','Upload a firmware (.bin)':'Téléverser un firmware (.bin)',
-  'Export JSON':'Exporter JSON','Import JSON':'Importer JSON','DANGER ZONE':'ZONE SENSIBLE',
+  'Export JSON':'Exporter JSON','Import JSON':'Importer JSON','Import effects from a file (one, a bank, a show)':'Importer des effets depuis un fichier (un seul, une banque, un show)','Export the whole bank':'Exporter toute la banque','Export':'Exporter','Import show':'Importer un show','Export show':'Exporter le show','The whole box: outputs, network, looks, credentials.':'Tout le boîtier : sorties, réseau, looks, identifiants.','A show is the looks only — effects, scenes, groups, DMX profiles, control universe — prepared elsewhere (the online demo) and brought to a box already set up. Its scenes name outputs 1-8 and its groups the fixtures of those outputs.':'Un show, ce sont les looks seuls — effets, scènes, groupes, profils DMX, univers de contrôle — préparés ailleurs (la démo en ligne) et apportés sur un boîtier déjà installé. Ses scènes désignent les sorties 1 à 8 et ses groupes les fixtures de ces sorties.','No effect in this file':'Aucun effet dans ce fichier','No show in this file':'Aucun show dans ce fichier','Imported what fits: the bank is full':'Importé ce qui tenait : la banque est pleine','Effects imported':'Effets importés','Replace the looks of this box with the show ':'Remplacer les looks de ce boîtier par le show ','✓ show imported':'✓ show importé','DANGER ZONE':'ZONE SENSIBLE',
   'Reboot':'Redémarrer','Factory reset':'Réinitialiser (usine)','Language':'Langue','English':'English','French':'Français',
   'Settings persisted in NVS · applied at once':'Réglages persistés en NVS · appliqués immédiatement','Network settings applied':'Réglages réseau appliqués','The box is asking a DHCP server for an address. Its screen shows it once it has one.':'Le boîtier demande une adresse à un serveur DHCP. Son écran l’affiche dès qu’il en a une.','The box now answers at {url}.':'Le boîtier répond maintenant sur {url}.','Reconnecting as soon as it answers…':'Reconnexion dès qu’il répond…','Stay here':'Rester ici',
   '✓ saved':'✓ enregistré','Cancel':'Annuler','Save':'Enregistrer','Saving…':'Enregistrement…',
@@ -1107,6 +1116,7 @@ function locale(){ return LANG==='fr'?'fr-FR':'en-US'; }
 function applyI18n(){
   document.documentElement.lang=LANG;
   document.querySelectorAll('[data-i18n]').forEach(function(e){ e.textContent=t(e.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-title]').forEach(function(e){ e.title=t(e.getAttribute('data-i18n-title')); });
   document.querySelectorAll('[data-i18n-ph]').forEach(function(e){ e.setAttribute('placeholder',t(e.getAttribute('data-i18n-ph'))); });
 }
 function setLang(l){
@@ -1288,8 +1298,9 @@ function slider(kind,e,label,max,val,txt){
 }
 var SEL_STYLE='width:100%;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 13px \'Figtree\'';
 var NAME_STYLE='width:100%;background:transparent;border:none;color:var(--fg);font:700 16px \'Figtree\';padding:2px 0;outline:none';
-function cardFooter(dup,del){
+function cardFooter(dup,del,exp){
   return '<div style="display:flex;gap:9px;padding-top:14px;border-top:1px solid var(--line)">'
+    +(exp?'<button class="btn-sec" data-action="'+exp+'" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer"><i data-lucide="download" class="ic14"></i>'+t('Export')+'</button>':'')
     +'<button class="btn-sec" data-action="'+dup+'" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer"><i data-lucide="copy" class="ic14"></i>'+t('Duplicate')+'</button>'
     +'<button class="btn-dng" data-action="'+del+'" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer;margin-left:auto"><i data-lucide="trash-2" class="ic14"></i>'+t('Delete')+'</button>'
     +'</div>';
@@ -1365,7 +1376,7 @@ function effectCardHTML(e){
     +phaserHTML(e)
     +matricksHTML(e)
     +'<div class="hint" data-fx-users>'+esc(users.length?(t('Played by scene ')+users.join(', ')):t('No scene plays this effect yet'))+'</div>'
-    +cardFooter('fx-dup','fx-del')
+    +cardFooter('fx-dup','fx-del','fx-export')
     +'</div>';
 }
 function effectRowHTML(e,i){
@@ -1544,6 +1555,61 @@ function effectDuplicate(){
   var from=curEffect, body=effectBody(src);
   body.name=(src.name+' '+t('copy')).slice(0,15);
   listEdit(function(){ return api('POST','/api/effects/add',body).then(function(r){ return api('POST','/api/effects/move',{from:r.index,to:from+1}); }); },'Effect duplicated',function(){ curEffect=from+1; });
+}
+// ── files: an effect, a bank, a show ──────────────────────────────────────
+// Files built in the page (the box and the demo alike), named after what
+// they hold. An effect file is {"pixfrog":"effect","effect":{…}}; a bank
+// {"pixfrog":"effects","effects":[…]}; a show {"pixfrog":"show", …the looks}
+// — the sections a backup has, minus the hardware and the network, so a
+// restore takes it as it is.
+function fileStem(name){ return (name||'pixfrog').replace(/[^\w.-]+/g,'-').replace(/^-+|-+$/g,'')||'pixfrog'; }
+function downloadText(name,text){
+  var blob=new Blob([text],{type:'application/json'}), a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1000);
+}
+function effectExport(){
+  var e=EFFECTS[curEffect]; if(!e) return;
+  downloadText(fileStem(e.name)+'.effect.json',JSON.stringify({pixfrog:'effect',version:1,effect:effectBody(e)},null,1));
+}
+function effectExportAll(){
+  if(!EFFECTS.length) return;
+  downloadText(fileStem(statusName()||'pixfrog')+'.effects.json',JSON.stringify({pixfrog:'effects',version:1,effects:EFFECTS.map(effectBody)},null,1));
+}
+function statusName(){ var e=document.querySelector('[data-live="node-name"]'); return e?e.textContent.trim():''; }
+// Whatever file holds effects — one, a bank, a show, a backup — adds them
+// to the bank, as many as fit.
+function effectImport(){
+  var f=el('fx-file').files[0]; if(!f) return; el('fx-file').value='';
+  f.text().then(function(txt){
+    var d; try{ d=JSON.parse(txt); }catch(e){ toast(t('Invalid JSON'),true); return; }
+    var list=d&&d.effect?[d.effect]:(d&&Array.isArray(d.effects)?d.effects:null);
+    if(!list||!list.length){ toast(t('No effect in this file'),true); return; }
+    var room=MAX_EFFECTS-EFFECTS.length;
+    if(room<=0){ toast(t('Effect bank full (31)'),true); return; }
+    var take=list.slice(0,room), first=EFFECTS.length;
+    listEdit(function(){ return take.reduce(function(pr,e){ return pr.then(function(){ return api('POST','/api/effects/add',e); }); },Promise.resolve()); },
+      take.length<list.length?'Imported what fits: the bank is full':'Effects imported',function(){ curEffect=first; });
+  });
+}
+function showExport(){
+  api('GET','/api/backup').then(function(b){
+    var show={pixfrog:'show',version:1,backup_version:b.backup_version,firmware:b.firmware,effects:b.effects,scenes:b.scenes,groups:b.groups||[],profiles:b.profiles||[],control:b.control};
+    downloadText(fileStem(statusName()||'pixfrog')+'.show.json',JSON.stringify(show,null,1));
+  }).catch(function(e){ toast(t('Error: ')+e.message,true); });
+}
+// A show file — or a backup, of which only the looks are taken — replaces
+// the effects, scenes, groups, profiles and control universe.
+function showImport(){
+  var f=el('show-file').files[0]; if(!f) return; el('show-file').value='';
+  f.text().then(function(txt){
+    var d; try{ d=JSON.parse(txt); }catch(e){ toast(t('Invalid JSON'),true); return; }
+    var body={backup_version:d.backup_version||2};
+    ['effects','scenes','groups','profiles','control'].forEach(function(k){ if(d[k]!==undefined) body[k]=d[k]; });
+    if(!body.effects&&!body.scenes){ toast(t('No show in this file'),true); return; }
+    if(!confirm(t('Replace the looks of this box with the show ')+f.name+' ?')) return;
+    api('POST','/api/restore',body).then(function(){ toast(t('✓ show imported')); return reloadConfig(); }).then(function(){ renderScenes(); renderEffects(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
+  });
 }
 function effectDelete(){
   var idx=curEffect, e=EFFECTS[idx]; if(!e) return;
@@ -2782,6 +2848,11 @@ function doAction(a){
   else if(a==='fx-add'){ effectAdd(); }
   else if(a==='fx-dup'){ effectDuplicate(); }
   else if(a==='fx-del'){ effectDelete(); }
+  else if(a==='fx-export'){ effectExport(); }
+  else if(a==='fx-export-all'){ effectExportAll(); }
+  else if(a==='fx-import'){ el('fx-file').click(); }
+  else if(a==='show-export'){ showExport(); }
+  else if(a==='show-import'){ el('show-file').click(); }
   else if(a==='cancel'){ dirty.clear(); langDirty=false; updateSaveBar(); reloadConfig(); toast(t('✓ saved')); }
   else if(a==='identify'){ api('POST','/api/identify',{}).then(function(r){ var n=[]; for(var i=0;i<8;i++) if((r.outputs>>i)&1) n.push(i+1); toast(n.length?t('Identifying outputs ')+n.join(', '):t('No output configured')); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast(t('Identifying channel ')+(curChan+1)); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
@@ -2974,6 +3045,8 @@ function init(){
   app.addEventListener('change',onInput);
   el('ota-file').addEventListener('change',otaUpload);
   el('restore-file').addEventListener('change',restoreUpload);
+  el('fx-file').addEventListener('change',effectImport);
+  el('show-file').addEventListener('change',showImport);
   el('fseq-file').addEventListener('change',fseqUpload);
   el('pl-loop').addEventListener('change',function(){ PL.loop=this.checked; savePlaylist(); });
   el('pl-auto').addEventListener('change',function(){ PL.autostart=this.checked; savePlaylist(); });
