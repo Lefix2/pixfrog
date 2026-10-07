@@ -137,6 +137,62 @@ static config::ChannelConfig rgb_chan(uint16_t px, uint8_t packing, uint16_t dmx
     return c;
 }
 
+// The patch overlap check works on where the ranges really sit: pixel runs
+// across universes, fixtures on their profiles, the control universe.
+static void test_patch_clashes() {
+    using namespace pixfrog::config;
+    ChannelConfig ch[kNumChannels]{};                     // Off
+    ch[0]         = rgb_chan(170, kPackContinuous);       // U1 1–510
+    ch[1]         = rgb_chan(170, kPackContinuous, 511);  // U1 511 → U2 508: a neighbour
+    ch[2]         = rgb_chan(10, kPackContinuous, 500);   // U1 500 → U2 17: on both
+    ch[3]         = rgb_chan(30, kPackContinuous);        // fixtures alone, at U9 · 1
+    ch[3].packing = kChanNoPixelMap | kChanFixtureCtl;
+    set_fix_address(ch[3], 9, 1);
+    ch[4]                = rgb_chan(4, kPackContinuous);  // pixels on the fixtures of 3
+    ch[4].universe_start = 9;
+    ch[5]                = rgb_chan(10, kPackContinuous);  // its pixels and its fixtures
+    ch[5].universe_start = 20;
+    ch[5].packing        = kChanFixtureCtl;
+    set_fix_address(ch[5], 20, 10);
+    ControlConfig ctl      = default_control();
+    ctl.enabled            = 1;
+    ctl.universe           = 2;
+    ctl.address            = 505;  // 6 channels: 505–510, the end of output 1
+    const ProfileBank bank = default_profiles();
+    const uint32_t foot    = static_cast<uint32_t>(profile_footprint(bank.profiles[0]));
+
+    PatchRange r[kMaxPatchRanges];
+    const size_t nr = collect_patch_ranges([&](size_t o) -> const ChannelConfig& { return ch[o]; },
+                                           kNumChannels, bank, ctl, r, kMaxPatchRanges);
+    EXPECT_EQ(nr, 8u);  // a range across two universes is one
+    PatchClash c[kMaxPatchClashes];
+    const size_t n = find_patch_clashes(r, nr, c, kMaxPatchClashes);
+    EXPECT_EQ(n, 5u);
+    auto find = [&](uint8_t a, uint8_t b) -> const PatchClash* {
+        for (size_t i = 0; i < n; ++i)
+            if (c[i].a == a && c[i].b == b) return &c[i];
+        return nullptr;
+    };
+    const PatchClash* x = find(0, 2);
+    EXPECT_TRUE(x && x->universe == 1 && x->slot == 499 && x->channels == 11);
+    x = find(1, 2);  // U1 511–512 and U2 1–17
+    EXPECT_TRUE(x && x->universe == 1 && x->slot == 510 && x->channels == 19);
+    x = find(1, kPatchControl);
+    EXPECT_TRUE(x && x->universe == 2 && x->slot == 504 && x->channels == 4);
+    x = find(4, kNumChannels + 3);
+    EXPECT_TRUE(x && x->universe == 9 && x->slot == 0 && x->channels == foot);
+    x = find(5, kNumChannels + 5);  // an output's own two ranges count too
+    EXPECT_TRUE(x && x->universe == 20 && x->slot == 9 && x->channels == (foot < 21 ? foot : 21));
+    EXPECT_TRUE(find(0, 1) == nullptr);              // side by side is not an overlap
+    EXPECT_EQ(find_patch_clashes(r, nr, c, 2), 2u);  // a short list stops at its end
+
+    // The control universe off: not a range.
+    ctl.enabled = 0;
+    EXPECT_EQ(collect_patch_ranges([&](size_t o) -> const ChannelConfig& { return ch[o]; },
+                                   kNumChannels, bank, ctl, r, kMaxPatchRanges),
+              7u);
+}
+
 static void test_layout_whole_pixels_never_split_one() {
     DmxRun r[kMaxDmxRuns];
     auto c         = rgb_chan(1024, config::kPackWholePixels);
@@ -2833,6 +2889,7 @@ int main() {
     test_decode_per_fixture_leaves_the_rest_dark();
     test_one_colour_per_fixture();
     test_auto_patch_compact_and_forced_packing();
+    test_patch_clashes();
     test_universe_map_shares_a_universe();
     test_fixture_spans_skip_the_dead_leds();
     test_fixture_spans_follow_invert_and_grouping();

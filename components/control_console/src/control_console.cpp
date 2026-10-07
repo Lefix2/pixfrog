@@ -678,6 +678,32 @@ int cmd_autopatch(int argc, char** argv) {
     return ok();
 }
 
+// overlaps — the ranges of the patch that share DMX channels, as the box
+// computes them: "overlap=ch0 pixels,ch1 fixtures,U3.1+170" per pair (the
+// first shared channel and how many they share).
+void print_patch_owner(uint8_t owner) {
+    if (owner >= dmx::kPatchControl)
+        printf("control");
+    else
+        printf("ch%u %s", static_cast<unsigned>(owner % config::kNumChannels),
+               owner < config::kNumChannels ? "pixels" : "fixtures");
+}
+
+int cmd_overlaps(int argc, char**) {
+    if (argc != 1) return err("usage: overlaps");
+    static dmx::PatchClash clashes[dmx::kMaxPatchClashes];  // off the console task's stack
+    const size_t n = dmx::patch_clashes(clashes, dmx::kMaxPatchClashes);
+    printf("overlaps=%u\n", static_cast<unsigned>(n));
+    for (size_t i = 0; i < n; ++i) {
+        printf("overlap=");
+        print_patch_owner(clashes[i].a);
+        printf(",");
+        print_patch_owner(clashes[i].b);
+        printf(",U%u.%u+%u\n", clashes[i].universe, clashes[i].address, clashes[i].channels);
+    }
+    return ok();
+}
+
 // ── DMX injection & buffer readback ─────────────────────────────────────────
 
 int cmd_dmxw(int argc, char** argv) {
@@ -1609,6 +1635,7 @@ void start() {
         "autopatch",
         "autopatch <base> [compact] [continuous|whole|fixture|colour] — re-address all channels",
         cmd_autopatch);
+    register_cmd("overlaps", "overlaps — the patch's ranges that share DMX channels", cmd_overlaps);
     register_cmd("dmxw", "dmxw <universe> <start_slot> <hex> — inject DMX data", cmd_dmxw);
     register_cmd("dmxr", "dmxr <universe> [start len] — read universe buffer", cmd_dmxr);
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);

@@ -550,6 +550,41 @@ size_t fixture_patch(const config::ChannelConfig& cc, FixtureAddress* out, size_
     return n < cap ? n : cap;
 }
 
+static_assert(kPatchControl == logic::kPatchControl && kMaxPatchClashes == logic::kMaxPatchClashes,
+              "the patch owners are numbered the same on both sides");
+
+size_t patch_clashes(PatchClash* out, size_t cap) {
+    if (!out || cap == 0) return 0;
+    // ~15 kB of ranges and the pairs: off the caller's stack (an HTTP handler,
+    // the console).
+    struct Work {
+        logic::PatchRange ranges[logic::kMaxPatchRanges];
+        logic::PatchClash pairs[logic::kMaxPatchClashes];
+    };
+    auto* w = static_cast<Work*>(heap_caps_malloc(sizeof(Work), MALLOC_CAP_SPIRAM));
+    if (!w) return 0;
+    const size_t nr = logic::collect_patch_ranges(
+        [](size_t o) -> const config::ChannelConfig& { return config::get_channel(o); },
+        config::kNumChannels, config::get_profiles(), config::get_control(), w->ranges,
+        logic::kMaxPatchRanges);
+    const size_t np = logic::find_patch_clashes(w->ranges, nr, w->pairs, logic::kMaxPatchClashes);
+    const size_t n  = np < cap ? np : cap;
+    for (size_t i = 0; i < n; ++i) {
+        const logic::PatchClash& p = w->pairs[i];
+        out[i] = PatchClash{ p.a, p.b, p.universe, static_cast<uint16_t>(p.slot + 1), p.channels };
+    }
+    heap_caps_free(w);
+    return n;
+}
+
+uint8_t patch_clash_outputs(const PatchClash* c, size_t n) {
+    uint8_t mask = 0;
+    for (size_t i = 0; i < n; ++i)
+        for (const uint8_t owner : { c[i].a, c[i].b })
+            if (owner < kPatchControl) mask |= 1u << (owner % config::kNumChannels);
+    return mask;
+}
+
 void set_pixel_preview(size_t channel_index, uint16_t pixel_count) {
     if (channel_index >= config::kNumChannels) return;
     const uint32_t prev = g_pixel_preview.load(std::memory_order_relaxed);

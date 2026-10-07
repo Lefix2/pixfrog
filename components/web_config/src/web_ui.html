@@ -516,7 +516,7 @@
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden">
             <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;font:500 10px 'DM Mono';letter-spacing:.1em;color:var(--fg-4);padding:12px 18px;border-bottom:1px solid var(--line)"><span>CH</span><span data-i18n="PROTOCOL">PROTOCOL</span><span data-i18n="ASSIGNED UNIVERSES">ASSIGNED UNIVERSES</span><span>DMX</span></div>
             <div id="patch-mount"></div>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--well)"><span style="font:500 12px 'DM Mono';color:var(--fg-3)"><span data-i18n="Universes used">Universes used</span>&nbsp;: <span class="fg-2">U0 – U<span id="patch-nextfree">0</span></span> · <span id="patch-pool" class="fg-2">0 / 72</span></span><span style="font:500 12px 'DM Mono';color:var(--accent)" data-i18n="no overlap detected">no overlap detected</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--well)"><span style="font:500 12px 'DM Mono';color:var(--fg-3)"><span data-i18n="Universes used">Universes used</span>&nbsp;: <span class="fg-2">U0 – U<span id="patch-nextfree">0</span></span> · <span id="patch-pool" class="fg-2">0 / 72</span></span><span id="patch-overlap" style="font:500 12px 'DM Mono';color:var(--accent);text-align:right"></span></div>
           </div>
         </div>
       </div>
@@ -659,6 +659,7 @@
                 </div>
               </div>
               <div id="dp-mode-note" class="hint"></div>
+              <div id="dp-clash" class="hint" style="display:none;color:var(--danger)"></div>
             </div>
           </div>
         </div>
@@ -945,6 +946,12 @@ var FR={
   'No channel yet — pick a preset or add one':'Aucun canal — choisissez un préréglage ou ajoutez-en un',
   'The mode ends past DMX channel 512 — move the start address':'Le mode dépasse le canal DMX 512 — déplacez l’adresse de départ',
   'Universe {u} also feeds channel {c}: both read the same data':'L’univers {u} alimente aussi la sortie {c} : les deux lisent les mêmes données',
+  'Output {n} pixels':'Sortie {n} pixels','Output {n} fixtures':'Sortie {n} fixtures','the control universe':'l’univers de contrôle',
+  '{a} and {b} share {n} ch from U{u} · {d}':'{a} et {b} partagent {n} canaux dès U{u} · {d}',
+  '1 overlap':'1 chevauchement','{n} overlaps':'{n} chevauchements',
+  'as saved: save to check your changes':'selon la config enregistrée : enregistrez pour vérifier vos changements',
+  'This output shares DMX channels — both read the same data:':'Cette sortie partage des canaux DMX — les deux lisent les mêmes données :',
+  'The control channels overlap {o}: both read the same data':'Les canaux de contrôle chevauchent {o} : les deux lisent les mêmes données',
   'receiving':'réception',
   'waiting for the desk':'en attente de la console',
   'waiting':'en attente',
@@ -1700,12 +1707,20 @@ function uniLabel(c){
   return a&&b?a+' + '+b:(a||b||'—');
 }
 function uniRange(r){ return r[1]>1?('U'+r[0]+'–U'+(r[0]+r[1]-1)):('U'+r[0]); }
+// The box's patch overlap check (GET /api/config "patch_clashes"): the ranges
+// of the saved settings that share DMX channels. null = not known (the demo).
+var CLASHES=null;
+function clashOwner(o){ return o.range==='control'?t('the control universe'):t(o.range==='fixtures'?'Output {n} fixtures':'Output {n} pixels').replace('{n}',o.output+1); }
+function clashText(c){ return t('{a} and {b} share {n} ch from U{u} · {d}').replace('{a}',clashOwner(c.a)).replace('{b}',clashOwner(c.b)).replace('{n}',c.channels).replace('{u}',c.universe).replace('{d}',c.address); }
+function clashesOf(output,range){ return (CLASHES||[]).filter(function(c){ return [c.a,c.b].some(function(o){ return o.range===range&&(range==='control'||o.output===output); }); }); }
+// Unsaved patch edits: the box's check is about the saved settings.
+function patchDirty(){ return Array.from(dirty).some(function(k){ return /^ch\d/.test(k)||k==='control'||k==='profiles'; }); }
 function totalUniverses(){ var n=0; CHANS.forEach(function(c){ if(c.protoRaw!=='Off') n+=chanSpan(c); }); return n; }
-function patchRow(n,proto,range,dmx){
+function patchRow(n,proto,range,dmx,bad){
   return '<div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;align-items:center;padding:13px 18px;border-bottom:1px solid var(--rule)">'
     +'<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:0;background:var(--well);border:1px solid var(--line-3);font:500 11px \'DM Mono\';color:var(--fg-2)">'+n+'</span>'
     +'<span class="mono-13">'+proto+'</span>'
-    +'<span style="font:500 13px \'DM Mono\';color:var(--accent)">'+range+'</span>'
+    +'<span style="font:500 13px \'DM Mono\';color:'+(bad?'var(--danger)':'var(--accent)')+'"'+(bad?' data-clash':'')+'>'+(bad?'⚠ ':'')+range+'</span>'
     +'<span style="font:500 13px \'DM Mono\';color:var(--fg-3)">'+dmx+'</span></div>';
 }
 var PACK_SHORT={whole:'whole px',fixture:'per fixture',colour:'colour/fixture'};
@@ -1716,14 +1731,20 @@ function buildPatch(){
     var px=pixSpan(c), fx=fixSpan(c);
     [px,fx].forEach(function(r){ if(r){ used+=r[1]; if(r[0]+r[1]-1>maxEnd) maxEnd=r[0]+r[1]-1; } });
     if(!px&&!fx){ rows+=patchRow(c.n,c.proto,'—',t('scenes only')); return; }
-    if(px) rows+=patchRow(c.n,c.proto,uniRange(px),c.dmx+' · '+t('pixels')+(c.pack&&c.pack!=='continuous'?' · '+t(PACK_SHORT[c.pack]):''));
-    if(fx){ var nfx=ctlPatch(c).length; rows+=patchRow(px?'↳':c.n,px?'':c.proto,uniRange(fx),c.fixDmx+' · '+(nfx>1?t('{n} fixtures').replace('{n}',nfx):t('1 fixture'))); }
+    if(px) rows+=patchRow(c.n,c.proto,uniRange(px),c.dmx+' · '+t('pixels')+(c.pack&&c.pack!=='continuous'?' · '+t(PACK_SHORT[c.pack]):''),clashesOf(c.n-1,'pixels').length>0);
+    if(fx){ var nfx=ctlPatch(c).length; rows+=patchRow(px?'↳':c.n,px?'':c.proto,uniRange(fx),c.fixDmx+' · '+(nfx>1?t('{n} fixtures').replace('{n}',nfx):t('1 fixture')),clashesOf(c.n-1,'fixtures').length>0); }
   });
   // The DMX control universe follows the outputs (auto_patch_universes).
   if(CTL.enabled){
     var w=ctlFootprint(), a=CTL.address;
     if(CTL.universe>maxEnd) maxEnd=CTL.universe;
-    rows+=patchRow('<i data-lucide="sliders-horizontal" class="ic14"></i>',t('DMX control'),'U'+CTL.universe,w>1?(a+'–'+(a+w-1)):String(a));
+    rows+=patchRow('<i data-lucide="sliders-horizontal" class="ic14"></i>',t('DMX control'),'U'+CTL.universe,w>1?(a+'–'+(a+w-1)):String(a),clashesOf(-1,'control').length>0);
+  }
+  var ov=el('patch-overlap');
+  if(ov){
+    var cl=CLASHES||[], txt=CLASHES===null?'':!cl.length?t('no overlap detected'):(cl.length>1?t('{n} overlaps').replace('{n}',cl.length):t('1 overlap'))+' · '+clashText(cl[0]);
+    if(txt&&patchDirty()) txt+=' · '+t('as saved: save to check your changes');
+    ov.textContent=txt; ov.style.color=cl.length?'var(--danger)':'var(--accent)'; ov.title=cl.map(clashText).join('\n');
   }
   var nf2=el('patch-nextfree'); if(nf2) nf2.textContent=(maxEnd+1);
   if(CTL.enabled) used++;
@@ -1792,6 +1813,8 @@ function updatePatchVis(){
   disp('dp-pm-fields',c.pm?'grid':'none'); disp('dp-fc-fields',c.fc?'grid':'none');
   var note=c.pm&&c.fc?'both':(!c.pm&&!c.fc?'none':''), ne=el('dp-mode-note');
   if(ne){ ne.textContent=note?t(MODE_NOTES[note]):''; ne.style.display=note?'block':'none'; }
+  var dc=el('dp-clash'), mine=off?[]:(CLASHES||[]).filter(function(x){ return [x.a,x.b].some(function(o){ return o.range!=='control'&&o.output===c.n-1; }); });
+  if(dc){ dc.style.display=mine.length?'block':'none'; dc.textContent=mine.length?t('This output shares DMX channels — both read the same data:')+' '+mine.map(clashText).join(' · ')+(patchDirty()?' ('+t('as saved: save to check your changes')+')':''):''; }
   var sm=document.querySelector('[data-dp-summary]'), n=chanSpan(c);
   if(sm) sm.textContent=off?'':(c.proto+' · '+c.pixels+' LED · '+(n?n+' '+t(n>1?'universes':'universe'):t('scenes only')));
 }
@@ -2377,6 +2400,7 @@ function setAuthUI(){
 function reloadConfig(){
   return api('GET','/api/config').then(function(d){
     var g=d.global;
+    CLASHES=d.patch_clashes||null;
     netDhcp=!!g.dhcp; setDhcpUI(); if(el('n-fallback')) el('n-fallback').value=g.ip_fallback||'linklocal';
     if(g.lang!=null && !langDirty){ LANG=(g.lang===1?'fr':'en'); var ls=el('s-lang'); if(ls) ls.value=LANG; applyI18n(); go(curScreen); }
     if(el('n-ip')) el('n-ip').value=g.ip; if(el('n-mask')) el('n-mask').value=g.mask; if(el('n-gw')) el('n-gw').value=g.gw;
@@ -2647,8 +2671,11 @@ function renderControl(){
   });
   m.innerHTML=rows||'<div style="padding:14px 18px;font:500 12px \'DM Mono\';color:var(--fg-4)">'+esc(t('No channel yet — pick a preset or add one'))+'</div>';
   var add=document.querySelector('[data-ct-add]'); if(add){ add.disabled=CTL.slots.length>=32||last>=512; add.style.opacity=add.disabled?'.4':'1'; }
-  var wn=el('ct-warn'), ov=ctlOverlap(), msg='';
+  // The box's check once saved; a universe-level estimate while editing.
+  var known=CLASHES!==null&&!dirty.has('control'), boxc=known?clashesOf(-1,'control'):[];
+  var wn=el('ct-warn'), ov=known?null:ctlOverlap(), msg='';
   if(last>512) msg=t('The mode ends past DMX channel 512 — move the start address');
+  else if(boxc.length) msg=t('The control channels overlap {o}: both read the same data').replace('{o}',boxc.map(function(c){ return clashOwner(c.a.range==='control'?c.b:c.a); }).join(', '));
   else if(ov) msg=t('Universe {u} also feeds channel {c}: both read the same data').replace('{u}',CTL.universe).replace('{c}',ov);
   else if(CTL.enabled && CTL.mapped===false && !dirty.has('control')) msg=t('No universe left for the control universe: the outputs use all {n} — the desk is not heard. Shorten an output.').replace('{n}',CTL.pool);
   if(wn){ wn.style.display=msg?'flex':'none'; wn.textContent=msg; }
