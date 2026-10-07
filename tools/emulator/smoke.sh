@@ -7,7 +7,7 @@
 # Main menu layout (node engine): 0 Show, 1 Looks, 2 Rig, 3 DMX, 4 Box,
 # 5 [Back to HOME]. Box: 0 Network, 1 Settings, 2 About, 3 [Back].
 # Settings (TFT, no speaker): 0 Bright, 1 Idle dim, 2 Dim after,
-# 3 Refresh px, 4 Nerd stats, 5 [Back]. DMX: 0 Protocols (Net first).
+# 3 Refresh px, 4 Nerd stats, 5 [Back]. DMX: 0 Patch (outputs 1-8).
 set -euo pipefail
 cd "$(dirname "$0")"
 BIN=${1:-build/pixfrog_emu}
@@ -47,9 +47,9 @@ expect '"screen":"Stats"'                    # click enters the nerd-stats page
 expect '"screen":"About"'                    # back ×2 (to Box), +1 detent + click → About
 expect '"screen":"MainMenu","cursor":3'      # back ×2 (About, Box), left: DMX
 expect '"screen":"DmxMenu"'                  # click → DMX
-expect '"screen":"ProtocolsMenu"'            # click → Protocols
-expect '"screen":"EditValue"'                # Protocols → Net edit
-expect '"screen":"Home"'                     # long-press climbs back: Protocols → DMX → Main → Home
+expect '"screen":"PatchListMenu"'            # click → Patch
+expect '"screen":"OutputPatchMenu"'          # Patch → output 1
+expect '"screen":"Home"'                     # long-press climbs back: output → Patch → DMX → Main → Home
 
 # ── Backlight: the Settings node previews the level live while editing ────────
 out=$(printf '%s\n' \

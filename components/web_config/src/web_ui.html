@@ -133,7 +133,6 @@
     <div data-nav="scenes" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="palette"></i><span data-i18n="Scenes">Scenes</span></div>
 
     <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="DMX">DMX</div>
-    <div data-nav="artnet" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="radio-tower"></i><span data-i18n="Protocols">Protocols</span></div>
     <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Control universe">Control universe</span></div>
     <div data-nav="profiles" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="cable"></i><span data-i18n="DMX profiles">DMX profiles</span></div>
     <div data-nav="fixpatch" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="list-plus"></i><span data-i18n="Fixture patch">Fixture patch</span></div>
@@ -252,6 +251,7 @@
               <canvas data-spark="sacn" data-color="#3fd463" style="width:100%;height:34px;display:block"></canvas>
               <div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:3px"><span data-i18n="total">total</span> <span data-live="sacn-total">0</span> · <span data-i18n="invalid">invalid</span> <span style="color:var(--danger)" data-live="bad">0</span></div>
             </div>
+            <div style="font:500 11px 'DM Mono';color:var(--fg-4)"><span data-i18n="universes patched">universes patched</span> <span class="fg-2" data-live="universes">0</span></div>
           </div>
 
           <div style="grid-column:span 7;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px;display:flex;flex-direction:column;gap:13px">
@@ -433,25 +433,34 @@
       <!-- ===== NETWORK ===== -->
       <div data-screen="network" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:980px">
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:18px">
-            <span class="eyebrow" data-i18n="IP ADDRESSING">IP ADDRESSING</span>
-            <div style="display:flex;gap:5px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:4px">
-              <div data-dhcp="1" style="flex:1;text-align:center;padding:7px 0;border-radius:0;font:600 12px 'Figtree';background:var(--accent);color:var(--on-accent);cursor:pointer" data-i18n="Automatic DHCP">Automatic DHCP</div>
-              <div data-dhcp="0" style="flex:1;text-align:center;padding:7px 0;border-radius:0;font:600 12px 'Figtree';color:var(--fg-2);cursor:pointer" data-i18n="Static IP">Static IP</div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:13px">
-              <div><label class="f-label" data-i18n="IP address">IP address</label><input class="field field-ro" id="n-ip" value="192.168.1.42" disabled/></div>
-              <div class="grid-2">
-                <div><label class="f-label" data-i18n="Mask">Mask</label><input class="field field-ro" id="n-mask" value="255.255.255.0" disabled/></div>
-                <div><label class="f-label" data-i18n="Gateway">Gateway</label><input class="field field-ro" id="n-gw" value="192.168.1.1" disabled/></div>
+          <div class="stack-16">
+            <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:18px">
+              <span class="eyebrow" data-i18n="IP ADDRESSING">IP ADDRESSING</span>
+              <div style="display:flex;gap:5px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:4px">
+                <div data-dhcp="1" style="flex:1;text-align:center;padding:7px 0;border-radius:0;font:600 12px 'Figtree';background:var(--accent);color:var(--on-accent);cursor:pointer" data-i18n="Automatic DHCP">Automatic DHCP</div>
+                <div data-dhcp="0" style="flex:1;text-align:center;padding:7px 0;border-radius:0;font:600 12px 'Figtree';color:var(--fg-2);cursor:pointer" data-i18n="Static IP">Static IP</div>
               </div>
+              <div style="display:flex;flex-direction:column;gap:13px">
+                <div><label class="f-label" data-i18n="IP address">IP address</label><input class="field field-ro" id="n-ip" value="192.168.1.42" disabled/></div>
+                <div class="grid-2">
+                  <div><label class="f-label" data-i18n="Mask">Mask</label><input class="field field-ro" id="n-mask" value="255.255.255.0" disabled/></div>
+                  <div><label class="f-label" data-i18n="Gateway">Gateway</label><input class="field field-ro" id="n-gw" value="192.168.1.1" disabled/></div>
+                </div>
+              </div>
+              <div data-fallback-row><label class="f-label" data-i18n="Without a DHCP server">Without a DHCP server</label>
+                <select class="field field-text" id="n-fallback">
+                  <option value="linklocal" data-i18n="Link-local 169.254.x.x (a laptop meets it with no setup)">Link-local 169.254.x.x (a laptop meets it with no setup)</option>
+                  <option value="artnet" data-i18n="Art-Net 2.x.x.x/8 (the desk convention)">Art-Net 2.x.x.x/8 (the desk convention)</option>
+                </select></div>
+              <div style="display:flex;align-items:center;gap:9px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.2);border-radius:0;padding:11px 13px;font:500 12px 'Figtree';color:var(--warn)"><i data-lucide="info" class="ic16"></i><span data-i18n="Changing IP mode requires a reboot.">Changing IP mode requires a reboot.</span></div>
             </div>
-            <div data-fallback-row><label class="f-label" data-i18n="Without a DHCP server">Without a DHCP server</label>
-              <select class="field field-text" id="n-fallback">
-                <option value="linklocal" data-i18n="Link-local 169.254.x.x (a laptop meets it with no setup)">Link-local 169.254.x.x (a laptop meets it with no setup)</option>
-                <option value="artnet" data-i18n="Art-Net 2.x.x.x/8 (the desk convention)">Art-Net 2.x.x.x/8 (the desk convention)</option>
-              </select></div>
-            <div style="display:flex;align-items:center;gap:9px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.2);border-radius:0;padding:11px 13px;font:500 12px 'Figtree';color:var(--warn)"><i data-lucide="info" class="ic16"></i><span data-i18n="Changing IP mode requires a reboot.">Changing IP mode requires a reboot.</span></div>
+            <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
+              <span class="eyebrow" data-i18n="DMX RECEPTION">DMX RECEPTION</span>
+              <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px"><div><div class="h-sm">ArtNet 4</div><div class="hint" data-i18n="UDP 6454 · always on">UDP 6454 · always on</div></div><span class="sw"><input type="checkbox" checked disabled/><span></span></span></label>
+              <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm">sACN E1.31</div><div class="hint">Multicast 239.255.x.x · UDP 5568</div></div><span class="sw"><input id="a-sacn" type="checkbox"/><span></span></span></label>
+              <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Remote FPP / FSEQ">Remote FPP / FSEQ</div><div class="hint" data-i18n="Multi-box FPP sync">Multi-box FPP sync</div></div><span class="sw"><input id="a-fpp" type="checkbox"/><span></span></span></label>
+              <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer"><div><span class="h-sm" data-i18n="Multi-source HTP merge">Multi-source HTP merge</span><div class="hint">Highest-Takes-Precedence</div></div><span class="sw"><input id="a-merge" type="checkbox"/><span></span></span></label>
+            </div>
           </div>
 
           <div class="stack-16">
@@ -467,31 +476,6 @@
             <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:11px">
               <span class="eyebrow" data-i18n="PHYSICAL LINK">PHYSICAL LINK</span>
               <div style="display:flex;align-items:center;gap:11px"><span style="width:38px;height:38px;border-radius:0;background:rgba(63,212,99,.12);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none"><i data-lucide="cable" class="ic20"></i></span><div><div style="font-size:14px;font-weight:600" data-live="link-text">Network link</div><div style="font:500 11.5px 'DM Mono';color:var(--fg-4);margin-top:2px">Ethernet RJ45 · 100 Mb/s full-duplex</div></div></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===== ARTNET ===== -->
-      <div data-screen="artnet" style="display:none">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;max-width:1040px">
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
-            <div style="display:flex;align-items:center;gap:9px"><i data-lucide="radio-tower" class="ic20 fg-warn"></i><span style="font-size:14px;font-weight:700" data-i18n="Reception protocols">Reception protocols</span></div>
-            <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px"><div><div class="h-sm">ArtNet 4</div><div class="hint" data-i18n="UDP 6454 · always on">UDP 6454 · always on</div></div><span class="sw"><input type="checkbox" checked disabled/><span></span></span></label>
-            <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm">sACN E1.31</div><div class="hint">Multicast 239.255.x.x · UDP 5568</div></div><span class="sw"><input id="a-sacn" type="checkbox"/><span></span></span></label>
-            <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Remote FPP / FSEQ">Remote FPP / FSEQ</div><div class="hint" data-i18n="Multi-box FPP sync">Multi-box FPP sync</div></div><span class="sw"><input id="a-fpp" type="checkbox"/><span></span></span></label>
-            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer"><div><span class="h-sm" data-i18n="Multi-source HTP merge">Multi-source HTP merge</span><div class="hint">Highest-Takes-Precedence</div></div><span class="sw"><input id="a-merge" type="checkbox"/><span></span></span></label>
-          </div>
-
-          <div class="stack-16">
-            <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:13px">
-              <span class="eyebrow" data-i18n="REAL-TIME STATISTICS">REAL-TIME STATISTICS</span>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
-                <div class="well"><div style="font:500 19px 'DM Mono';color:var(--warn);line-height:1"><span data-live="artnet-rate">0</span></div><div class="hint-xs" data-i18n="ArtNet packets/s">ArtNet packets/s</div></div>
-                <div class="well"><div style="font:500 19px 'DM Mono';color:var(--accent);line-height:1"><span data-live="sacn-rate">0</span></div><div class="hint-xs" data-i18n="sACN packets/s">sACN packets/s</div></div>
-                <div class="well"><div style="font:500 19px 'DM Mono';line-height:1" data-live="universes">0</div><div class="hint-xs" data-i18n="active universes">active universes</div></div>
-                <div class="well"><div style="font:500 19px 'DM Mono';color:var(--danger);line-height:1" data-live="bad">0</div><div class="hint-xs" data-i18n="invalid packets">invalid packets</div></div>
-              </div>
             </div>
           </div>
         </div>
@@ -1004,11 +988,10 @@ var FR={
   'The playlist holds 16 files':'La playlist contient 16 fichiers au plus',
   'Playing the playlist':'Lecture de la playlist','playlist':'playlist','loop':'boucle',
   '8 lines · 2 outputs (DATA + CLOCK) per channel':'8 lignes · 2 sorties (DATA + CLOCK) par canal',
-  'IP addressing — applied at once, the page reconnects':'Adressage IP — appliqué immédiatement, la page se reconnecte',
+  'IP addressing and DMX reception — applied at once, the page reconnects':'Adressage IP et réception DMX — appliqués immédiatement, la page se reconnecte',
   'Without a DHCP server':'Sans serveur DHCP',
   'Link-local 169.254.x.x (a laptop meets it with no setup)':'Link-local 169.254.x.x (un portable la joint sans réglage)',
   'Art-Net 2.x.x.x/8 (the desk convention)':'Art-Net 2.x.x.x/8 (la convention des consoles)',
-  'ArtNet 4 + sACN E1.31 reception · merge & failsafe':'Réception ArtNet 4 + sACN E1.31 · merge & failsafe',
   'Contiguous re-addressing of every channel':'Ré-adressage contigu de tous les canaux',
   'General · security · firmware · maintenance':'Général · sécurité · firmware · maintenance',
   'link':'lien','offline':'hors-ligne','Network link active':'Lien réseau actif','Network link down':'Lien réseau absent',
@@ -1054,15 +1037,14 @@ var FR={
   'IP address':'Adresse IP','Mask':'Masque','Gateway':'Passerelle',
   'Changing IP mode requires a reboot.':'Le changement de mode IP nécessite un redémarrage.',
   'IDENTITY':'IDENTITÉ','Name (ArtNet / mDNS)':'Nom (ArtNet / mDNS)','Long name':'Nom long','Frame rate':'Cadence',
-  'PHYSICAL LINK':'LIEN PHYSIQUE','Reception protocols':'Protocoles de réception',
+  'PHYSICAL LINK':'LIEN PHYSIQUE','DMX RECEPTION':'RÉCEPTION DMX',
   'UDP 6454 · always on':'UDP 6454 · toujours actif','Multicast 239.255.x.x · UDP 5568':'Multicast 239.255.x.x · UDP 5568',
   'Remote FPP / FSEQ':'FPP / FSEQ distant','Multi-box FPP sync':'Synchro multi-boîtiers FPP',
   'Multi-source HTP merge':'Fusion HTP multi-sources',
   'Highest-Takes-Precedence':'Highest-Takes-Precedence','Failsafe (signal loss)':'Failsafe (perte de signal)',
   'Trigger delay':'Délai avant déclenchement','Behavior':'Comportement','Full blackout':'Extinction totale',
   'Hold last look':'Maintenir la dernière image','Solid color':'Couleur fixe','Play a scene':'Lancer une scène',
-  'REAL-TIME STATISTICS':'STATISTIQUES TEMPS RÉEL','ArtNet packets/s':'ArtNet paquets/s','sACN packets/s':'sACN paquets/s',
-  'active universes':'univers actifs','invalid packets':'paquets invalides',
+  'universes patched':'univers patchés',
   'Contiguous auto-patch':'Auto-patch contigu',
   'Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures\' DMX profiles, then the pixels of every output — no gap, no overlap, from the first universe below. Adding LEDs moves nothing before them.':'Réadresse tout en trois blocs, chacun ouvrant un univers, du plus stable au plus changeant : l’univers de contrôle, puis les profils DMX des fixtures, puis les pixels de chaque sortie — sans trou ni chevauchement, à partir du premier univers ci-dessous. Ajouter des LEDs ne déplace rien avant elles.',
   'Run auto-patch':'Lancer l’auto-patch','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
@@ -1105,7 +1087,7 @@ var FR={
   'Fixture profile (OFL)':'Profil de fixture (OFL)','Save first: the file is made from the saved profile':'Enregistrez d’abord : le fichier est fait à partir du profil enregistré',
   'DMX control: no pixel data, each fixture on its profile':'Contrôle DMX : pas de données pixel, chaque fixture sur son profil','DMX profile':'Profil DMX',
   '{n} fixtures':'{n} fixtures','No fixture listed: the whole strip is one fixture, on profile 1':'Aucune fixture listée : tout le ruban est une fixture, sur le profil 1',
-  'LOOKS':'LOOKS','RIG':'INSTALLATION','DMX':'DMX','PLAYBACK':'LECTURE','SETTINGS':'RÉGLAGES','Sequences':'Séquences','Automations':'Automatismes','Fixture patch':'Patch des fixtures','Pixel patch':'Patch des pixels','Maintenance':'Maintenance','Protocols':'Protocoles','Control universe':'Univers de contrôle','What the box does on its own: at startup, between scenes, when the signal is lost':'Ce que le boîtier fait seul : au démarrage, entre les scènes, à la perte du signal','8 outputs · the LED hardware and the fixtures of each strip':'8 sorties · le matériel LED et les fixtures de chaque ruban','Ordered sets of fixtures, on any outputs':'Ensembles ordonnés de fixtures, sur n’importe quelles sorties','ArtNet 4 + sACN E1.31 reception · merge':'Réception ArtNet 4 + sACN E1.31 · fusion','The desk\'s patch: each fixture on the channels of its DMX profile, from the output\'s fixture address':'Le patch de la régie : chaque fixture sur les canaux de son profil DMX, depuis l’adresse fixtures de la sortie','The media server\'s patch: every LED its DMX channels — layout, universe, address':'Le patch du media server : chaque LED a ses canaux DMX — layout, univers, adresse','Last: the patch sheet, and the re-addressing of everything in blocks':'En dernier : la feuille de patch, et le réadressage de tout en blocs','Language · screen · speaker · security':'Langue · écran · haut-parleur · sécurité','Firmware · configuration backup · telemetry & device logs · restart':'Firmware · sauvegarde de la configuration · télémétrie et logs · redémarrage','AT STARTUP':'AU DÉMARRAGE','BETWEEN SCENES':'ENTRE LES SCÈNES','One frame rate for the eight outputs: it bounds how many LEDs each can drive.':'Une fréquence d’images pour les huit sorties : elle borne le nombre de LEDs que chacune peut piloter.','This output is off: nothing to patch.':'Cette sortie est désactivée : rien à patcher.','This output is off: switch it on to set it up.':'Cette sortie est désactivée : activez-la pour la configurer.','Pixel mapping':'Pixel mapping','Every LED has its own DMX channels, on its own address range.':'Chaque LED a ses propres canaux DMX, sur sa plage d’adresses.','Fixtures (DMX profiles)':'Fixtures (profils DMX)','Each fixture answers to the channels of its DMX profile — dimmer, shutter, effect… — on another address range.':'Chaque fixture répond aux canaux de son profil DMX — dimmer, shutter, effet… — sur une autre plage d’adresses.','Fixtures\' Art-Net address':'Adresse Art-Net des fixtures','Fixtures\' DMX start address':'Adresse DMX de départ des fixtures','Both: a fixture whose Effect channel is at 0 shows its pixels, under its dimmer and shutter; above 0 it plays the effect of the bank.':'Les deux : une fixture dont le canal Effet est à 0 montre ses pixels, sous son dimmer et son shutter ; au-dessus de 0 elle joue l’effet de la banque.','Neither: this output listens to no universe. It only plays scenes.':'Aucun des deux : cette sortie n’écoute aucun univers. Elle ne joue que des scènes.','scenes only':'scènes seulement','pixels':'pixels','1 fixture':'1 fixture','FIXTURES\' BLOCK':'BLOC DES FIXTURES','In order, after the control universe':'Dans l’ordre, après l’univers de contrôle','CONTROL UNIVERSE':'UNIVERS DE CONTRÔLE','PIXELS':'PIXELS','SCENES ONLY':'SCÈNES SEULEMENT','From universe':'Depuis l’univers','Fixture profiles':'Profils des fixtures','one after the other from the start address':'les unes après les autres depuis l’adresse de départ','universe':'univers','PREVIEW':'APERÇU','LEDs in the preview':'LEDs de l’aperçu','Drawn by the box, as on a strip of that many LEDs — unsaved changes included.':'Dessiné par le boîtier, comme sur un ruban de ce nombre de LEDs — modifications non enregistrées comprises.','PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
+  'LOOKS':'LOOKS','RIG':'INSTALLATION','DMX':'DMX','PLAYBACK':'LECTURE','SETTINGS':'RÉGLAGES','Sequences':'Séquences','Automations':'Automatismes','Fixture patch':'Patch des fixtures','Pixel patch':'Patch des pixels','Maintenance':'Maintenance','Control universe':'Univers de contrôle','What the box does on its own: at startup, between scenes, when the signal is lost':'Ce que le boîtier fait seul : au démarrage, entre les scènes, à la perte du signal','8 outputs · the LED hardware and the fixtures of each strip':'8 sorties · le matériel LED et les fixtures de chaque ruban','Ordered sets of fixtures, on any outputs':'Ensembles ordonnés de fixtures, sur n’importe quelles sorties','ArtNet 4 + sACN E1.31 reception · merge':'Réception ArtNet 4 + sACN E1.31 · fusion','The desk\'s patch: each fixture on the channels of its DMX profile, from the output\'s fixture address':'Le patch de la régie : chaque fixture sur les canaux de son profil DMX, depuis l’adresse fixtures de la sortie','The media server\'s patch: every LED its DMX channels — layout, universe, address':'Le patch du media server : chaque LED a ses canaux DMX — layout, univers, adresse','Last: the patch sheet, and the re-addressing of everything in blocks':'En dernier : la feuille de patch, et le réadressage de tout en blocs','Language · screen · speaker · security':'Langue · écran · haut-parleur · sécurité','Firmware · configuration backup · telemetry & device logs · restart':'Firmware · sauvegarde de la configuration · télémétrie et logs · redémarrage','AT STARTUP':'AU DÉMARRAGE','BETWEEN SCENES':'ENTRE LES SCÈNES','One frame rate for the eight outputs: it bounds how many LEDs each can drive.':'Une fréquence d’images pour les huit sorties : elle borne le nombre de LEDs que chacune peut piloter.','This output is off: nothing to patch.':'Cette sortie est désactivée : rien à patcher.','This output is off: switch it on to set it up.':'Cette sortie est désactivée : activez-la pour la configurer.','Pixel mapping':'Pixel mapping','Every LED has its own DMX channels, on its own address range.':'Chaque LED a ses propres canaux DMX, sur sa plage d’adresses.','Fixtures (DMX profiles)':'Fixtures (profils DMX)','Each fixture answers to the channels of its DMX profile — dimmer, shutter, effect… — on another address range.':'Chaque fixture répond aux canaux de son profil DMX — dimmer, shutter, effet… — sur une autre plage d’adresses.','Fixtures\' Art-Net address':'Adresse Art-Net des fixtures','Fixtures\' DMX start address':'Adresse DMX de départ des fixtures','Both: a fixture whose Effect channel is at 0 shows its pixels, under its dimmer and shutter; above 0 it plays the effect of the bank.':'Les deux : une fixture dont le canal Effet est à 0 montre ses pixels, sous son dimmer et son shutter ; au-dessus de 0 elle joue l’effet de la banque.','Neither: this output listens to no universe. It only plays scenes.':'Aucun des deux : cette sortie n’écoute aucun univers. Elle ne joue que des scènes.','scenes only':'scènes seulement','pixels':'pixels','1 fixture':'1 fixture','FIXTURES\' BLOCK':'BLOC DES FIXTURES','In order, after the control universe':'Dans l’ordre, après l’univers de contrôle','CONTROL UNIVERSE':'UNIVERS DE CONTRÔLE','PIXELS':'PIXELS','SCENES ONLY':'SCÈNES SEULEMENT','From universe':'Depuis l’univers','Fixture profiles':'Profils des fixtures','one after the other from the start address':'les unes après les autres depuis l’adresse de départ','universe':'univers','PREVIEW':'APERÇU','LEDs in the preview':'LEDs de l’aperçu','Drawn by the box, as on a strip of that many LEDs — unsaved changes included.':'Dessiné par le boîtier, comme sur un ruban de ce nombre de LEDs — modifications non enregistrées comprises.','PARTS':'PARTIES','Add a part':'Ajouter une partie','Remove this part':'Retirer cette partie','missing effect':'effet manquant',
   'No part: this scene plays nowhere':'Aucune partie : cette scène ne joue nulle part',
   'Each part plays one effect on its outputs; an output belongs to one part.':'Chaque partie joue un effet sur ses sorties ; une sortie n’appartient qu’à une partie.',
   'Scene added':'Scène ajoutée','Scene deleted':'Scène supprimée','Scene moved':'Scène déplacée','Scene duplicated':'Scène dupliquée',
@@ -1883,8 +1865,8 @@ function buildPatch(){
 }
 
 /* ─────────── navigation ─────────── */
-var TITLES={dashboard:'Dashboard',fseq:'Sequences',auto:'Automations',effects:'Effects',scenes:'Scenes',channels:'Outputs',groups:'Groups',artnet:'Protocols',profiles:'DMX profiles',fixpatch:'Fixture patch',pixpatch:'Pixel patch',control:'Control universe',patch:'Auto-patch',network:'Network',system:'System',maint:'Maintenance'};
-var SUBS={dashboard:'Live update · every 1 s',fseq:'Play .fseq sequences from the microSD card',auto:'What the box does on its own: at startup, between scenes, when the signal is lost',effects:'Up to 31 effects · 11 generators · up to 4 colors',scenes:'Up to 30 scenes · each part plays an effect on its outputs',channels:'8 outputs · the LED hardware and the fixtures of each strip',groups:'Ordered sets of fixtures, on any outputs',artnet:'ArtNet 4 + sACN E1.31 reception · merge',profiles:'Up to 8 profiles · the DMX channels a fixture answers to',fixpatch:'The desk\'s patch: each fixture on the channels of its DMX profile, from the output\'s fixture address',pixpatch:'The media server\'s patch: every LED its DMX channels — layout, universe, address',control:'Drive the box from any desk: compose its DMX channels',patch:'Last: the patch sheet, and the re-addressing of everything in blocks',network:'IP addressing — applied at once, the page reconnects',system:'Language · screen · speaker · security',maint:'Firmware · configuration backup · telemetry & device logs · restart'};
+var TITLES={dashboard:'Dashboard',fseq:'Sequences',auto:'Automations',effects:'Effects',scenes:'Scenes',channels:'Outputs',groups:'Groups',profiles:'DMX profiles',fixpatch:'Fixture patch',pixpatch:'Pixel patch',control:'Control universe',patch:'Auto-patch',network:'Network',system:'System',maint:'Maintenance'};
+var SUBS={dashboard:'Live update · every 1 s',fseq:'Play .fseq sequences from the microSD card',auto:'What the box does on its own: at startup, between scenes, when the signal is lost',effects:'Up to 31 effects · 11 generators · up to 4 colors',scenes:'Up to 30 scenes · each part plays an effect on its outputs',channels:'8 outputs · the LED hardware and the fixtures of each strip',groups:'Ordered sets of fixtures, on any outputs',profiles:'Up to 8 profiles · the DMX channels a fixture answers to',fixpatch:'The desk\'s patch: each fixture on the channels of its DMX profile, from the output\'s fixture address',pixpatch:'The media server\'s patch: every LED its DMX channels — layout, universe, address',control:'Drive the box from any desk: compose its DMX channels',patch:'Last: the patch sheet, and the re-addressing of everything in blocks',network:'IP addressing and DMX reception — applied at once, the page reconnects',system:'Language · screen · speaker · security',maint:'Firmware · configuration backup · telemetry & device logs · restart'};
 var curScreen='dashboard';
 function go(name){
   curScreen=name;

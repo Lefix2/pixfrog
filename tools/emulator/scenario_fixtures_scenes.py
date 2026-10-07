@@ -19,7 +19,7 @@ from scenario_editors import click_until_leaves, expect  # noqa: E402
 
 CH1 = [0, 1, 0]  # main menu → Rig → output 1: Proto, Pixels, Dead px, Fixtures, …
 CH_FIXTURES = 3
-PATCH1 = [0, 3, 1, 0]  # main menu → DMX → Patch → output 1: Pixel map, Layout, Uni, DMX, Fixtures
+PATCH1 = [0, 3, 0, 0]  # main menu → DMX → Patch → output 1: Pixel map, Layout, Uni, DMX, Fixtures
 SCENES = [0, 2, 0]  # main menu → Looks → Scenes (to edit)
 
 

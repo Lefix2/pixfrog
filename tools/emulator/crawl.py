@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Every NodeId (menu_debug_state names) plus the editor kinds must be reached.
 REQUIRED = {
-    "MainMenu", "ShowMenu", "LooksMenu", "RigMenu", "DmxMenu", "BoxMenu", "ProtocolsMenu",
+    "MainMenu", "ShowMenu", "LooksMenu", "RigMenu", "DmxMenu", "BoxMenu",
     "NetworkMenu", "SettingsMenu", "ChannelMenu", "ScenesMenu", "FSeqMenu", "TestPatternMenu",
     "GapsMenu", "Stats", "About", "EditValue", "EditString", "EditIp", "EditUni", "ControlMenu",
     "ControlSlotMenu", "FixturesMenu", "FixtureMenu", "SceneListMenu", "SceneEditMenu",
@@ -40,10 +40,10 @@ GOLDEN = {
     "scene_edit": [0, 2, 0, 1],
     "scene_part": [0, 2, 0, 1, 2],
     "dmx_menu": [0, 3],
-    "patch_list": [0, 3, 1],
-    "output_patch1": [0, 3, 1, 0],
-    "output_patch2": [0, 3, 1, 1],  # pixels and fixtures at once
-    "control_menu": [0, 3, 2],
+    "patch_list": [0, 3, 0],
+    "output_patch1": [0, 3, 0, 0],
+    "output_patch2": [0, 3, 0, 1],  # pixels and fixtures at once
+    "control_menu": [0, 3, 1],
 }
 
 SEED = [
