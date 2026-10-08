@@ -531,10 +531,27 @@ inline uint32_t bounce256(uint64_t travel256, uint32_t span) {
     return static_cast<uint32_t>(m < leg ? m : 2 * leg - m);
 }
 
+// The generators that move or size in pixels — chase, blobs, scanner,
+// stripes — are defined for a bar of kRefBarPixels LEDs and scaled to the
+// run they draw on: a chase crosses a 30- or a 120-LED fixture in the time
+// it crosses the bar, its head takes the same share of it. A look is the
+// fixture's, not the centimetres' (a phaser on a desk is relative to its
+// selection the same way). A head or a band is never under one pixel.
+constexpr uint32_t kRefBarPixels = 60;
+inline uint32_t ref_px(uint32_t px, uint16_t n) {  // a size, scaled to the run
+    const uint32_t v = px * n / kRefBarPixels;
+    return v ? v : 1;
+}
+inline uint64_t ref_travel(uint64_t gen_px1000, uint16_t n) {  // a distance run, in px
+    return gen_px1000 * n / (kRefBarPixels * 1000u);
+}
+
 // Per-effect meaning of speed/param. param 0 always means the effect's default.
 //   solid    — colour 1; speed = strobe 0..60 Hz: 1/60 s flashes of colour 2
 //              (black when unset), so 0 is steady colour 1 and 255 steady colour 2
 //   chase    — one param-px head per colour (default 1), evenly spaced, speed px/s
+//              (px of the reference bar: see kRefBarPixels, as blobs,
+//              scanner and stripes)
 //   rainbow  — param wheel repeats (default 1), speed rotates; colours unused
 //   blobs    — param soft blobs (default 3, max 16) drifting and bouncing, one
 //              colour each, additive where they meet; speed ≈ px/s
@@ -562,8 +579,8 @@ inline void solid(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint32_
 inline void chase(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
                   const FxTime& t) {
     std::memset(d, 0, static_cast<size_t>(n) * bpp);
-    const uint16_t width = param ? param : 1;
-    const uint32_t head  = (t.gen / 1000) % n;
+    const uint16_t width = static_cast<uint16_t>(ref_px(param ? param : 1, n));
+    const uint32_t head  = static_cast<uint32_t>(ref_travel(t.gen, n) % n);
     for (uint8_t k = 0; k < p.n; ++k) {
         const uint32_t h = head + static_cast<uint32_t>(k) * n / p.n;
         for (uint16_t w = 0; w < width && w < n; ++w)
@@ -594,7 +611,7 @@ inline void blobs(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t
         const uint32_t h = hash32(k * 0x9E3779B9u + 1);
         // 0.6×..1.4× the nominal speed, so blobs overtake and cross each other.
         const uint32_t vel    = 96 + (h & 127);
-        const uint64_t travel = t.gen * vel * 256 / (160 * 1000);
+        const uint64_t travel = ref_travel(t.gen * vel / 160 * 256, n);  // 1/256 px
         const uint32_t pos    = bounce256(travel + (h >> 8) % (2 * span * 256), span);
         const Rgb c           = p.c[k % p.n];
         const uint32_t lo     = pos > r256 ? (pos - r256) / 256 : 0;
@@ -665,10 +682,10 @@ inline void fire(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, const Fx
 inline void scanner(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
                     const FxTime& t) {
     const uint32_t span   = n > 1 ? n - 1u : 1u;
-    const uint32_t width  = param ? param : (n / 20 ? n / 20 : 1);
+    const uint32_t width  = param ? ref_px(param, n) : (n / 20 ? n / 20 : 1);
     const uint32_t half   = width * 128;
     const uint32_t trail  = width * 4 * 256;
-    const uint64_t travel = t.gen * 256 / 1000;
+    const uint64_t travel = ref_travel(t.gen * 256, n);
     const uint64_t leg    = static_cast<uint64_t>(span) * 256;
     const bool forward    = travel % (2 * leg) < leg;
     const uint32_t pos    = bounce256(travel, span);
@@ -719,10 +736,10 @@ inline void wave(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t 
 
 inline void stripes(uint8_t* d, uint16_t n, uint8_t bpp, const Palette& p, uint8_t param,
                     const FxTime& t) {
-    const uint32_t width  = param ? param : 4;
+    const uint32_t width  = ref_px(param ? param : 4, n);
     const uint32_t bands  = p.n > 1 ? p.n : 2;  // a lone colour alternates with black
     const uint32_t period = width * bands;
-    const uint32_t shift  = static_cast<uint32_t>(t.gen / 1000 % period);
+    const uint32_t shift  = static_cast<uint32_t>(ref_travel(t.gen, n) % period);
     for (uint16_t i = 0; i < n; ++i) {
         const uint32_t band = (i + period - shift) % period / width;
         set_px(d, bpp, i, band < p.n ? p.c[band] : Rgb{ 0, 0, 0 });
