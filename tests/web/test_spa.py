@@ -1318,7 +1318,7 @@ def test_the_patch_sheet_and_the_dmx_charts(page, device):
     html = open(dl.value.path()).read()
     assert dl.value.suggested_filename.endswith(".patch.html")
     for needle in ("Patch sheet", "Control universe", "pixfrog control", "Fixtures", "F2", "21–40", "RGB FX",
-                   "U10", "104", "Pixels", "WS2815 · 60 LED", "DMX charts", "Profile 3", "Effect speed",
+                   "U10", "104", "Pixels", "WS2815 · 60 LED", "DMX charts", "Profile 3", "Speed",
                    "8–15", "Shutter", "strobe 1Hz → 25Hz", "Master fine"):
         assert needle in html, needle
     assert html.index("Control universe") < html.index("Fixtures") < html.index("Pixels")
@@ -1342,7 +1342,8 @@ def test_the_patch_sheet_and_the_dmx_charts(page, device):
         page.locator("[data-pf-chart]").click()
     chart = open(dl.value.path()).read()
     assert dl.value.suggested_filename == "RGB-FX.chart.html"
-    assert "DMX chart" in chart and "Effect speed" in chart and "speed slow → fast" in chart
+    assert "DMX chart" in chart and "Speed" in chart and "10x the stored tempo" in chart
+    assert "per effect of the bank" in chart and "Chase : speed" in chart and "Warm white : strobe" in chart
     assert "1–7" in chart and "Colour 1, steady" in chart
     nav(page, "control")
     with page.expect_download() as dl:

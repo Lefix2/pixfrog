@@ -203,7 +203,8 @@ A change of the Effect or Generator channel crossfades the outputs or the
 group to the new look over the scene fade time — the Fade channel when the
 mode has one, else the box's scene fade (Automations); 0 cuts. See
 [Effect transitions](#effect-transitions).
-| Speed / Param | 0 = the effect's own, 1–255 = override |
+| Speed | the **tempo** of the look as a whole — the generator's motion and the dimmer phaser's rate, whatever the effect is made of: 0 = as stored, 1–127 slower (down to ÷10), 128 = ×1, 129–255 faster (up to ×10), log scale. The chart lists what it drives effect by effect (a Solid's strobe, a Chase's run, a Fire's flicker…) |
+| Adjust (`param`) | the generator's own second setting — a Chase's width, the Blobs' count, Twinkle's density, nothing on Solid / Fade / Fire: 0 = the effect's own, 1–255 = override. The chart lists it effect by effect |
 | Generator (`effect`) | 0 = the effect's own generator, 1–255 spread over the 11 generators |
 | Red / Green / Blue (colour n) | overrides colour n of the effect an output plays; all three at 0 = the effect's own |
 | Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine, then cosine, ramp up, ramp down, triangle, PWM, bump |
@@ -283,7 +284,8 @@ instead of them.
 | Shutter (pro) | 0–31 closed · 32–63 open · 64–95 strobe 1–25 Hz · 96–127 open · 128–159 pulse 0.5–10 Hz · 160–191 open · 192–223 random strobe 1–20 flashes/s · 224–255 open (see below) |
 | Strobe | 0–9 = none, 10–255 = strobe 1–25 Hz — the LED fixtures' simple strobe |
 | Effect (`bank`) | bands of 8: 0 = the fixture's own light — colour 1, steady, or its pixels under pixel mapping; 1–7 = colour 1, steady, in both cases (the plain RGB fixture); 8–15 = effect 1 of the bank, 16–23 = effect 2 … |
-| Effect speed / parameter | 0 = the effect's own, 1–255 = override |
+| Speed | the tempo of the look (generator and phaser together): 0 = as stored, 128 = ×1, log scale to ÷10 / ×10 |
+| Adjust (`param`) | the generator's own second setting: 0 = the effect's own, 1–255 = override |
 | Phaser wave | bands of 8: 0–7 = the effect's own, 8–15 = no phaser, 16–23 = sine … |
 | Phaser rate / spread / width | 0 = the effect's own, 1–255 = override |
 | Phaser attack / decay | 0 = the effect's own, 1 = none (hard edge), 2–255 = the share of the lit part |

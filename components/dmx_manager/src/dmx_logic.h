@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -2118,13 +2119,30 @@ inline uint8_t apply_mode_override(uint8_t fixture_mode, const EffectOverride& o
         o.reverse >= 0 ? o.reverse == 1 : config::scene_reverse_of(fixture_mode), -1);
 }
 
+// The Speed channel is a tempo over the look as a whole — the generator's
+// motion and the dimmer phaser's rate, whatever the effect is made of — not
+// a value of one of them: 128 = as stored, down to ÷10 at 1, up to ×10 at
+// 255, log scale. A rate at 0 (no motion) stays 0; a Solid's 255 (steady
+// colour 2, not a strobe) stays 255.
+inline uint8_t tempo_scaled(uint8_t rate, uint8_t tempo, bool solid) {
+    if (rate == 0 || tempo == 128 || (solid && rate == 255)) return rate;
+    const float f = std::exp2(static_cast<float>(static_cast<int>(tempo) - 128) *
+                              (3.3219f / 127.f));
+    const int v   = static_cast<int>(static_cast<float>(rate) * f + 0.5f);
+    return static_cast<uint8_t>(v < 1 ? 1 : v > 255 ? 255 : v);
+}
+
 // Everything but `bank` and the fixture mode: swapping the effect itself is
 // the caller's, which holds the bank (see dmx_manager's render_source).
 inline void apply_effect_override(config::Effect& e, const EffectOverride& o) {
     auto take = [](uint8_t& field, int16_t v) {
         if (v >= 0) field = static_cast<uint8_t>(v);
     };
-    take(e.speed, o.speed);
+    if (o.speed > 0) {  // the tempo first: an absolute phaser rate below wins
+        e.speed   = tempo_scaled(e.speed, static_cast<uint8_t>(o.speed),
+                                 e.generator == config::kSceneFxSolid);
+        e.ph_rate = tempo_scaled(e.ph_rate, static_cast<uint8_t>(o.speed), false);
+    }
     take(e.param, o.param);
     take(e.generator, o.generator);
     take(e.ph_wave, o.ph_wave);
