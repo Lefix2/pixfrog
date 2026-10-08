@@ -262,8 +262,6 @@ extern std::atomic<bool> g_speaker;  // ui::set_speaker_present()
 // ── Editable fields ─────────────────────────────────────────────────────────
 enum class Field : uint8_t {
     None,
-    ArtnetNet,
-    ArtnetSubnet,
     ArtnetReplyUnicast,
     ArtnetSacn,
     ArtnetFpp,

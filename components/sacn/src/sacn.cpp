@@ -25,7 +25,6 @@
 
 #include "config_store.h"
 #include "dmx_manager.h"
-#include "led_protocols.h"
 
 namespace pixfrog::sacn {
 
@@ -73,34 +72,13 @@ uint32_t now_ms() {
 }
 
 // Universes the current config maps, deduplicated, capped to the pool size.
+// E1.31 has no universe 0.
 size_t wanted_universes(uint16_t out[kMaxJoined]) {
-    size_t n  = 0;
-    auto want = [&](uint32_t first, size_t count) {
-        for (size_t u = 0; u < count && n < kMaxJoined; ++u) {
-            const uint32_t uni = first + u;
-            if (uni < 1 || !dmx::universe_routable(uni)) continue;
-            bool dup = false;
-            for (size_t i = 0; i < n; ++i)
-                if (out[i] == uni) dup = true;
-            if (!dup) out[n++] = static_cast<uint16_t>(uni);
-        }
-    };
-    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
-        const auto& cc = config::get_channel(ch);
-        if (led::is_off(cc.protocol)) continue;
-        // Its two address ranges: its pixels', its fixtures' (either may be empty).
-        want(cc.universe_start, dmx::channel_pixel_span(cc));
-        want(config::fix_universe(cc), dmx::channel_fixture_span(cc));
-    }
-    // The DMX control universe, when enabled.
-    const int ctrl = dmx::control_universe();
-    if (ctrl >= 1 && n < kMaxJoined) {
-        bool dup = false;
-        for (size_t i = 0; i < n; ++i)
-            if (out[i] == ctrl) dup = true;
-        if (!dup) out[n++] = static_cast<uint16_t>(ctrl);
-    }
-    return n;
+    size_t n = dmx::listened_universes(out, kMaxJoined);
+    size_t k = 0;
+    for (size_t i = 0; i < n; ++i)
+        if (out[i] >= 1) out[k++] = out[i];
+    return k;
 }
 
 bool membership(uint16_t universe, int op) {

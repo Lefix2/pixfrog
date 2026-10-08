@@ -245,24 +245,18 @@ inline uint32_t time_code_to_ms(const TimeCodeFields& tc) {
     return base_ms + tc.frames * kFrameUs[tc.type & 3] / 1000u;
 }
 
-// ── Net/subnet filter ───────────────────────────────────────────────────────
-
-inline bool universe_matches(uint16_t universe, uint8_t our_net, uint8_t our_subnet) {
-    return ((universe >> 8) & 0x7F) == (our_net & 0x7F) &&
-           ((universe >> 4) & 0x0F) == (our_subnet & 0x0F);
-}
-
 // ── ArtPollReply builder ────────────────────────────────────────────────────
 
 struct PollReplyInputs {
     uint32_t local_ip_host;   // host-order IPv4
-    uint8_t artnet_net;       // 0..127
-    uint8_t artnet_subnet;    // 0..15
+    uint8_t artnet_net;       // 0..127, shared by the reply's ports
+    uint8_t artnet_subnet;    // 0..15, shared by the reply's ports
     const char* short_name;   // <=18 chars
     const char* long_name;    // <=64 chars
     const char* node_report;  // <=64 chars, may be nullptr
     const uint8_t* mac;       // 6 bytes (must not be null)
     uint8_t bind_index;       // 1 for primary, 2.. for bound replies
+    uint8_t num_ports = 4;    // 0..4; the ports past it are left empty
     uint8_t sw_out[4];        // low 4 bits of each port's universe
     // A disabled (Off) channel advertises no port type and no output activity,
     // so controllers don't see it as a live DMX universe.
@@ -297,9 +291,10 @@ inline void build_poll_reply(uint8_t pkt[kPollReplySize], const PollReplyInputs&
     detail::copy_bounded(pkt + 44, 64, in.long_name);
     detail::copy_bounded(pkt + 108, 64, in.node_report);
 
-    pkt[172] = 0x00;
-    pkt[173] = 0x04;
-    for (uint8_t p = 0; p < 4; ++p) {
+    pkt[172]            = 0x00;
+    const uint8_t ports = in.num_ports < 4 ? in.num_ports : 4;
+    pkt[173]            = ports;
+    for (uint8_t p = 0; p < ports; ++p) {
         if (in.port_enabled[p]) {
             pkt[174 + p] = 0x80;                   // PortType: output, DMX512
             uint8_t good = 0x80;                   // GoodOutputA: transmitting
@@ -314,7 +309,7 @@ inline void build_poll_reply(uint8_t pkt[kPollReplySize], const PollReplyInputs&
     if (in.mac) std::memcpy(pkt + 201, in.mac, 6);
     detail::write_ip(pkt + 207, in.local_ip_host);
     pkt[211] = in.bind_index;
-    pkt[212] = 0x08;  // Status2: DHCP capable
+    pkt[212] = 0x08;  // Status2: 15-bit Port-Address
 }
 
 }  // namespace pixfrog::artnet::parser

@@ -552,6 +552,29 @@ size_t channel_universe_span(const config::ChannelConfig& cc) {
     return logic::channel_universes_used(cc, &config::get_profiles());
 }
 
+size_t listened_universes(uint16_t* out, size_t cap) {
+    size_t n  = 0;
+    auto want = [&](uint32_t first, size_t count) {
+        for (size_t u = 0; u < count && n < cap; ++u) {
+            const uint32_t uni = first + u;
+            if (!universe_routable(uni)) continue;
+            bool dup = false;
+            for (size_t i = 0; i < n; ++i)
+                if (out[i] == uni) dup = true;
+            if (!dup) out[n++] = static_cast<uint16_t>(uni);
+        }
+    };
+    for (size_t ch = 0; ch < config::kNumChannels; ++ch) {
+        const auto& cc = config::get_channel(ch);
+        if (led::is_off(cc.protocol)) continue;
+        want(cc.universe_start, channel_pixel_span(cc));
+        want(config::fix_universe(cc), channel_fixture_span(cc));
+    }
+    const int ctrl = control_universe();
+    if (ctrl >= 0) want(static_cast<uint32_t>(ctrl), 1);
+    return n;
+}
+
 bool fixtures_clear_of_pixels(size_t ch, config::ChannelConfig& cc) {
     return logic::fixtures_clear_of_pixels(
         cc, ch, config::kNumChannels,
@@ -1605,6 +1628,14 @@ bool is_channel_merging(size_t channel_index) {
         if (logic::merge_active_count(m) == 2) return true;
     }
     return false;
+}
+
+bool is_universe_merging(uint16_t universe_number) {
+    const uint16_t slot = slot_for_universe(universe_number);
+    if (slot == logic::kNoSlot) return false;
+    logic::MergeState m = g_merge[slot];
+    logic::merge_expire(m, esp_timer_get_time(), kArtnetMergeTimeoutUs);
+    return logic::merge_active_count(m) == 2;
 }
 
 const uint8_t* universe_front_buffer_for(uint16_t universe_number) {

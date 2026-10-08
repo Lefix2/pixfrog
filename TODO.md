@@ -75,10 +75,6 @@ on the one before.
 
 ## Network & protocols
 
-- [ ] **ArtPollReply: one bind per universe** — it advertises 8 ports with the
-      global net/subnet and each channel's first universe only; desks (MADRIX,
-      xLights) should see every mapped universe with its own Net/SubNet (and
-      the control universe).
 - [ ] **sACN multicast on a real LAN** — only unicast was validated (bench
       behind a NAT). Drive the board from xLights or a desk on the same LAN,
       incl. a universe re-config (5 s join refresh) and the control universe.

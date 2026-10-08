@@ -869,8 +869,15 @@ def test_auto_patch_places_the_control_universe_first(page, device):
     navs = page.locator("aside div[data-nav]").evaluate_all("els => els.map(e => e.dataset.nav)")
     assert navs.index("patch") == navs.index("pixpatch") + 1  # the blocks' order, auto-patch last
     device.post("/api/control", {"enabled": True, "universe": 300, "address": 40})
+    before = device.get("/api/config")["channels"]
+    lowest = min(c["universe_start"] for c in before if c["protocol"] != "Off")
     page.reload()
     nav(page, "patch")
+    # The first universe starts where the patch starts today; set it to 0·0·0.
+    expect(page.locator("#ap-uni-flat")).to_have_text(str(min(lowest, 300)))
+    for f in ("#ap-net", "#ap-sub", "#ap-uni"):
+        page.locator(f).fill("0")
+    expect(page.locator("#ap-uni-flat")).to_have_text("0")
     page.locator('[data-action="autopatch"]').click()
     expect(page.locator("#patch-mount")).to_contain_text("DMX control")
     cfg = device.get("/api/config")

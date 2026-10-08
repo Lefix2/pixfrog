@@ -327,20 +327,6 @@ void render_edit_value() {
 void commit_edit() {
     const int32_t v = s.edit.current;
     switch (s.edit.field) {
-    case Field::ArtnetNet: {
-        auto g       = config::get_global();
-        g.artnet_net = static_cast<uint8_t>(v);
-        config::set_global(g);
-        dmx::mark_global_dirty();
-        break;
-    }
-    case Field::ArtnetSubnet: {
-        auto g          = config::get_global();
-        g.artnet_subnet = static_cast<uint8_t>(v);
-        config::set_global(g);
-        dmx::mark_global_dirty();
-        break;
-    }
     case Field::ArtnetReplyUnicast: {
         auto g                      = config::get_global();
         g.artnet_poll_reply_unicast = (v != 0);

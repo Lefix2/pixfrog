@@ -480,10 +480,6 @@
             <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px"><div><div class="h-sm">ArtNet 4</div><div class="hint" data-i18n="UDP 6454 · always on">UDP 6454 · always on</div></div><span class="sw"><input type="checkbox" checked disabled/><span></span></span></label>
             <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm">sACN E1.31</div><div class="hint">Multicast 239.255.x.x · UDP 5568</div></div><span class="sw"><input id="a-sacn" type="checkbox"/><span></span></span></label>
             <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Remote FPP / FSEQ">Remote FPP / FSEQ</div><div class="hint" data-i18n="Multi-box FPP sync">Multi-box FPP sync</div></div><span class="sw"><input id="a-fpp" type="checkbox"/><span></span></span></label>
-            <div class="grid-2">
-              <div><label class="f-label" data-i18n="ArtNet net">ArtNet net</label><input class="field" id="a-net" type="number" min="0" max="127" value="0"/></div>
-              <div><label class="f-label">Sub-net</label><input class="field" id="a-subnet" type="number" min="0" max="15" value="0"/></div>
-            </div>
             <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer"><div><span class="h-sm" data-i18n="Multi-source HTP merge">Multi-source HTP merge</span><div class="hint">Highest-Takes-Precedence</div></div><span class="sw"><input id="a-merge" type="checkbox"/><span></span></span></label>
           </div>
 
@@ -505,10 +501,11 @@
       <div data-screen="patch" style="display:none">
         <div style="max-width:920px;display:flex;flex-direction:column;gap:16px">
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:18px">
-            <div style="display:flex;align-items:center;gap:13px"><span style="width:42px;height:42px;border-radius:0;background:rgba(63,212,99,.12);border:1px solid rgba(63,212,99,.28);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none"><i data-lucide="git-fork" class="ic22"></i></span><div><div style="font-size:15px;font-weight:700;letter-spacing:-.02em" data-i18n="Auto-patch">Auto-patch</div><div style="font:500 12px 'DM Mono';color:var(--fg-3);margin-top:3px;max-width:520px" data-i18n="Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures&#39; DMX profiles, then the pixels of every output — no gap, no overlap, from universe 0. Adding LEDs moves nothing before them.">Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures' DMX profiles, then the pixels of every output — no gap, no overlap, from universe 0. Adding LEDs moves nothing before them.</div></div></div>
+            <div style="display:flex;align-items:center;gap:13px"><span style="width:42px;height:42px;border-radius:0;background:rgba(63,212,99,.12);border:1px solid rgba(63,212,99,.28);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none"><i data-lucide="git-fork" class="ic22"></i></span><div><div style="font-size:15px;font-weight:700;letter-spacing:-.02em" data-i18n="Auto-patch">Auto-patch</div><div style="font:500 12px 'DM Mono';color:var(--fg-3);margin-top:3px;max-width:520px" data-i18n="Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures&#39; DMX profiles, then the pixels of every output — no gap, no overlap, from the first universe below. Adding LEDs moves nothing before them.">Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures' DMX profiles, then the pixels of every output — no gap, no overlap, from the first universe below. Adding LEDs moves nothing before them.</div></div></div>
             <button class="btn-pri" data-action="autopatch" style="display:inline-flex;align-items:center;gap:8px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:11px 18px;font:500 13px 'DM Mono';cursor:pointer;flex:none"><i data-lucide="wand-2" class="ic16"></i><span data-i18n="Run auto-patch">Run auto-patch</span></button>
           </div>
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:16px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+            <div><label class="f-label-caps"><span data-i18n="FIRST UNIVERSE">FIRST UNIVERSE</span> <span class="fg-4">net · sub · uni</span></label><div style="display:flex;width:100%;align-items:center;gap:5px;background:var(--well);border:1px solid var(--line-3);border-radius:0;padding:7px 9px"><input id="ap-net" type="number" min="0" max="127" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/><span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span><input id="ap-sub" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/><span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span><input id="ap-uni" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/></div><div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="ap-uni-flat">0</span></div></div>
             <div><label class="f-label-caps" data-i18n="PLACEMENT">PLACEMENT</label><select class="field field-text" id="ap-place"><option value="aligned" data-i18n="Each output opens a universe">Each output opens a universe</option><option value="compact" data-i18n="Compact: outputs follow each other inside a universe">Compact: outputs follow each other inside a universe</option></select></div>
             <div><label class="f-label-caps" data-i18n="DMX LAYOUT">DMX LAYOUT</label><select class="field field-text" id="ap-pack"><option value="keep" data-i18n="Keep each output's own">Keep each output's own</option><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="colour" data-i18n="One colour per fixture (3 or 4 channels a bar)">One colour per fixture (3 or 4 channels a bar)</option></select></div>
             <div><label class="f-label-caps" data-i18n="PATCH SHEET">PATCH SHEET</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-sec" data-action="sheet-html" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i><span data-i18n="Sheet">Sheet</span></button><button class="btn-sec" data-action="sheet-csv" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i>CSV</button><label style="display:inline-flex;align-items:center;gap:6px;font:500 11.5px 'DM Mono';color:var(--fg-3);cursor:pointer"><input id="sheet-pixels" type="checkbox" checked style="accent-color:var(--accent)"/><span data-i18n="with the pixels">with the pixels</span></label></div></div>
@@ -518,7 +515,7 @@
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden">
             <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;font:500 10px 'DM Mono';letter-spacing:.1em;color:var(--fg-4);padding:12px 18px;border-bottom:1px solid var(--line)"><span>CH</span><span data-i18n="PROTOCOL">PROTOCOL</span><span data-i18n="ASSIGNED UNIVERSES">ASSIGNED UNIVERSES</span><span>DMX</span></div>
             <div id="patch-mount"></div>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--well)"><span style="font:500 12px 'DM Mono';color:var(--fg-3)"><span data-i18n="Universes used">Universes used</span>&nbsp;: <span class="fg-2">U0 – U<span id="patch-nextfree">0</span></span> · <span id="patch-pool" class="fg-2">0 / 72</span></span><span id="patch-overlap" style="font:500 12px 'DM Mono';color:var(--accent);text-align:right"></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--well)"><span style="font:500 12px 'DM Mono';color:var(--fg-3)"><span data-i18n="Universes used">Universes used</span>&nbsp;: <span class="fg-2">U<span id="patch-first">0</span> – U<span id="patch-nextfree">0</span></span> · <span id="patch-pool" class="fg-2">0 / 72</span></span><span id="patch-overlap" style="font:500 12px 'DM Mono';color:var(--accent);text-align:right"></span></div>
           </div>
         </div>
       </div>
@@ -934,7 +931,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 var LANG='en';
 var FR={
   'Play':'Lire','Playing':'En lecture','Output':'Sortie','Select at least one output':'Choisissez au moins une sortie',
-  'DMX control':'Contrôle DMX','DMX layout':'Répartition DMX','DMX LAYOUT':'RÉPARTITION DMX','PLACEMENT':'PLACEMENT','Continuous (a pixel may straddle two universes)':'Continue (un pixel peut chevaucher deux univers)','Whole pixels (170 RGB / 128 RGBW per universe)':'Pixels entiers (170 RGB / 128 RGBW par univers)','One fixture per universe':'Une fixture par univers','Each output opens a universe':'Chaque sortie ouvre un univers','Compact: outputs follow each other inside a universe':'Compacte : les sorties se suivent dans un univers',"Keep each output's own":'Garder celle de chaque sortie','whole px':'px entiers','per fixture':'par fixture','universes':'univers','more than the box can map':'plus que le boîtier ne peut en recevoir','No universe left for the control universe: the outputs use all {n} — the desk is not heard. Shorten an output.':'Plus d’univers libre pour l’univers de contrôle : les sorties utilisent les {n} — la console n’est pas entendue. Raccourcis une sortie.',
+  'DMX control':'Contrôle DMX','DMX layout':'Répartition DMX','DMX LAYOUT':'RÉPARTITION DMX','PLACEMENT':'PLACEMENT','FIRST UNIVERSE':'PREMIER UNIVERS','Continuous (a pixel may straddle two universes)':'Continue (un pixel peut chevaucher deux univers)','Whole pixels (170 RGB / 128 RGBW per universe)':'Pixels entiers (170 RGB / 128 RGBW par univers)','One fixture per universe':'Une fixture par univers','Each output opens a universe':'Chaque sortie ouvre un univers','Compact: outputs follow each other inside a universe':'Compacte : les sorties se suivent dans un univers',"Keep each output's own":'Garder celle de chaque sortie','whole px':'px entiers','per fixture':'par fixture','universes':'univers','more than the box can map':'plus que le boîtier ne peut en recevoir','No universe left for the control universe: the outputs use all {n} — the desk is not heard. Shorten an output.':'Plus d’univers libre pour l’univers de contrôle : les sorties utilisent les {n} — la console n’est pas entendue. Raccourcis une sortie.',
   'SHOW':'SHOW',
   'Master':'Master',
   'Strobe':'Stroboscope',
@@ -1060,14 +1057,14 @@ var FR={
   'PHYSICAL LINK':'LIEN PHYSIQUE','Reception protocols':'Protocoles de réception',
   'UDP 6454 · always on':'UDP 6454 · toujours actif','Multicast 239.255.x.x · UDP 5568':'Multicast 239.255.x.x · UDP 5568',
   'Remote FPP / FSEQ':'FPP / FSEQ distant','Multi-box FPP sync':'Synchro multi-boîtiers FPP',
-  'ArtNet net':'Net ArtNet','Sub-net':'Sub-net','Multi-source HTP merge':'Fusion HTP multi-sources',
+  'Multi-source HTP merge':'Fusion HTP multi-sources',
   'Highest-Takes-Precedence':'Highest-Takes-Precedence','Failsafe (signal loss)':'Failsafe (perte de signal)',
   'Trigger delay':'Délai avant déclenchement','Behavior':'Comportement','Full blackout':'Extinction totale',
   'Hold last look':'Maintenir la dernière image','Solid color':'Couleur fixe','Play a scene':'Lancer une scène',
   'REAL-TIME STATISTICS':'STATISTIQUES TEMPS RÉEL','ArtNet packets/s':'ArtNet paquets/s','sACN packets/s':'sACN paquets/s',
   'active universes':'univers actifs','invalid packets':'paquets invalides',
   'Contiguous auto-patch':'Auto-patch contigu',
-  'Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures\' DMX profiles, then the pixels of every output — no gap, no overlap, from universe 0. Adding LEDs moves nothing before them.':'Réadresse tout en trois blocs, chacun ouvrant un univers, du plus stable au plus changeant : l’univers de contrôle, puis les profils DMX des fixtures, puis les pixels de chaque sortie — sans trou ni chevauchement, à partir de l’univers 0. Ajouter des LEDs ne déplace rien avant elles.',
+  'Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures\' DMX profiles, then the pixels of every output — no gap, no overlap, from the first universe below. Adding LEDs moves nothing before them.':'Réadresse tout en trois blocs, chacun ouvrant un univers, du plus stable au plus changeant : l’univers de contrôle, puis les profils DMX des fixtures, puis les pixels de chaque sortie — sans trou ni chevauchement, à partir du premier univers ci-dessous. Ajouter des LEDs ne déplace rien avant elles.',
   'Run auto-patch':'Lancer l’auto-patch','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
   'Universes used':'Univers consommés','effects':'effets','CPU core 0':'CPU cœur 0','CPU core 1 (render)':'CPU cœur 1 (rendu)','no overlap detected':'aucun chevauchement détecté',
   'GENERAL':'GÉNÉRAL','Frame rate (Hz)':'Cadence (Hz)','Return to home (s)':'Retour accueil (s)',
@@ -1838,6 +1835,14 @@ function patchRow(n,proto,range,dmx,bad){
     +'<span style="font:500 13px \'DM Mono\';color:'+(bad?'var(--danger)':'var(--accent)')+'"'+(bad?' data-clash':'')+'>'+(bad?'⚠ ':'')+range+'</span>'
     +'<span style="font:500 13px \'DM Mono\';color:var(--fg-3)">'+dmx+'</span></div>';
 }
+// The lowest universe patched today: where the auto-patch starts by default.
+var apBaseTouched=false;
+function patchFirst(){
+  var lo=-1, take=function(u){ if(lo<0||u<lo) lo=u; };
+  CHANS.forEach(function(c){ if(c.protoRaw==='Off') return; [pixSpan(c),fixSpan(c)].forEach(function(r){ if(r) take(r[0]); }); });
+  if(CTL.enabled) take(CTL.universe);
+  return lo<0?0:lo;
+}
 var PACK_SHORT={whole:'whole px',fixture:'per fixture',colour:'colour/fixture'};
 // The patch sheet: one line a range — the control universe, each output's
 // fixtures, each output's pixels — sorted by universe under a header per
@@ -1871,6 +1876,7 @@ function buildPatch(){
     ov.textContent=txt; ov.style.color=cl.length?'var(--danger)':'var(--accent)'; ov.title=cl.map(clashText).join('\n');
   }
   var nf2=el('patch-nextfree'); if(nf2) nf2.textContent=(maxEnd+1);
+  var pf=el('patch-first'); if(pf) pf.textContent=patchFirst();
   if(CTL.enabled) used++;
   var pu=el('patch-pool'); if(pu){ pu.textContent=used+' / '+(CTL.pool||72); pu.style.color=used>(CTL.pool||72)?'var(--danger)':''; }
   return rows;
@@ -2539,7 +2545,6 @@ function reloadConfig(){
     REFRESH=g.refresh_hz||60;
     setLive('refresh',(g.refresh_hz||0)+' Hz');
     setLive('fps-max','/ '+(g.refresh_hz||0)+' Hz');
-    if(el('a-net')) el('a-net').value=g.net; if(el('a-subnet')) el('a-subnet').value=g.subnet;
     if(el('a-sacn')) el('a-sacn').checked=!!g.sacn_enabled; if(el('a-fpp')) el('a-fpp').checked=!!g.fpp_remote;
     if(el('a-merge')) el('a-merge').checked=(g.merge_mode===1);
     if(el('a-fsmode')) el('a-fsmode').value=String(g.failsafe_mode!=null?g.failsafe_mode:0);
@@ -2561,6 +2566,7 @@ function reloadConfig(){
     setLive('side-ver',(d.version||'?')+' · esp32-p4 · '+(d.ota_partition||'?'));
     setLive('part-line',(d.version||'')+' · '+(d.ota_partition||''));
     CHANS=(d.channels||[]).map(buildChan);
+    if(!apBaseTouched) setUniFields(patchFirst(),'ap-');
     EFFECTS=(d.effects||[]).map(function(e,i){ return {n:i+1,name:e.name||'',gen:e.generator||0,colors:(e.colors&&e.colors.length)?e.colors.slice(0,MAX_COLORS):['#000000'],speed:e.speed||0,param:e.param||0,ph:phaserOf(e.phaser),invert:!!e.invert,mx:matricksOf(e.matricks)}; });
     SCENES=(d.scenes||[]).map(function(sc,i){ return {n:i+1,name:sc.name||'',group:sc.group!=null?sc.group:-1,parts:(sc.parts||[]).map(function(p){ return {mask:p.mask||0,effect:p.effect||0,mode:p.fixture_mode||'each',rev:!!p.reverse}; })}; });
     if(curEffect>=EFFECTS.length) curEffect=Math.max(0,EFFECTS.length-1);
@@ -2613,7 +2619,7 @@ function savePlaylist(){
 function buildGlobalBody(){
   var b={};
   if(dirty.has('network')){ b.dhcp=netDhcp; b.ip_fallback=el('n-fallback').value; if(!netDhcp){ b.ip=el('n-ip').value; b.mask=el('n-mask').value; b.gw=el('n-gw').value; } b.short_name=el('n-host').value; b.long_name=el('n-long').value; b.hub_preferred=el('n-hub').checked; }
-  if(dirty.has('artnet')){ b.net=parseInt(el('a-net').value,10)||0; b.subnet=parseInt(el('a-subnet').value,10)||0; b.sacn_enabled=el('a-sacn').checked; b.fpp_remote=el('a-fpp').checked; b.merge_mode=el('a-merge').checked?1:0; b.failsafe_mode=parseInt(el('a-fsmode').value,10)||0; b.failsafe_scene=parseInt(el('a-fsscene').value,10)||0; b.failsafe_timeout_s=parseInt(el('a-fsdelay').value,10)||0; }
+  if(dirty.has('artnet')){ b.sacn_enabled=el('a-sacn').checked; b.fpp_remote=el('a-fpp').checked; b.merge_mode=el('a-merge').checked?1:0; b.failsafe_mode=parseInt(el('a-fsmode').value,10)||0; b.failsafe_scene=parseInt(el('a-fsscene').value,10)||0; b.failsafe_timeout_s=parseInt(el('a-fsdelay').value,10)||0; }
   if(dirty.has('sysgen')){ b.refresh_hz=Math.max(20,Math.min(120,parseInt(el('s-refresh').value,10)||60)); b.home_timeout_s=parseInt(el('s-home').value,10)||0; b.boot_scene=parseInt(el('s-boot').value,10)||0; b.tft_brightness=parseInt(el('s-bright').value,10)||100; b.tft_idle_dim=parseInt(el('s-dim').value,10)||0; b.tft_dim_delay_s=parseInt(el('s-dimdelay').value,10)||0; b.scene_fade_ms=Math.max(0,Math.min(25500,Math.round((parseFloat(el('s-fade').value)||0)*10)*100)); }
   if(dirty.has('sysauth')){ if(!el('s-auth').checked) b.web_password=''; else if(el('s-pwd').value) b.web_password=el('s-pwd').value; }
   if(dirty.has('syslang')){ b.lang=(LANG==='fr'?1:0); }
@@ -3018,7 +3024,7 @@ function doAction(a){
   else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast(t('Identifying channel ')+(curChan+1)); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='blackout'){ api('POST','/api/show',{blackout:'toggle'}).then(applyShow); }
   else if(a==='stop-all'){ Promise.all([api('POST','/api/scenes/stop',{}),api('POST','/api/fseq/stop',{})]).then(function(){ toast(t('Outputs stopped')); pollStatus(); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
-  else if(a==='autopatch'){ var pb={base:0,compact:(el('ap-place')||{}).value==='compact',packing:(el('ap-pack')||{}).value||'keep',fix_base:(el('ap-fix')||{}).value==='base'?Math.max(0,Math.min(32767,parseInt(el('ap-fixbase').value,10)||0)):-1};
+  else if(a==='autopatch'){ var pb={base:readUni('ap-'),compact:(el('ap-place')||{}).value==='compact',packing:(el('ap-pack')||{}).value||'keep',fix_base:(el('ap-fix')||{}).value==='base'?Math.max(0,Math.min(32767,parseInt(el('ap-fixbase').value,10)||0)):-1};
     // An unsaved DMX control change goes first: the patch then places it, and
     // a later Save cannot put the old universe back (it reloads into CTL).
     var pre=dirty.has('control')?api('POST','/api/control',ctlBody()).then(function(){ dirty.delete('control'); updateSaveBar(); }):Promise.resolve();
@@ -3167,11 +3173,12 @@ function onInput(e){
   if(t.id==='grp-name'){ var gn=GROUPS[curGroup]; if(gn){ gn.name=t.value.slice(0,15); markDirty('groups'); if(e.type==='change') renderGroups(); } return; }
   if(t.id&&t.id.indexOf('cd-lay-t-')===0){ var lc=CHANS[curChan], lk=+t.id.slice(9); if(lc&&lc.lay&&lc.lay[lk]){ lc.lay[lk].t=t.value; lc.pixels=layLive(lc.lay); markDirty('ch'+curChan); renderGaps(); readChanEditor(); } return; }
   if(t.hasAttribute&&t.hasAttribute('data-lay-prof')){ var pc=CHANS[curChan], pk2=+t.getAttribute('data-lay-prof'); if(pc&&pc.lay&&pc.lay[pk2]){ pc.lay[pk2].p=parseInt(t.value,10)||0; markDirty('ch'+curChan); renderGaps(); } return; }
+  if(['ap-net','ap-sub','ap-uni'].indexOf(t.id)>=0){ apBaseTouched=true; updateUniFlat(null,'ap-'); return; }
   if(t.id==='ap-fix'){ var fb=el('ap-fixbase'); if(fb) fb.style.display=t.value==='base'?'':'none'; return; }
   if(t.id==='cd-on'&&t.checked){ var ps=el('cd-proto'); if(ps) ps.selectedIndex=0; }
   if(t.id&&t.id.indexOf('cd-')===0){ readChanEditor(); markDirty('ch'+curChan); if(t.id==='cd-proto'||t.id==='cd-on') updateChanVis(); if(t.id==='cd-pack'||t.id==='cd-pixmap'||t.id==='cd-fixctl'||(CHANS[curChan].fc&&t.id.indexOf('cd-lay-')!==0)) renderGaps(); else updatePatchVis(); return; }
   if(['n-ip','n-mask','n-gw','n-host','n-long','n-fallback','n-hub'].indexOf(t.id)>=0){ markDirty('network'); return; }
-  if(['a-net','a-subnet','a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
+  if(['a-merge','a-sacn','a-fpp','a-fsmode','a-fsscene'].indexOf(t.id)>=0){ if(t.id==='a-fsmode') setFsSceneVis(); markDirty('artnet'); return; }
   if(t.id==='a-fsdelay'){ var fv=el('a-fsdelay-val'); if(fv) fv.textContent=fsLabel(t.value); markDirty('artnet'); return; }
   if(['s-refresh','s-home','s-boot','s-bright','s-dim','s-dimdelay','s-fade'].indexOf(t.id)>=0){ markDirty('sysgen'); return; }
   if(t.id==='spk-vol'){ spkVolLabel(); spkButtons(); if(e.type==='change') api('POST','/api/global',{speaker_volume:+t.value}).then(function(){ toast(tr('✓ saved')); }).catch(function(er){ toast(er.message,true); }); return; }
