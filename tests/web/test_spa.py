@@ -673,6 +673,7 @@ def test_the_two_switches_of_an_output_pixels_and_fixtures(page, device):
     page.locator("#cd-fixctl").uncheck()
     expect(page.locator('[data-screen="fixpatch"] [data-dp-note]')).to_contain_text("only plays scenes")
     nav(page, "pixpatch")
+    page.locator("[data-modal-confirm]").click()  # leaving with the change pending: save it
     expect(page.locator('[data-screen="pixpatch"] [data-dp-note]')).to_contain_text("only plays scenes")
     expect(page.locator("[data-lay-prof]")).to_have_count(0)
     expect(page.locator("[data-dp-summary]").first).to_contain_text("scenes only")
@@ -754,6 +755,7 @@ def test_french_translation(page):
     nav(page, "system")
     page.locator("#s-lang").select_option("fr")
     nav(page, "dashboard")
+    page.locator("[data-modal-confirm]").click()  # the language is a pending change: save it
     expect(page.locator("[data-screen-title]")).to_have_text("Tableau de bord")
 
 
@@ -918,6 +920,7 @@ def test_auto_patch_places_an_unsaved_control_universe(page, device):
     nav(page, "control")
     page.locator("#ct-en").check(force=True)  # enabled, not saved yet (universe 100)
     nav(page, "patch")
+    page.locator("[data-modal-confirm]").click()  # leaving the screen saves it first
     page.locator('[data-action="autopatch"]').click()
     expect(page.locator('[data-live="save-state"]')).to_contain_text("universes")
     c = device.get("/api/config")["control"]
@@ -1394,3 +1397,35 @@ def test_effects_and_shows_travel_as_files(page, device, tmp_path):
     cfg = device.get("/api/config")
     assert [e["name"] for e in cfg["effects"]][:1] == ["Show look"] and len(cfg["effects"]) == 2
     assert cfg["channels"] == before_rig
+
+
+def test_leaving_a_screen_with_unsaved_changes_asks_to_save_or_cancel(page, device):
+    modal = page.locator("[data-modal-backdrop]")
+    nav(page, "channels")
+    page.locator("#cd-bri").fill("66")
+    nav(page, "network")
+    # A dialog over the dimmed page; the backdrop and Escape do not close it.
+    expect(modal).to_be_visible()
+    expect(modal).to_contain_text("Unsaved changes")
+    expect(page.locator('[data-screen="channels"]')).to_be_visible()
+    page.mouse.click(5, 5)
+    page.keyboard.press("Escape")
+    expect(modal).to_be_visible()
+    # Cancel: the change is dropped and the move goes on.
+    page.locator("[data-modal-cancel]").click()
+    expect(modal).to_be_hidden()
+    expect(page.locator('[data-screen="network"]')).to_be_visible()
+    assert device.get("/api/config")["channels"][0]["brightness"] != 66
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("saved")
+    # Save: the change reaches the box, then the move.
+    nav(page, "channels")
+    page.locator("#cd-bri").fill("67")
+    page.locator('div[data-nav="system"]').click()
+    expect(modal).to_be_visible()
+    page.locator("[data-modal-confirm]").click()
+    expect(page.locator('[data-screen="system"]')).to_be_visible()
+    assert device.get("/api/config")["channels"][0]["brightness"] == 67
+    # Nothing pending: no dialog.
+    nav(page, "network")
+    expect(modal).to_be_hidden()
+    expect(page.locator('[data-screen="network"]')).to_be_visible()
