@@ -511,6 +511,7 @@
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:16px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
             <div><label class="f-label-caps" data-i18n="PLACEMENT">PLACEMENT</label><select class="field field-text" id="ap-place"><option value="aligned" data-i18n="Each output opens a universe">Each output opens a universe</option><option value="compact" data-i18n="Compact: outputs follow each other inside a universe">Compact: outputs follow each other inside a universe</option></select></div>
             <div><label class="f-label-caps" data-i18n="DMX LAYOUT">DMX LAYOUT</label><select class="field field-text" id="ap-pack"><option value="keep" data-i18n="Keep each output's own">Keep each output's own</option><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="colour" data-i18n="One colour per fixture (3 or 4 channels a bar)">One colour per fixture (3 or 4 channels a bar)</option></select></div>
+            <div><label class="f-label-caps" data-i18n="PATCH SHEET">PATCH SHEET</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-sec" data-action="sheet-html" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i><span data-i18n="Sheet">Sheet</span></button><button class="btn-sec" data-action="sheet-csv" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i>CSV</button><label style="display:inline-flex;align-items:center;gap:6px;font:500 11.5px 'DM Mono';color:var(--fg-3);cursor:pointer"><input id="sheet-pixels" type="checkbox" checked style="accent-color:var(--accent)"/><span data-i18n="with the pixels">with the pixels</span></label></div></div>
             <div><label class="f-label-caps" data-i18n="FIXTURES' BLOCK">FIXTURES' BLOCK</label><div style="display:flex;gap:8px"><select class="field field-text" id="ap-fix" style="flex:1;min-width:0"><option value="after" data-i18n="In order, after the control universe">In order, after the control universe</option><option value="base" data-i18n="From universe">From universe</option></select><input class="field" id="ap-fixbase" type="number" min="0" max="32767" value="100" style="width:92px;display:none"/></div></div>
           </div>
 
@@ -539,6 +540,7 @@
                 <button class="btn-sec" data-ct-preset="simple" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Simple preset">Simple preset</button>
                 <button class="btn-sec" data-ct-preset="full" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Full preset">Full preset</button>
                 <a id="ct-fixture" href="/api/control/fixture" download="pixfrog-control.json" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer;text-decoration:none"><i data-lucide="download" class="ic14"></i><span data-i18n="Fixture profile">Fixture profile</span></a>
+                <button class="btn-sec" id="ct-chart" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i><span data-i18n="DMX chart">DMX chart</span></button>
               </span>
             </div>
             <div style="display:grid;grid-template-columns:70px 1.3fr 2fr 1fr 70px 70px;gap:10px;font:500 10px 'DM Mono';letter-spacing:.1em;color:var(--fg-4);padding:10px 18px;border-bottom:1px solid var(--line)"><span>DMX</span><span data-i18n="FUNCTION">FUNCTION</span><span data-i18n="OUTPUTS">OUTPUTS</span><span data-i18n="OPTION">OPTION</span><span></span><span></span></div>
@@ -1074,7 +1076,7 @@ var FR={
   'INTERFACE SECURITY':'SÉCURITÉ DE L’INTERFACE','Protect with a password':'Protéger par mot de passe',
   'HTTP Basic auth on writes':'Authentification HTTP Basic sur les écritures','User':'Utilisateur','New password':'Nouveau mot de passe',
   'FIRMWARE':'FIRMWARE','Upload a firmware (.bin)':'Téléverser un firmware (.bin)',
-  'Export JSON':'Exporter JSON','Import JSON':'Importer JSON','Import effects from a file (one, a bank, a show)':'Importer des effets depuis un fichier (un seul, une banque, un show)','Export the whole bank':'Exporter toute la banque','Export':'Exporter','Import show':'Importer un show','Export show':'Exporter le show','The whole box: outputs, network, looks, credentials.':'Tout le boîtier : sorties, réseau, looks, identifiants.','A show is the looks only — effects, scenes, groups, DMX profiles, control universe — prepared elsewhere (the online demo) and brought to a box already set up. Its scenes name outputs 1-8 and its groups the fixtures of those outputs.':'Un show, ce sont les looks seuls — effets, scènes, groupes, profils DMX, univers de contrôle — préparés ailleurs (la démo en ligne) et apportés sur un boîtier déjà installé. Ses scènes désignent les sorties 1 à 8 et ses groupes les fixtures de ces sorties.','No effect in this file':'Aucun effet dans ce fichier','No show in this file':'Aucun show dans ce fichier','Imported what fits: the bank is full':'Importé ce qui tenait : la banque est pleine','Effects imported':'Effets importés','Replace the looks of this box with the show ':'Remplacer les looks de ce boîtier par le show ','✓ show imported':'✓ show importé','DANGER ZONE':'ZONE SENSIBLE',
+  'Export JSON':'Exporter JSON','Import JSON':'Importer JSON','PATCH SHEET':'FEUILLE DE PATCH','Sheet':'Feuille','with the pixels':'avec les pixels','DMX chart':'Charte DMX','DMX charts':'Chartes DMX','Patch sheet':'Feuille de patch','universes are absolute, net.sub.uni in brackets':'univers absolus, net.sub.uni entre parenthèses','Fixtures':'Fixtures','Type':'Type','Universe':'Univers','Address':'Adresse','LEDs':'LEDs','Profile (mode)':'Profil (mode)','Strip':'Ruban','Universes':'Univers','Profile':'Profil','Value':'Valeur','Function':'Fonction','channels':'canaux','intensity 0–100 %':'intensité 0–100 %','0–100 %':'0–100 %','effect':'effet','speed':'vitesse','parameter':'paramètre','random':'aléatoire','fine: the low byte of':'fin : l’octet bas de','16-bit':'16 bits','Import effects from a file (one, a bank, a show)':'Importer des effets depuis un fichier (un seul, une banque, un show)','Export the whole bank':'Exporter toute la banque','Export':'Exporter','Import show':'Importer un show','Export show':'Exporter le show','The whole box: outputs, network, looks, credentials.':'Tout le boîtier : sorties, réseau, looks, identifiants.','A show is the looks only — effects, scenes, groups, DMX profiles, control universe — prepared elsewhere (the online demo) and brought to a box already set up. Its scenes name outputs 1-8 and its groups the fixtures of those outputs.':'Un show, ce sont les looks seuls — effets, scènes, groupes, profils DMX, univers de contrôle — préparés ailleurs (la démo en ligne) et apportés sur un boîtier déjà installé. Ses scènes désignent les sorties 1 à 8 et ses groupes les fixtures de ces sorties.','No effect in this file':'Aucun effet dans ce fichier','No show in this file':'Aucun show dans ce fichier','Imported what fits: the bank is full':'Importé ce qui tenait : la banque est pleine','Effects imported':'Effets importés','Replace the looks of this box with the show ':'Remplacer les looks de ce boîtier par le show ','✓ show imported':'✓ show importé','DANGER ZONE':'ZONE SENSIBLE',
   'Reboot':'Redémarrer','Factory reset':'Réinitialiser (usine)','Language':'Langue','English':'English','French':'Français',
   'Settings persisted in NVS · applied at once':'Réglages persistés en NVS · appliqués immédiatement','Network settings applied':'Réglages réseau appliqués','The box is asking a DHCP server for an address. Its screen shows it once it has one.':'Le boîtier demande une adresse à un serveur DHCP. Son écran l’affiche dès qu’il en a une.','The box now answers at {url}.':'Le boîtier répond maintenant sur {url}.','Reconnecting as soon as it answers…':'Reconnexion dès qu’il répond…','Stay here':'Rester ici',
   '✓ saved':'✓ enregistré','Cancel':'Annuler','Save':'Enregistrer','Saving…':'Enregistrement…',
@@ -1602,6 +1604,99 @@ function effectExport(){
 function effectExportAll(){
   if(!EFFECTS.length) return;
   downloadText(fileStem(statusName()||'pixfrog')+'.effects.json',JSON.stringify({pixfrog:'effects',version:1,effects:EFFECTS.map(effectBody)},null,1));
+}
+// ── the patch sheet and the DMX charts ────────────────────────────────────
+// What the operator pins at the desk: every range with its universe and
+// address, and in annex the DMX chart of each profile — channel, value
+// ranges, function — read from the box's own OFL export (the type, which
+// holds the ranges; the sheet holds the addresses).
+function docHtml(title,body){
+  return '<!doctype html><html><head><meta charset="utf-8"><title>'+esc(title)+'</title><style>'
+    +'body{font:13px/1.45 system-ui,sans-serif;color:#111;margin:28px;max-width:1000px}h1{font-size:20px;margin:0 0 4px}h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin:26px 0 6px;padding-bottom:4px;border-bottom:1px solid #888}h3{font-size:14px;margin:18px 0 4px}'
+    +'table{border-collapse:collapse;width:100%;margin:6px 0 10px}th,td{border:1px solid #bbb;padding:4px 8px;text-align:left;vertical-align:top}th{background:#eee;font-weight:600}td.r,th.r{text-align:right}.muted{color:#666}.sub{color:#666;margin:0 0 14px}'
+    +'@media print{body{margin:12mm}h2{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}}</style></head><body>'+body+'</body></html>';
+}
+function uniLabelFull(u){ return 'U'+u+' <span class="muted">('+((u>>8)&0x7F)+'.'+((u>>4)&0x0F)+'.'+(u&0x0F)+')</span>'; }
+// One capability of an OFL channel, in words.
+function capText(c){
+  if(!c) return '';
+  var tp=c.type||'';
+  if(tp==='NoFunction') return '—';
+  if(tp==='Intensity') return t('intensity 0–100 %');
+  if(tp==='ColorIntensity') return (c.color||'')+' '+t('0–100 %');
+  if(tp==='Effect') return t('effect')+' « '+(c.effectName||'')+' »';
+  if(tp==='EffectSpeed') return t('speed')+' '+(c.speedStart||'')+' → '+(c.speedEnd||'');
+  if(tp==='EffectParameter') return t('parameter')+' '+(c.parameterStart||'')+' → '+(c.parameterEnd||'');
+  if(tp==='ShutterStrobe'){ var e=c.shutterEffect||'', sp=c.speedStart?' '+c.speedStart+' → '+c.speedEnd:(c.speed?' '+c.speed:''); return (c.randomTiming?t('random')+' ':'')+e.toLowerCase()+sp; }
+  if(tp==='Generic') return c.comment||'';
+  var extra=Object.keys(c).filter(function(k){ return k!=='type'&&k!=='dmxRange'&&typeof c[k]!=='object'; }).map(function(k){ return c[k]; }).join(' ');
+  return tp+(extra?' '+extra:'');
+}
+// The chart of an OFL fixture: its first mode, a row a channel.
+function chartHtml(ofl,title){
+  var mode=(ofl.modes||[])[0]||{channels:[]}, av=ofl.availableChannels||{};
+  var rows=mode.channels.map(function(name,i){
+    var ch=av[name], cell='';
+    if(!ch){  // a fine channel: the alias of the coarse one
+      var coarse=Object.keys(av).filter(function(k){ return (av[k].fineChannelAliases||[]).indexOf(name)>=0; })[0];
+      cell='<td colspan="2">'+esc(t('fine: the low byte of')+' « '+(coarse||'')+' » ('+t('16-bit')+')')+'</td>';
+    } else if(ch.capability){
+      cell='<td class="r">0–255</td><td>'+esc(capText(ch.capability))+'</td>';
+    } else {
+      cell='<td colspan="2"><table>'+(ch.capabilities||[]).map(function(c){ var r=c.dmxRange||[0,255]; return '<tr><td class="r" style="width:70px">'+(r[0]===r[1]?r[0]:r[0]+'–'+r[1])+'</td><td>'+esc(capText(c))+'</td></tr>'; }).join('')+'</table></td>';
+    }
+    return '<tr><td class="r" style="width:40px">'+(i+1)+'</td><td style="width:180px">'+esc(name)+'</td>'+cell+'</tr>';
+  }).join('');
+  return '<h3>'+esc(title)+' <span class="muted">· '+mode.channels.length+' '+esc(t('channels'))+(mode.name?' · '+esc(mode.name):'')+'</span></h3>'
+    +'<table><tr><th class="r">#</th><th>'+esc(t('Channel'))+'</th><th class="r">'+esc(t('Value'))+'</th><th>'+esc(t('Function'))+'</th></tr>'+rows+'</table>';
+}
+function chartDownload(url,title,stem){
+  api('GET',url).then(function(ofl){ downloadText(fileStem(stem)+'.chart.html',docHtml(title,'<h1>'+esc(title)+'</h1><p class="sub">'+esc(t('DMX chart'))+' · '+esc(statusName())+' · '+new Date().toLocaleDateString()+'</p>'+chartHtml(ofl,ofl.name||title))); })
+    .catch(function(e){ toast(t('Error: ')+e.message,true); });
+}
+// The ranges of the patch, as the Auto-patch table has them: [{block, output,
+// item, leds:[a,b], profile, uni, addr, channels}], blocks in order.
+function patchRanges(withPixels){
+  var out=[];
+  if(CTL.enabled) out.push({block:'control',output:'',item:t('DMX control'),leds:null,profile:'pixfrog control',uni:CTL.universe,addr:CTL.address,channels:ctlFootprint()});
+  CHANS.forEach(function(c){
+    if(c.protoRaw==='Off') return;
+    if(c.fc){
+      var patch=ctlPatch(c), fi=0, phys=1, nf=0;
+      (c.lay||[]).forEach(function(it){ var from=phys; phys+=it.n; if(it.t!=='f') return; var pa=patch[fi++]; nf++;
+        out.push({block:'fixtures',output:c.n,item:'F'+nf,leds:[from,phys-1],profile:pfOf(it.p||0).name||('#'+((it.p||0)+1)),uni:pa.uni,addr:pa.addr,channels:pa.foot}); });
+      if(!nf){ var pa0=patch[0]; out.push({block:'fixtures',output:c.n,item:'F1',leds:[1,c.pixels],profile:pfOf(0).name||'#1',uni:pa0.uni,addr:pa0.addr,channels:pa0.foot}); }
+    }
+    if(c.pm&&withPixels){ var px=pixSpan(c); out.push({block:'pixels',output:c.n,item:c.proto+' · '+c.pixels+' LED'+(c.pack&&c.pack!=='continuous'?' · '+t(PACK_SHORT[c.pack]):''),leds:[1,c.pixels],profile:'',uni:px[0],addr:c.dmx,channels:chanSlots(c),span:px[1]}); }
+  });
+  var order={control:0,fixtures:1,pixels:2};
+  out.sort(function(x,y){ return order[x.block]-order[y.block]||x.uni-y.uni||x.addr-y.addr; });
+  return out;
+}
+function sheetHtml(withPixels,charts){
+  var name=statusName(), ranges=patchRanges(withPixels), body='<h1>'+esc(t('Patch sheet'))+' — '+esc(name)+'</h1><p class="sub">'+esc(lastHost?lastHost+'.local':'')+' · '+new Date().toLocaleString()+' · '+esc(t('universes are absolute, net.sub.uni in brackets'))+'</p>';
+  function section(block,title,cols,row){ var rs=ranges.filter(function(r){ return r.block===block; }); if(!rs.length) return ''; return '<h2>'+esc(t(title))+'</h2><table><tr>'+cols.map(function(c){ return '<th'+(/^(Universe|Address|Channels|LEDs)$/.test(c)?' class="r"':'')+'>'+esc(t(c))+'</th>'; }).join('')+'</tr>'+rs.map(row).join('')+'</table>'; }
+  body+=section('control','Control universe',['Type','Universe','Address','Channels'],function(r){ return '<tr><td>'+esc(r.profile)+'</td><td class="r">'+uniLabelFull(r.uni)+'</td><td class="r">'+r.addr+'</td><td class="r">'+r.channels+'</td></tr>'; });
+  body+=section('fixtures','Fixtures',['Output','Fixture','LEDs','Profile (mode)','Universe','Address','Channels'],function(r){ return '<tr><td>'+r.output+'</td><td>'+esc(r.item)+'</td><td class="r">'+r.leds[0]+'–'+r.leds[1]+'</td><td>'+esc(r.profile)+'</td><td class="r">'+uniLabelFull(r.uni)+'</td><td class="r">'+r.addr+'</td><td class="r">'+r.channels+'</td></tr>'; });
+  body+=section('pixels','Pixels',['Output','Strip','Universes','Address','Channels'],function(r){ return '<tr><td>'+r.output+'</td><td>'+esc(r.item)+'</td><td class="r">'+uniLabelFull(r.uni)+(r.span>1?' → '+uniLabelFull(r.uni+r.span-1):'')+'</td><td class="r">'+r.addr+'</td><td class="r">'+r.channels+'</td></tr>'; });
+  if(charts.length) body+='<h2>'+esc(t('DMX charts'))+'</h2>'+charts.join('');
+  return docHtml(t('Patch sheet')+' — '+name,body);
+}
+function sheetCsv(withPixels){
+  var lines=['block,output,item,leds_from,leds_to,profile,universe,net,sub,uni,address,channels'];
+  patchRanges(withPixels).forEach(function(r){ lines.push([r.block,r.output,r.item,r.leds?r.leds[0]:'',r.leds?r.leds[1]:'',r.profile,r.uni,(r.uni>>8)&0x7F,(r.uni>>4)&0x0F,r.uni&0x0F,r.addr,r.channels].map(function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(',')); });
+  return lines.join('\n')+'\n';
+}
+// The sheet: the profiles it uses get their chart in annex, and the control
+// universe its own, from the box's OFL exports.
+function sheetDownload(){
+  var withPixels=!el('sheet-pixels')||el('sheet-pixels').checked, used={};
+  CHANS.forEach(function(c){ if(c.protoRaw==='Off'||!c.fc) return; var any=false; (c.lay||[]).forEach(function(it){ if(it.t==='f'){ used[it.p||0]=true; any=true; } }); if(!any) used[0]=true; });
+  var jobs=[];
+  if(CTL.enabled) jobs.push(api('GET','/api/control/fixture').then(function(o){ return chartHtml(o,t('DMX control')); }));
+  Object.keys(used).sort().forEach(function(i){ jobs.push(api('GET','/api/profile/'+i+'/fixture').then(function(o){ return chartHtml(o,t('Profile')+' '+(+i+1)+' · '+(pfOf(+i).name||'')); })); });
+  Promise.all(jobs).then(function(charts){ downloadText(fileStem(statusName())+'.patch.html',sheetHtml(withPixels,charts)); })
+    .catch(function(e){ toast(t('Error: ')+e.message,true); });
 }
 function statusName(){ var e=document.querySelector('[data-live="node-name"]'); return e?e.textContent.trim():''; }
 // Whatever file holds effects — one, a bank, a show, a backup — adds them
@@ -2585,6 +2680,7 @@ function renderProfileEditor(){
     +'<div class="hint">'+esc(t('Effect, speed, parameter, phaser and Block / Groups / Wings channels at 0 keep the effect\'s own value. With the effect channel at 0 the fixture shows its colour, steady. Without a dimmer channel the fixture is at full.'))+'</div>'
     +'<div style="display:flex;gap:9px;padding-top:14px;border-top:1px solid var(--line);align-items:center;flex-wrap:wrap">'
     +'<a data-pf-ofl href="/api/profile/'+curProfile+'/fixture" download style="'+btn+';text-decoration:none'+(stale?';opacity:.4;pointer-events:none':'')+'"><i data-lucide="download" class="ic14"></i>'+t('Fixture profile (OFL)')+'</a>'
+    +'<button class="btn-sec" data-pf-chart style="'+btn+(stale?';opacity:.4;pointer-events:none':'')+'"><i data-lucide="download" class="ic14"></i>'+t('DMX chart')+'</button>'
     +(stale?'<span class="hint">'+esc(t('Save first: the file is made from the saved profile'))+'</span>':'')
     +(PROFILES.length>1?'<button class="btn-dng" data-pf-remove style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:8px 13px;font:500 12.5px \'DM Mono\';cursor:pointer;margin-left:auto"><i data-lucide="trash-2" class="ic14"></i>'+t('Delete')+'</button>':'')
     +'</div>';
@@ -2915,6 +3011,8 @@ function doAction(a){
   else if(a==='fx-import'){ el('fx-file').click(); }
   else if(a==='show-export'){ showExport(); }
   else if(a==='show-import'){ el('show-file').click(); }
+  else if(a==='sheet-html'){ sheetDownload(); }
+  else if(a==='sheet-csv'){ downloadText(fileStem(statusName())+'.patch.csv',sheetCsv(!el('sheet-pixels')||el('sheet-pixels').checked)); }
   else if(a==='cancel'){ dirty.clear(); langDirty=false; updateSaveBar(); reloadConfig(); toast(t('✓ saved')); }
   else if(a==='identify'){ api('POST','/api/identify',{}).then(function(r){ var n=[]; for(var i=0;i<8;i++) if((r.outputs>>i)&1) n.push(i+1); toast(n.length?t('Identifying outputs ')+n.join(', '):t('No output configured')); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast(t('Identifying channel ')+(curChan+1)); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
@@ -2977,6 +3075,8 @@ function onClick(e){
   var ctn=e.target.closest('[data-ct-down]'); if(ctn){ var di=+ctn.getAttribute('data-ct-down'); if(di<CTL.slots.length-1){ var tmp2=CTL.slots[di+1]; CTL.slots[di+1]=CTL.slots[di]; CTL.slots[di]=tmp2; markDirty('control'); renderControl(); } return; }
   var pfr=e.target.closest('[data-pf-row]'); if(pfr){ curProfile=+pfr.getAttribute('data-pf-row'); renderProfiles(); return; }
   if(e.target.closest('[data-pf-new]')){ if(PROFILES.length<MAX_PROFILES){ var np=pfPreset('rgb'); np.name=t('New profile').slice(0,15); PROFILES.push(np); curProfile=PROFILES.length-1; pfTouch(); } return; }
+  if(e.target.closest('[data-pf-chart]')){ var pc=PROFILES[curProfile]; chartDownload('/api/profile/'+curProfile+'/fixture',t('Profile')+' '+(curProfile+1)+' · '+(pc&&pc.name||''),(pc&&pc.name)||'profile'); return; }
+  if(e.target.closest('#ct-chart')){ chartDownload('/api/control/fixture',t('DMX control')+' — '+statusName(),'pixfrog-control'); return; }
   if(e.target.closest('[data-pf-remove]')){ if(PROFILES.length>1){ PROFILES.splice(curProfile,1); pfTouch(); } return; }
   var pfp=e.target.closest('[data-pf-preset]'); if(pfp){ var keep=PROFILES[curProfile].name, pr=pfPreset(pfp.getAttribute('data-pf-preset')); if(keep && !Object.keys(PF_PRESETS).some(function(k){ return PF_PRESETS[k][0]===keep; })) pr.name=keep; PROFILES[curProfile]=pr; pfTouch(); return; }
   if(e.target.closest('[data-pf-add]')){ var ap=PROFILES[curProfile]; if(ap.slots.length<MAX_PF_SLOTS){ ap.slots.push({fn:'dimmer',index:0,fine:false}); pfTouch(); } return; }

@@ -60,6 +60,53 @@
              control: clone(c.control), playlist: clone(S.playlist), groups: clone(c.groups || []),
              profiles: clone(c.profiles || []) };
   }
+  // A profile as the box exports it (OFL JSON, GET /api/profile/<n>/fixture):
+  // the channels in order, each with its value ranges — the sketch the DMX
+  // chart and the patch sheet read, after the firmware's own ladders.
+  function profileFixture(pf) {
+    var names = {}, avail = {}, mode = [];
+    function gen(c) { return { type: 'Generic', comment: c }; }
+    function range(lo, hi, cap) { cap.dmxRange = [lo, hi]; return cap; }
+    function shut(effect, lo, hi, s0, s1) { var c = { type: 'ShutterStrobe', shutterEffect: effect }; if (s0) { c.speedStart = s0; c.speedEnd = s1; } return range(lo, hi, c); }
+    function bank(none, colour) {
+      var caps = [range(0, 0, gen(none)), range(1, 7, gen(colour))];
+      S.config.effects.forEach(function (e, i) { caps.push(range(8 * (i + 1), 8 * (i + 1) + 7, { type: 'Effect', effectName: e.name })); });
+      if (8 * (S.config.effects.length + 1) <= 255) caps.push(range(8 * (S.config.effects.length + 1), 255, { type: 'NoFunction' }));
+      return caps;
+    }
+    var waves = ['the effect\'s own', 'no phaser', 'sine', 'cosine', 'ramp up', 'ramp down', 'triangle', 'PWM', 'bump'];
+    var own = function (what) { return [range(0, 0, { type: 'NoFunction' }), range(1, 255, gen(what))]; };
+    (pf.slots || []).forEach(function (sl) {
+      var fn = sl.fn, col = (sl.index || 0) + 1, cap = null, name = null, fine = false;
+      switch (fn) {
+        case 'dimmer': name = 'Dimmer'; cap = { capability: { type: 'Intensity' } }; fine = !!sl.fine; break;
+        case 'red': case 'green': case 'blue': name = fn[0].toUpperCase() + fn.slice(1) + (col > 1 ? ' ' + col : ''); cap = { capability: { type: 'ColorIntensity', color: name.split(' ')[0] } }; break;
+        case 'white': name = 'White'; cap = { capability: { type: 'ColorIntensity', color: 'White' } }; break;
+        case 'shutter': name = 'Shutter'; cap = { capabilities: [shut('Closed', 0, 31), shut('Open', 32, 63), shut('Strobe', 64, 95, '1Hz', '25Hz'), shut('Open', 96, 127), shut('Pulse', 128, 159, '0.5Hz', '10Hz'), shut('Open', 160, 191), shut('RandomStrobe', 192, 223, '1Hz', '20Hz'), shut('Open', 224, 255)] }; break;
+        case 'strobe': name = 'Strobe'; cap = { capabilities: [shut('Open', 0, 9), shut('Strobe', 10, 255, '1Hz', '25Hz')] }; break;
+        case 'bank': name = 'Effect'; cap = { capabilities: bank('No effect: colour 1, steady (its pixels, under pixel mapping)', 'Colour 1, steady') }; break;
+        case 'speed': name = 'Effect speed'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 255, { type: 'EffectSpeed', speedStart: 'slow', speedEnd: 'fast' })] }; break;
+        case 'param': name = 'Effect parameter'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 255, { type: 'EffectParameter', parameterStart: 'low', parameterEnd: 'high' })] }; break;
+        case 'ph_wave': name = 'Phaser wave'; cap = { capabilities: waves.map(function (w, i) { return range(8 * i, 8 * i + 7, gen(w)); }).concat([range(72, 255, { type: 'NoFunction' })]) }; break;
+        case 'ph_rate': name = 'Phaser rate'; cap = { capabilities: own('rate override') }; break;
+        case 'ph_spread': name = 'Phaser spread'; cap = { capabilities: own('spread override') }; break;
+        case 'ph_width': name = 'Phaser width'; cap = { capabilities: own('width override') }; break;
+        case 'ph_attack': name = 'Phaser attack'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 1, gen('none (hard edge)')), range(2, 255, gen('share of the lit part'))] }; break;
+        case 'ph_decay': name = 'Phaser decay'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 1, gen('none (hard edge)')), range(2, 255, gen('share of the lit part'))] }; break;
+        case 'block': case 'groups': case 'wings': name = fn[0].toUpperCase() + fn.slice(1); cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 1, gen('off')), range(2, 255, gen('N'))] }; break;
+        case 'fx_fade': name = 'Effect fade'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 255, gen('Effect change crossfade, value x 0.1 s'))] }; break;
+        default: name = 'Spare'; cap = { capability: { type: 'NoFunction' } };
+      }
+      var n = name, k = 2;
+      while (avail[n]) n = name + ' ' + (k++);
+      if (fine) cap.fineChannelAliases = [n + ' fine'];
+      avail[n] = cap; mode.push(n);
+      if (fine) mode.push(n + ' fine');
+    });
+    return { $schema: 'https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json',
+             name: 'pixfrog ' + (pf.name || 'fixture'), categories: ['Pixel Bar'], meta: { authors: ['pixfrog (demo)'] },
+             availableChannels: avail, modes: [{ name: mode.length + '-channel', channels: mode }] };
+  }
   function activeScene() {
     var sc = S.status.show.scenes;
     for (var i = 0; i < sc.length; ++i) if (sc[i] >= 0) return sc[i];
@@ -131,6 +178,10 @@
       if (p === '/api/peers') return [{ name: S.config.global.short_name, ip: location.hostname, port: 80,
                                         fw: S.config.version, self: true }];
       if (p === '/api/control/fixture') return clone(S.fixture);
+      if ((m = p.match(/^\/api\/profile\/(\d+)\/fixture$/))) {
+        var pf = (S.config.profiles || [])[+m[1]];
+        return pf ? profileFixture(pf) : bad(404, 'no such profile');
+      }
       if (p === '/api/backup') return backupJson();
       if (p === '/api/coredump') return bad(404, 'no core dump');
       return bad(404, 'not found');
