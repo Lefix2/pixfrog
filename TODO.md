@@ -111,6 +111,13 @@ on the one before.
 
 ## Web UI
 
+- [ ] **The patch sheet and the DMX charts** — the Auto-patch table exists only
+      on screen; the operator wants the document: a printable sheet (and a
+      CSV) of every range — control universe, each fixture with its profile,
+      universe, address and footprint, the pixels optionally — with, in annex,
+      the DMX chart of each profile used (channel, value ranges, function, as a
+      fixture's manual prints it) built from the OFL exports; a "DMX chart"
+      next to each OFL download.
 - [ ] **More classes** — ~330 inline styles remain (one-off layout, JS-built
       rows); fold further repeats into classes as screens are touched.
 
