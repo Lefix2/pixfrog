@@ -136,11 +136,11 @@ def test_the_menu_is_grouped_by_job(page):
         ["", "dashboard"],
         ["RIG", "channels", "groups"],
         ["LOOKS", "effects", "scenes"],
-        ["DMX", "artnet", "control", "profiles", "fixpatch", "pixpatch", "patch"],  # the blocks' order, auto-patch last
+        ["DMX", "control", "profiles", "fixpatch", "pixpatch", "patch"],  # the blocks' order, auto-patch last
         ["PLAYBACK", "fseq", "auto"],
         ["SETTINGS", "network", "system", "maint"]]
     titles = {"auto": "Automations", "fixpatch": "Fixture patch", "pixpatch": "Pixel patch", "maint": "Maintenance",
-              "channels": "Outputs", "artnet": "Protocols", "control": "Control universe"}
+              "channels": "Outputs", "control": "Control universe"}
     for g in groups:
         for screen in g[1:]:
             nav(page, screen)
@@ -1211,7 +1211,7 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
         expect(pg.locator("[data-screen-title]")).to_have_text("Dashboard")
         expect(pg.locator('canvas[data-preview="0"]')).to_have_attribute("width", re.compile(r"[1-9]\d*"))
         for screen in ["scenes", "effects", "fseq", "channels", "groups", "profiles", "control", "network",
-                       "artnet", "system", "maint", "dashboard"]:
+                       "system", "maint", "dashboard"]:
             nav(pg, screen)
             expect(pg.locator("[data-screen-title]")).not_to_have_text("")
         # The effect bank and the scenes' parts are editable on the simulated box.

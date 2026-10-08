@@ -200,13 +200,12 @@ enum class Screen : uint8_t {
 // cursor indices. Indexed by value into kNodes[].
 enum class NodeId : uint8_t {
     Main,
-    Show,    // master / blackout / strobe, what plays, signal loss
-    Looks,   // the scenes to edit
-    Rig,     // the outputs, their frame rate, the test patterns
-    Dmx,     // protocols, patch, control universe, auto-patch
-    Box,     // network, settings, about
-    Inputs,  // the reception protocols (PROTOCOLS)
-    Network,
+    Show,      // master / blackout / strobe, what plays, signal loss
+    Looks,     // the scenes to edit
+    Rig,       // the outputs, their frame rate, the test patterns
+    Dmx,       // patch, control universe, auto-patch
+    Box,       // network, settings, about
+    Network,   // IP addressing, identity, DMX reception
     Settings,  // the box itself: screen, speaker, nerd stats
     Channel,   // one output: LED hardware, dead pixels, fixtures
     Scenes,
@@ -527,7 +526,6 @@ uint8_t build_main(ListItem* items, OnClick* fns);
 uint8_t build_testpattern(ListItem* items, OnClick* fns);
 uint8_t build_scenes(ListItem* items, OnClick* fns);
 uint8_t build_fseq(ListItem* items, OnClick* fns);
-uint8_t build_inputs(ListItem* items, OnClick* fns);
 uint8_t build_control(ListItem* items, OnClick* fns);
 uint8_t build_control_slot(ListItem* items, OnClick* fns);
 uint8_t build_show(ListItem* items, OnClick* fns);

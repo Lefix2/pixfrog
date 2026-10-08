@@ -153,16 +153,14 @@ uint8_t build_rig(ListItem* items, OnClick* fns) {
 }
 
 // ── DMX NODE ────────────────────────────────────────────────────────────────
-// Addressing and remote control, in the order they are set up: what carries
-// the DMX, where each output sits, the control universe, and — last — the
-// auto-patch that re-addresses them all.
+// Addressing and remote control, in the order they are set up: where each
+// output sits, the control universe, and — last — the auto-patch that
+// re-addresses them all. What the box listens to is under BOX › NETWORK.
 
 uint8_t build_dmx(ListItem* items, OnClick* fns) {
     static char vctl[8];
     std::snprintf(vctl, sizeof(vctl), "%s", config::get_control().enabled ? "ON" : "OFF");
     uint8_t n = 0;
-    items[n]  = { "Protocols", "" };
-    fns[n++]  = [](uint8_t) { go(NodeId::Inputs); };
     items[n]  = { "Patch", "" };
     fns[n++]  = [](uint8_t) { go(NodeId::PatchList); };
     items[n]  = { "Control uni", vctl };
@@ -414,40 +412,6 @@ uint8_t build_fseq(ListItem* items, OnClick* fns) {
     return static_cast<uint8_t>(n + 2);
 }
 
-// ── PROTOCOLS NODE ───────────────────────────────────────────────────────────
-// DMX-over-IP reception: Art-Net addressing and the alternative input
-// protocols (sACN, FPP).
-
-uint8_t build_inputs(ListItem* items, OnClick* fns) {
-    static char vunicast[8], vsacn[8], vfpp[8];
-    const auto& g = config::get_global();
-    std::snprintf(vunicast, sizeof(vunicast), "%s", g.artnet_poll_reply_unicast ? "ON" : "OFF");
-    std::snprintf(vsacn, sizeof(vsacn), "%s", g.sacn_enabled ? "ON" : "OFF");
-    std::snprintf(vfpp, sizeof(vfpp), "%s", g.fpp_remote ? "ON" : "OFF");
-
-    items[0] = { "Unicast", vunicast };
-    fns[0]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::ArtnetReplyUnicast, ValueKind::Bool, g.artnet_poll_reply_unicast ? 1 : 0,
-                     0, 1, 1, "Unicast", Screen::Menu);
-    };
-    items[1] = { "sACN", vsacn };
-    fns[1]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::ArtnetSacn, ValueKind::Bool, g.sacn_enabled ? 1 : 0, 0, 1, 1, "sACN",
-                     Screen::Menu);
-    };
-    items[2] = { "FPP", vfpp };
-    fns[2]   = [](uint8_t) {
-        const auto& g = config::get_global();
-        enter_edit(Field::ArtnetFpp, ValueKind::Bool, g.fpp_remote ? 1 : 0, 0, 1, 1, "FPP",
-                     Screen::Menu);
-    };
-    items[3] = back_item();
-    fns[3]   = [](uint8_t) { go_back(); };
-    return 4;
-}
-
 // ── DMX CONTROL NODE ─────────────────────────────────────────────────────────
 // The control universe: on/off, where it lives, a preset to start from, then
 // one row per slot ("1-2  Master") — click to edit it — and [Add].
@@ -657,8 +621,11 @@ uint8_t build_settings(ListItem* items, OnClick* fns) {
 
 uint8_t build_network(ListItem* items, OnClick* fns) {
     static char vdhcp[8], vip[kOledCols + 1], vmsk[kOledCols + 1], vgw[kOledCols + 1], vweb[8];
-    static char vshort[14], vlong[14], vfb[12];
+    static char vshort[14], vlong[14], vfb[12], vunicast[8], vsacn[8], vfpp[8];
     const auto& g = config::get_global();
+    std::snprintf(vunicast, sizeof(vunicast), "%s", g.artnet_poll_reply_unicast ? "ON" : "OFF");
+    std::snprintf(vsacn, sizeof(vsacn), "%s", g.sacn_enabled ? "ON" : "OFF");
+    std::snprintf(vfpp, sizeof(vfpp), "%s", g.fpp_remote ? "ON" : "OFF");
     std::snprintf(vfb, sizeof(vfb), "%s",
                   g.ip_fallback == config::kIpFallbackArtnet ? "ARTNET" : "LINK");
     std::snprintf(vdhcp, sizeof(vdhcp), "%s", g.use_dhcp ? "ON" : "OFF");
@@ -710,15 +677,34 @@ uint8_t build_network(ListItem* items, OnClick* fns) {
         enter_edit_string(StringField::ArtnetLong, g.long_name, sizeof(g.long_name) - 1, "Long",
                             Screen::Menu);
     };
-    // Only meaningful in DHCP mode; kept last so the rows above keep their place.
+    // Only meaningful in DHCP mode.
     items[7] = { "NoDHCP", vfb };
     fns[7]   = [](uint8_t) {
         enter_edit(Field::NetworkIpFallback, ValueKind::IpFallback,
                      config::get_global().ip_fallback, 0, 1, 1, "No DHCP", Screen::Menu);
     };
-    items[8] = back_item();
-    fns[8]   = [](uint8_t) { go_back(); };
-    return 9;
+    // What the box listens to (Art-Net is always on).
+    items[8] = { "sACN", vsacn };
+    fns[8]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetSacn, ValueKind::Bool, g.sacn_enabled ? 1 : 0, 0, 1, 1, "sACN",
+                     Screen::Menu);
+    };
+    items[9] = { "FPP", vfpp };
+    fns[9]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetFpp, ValueKind::Bool, g.fpp_remote ? 1 : 0, 0, 1, 1, "FPP",
+                     Screen::Menu);
+    };
+    items[10] = { "Unicast", vunicast };
+    fns[10]   = [](uint8_t) {
+        const auto& g = config::get_global();
+        enter_edit(Field::ArtnetReplyUnicast, ValueKind::Bool, g.artnet_poll_reply_unicast ? 1 : 0,
+                     0, 1, 1, "Unicast", Screen::Menu);
+    };
+    items[11] = back_item();
+    fns[11]   = [](uint8_t) { go_back(); };
+    return 12;
 }
 
 // ── CHANNEL MENU ────────────────────────────────────────────────────────────
