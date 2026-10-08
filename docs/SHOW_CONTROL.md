@@ -61,6 +61,16 @@ Speed runs 0–255, in steps of two generator units: 2 px/s per step for chase,
 scanner and stripes (up to 510 px/s), 20 °/s for rainbow. Solid is apart: its
 speed is a strobe frequency, 0–60 Hz, where 255 means "steady colour 2".
 
+A look is the fixture's, not the centimetres': the generators that move or
+size in pixels — chase, blobs, scanner, stripes — are defined for a **bar of
+60 LEDs** and scaled to the run they draw on, so a chase crosses a 30- or a
+120-LED fixture in the time it crosses the bar and its head takes the same
+share of it (a head or a band is never under one pixel). Rainbow, gradient,
+wave and the phaser's spread were already relative to the run; fire, twinkle
+and fade run on time alone. The other side of it: fixtures chained into one
+run (the *chain* mode, or Block / Groups / Wings) share one lap, as a phaser
+on a desk is relative to its selection — ride the tempo for a longer run.
+
 A speed change — a desk riding its Speed or phaser Rate channel, an edit of
 the effect — bends the motion: the look carries on from where it is, at the
 new pace, instead of jumping to where it would be had it always run that fast.

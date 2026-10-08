@@ -1080,24 +1080,42 @@ static void test_scene_solid_rgbw_white_off() {
 }
 
 static void test_scene_chase_position_and_width() {
-    // 10 px, speed 100 px/s, t=0 → head at 0; width 3 → pixels 0, 9, 8 lit.
-    uint8_t buf[10 * 3] = {};
-    fill_scene_pattern(buf, sizeof(buf), 10, 3, mk_scene(1 /*chase*/, 255, 0, 0, 100, 3), 0);
+    // The reference bar (60 px): speed 100 px/s, t=0 → head at 0; width 3 →
+    // pixels 0, 59, 58 lit.
+    uint8_t buf[60 * 3] = {};
+    fill_scene_pattern(buf, sizeof(buf), 60, 3, mk_scene(1 /*chase*/, 255, 0, 0, 100, 3), 0);
     EXPECT_EQ(buf[0 * 3], 255);
-    EXPECT_EQ(buf[9 * 3], 255);
-    EXPECT_EQ(buf[8 * 3], 255);
+    EXPECT_EQ(buf[59 * 3], 255);
+    EXPECT_EQ(buf[58 * 3], 255);
     EXPECT_EQ(buf[5 * 3], 0);  // background black
 
-    // t=1000 ms → 100 px advanced → head back at 0 (wrap).
-    uint8_t buf2[10 * 3] = {};
-    fill_scene_pattern(buf2, sizeof(buf2), 10, 3, mk_scene(1, 255, 0, 0, 100, 3), 1000);
+    // t=600 ms → 60 px advanced → head back at 0 (wrap).
+    uint8_t buf2[60 * 3] = {};
+    fill_scene_pattern(buf2, sizeof(buf2), 60, 3, mk_scene(1, 255, 0, 0, 100, 3), 600);
     EXPECT_EQ(buf2[0 * 3], 255);
 
     // t=50 ms → 5 px advanced → head at 5.
-    uint8_t buf3[10 * 3] = {};
-    fill_scene_pattern(buf3, sizeof(buf3), 10, 3, mk_scene(1, 255, 0, 0, 100, 3), 50);
+    uint8_t buf3[60 * 3] = {};
+    fill_scene_pattern(buf3, sizeof(buf3), 60, 3, mk_scene(1, 255, 0, 0, 100, 3), 50);
     EXPECT_EQ(buf3[5 * 3], 255);
     EXPECT_EQ(buf3[0 * 3], 0);
+
+    // A run of another length scales the look, not the time: on 30 px the
+    // same 50 ms put the head at 2.5 → 2, the width at 1.5 → 1; on 120 px
+    // at 10, 6 wide. A head is never under one pixel.
+    uint8_t s30[30 * 3] = {}, s120[120 * 3] = {};
+    fill_scene_pattern(s30, sizeof(s30), 30, 3, mk_scene(1, 255, 0, 0, 100, 3), 50);
+    EXPECT_EQ(s30[2 * 3], 255);
+    EXPECT_EQ(s30[1 * 3], 0);
+    fill_scene_pattern(s120, sizeof(s120), 120, 3, mk_scene(1, 255, 0, 0, 100, 3), 50);
+    EXPECT_EQ(s120[10 * 3], 255);
+    EXPECT_EQ(s120[5 * 3], 255);
+    EXPECT_EQ(s120[4 * 3], 0);
+    // ... and the lap takes the same time whatever the length.
+    fill_scene_pattern(s30, sizeof(s30), 30, 3, mk_scene(1, 255, 0, 0, 100, 3), 600);
+    fill_scene_pattern(s120, sizeof(s120), 120, 3, mk_scene(1, 255, 0, 0, 100, 3), 600);
+    EXPECT_EQ(s30[0], 255);
+    EXPECT_EQ(s120[0], 255);
 }
 
 static void test_scene_rainbow_spans_hues() {
@@ -1204,36 +1222,48 @@ static void test_scene_fire_hot_base_dark_tip() {
 
 static void test_scene_scanner_bounces() {
     using namespace pixfrog::config;
+    // The reference bar: 60 px, a leg of 59, speed 100 px/s, a 1-px eye.
     const SceneV3 s = mk_scene(kSceneFxScanner, 0, 255, 0, 100, 1);
-    uint8_t buf[11 * 3];
-    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 50);  // 5 px along the first leg
+    uint8_t buf[60 * 3];
+    fill_scene_pattern(buf, sizeof(buf), 60, 3, s, 50);  // 5 px along the first leg
     EXPECT_EQ(buf[5 * 3 + 1], 255);
-    EXPECT_TRUE(buf[4 * 3 + 1] > 0);                      // trail behind
-    EXPECT_EQ(buf[6 * 3 + 1], 0);                         // nothing ahead
-    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 150);  // 15 px: bounced back to 5
+    EXPECT_TRUE(buf[4 * 3 + 1] > 0);                       // trail behind
+    EXPECT_EQ(buf[6 * 3 + 1], 0);                          // nothing ahead
+    fill_scene_pattern(buf, sizeof(buf), 60, 3, s, 1130);  // 113 px: bounced back to 5
     EXPECT_EQ(buf[5 * 3 + 1], 255);
     EXPECT_TRUE(buf[6 * 3 + 1] > 0);  // trail now on the other side
     // Just after the turn the trail is still where the eye came from: it
     // follows the eye through the end instead of vanishing there.
-    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 110);  // 11 px: back to 9
-    EXPECT_EQ(buf[9 * 3 + 1], 255);
-    EXPECT_TRUE(buf[8 * 3 + 1] > 0 && buf[7 * 3 + 1] > 0);  // passed on the way up
-    EXPECT_TRUE(buf[8 * 3 + 1] > buf[7 * 3 + 1]);           // ... and fading with the path
-    EXPECT_EQ(buf[4 * 3 + 1], 0);
-    fill_scene_pattern(buf, sizeof(buf), 11, 3, s, 20);  // 2 px, first pass: nothing ahead
+    fill_scene_pattern(buf, sizeof(buf), 60, 3, s, 600);  // 60 px: back to 58
+    EXPECT_EQ(buf[58 * 3 + 1], 255);
+    EXPECT_TRUE(buf[57 * 3 + 1] > 0 && buf[56 * 3 + 1] > 0);  // passed on the way up
+    EXPECT_TRUE(buf[57 * 3 + 1] > buf[56 * 3 + 1]);           // ... and fading with the path
+    EXPECT_EQ(buf[50 * 3 + 1], 0);
+    fill_scene_pattern(buf, sizeof(buf), 60, 3, s, 20);  // 2 px, first pass: nothing ahead
     EXPECT_EQ(buf[2 * 3 + 1], 255);
-    EXPECT_EQ(buf[3 * 3 + 1] + buf[10 * 3 + 1], 0);
+    EXPECT_EQ(buf[3 * 3 + 1] + buf[59 * 3 + 1], 0);
+    // A 30-px bar: the same sweep in the same time, on half the pixels.
+    uint8_t half[30 * 3];
+    fill_scene_pattern(half, sizeof(half), 30, 3, s, 600);  // the turn, a leg of 29
+    EXPECT_EQ(half[28 * 3 + 1], 255);
 }
 
 static void test_scene_stripes_alternate_palette() {
     using namespace pixfrog::config;
+    // 2-px bands on the reference bar: 60 px.
     const SceneV3 s = with_color(mk_scene(kSceneFxStripes, 255, 0, 0, 0, 2), 0, 255, 0);
-    uint8_t buf[8 * 3];
-    fill_scene_pattern(buf, sizeof(buf), 8, 3, s, 0);
+    uint8_t buf[60 * 3];
+    fill_scene_pattern(buf, sizeof(buf), 60, 3, s, 0);
     EXPECT_EQ(buf[0 * 3 + 0], 255);
     EXPECT_EQ(buf[1 * 3 + 0], 255);
     EXPECT_EQ(buf[2 * 3 + 1], 255);
     EXPECT_EQ(buf[4 * 3 + 0], 255);
+    // On 120 px the bands are 4 wide: the same number of them on the run.
+    uint8_t wide[120 * 3];
+    fill_scene_pattern(wide, sizeof(wide), 120, 3, s, 0);
+    EXPECT_EQ(wide[3 * 3 + 0], 255);
+    EXPECT_EQ(wide[4 * 3 + 1], 255);
+    EXPECT_EQ(wide[8 * 3 + 0], 255);
 }
 
 static void test_scene_fade_crosses_palette() {
@@ -1309,8 +1339,8 @@ static void test_effect_speed_counts_double() {
     e.num_colors   = 1;
     e.colors[0][0] = 255;
     EXPECT_EQ(effect_rate(e), 510);
-    uint8_t buf[100 * 3];
-    fill_effect_run(buf, sizeof(buf), 100, 3, e, 100);  // 510 px/s for 0.1 s
+    uint8_t buf[60 * 3];
+    fill_effect_run(buf, sizeof(buf), 60, 3, e, 100);  // 510 px/s for 0.1 s
     EXPECT_EQ(buf[51 * 3], 255);
     EXPECT_EQ(buf[50 * 3], 0);
     e.generator = kSceneFxSolid;  // a strobe frequency: its own scale
@@ -1682,23 +1712,23 @@ static void test_matricks_on_an_effect() {
     e.generator    = kSceneFxChase;
     e.num_colors   = 1;
     e.colors[0][0] = 200;
-    e.speed        = 1;  // 2 px/s
+    e.speed        = 1;  // 2 px/s on the bar: 0.4 px/s on a 12-px virtual run
     e.wings        = 2;
-    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);  // head on virtual pixel 3
+    fill_effect_run(b, sizeof(b), 24, 3, e, 7500);  // head on virtual pixel 3
     for (int i = 0; i < 24; ++i)
         EXPECT_EQ(red(i), i == 3 || i == 20 ? 200 : 0);
 
     // Block: the head is three pixels wide and moves by three.
     e.wings = 0;
-    e.block = 3;
-    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);
+    e.block = 3;  // an 8-px virtual run: 3 px in 11.25 s
+    fill_effect_run(b, sizeof(b), 24, 3, e, 11250);
     for (int i = 0; i < 24; ++i)
         EXPECT_EQ(red(i), i >= 9 && i < 12 ? 200 : 0);
 
-    // Groups: the head repeats every 6 pixels.
+    // Groups: the head repeats every 6 pixels (a 6-px run: 3 px in 15 s).
     e.block  = 0;
     e.groups = 6;
-    fill_effect_run(b, sizeof(b), 24, 3, e, 1500);
+    fill_effect_run(b, sizeof(b), 24, 3, e, 15000);
     for (int i = 0; i < 24; ++i)
         EXPECT_EQ(red(i), i % 6 == 3 ? 200 : 0);
 

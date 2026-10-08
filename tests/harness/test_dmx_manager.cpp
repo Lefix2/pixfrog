@@ -843,7 +843,7 @@ TEST(the_desk_effect_pick_crossfades_over_the_scene_fade) {
 
 TEST(a_speed_change_bends_the_motion_instead_of_jumping_it) {
     reset_show();
-    one_channel(200);
+    one_channel(60);  // the reference bar: a generator's px are its px
     config::Effect e{};
     std::snprintf(e.name, sizeof(e.name), "Chase");
     e.generator    = config::kSceneFxChase;
@@ -860,7 +860,7 @@ TEST(a_speed_change_bends_the_motion_instead_of_jumping_it) {
             if (px[i * 3]) return i;
         return -1;
     };
-    shim::set_time_us(1'000'000'000);  // 1000 s: 100 000 px travelled, a whole number of laps
+    shim::set_time_us(1'200'000'000);  // 1200 s: 120 000 px travelled, a whole number of laps
     uint8_t u[16]{};
     u[0] = u[1] = 0xFF;
     u[4]        = 8;  // scene 1
@@ -871,20 +871,20 @@ TEST(a_speed_change_bends_the_motion_instead_of_jumping_it) {
     u[5] = 217;  // the desk's tempo x5 (10^((217-128)/127)): 251 = 502 units
     ctrl_frame(u, sizeof(u));
     EXPECT_EQ(head(), 10);  // where it was (time × speed: pixel 50)
-    shim::advance_ms(100);
-    EXPECT_EQ(head(), 60);  // 50 px in 100 ms
+    shim::advance_ms(60);
+    EXPECT_EQ(head(), 40);  // 30 px in 60 ms
     u[5] = 0;               // back to the effect's own speed
     ctrl_frame(u, sizeof(u));
-    EXPECT_EQ(head(), 60);
+    EXPECT_EQ(head(), 40);
     shim::advance_ms(100);
-    EXPECT_EQ(head(), 70);
+    EXPECT_EQ(head(), 50);
 
     // Another scene starts on the wall clock, in step with any other output
     // playing that look from scratch.
     EXPECT_TRUE(config::set_scene(1, config::make_scene("Chase 2", 0x01, 0)));
     u[4] = 16;
     ctrl_frame(u, sizeof(u));
-    EXPECT_EQ(head(), (1'000'300 / 10) % 200);
+    EXPECT_EQ(head(), (1'200'260 / 10) % 60);
     reset_show();
     dmx::scene_stop();
 }
