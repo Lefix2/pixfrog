@@ -104,28 +104,6 @@ void draw_chan_badge(int x, int y, int side, int number, Color family, bool fill
 
 #ifdef CONFIG_PIXFROG_DISPLAY_TFT
 #ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-// An output's universes for HOME: its pixels' real span (1, 8-10: layout and
-// dmx_start included), its fixtures' first universe (F21), both (3+F20) —
-// a dash when it listens to none.
-void format_ch_universes(const config::ChannelConfig& cc, char* buf, size_t cap) {
-    const size_t px = dmx::channel_pixel_span(cc), fx = dmx::channel_fixture_span(cc);
-    const unsigned u = cc.universe_start, f = config::fix_universe(cc);
-    if (px && fx)
-        std::snprintf(buf, cap, "%u+F%u", u, f);
-    else if (px > 1)
-        std::snprintf(buf, cap, "%u-%u", u, static_cast<unsigned>(u + px - 1));
-    else if (px)
-        std::snprintf(buf, cap, "%u", u);
-    else if (fx)
-        std::snprintf(buf, cap, "F%u", f);
-    else
-        std::snprintf(buf, cap, "-");
-}
-#endif
-#endif
-
-#ifdef CONFIG_PIXFROG_DISPLAY_TFT
-#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
 // Edit-screen hint bar: green keycaps + dim actions, three segments (design
 // Hints "TURN · PRESS · HOLD"). Drawn flush to the bottom over a top hairline.
 void draw_hint_bar(const char* v_turn, const char* v_press, const char* v_hold) {

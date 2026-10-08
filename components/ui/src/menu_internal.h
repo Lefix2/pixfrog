@@ -143,12 +143,6 @@ void draw_data_icon(int x, int y, DataFlow f);
 // the draw origin so the digit's *ink* box lands on the badge centre instead.
 void draw_chan_badge(int x, int y, int side, int number, Color family, bool filled, Color behind);
 
-// Number of DMX universes a channel occupies, derived from its pixel
-// byte-footprint (pixels × bytes/px, offset by dmx_start); a disabled channel
-// none. Lets HOME show the real
-// addressing span (U1-2, U8-10) instead of only the start universe.
-void format_ch_universes(const config::ChannelConfig& cc, char* buf, size_t cap);
-
 // Edit-screen hint bar: green keycaps + dim actions, three segments (design
 // Hints "TURN · PRESS · HOLD"). Drawn flush to the bottom over a top hairline.
 void draw_hint_bar(const char* v_turn, const char* v_press, const char* v_hold);
