@@ -461,7 +461,13 @@ often they grow** — each block only ever pushes the ones after it:
    control universe when the fixtures have a base of their own).
 
 The web Auto-patch screen is the patch sheet: one line a range, under a
-header per block, sorted by universe. Inside the last two blocks:
+header per block, sorted by universe — and **downloads it** for the desk: a
+printable HTML (the pixels optional, and in annex the DMX chart of the
+control universe and of each profile used — channel, value ranges, function,
+as a fixture's manual prints it, read from the box's own OFL exports) and a
+CSV (`block, output, item, leds_from, leds_to, profile, universe, net, sub,
+uni, address, channels`). A chart alone sits next to each OFL download
+(DMX profiles, Control universe). Inside the last two blocks:
 - **aligned** (default): every output opens a universe at slot 1.
 - **compact**: an output starts at the slot after the previous one, sharing
   its universe (a `whole` output skips to the next universe when not one pixel

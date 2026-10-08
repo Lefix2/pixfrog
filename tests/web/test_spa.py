@@ -1238,6 +1238,16 @@ def test_the_demo_runs_the_ui_on_a_simulated_box(browser, tmp_path):
         pg.on("dialog", lambda d: d.accept())
         pg.locator("#pf-demo-reset").click()
         expect(pg.locator('[data-live="node-name"]').first).not_to_have_text("demo-rack")
+        # The patch sheet and a profile's DMX chart come out of the simulated box.
+        nav(pg, "patch")
+        with pg.expect_download() as dl:
+            pg.locator('[data-action="sheet-html"]').click()
+        sheet = open(dl.value.path()).read()
+        assert "Patch sheet" in sheet and "Fixtures" in sheet and "DMX charts" in sheet
+        nav(pg, "profiles")
+        with pg.expect_download() as dl:
+            pg.locator("[data-pf-chart]").click()
+        assert "Blue 0–100 %" in open(dl.value.path()).read()
         nav(pg, "effects")
         expect(pg.locator("[data-fx-row]")).to_have_count(bank)
     finally:
@@ -1284,6 +1294,54 @@ def test_the_demo_draws_the_effects_with_the_firmware_engine(browser, device, tm
     finally:
         ctx.close()
         srv.shutdown()
+
+
+def test_the_patch_sheet_and_the_dmx_charts(page, device):
+    """The document for the desk: every range with its address, the pixels
+    optional, the DMX chart of each profile used in annex — and a chart alone
+    next to each OFL download."""
+    device.post("/api/channel/0", {"protocol": "WS2815", "pixel_count": 60, "universe_start": 1,
+                                   "dmx_start": 1, "fixtures": [[1, 20], [21, 20, 0, 2], [41, 20, 0, 3]],
+                                   "fixture_ctl": True, "fix_universe": 10, "fix_dmx_start": 101})
+    device.post("/api/control", {"enabled": True, "universe": 0, "address": 1})
+    page.reload()
+    nav(page, "patch")
+    with page.expect_download() as dl:
+        page.locator('[data-action="sheet-html"]').click()
+    html = open(dl.value.path()).read()
+    assert dl.value.suggested_filename.endswith(".patch.html")
+    for needle in ("Patch sheet", "Control universe", "pixfrog control", "Fixtures", "F2", "21–40", "RGB FX",
+                   "U10", "104", "Pixels", "WS2815 · 60 LED", "DMX charts", "Profile 3", "Effect speed",
+                   "8–15", "Shutter", "strobe 1Hz → 25Hz", "Master fine"):
+        assert needle in html, needle
+    assert html.index("Control universe") < html.index("Fixtures") < html.index("Pixels")
+    # Without the pixels: the desk's sheet.
+    page.locator("#sheet-pixels").uncheck()
+    with page.expect_download() as dl:
+        page.locator('[data-action="sheet-html"]').click()
+    html = open(dl.value.path()).read()
+    assert "Fixtures" in html and "<h2>Pixels</h2>" not in html
+    with page.expect_download() as dl:
+        page.locator('[data-action="sheet-csv"]').click()
+    csv = open(dl.value.path()).read().splitlines()
+    assert csv[0] == "block,output,item,leds_from,leds_to,profile,universe,net,sub,uni,address,channels"
+    assert csv[1].startswith("control,,DMX control,,,pixfrog control,0,0,0,0,1,")
+    assert any(l.startswith("fixtures,1,F2,21,40,RGB FX,10,0,0,10,104,6") for l in csv), csv
+    assert not any(l.startswith("pixels,") for l in csv)
+    # A chart alone, from the profiles screen and the control universe.
+    nav(page, "profiles")
+    page.locator('[data-pf-row="2"]').click()
+    with page.expect_download() as dl:
+        page.locator("[data-pf-chart]").click()
+    chart = open(dl.value.path()).read()
+    assert dl.value.suggested_filename == "RGB-FX.chart.html"
+    assert "DMX chart" in chart and "Effect speed" in chart and "speed slow → fast" in chart
+    assert "1–7" in chart and "Colour 1, steady" in chart
+    nav(page, "control")
+    with page.expect_download() as dl:
+        page.locator("#ct-chart").click()
+    chart = open(dl.value.path()).read()
+    assert "Master" in chart and "fine: the low byte of" in chart and "Blackout" in chart
 
 
 def test_effects_and_shows_travel_as_files(page, device, tmp_path):

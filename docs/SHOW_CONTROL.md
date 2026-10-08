@@ -264,7 +264,11 @@ for other desks, then patch one fixture at the configured address.
 ## Fixture DMX profiles
 
 A **profile** is the ordered list of DMX channels a fixture answers to, like the
-mode of a conventional luminaire. The box keeps up to eight; each fixture of an
+mode of a conventional luminaire. Its OFL export is the fixture *type* (for a
+desk's library: QLC+ reads it, the OFL site converts it for GrandMA2); where
+each fixture sits is the patch sheet (PROTOCOLS §5.6, Auto-patch →
+**Sheet**), and the **DMX chart** next to the export is the type as a manual
+prints it, for a desk whose fixture is built by hand. The box keeps up to eight; each fixture of an
 output points at one (the first by default). They drive the fixtures of an
 output whose **Fixtures** switch is on (PROTOCOLS §5.6) — alone, or over the
 output's pixel mapping: the Effect channel at 0 then shows the fixture's
