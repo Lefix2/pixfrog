@@ -182,6 +182,21 @@ static void ofl_bank(cJSON* caps, const char* none, const char* colour = nullptr
         ofl_range(caps, static_cast<int>(8 * (n + 1)), 255, ofl_cap("NoFunction"));
 }
 
+// The Speed channel: a tempo over the look as a whole (the generator's motion
+// and the dimmer phaser's rate), 128 = as stored, log scale to ÷10 / ×10.
+static void ofl_tempo(cJSON* caps) {
+    ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
+    cJSON* slow = ofl_cap("EffectSpeed");
+    cJSON_AddStringToObject(slow, "speedStart", "1/10 of the stored tempo");
+    cJSON_AddStringToObject(slow, "speedEnd", "the stored tempo");
+    ofl_range(caps, 1, 127, slow);
+    ofl_range(caps, 128, 128, ofl_generic("The stored tempo"));
+    cJSON* fast = ofl_cap("EffectSpeed");
+    cJSON_AddStringToObject(fast, "speedStart", "the stored tempo");
+    cJSON_AddStringToObject(fast, "speedEnd", "10x the stored tempo");
+    ofl_range(caps, 129, 255, fast);
+}
+
 // Bands of 8 over the phaser waves: band 0 = the effect's own, band 1 = none.
 static void ofl_phaser_wave(cJSON* caps) {
     static const char* const kNames[] = { "No phaser",      "Phaser sine",      "Phaser cosine",
@@ -245,14 +260,7 @@ static cJSON* ofl_channel(const config::ControlSlot& sl) {
             ofl_range(caps, static_cast<int>(8 * (n + 1)), 255, ofl_cap("NoFunction"));
         break;
     }
-    case config::CtlFn::Speed: {
-        ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
-        cJSON* c = ofl_cap("EffectSpeed");
-        cJSON_AddStringToObject(c, "speedStart", "slow");
-        cJSON_AddStringToObject(c, "speedEnd", "fast");
-        ofl_range(caps, 1, 255, c);
-        break;
-    }
+    case config::CtlFn::Speed: ofl_tempo(caps); break;
     case config::CtlFn::Param: {
         ofl_range(caps, 0, 0, ofl_cap("NoFunction"));
         cJSON* c = ofl_cap("EffectParameter");
@@ -362,8 +370,8 @@ static const char* ofl_base_name(const config::ControlSlot& sl, char* buf, size_
     case config::CtlFn::Blackout: return "Blackout";
     case config::CtlFn::Strobe: return "Strobe";
     case config::CtlFn::Scene: return "Scene";
-    case config::CtlFn::Speed: return "Effect speed";
-    case config::CtlFn::Param: return "Effect parameter";
+    case config::CtlFn::Speed: return "Speed";
+    case config::CtlFn::Param: return "Adjust";
     case config::CtlFn::Red:
     case config::CtlFn::Green:
     case config::CtlFn::Blue:
@@ -716,8 +724,8 @@ static const char* ofl_profile_base(const config::ProfileSlot& sl, char* buf, si
     case config::FixFn::Shutter: return "Shutter";
     case config::FixFn::Strobe: return "Strobe";
     case config::FixFn::Bank: return "Effect";
-    case config::FixFn::Speed: return "Effect speed";
-    case config::FixFn::Param: return "Effect parameter";
+    case config::FixFn::Speed: return "Speed";
+    case config::FixFn::Param: return "Adjust";
     case config::FixFn::PhWave: return "Phaser wave";
     case config::FixFn::PhRate: return "Phaser rate";
     case config::FixFn::PhSpread: return "Phaser spread";

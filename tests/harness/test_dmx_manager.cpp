@@ -868,7 +868,7 @@ TEST(a_speed_change_bends_the_motion_instead_of_jumping_it) {
     EXPECT_EQ(head(), 0);
     shim::advance_ms(100);
     EXPECT_EQ(head(), 10);
-    u[5] = 250;  // the desk's speed: 500 units, five times faster
+    u[5] = 217;  // the desk's tempo x5 (10^((217-128)/127)): 251 = 502 units
     ctrl_frame(u, sizeof(u));
     EXPECT_EQ(head(), 10);  // where it was (time × speed: pixel 50)
     shim::advance_ms(100);

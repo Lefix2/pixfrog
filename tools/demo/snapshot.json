@@ -607,14 +607,12 @@
    "long_name": "pixfrog \u00b7 stage left",
    "mask": "0.0.0.0",
    "merge_mode": 0,
-   "net": 0,
    "refresh_hz": 60,
    "reply_unicast": false,
    "sacn_enabled": true,
    "scene_fade_ms": 1500,
    "short_name": "pixfrog-stage",
    "speaker_volume": 0,
-   "subnet": 0,
    "tft_brightness": 100,
    "tft_dim_delay_s": 30,
    "tft_idle_dim": 60,
@@ -1030,6 +1028,26 @@
  "fixture": {
   "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
   "availableChannels": {
+   "Adjust": {
+    "capabilities": [
+     {
+      "dmxRange": [
+       0,
+       0
+      ],
+      "type": "NoFunction"
+     },
+     {
+      "dmxRange": [
+       1,
+       255
+      ],
+      "parameterEnd": "high",
+      "parameterStart": "low",
+      "type": "EffectParameter"
+     }
+    ]
+   },
    "Blackout": {
     "capabilities": [
      {
@@ -1084,46 +1102,6 @@
      "color": "Red",
      "type": "ColorIntensity"
     }
-   },
-   "Effect parameter": {
-    "capabilities": [
-     {
-      "dmxRange": [
-       0,
-       0
-      ],
-      "type": "NoFunction"
-     },
-     {
-      "dmxRange": [
-       1,
-       255
-      ],
-      "parameterEnd": "high",
-      "parameterStart": "low",
-      "type": "EffectParameter"
-     }
-    ]
-   },
-   "Effect speed": {
-    "capabilities": [
-     {
-      "dmxRange": [
-       0,
-       0
-      ],
-      "type": "NoFunction"
-     },
-     {
-      "dmxRange": [
-       1,
-       255
-      ],
-      "speedEnd": "fast",
-      "speedStart": "slow",
-      "type": "EffectSpeed"
-     }
-    ]
    },
    "Fade time": {
     "capability": {
@@ -1340,6 +1318,43 @@
      }
     ]
    },
+   "Speed": {
+    "capabilities": [
+     {
+      "dmxRange": [
+       0,
+       0
+      ],
+      "type": "NoFunction"
+     },
+     {
+      "dmxRange": [
+       1,
+       127
+      ],
+      "speedEnd": "the stored tempo",
+      "speedStart": "1/10 of the stored tempo",
+      "type": "EffectSpeed"
+     },
+     {
+      "comment": "The stored tempo",
+      "dmxRange": [
+       128,
+       128
+      ],
+      "type": "Generic"
+     },
+     {
+      "dmxRange": [
+       129,
+       255
+      ],
+      "speedEnd": "10x the stored tempo",
+      "speedStart": "the stored tempo",
+      "type": "EffectSpeed"
+     }
+    ]
+   },
    "Strobe": {
     "capabilities": [
      {
@@ -1381,8 +1396,8 @@
      "Blackout",
      "Strobe",
      "Scene",
-     "Effect speed",
-     "Effect parameter",
+     "Speed",
+     "Adjust",
      "Generator",
      "Colour 1 red",
      "Colour 1 green",

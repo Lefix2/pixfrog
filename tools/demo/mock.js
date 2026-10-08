@@ -85,8 +85,8 @@
         case 'shutter': name = 'Shutter'; cap = { capabilities: [shut('Closed', 0, 31), shut('Open', 32, 63), shut('Strobe', 64, 95, '1Hz', '25Hz'), shut('Open', 96, 127), shut('Pulse', 128, 159, '0.5Hz', '10Hz'), shut('Open', 160, 191), shut('RandomStrobe', 192, 223, '1Hz', '20Hz'), shut('Open', 224, 255)] }; break;
         case 'strobe': name = 'Strobe'; cap = { capabilities: [shut('Open', 0, 9), shut('Strobe', 10, 255, '1Hz', '25Hz')] }; break;
         case 'bank': name = 'Effect'; cap = { capabilities: bank('No effect: colour 1, steady (its pixels, under pixel mapping)', 'Colour 1, steady') }; break;
-        case 'speed': name = 'Effect speed'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 255, { type: 'EffectSpeed', speedStart: 'slow', speedEnd: 'fast' })] }; break;
-        case 'param': name = 'Effect parameter'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 255, { type: 'EffectParameter', parameterStart: 'low', parameterEnd: 'high' })] }; break;
+        case 'speed': name = 'Speed'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 127, { type: 'EffectSpeed', speedStart: '1/10 of the stored tempo', speedEnd: 'the stored tempo' }), range(128, 128, gen('The stored tempo')), range(129, 255, { type: 'EffectSpeed', speedStart: 'the stored tempo', speedEnd: '10x the stored tempo' })] }; break;
+        case 'param': name = 'Adjust'; cap = { capabilities: [range(0, 0, { type: 'NoFunction' }), range(1, 255, { type: 'EffectParameter', parameterStart: 'low', parameterEnd: 'high' })] }; break;
         case 'ph_wave': name = 'Phaser wave'; cap = { capabilities: waves.map(function (w, i) { return range(8 * i, 8 * i + 7, gen(w)); }).concat([range(72, 255, { type: 'NoFunction' })]) }; break;
         case 'ph_rate': name = 'Phaser rate'; cap = { capabilities: own('rate override') }; break;
         case 'ph_spread': name = 'Phaser spread'; cap = { capabilities: own('spread override') }; break;

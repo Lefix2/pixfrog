@@ -2979,7 +2979,7 @@ static void test_effect_override_applies() {
     o.color[2][1] = 8;
     o.color[2][2] = 7;
     apply_effect_override(e, o);
-    EXPECT_EQ(e.speed, 200);
+    EXPECT_EQ(e.speed, 37);  // a tempo: 200 is x3.7 (10^((200-128)/127)) over the stored 10
     EXPECT_EQ(e.generator, config::kSceneFxChase);
     EXPECT_EQ(config::effect_num_colors(e), 3);  // colour 3 exists now
     EXPECT_EQ(e.colors[2][0], 9);
@@ -2988,6 +2988,43 @@ static void test_effect_override_applies() {
     config::Effect before = e;
     apply_effect_override(e, none);
     EXPECT_EQ(std::memcmp(&before, &e, sizeof(e)), 0);
+
+    // The Speed channel is a tempo over the whole look: the generator's
+    // motion and the dimmer phaser's rate together, 128 = as stored, log
+    // scale to /10 at 1 and x10 at 255. What does not move stays still, a
+    // Solid's steady colour 2 (255) is not a strobe to speed up, and an
+    // absolute phaser rate beside it wins.
+    auto scaled = [](uint8_t speed, uint8_t rate, uint8_t tempo,
+                     uint8_t gen = config::kSceneFxChase) {
+        config::Effect x{};
+        x.generator = gen;
+        x.speed     = speed;
+        x.ph_rate   = rate;
+        EffectOverride t;
+        t.speed = tempo;
+        apply_effect_override(x, t);
+        return x;
+    };
+    EXPECT_EQ(scaled(100, 40, 128).speed, 100);
+    EXPECT_EQ(scaled(100, 40, 128).ph_rate, 40);
+    EXPECT_EQ(scaled(100, 40, 255).speed, 255);  // x10, clamped
+    EXPECT_EQ(scaled(20, 40, 255).speed, 200);
+    EXPECT_EQ(scaled(20, 40, 255).ph_rate, 255);
+    EXPECT_EQ(scaled(100, 40, 1).speed, 10);  // /10
+    EXPECT_EQ(scaled(100, 40, 1).ph_rate, 4);
+    EXPECT_EQ(scaled(3, 0, 1).speed, 1);                             // never down to a halt
+    EXPECT_EQ(scaled(0, 0, 255).speed, 0);                           // still stays still
+    EXPECT_EQ(scaled(255, 0, 1, config::kSceneFxSolid).speed, 255);  // steady colour 2 stays
+    EXPECT_EQ(scaled(60, 0, 1, config::kSceneFxSolid).speed, 6);     // a strobe slows down
+    EffectOverride both;
+    both.speed   = 255;
+    both.ph_rate = 33;
+    config::Effect y{};
+    y.speed   = 20;
+    y.ph_rate = 40;
+    apply_effect_override(y, both);
+    EXPECT_EQ(y.speed, 200);
+    EXPECT_EQ(y.ph_rate, 33);
 }
 
 // Largest per-byte change between two frames.
