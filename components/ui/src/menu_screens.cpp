@@ -9,29 +9,20 @@ namespace pixfrog::ui::detail::menu_impl {
 
 // ── HOME ────────────────────────────────────────────────────────────────────
 
-#ifdef CONFIG_PIXFROG_DISPLAY_NV3007
-// Per-channel metric shown in HOME's rotating right-hand slot. The unit shares
-// the value's Body face (px / % / g), so the suffix alone identifies the metric
-// as the display cycles through them.
-enum class ChMetric : uint8_t { Pixels, Bright, Gamma, Order, Count };
+#ifdef CONFIG_PIXFROG_DISPLAY_TFT
+// Both cores' load, "12/45%" (core 0 / core 1, the render core); "-" until the
+// first second is measured. *hot when either core is past kCpuHotPct.
+constexpr uint8_t kCpuHotPct = 85;
 
-// Advance one metric every kHomeRotateMs — slow enough to read, brisk enough to
-// feel live. Global (all LED channels show the same metric at once).
-constexpr uint32_t kHomeRotateMs = 2600;
-
-void format_ch_metric(const config::ChannelConfig& cc, ChMetric m, char* out, size_t cap) {
-    switch (m) {
-    case ChMetric::Bright:
-        std::snprintf(out, cap, "%u%%",
-                      (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
+void format_cpu_load(const dmx::Stats& st, char* out, size_t cap, bool* hot) {
+    const uint8_t a = st.cpu_load[0], b = st.cpu_load[1];
+    if (a == dmx::kCpuLoadUnknown || b == dmx::kCpuLoadUnknown) {
+        std::snprintf(out, cap, "-");
+        *hot = false;
         return;
-    case ChMetric::Gamma:
-        std::snprintf(out, cap, "%u.%ug", cc.gamma_x10 / 10, cc.gamma_x10 % 10);
-        return;
-    case ChMetric::Order: std::snprintf(out, cap, "%s", color_order_name(cc.color_order)); return;
-    case ChMetric::Pixels:
-    default: std::snprintf(out, cap, "%upx", cc.pixel_count); return;
     }
+    std::snprintf(out, cap, "%u/%u%%", static_cast<unsigned>(a), static_cast<unsigned>(b));
+    *hot = a >= kCpuHotPct || b >= kCpuHotPct;
 }
 #endif
 
@@ -102,21 +93,24 @@ void render_home() {
         std::snprintf(line, sizeof(line), "%lu", static_cast<unsigned long>(stats.current_fps));
         rx -= body_w(line);
         text_body(rx, 0, h, line, color::Gold);
+        // Both cores' load, read like the fps: "12/45% cpu" — left out when the
+        // service strip (a long address, several labels) already reaches it.
+        bool hot = false;
+        format_cpu_load(stats, line, sizeof(line), &hot);
+        const int cpu_x = rx - 10 - body_w("cpu") - 3 - body_w(line);
+        if (cpu_x >= strip.x) {
+            text_body(cpu_x, 0, h, line, hot ? color::Orange : color::LightGray);
+            text_body(cpu_x + body_w(line) + 3, 0, h, "cpu", color::DimGreen);
+        }
     }
     canvas_hline(0, kHdrH - 1, kTW, color::FrogLine);
 
     // ── Channel grid: 8 single-line cells, row-major (1 2 / 3 4 / …) ──────────
-    // Soft zebra rows (no hairlines), one homogeneous Body cell for every value.
-    // Per cell: [badge] PROTOCOL   <universe range>   <rotating metric>  •
-    // Universe values share a common centre-x (centred among themselves, not
-    // right-aligned); the metric column rotates through pixels/brightness/gamma/
-    // order, the unit suffix (px/%/g) telling which is on screen.
+    // Soft zebra rows (no hairlines). Per cell: [badge] PROTOCOL   <px>  •
+    // The patch (universes) is the web patch sheet's; the rest is in the menus.
     const int dotR   = kCellW - 9;     // activity dot / "!" right edge
-    const int rotR   = dotR - 11;      // rotating-metric right edge (clears the dot)
-    const int uniCtr = kCellW - 98;    // shared centre-x of the universe column
+    const int pxR    = dotR - 11;      // pixel count right edge (clears the dot)
     const int protoX = 7 + kChip + 6;  // protocol name left edge within a cell
-    const int metric = static_cast<int>((now_ms() / kHomeRotateMs) %
-                                        static_cast<uint32_t>(ChMetric::Count));
     for (int i = 0; i < 8; ++i) {
         const int col      = i % 2;
         const int row      = i / 2;
@@ -147,25 +141,11 @@ void render_home() {
             canvas_fill_round_rect_aa(x0 + dotR - 8, cy + (kChH - 8) / 2, 8, 8, 4, dotcol, row_bg);
         }
         if (!off) {
-            // Rotating metric (right-aligned).
-            char mv[16];
-            format_ch_metric(cc, static_cast<ChMetric>(metric), mv, sizeof(mv));
-            const int mvw        = body_w(mv);
-            const int metricLeft = x0 + rotR - mvw;
-
-            // Universe range, centred on the shared column axis. When a wide
-            // range would meet a wide metric it is nudged left to keep a small
-            // gap (perfect centring holds for the common short values).
-            char ur[24];  // two 10-digit numbers and a dash
-            format_ch_universes(cc, ur, sizeof(ur));
-            const int urw      = body_w(ur);
-            const int protoEnd = x0 + protoX + body_w(pname);
-            int uni_x          = x0 + uniCtr - urw / 2;
-            if (uni_x + urw > metricLeft - 4) uni_x = metricLeft - 4 - urw;
-            if (uni_x < protoEnd + 3) uni_x = protoEnd + 3;
-            text_body(uni_x, cy, kChH, ur, ok ? color::Gold : color::BadCoral, row_bg);
-
-            text_body(metricLeft, cy, kChH, mv, color::LightGray, row_bg);
+            // Red: more pixels than this refresh rate can drive.
+            char px[12];
+            std::snprintf(px, sizeof(px), "%upx", cc.pixel_count);
+            text_body(x0 + pxR - body_w(px), cy, kChH, px, ok ? color::LightGray : color::BadCoral,
+                      row_bg);
         }
     }
     // Thin divider between the two channel columns.
@@ -181,7 +161,6 @@ void render_home() {
     // Channel-table columns (shared by the header labels and the rows).
     constexpr int kColBadge  = 6;
     constexpr int kColProto  = 30;
-    constexpr int kColUniEnd = 158;
     constexpr int kColPixEnd = 222;
     constexpr int kColBriEnd = 286;
     constexpr int kDotD      = 10;
@@ -242,7 +221,15 @@ void render_home() {
     char cnt[24];
     fmt_count(cnt, sizeof(cnt), stats.artnet_packets_rx);
     const int cnt_x = draw_text_r(kTW - kIndent, iy, cnt, color::LightGray, color::AltRowBg);
-    canvas_draw_text(cnt_x - 2 * kFontCellWidth - 6, iy + 6, "RX", color::DarkGray, color::AltRowBg,
+    int rx_x        = cnt_x - 2 * kFontCellWidth - 6;
+    canvas_draw_text(rx_x, iy + 6, "RX", color::DarkGray, color::AltRowBg, 1);
+    // Both cores' load, small like DHCP / RX: "12/45% cpu".
+    bool hot = false;
+    format_cpu_load(stats, line, sizeof(line), &hot);
+    rx_x -= 12 + 3 * kFontCellWidth;
+    canvas_draw_text(rx_x, iy + 6, "cpu", color::DarkGray, color::AltRowBg, 1);
+    rx_x -= 3 + static_cast<int>(std::strlen(line)) * kFontCellWidth;
+    canvas_draw_text(rx_x, iy + 6, line, hot ? color::Orange : color::LightGray, color::AltRowBg,
                      1);
 
     // ── Services row: opt-in listeners + the live playback source ───────────
@@ -279,7 +266,6 @@ void render_home() {
     const int ly  = ry + (kColHdrH - 8) / 2 - 1;
     canvas_draw_text(kColBadge, ly, "CH", color::DarkGray, color::Black, 1);
     canvas_draw_text(kColProto, ly, "PROTOCOL", color::DarkGray, color::Black, 1);
-    canvas_draw_text(kColUniEnd - 3 * kFontCellWidth, ly, "UNI", color::DarkGray, color::Black, 1);
     canvas_draw_text(kColPixEnd - 3 * kFontCellWidth, ly, "PIX", color::DarkGray, color::Black, 1);
     canvas_draw_text(kColBriEnd - 3 * kFontCellWidth, ly, "BRI", color::DarkGray, color::Black, 1);
     canvas_draw_text(kColDot + kDotD - 3 * kFontCellWidth, ly, "ACT", color::DarkGray, color::Black,
@@ -306,8 +292,6 @@ void render_home() {
         const bool ok    = dmx::is_channel_capacity_ok(i);
         const bool fsafe = dmx::is_channel_failsafe(i);
         if (!off) {
-            std::snprintf(line, sizeof(line), "%u", cc.universe_start);
-            draw_text_r(kColUniEnd, ty, line, ok ? color::Gold : color::Red, row_bg);
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
             // Red: the stored count is more than this refresh rate can drive.
             draw_text_r(kColPixEnd, ty, line, ok ? color::LightGray : color::Red, row_bg);
