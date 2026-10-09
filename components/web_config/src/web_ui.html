@@ -1049,7 +1049,9 @@ var FR={
   'universes patched':'univers patchés',
   'Contiguous auto-patch':'Auto-patch contigu',
   'Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures\' DMX profiles, then the pixels of every output — no gap, no overlap, from the first universe below. Adding LEDs moves nothing before them.':'Réadresse tout en trois blocs, chacun ouvrant un univers, du plus stable au plus changeant : l’univers de contrôle, puis les profils DMX des fixtures, puis les pixels de chaque sortie — sans trou ni chevauchement, à partir du premier univers ci-dessous. Ajouter des LEDs ne déplace rien avant elles.',
-  'Run auto-patch':'Lancer l’auto-patch','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
+  'Run auto-patch':'Lancer l’auto-patch',
+  'Unsaved changes':'Modifications non enregistrées','1 change is not saved.':'1 modification n’est pas enregistrée.','{n} changes are not saved.':'{n} modifications ne sont pas enregistrées.',
+  'Save them or cancel them before you leave this screen.':'Enregistrez-les ou annulez-les avant de quitter cet écran.','Save it or cancel it before you leave this screen.':'Enregistrez-la ou annulez-la avant de quitter cet écran.','Cancel changes':'Annuler les modifications','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
   'Universes used':'Univers consommés','effects':'effets','CPU core 0':'CPU cœur 0','CPU core 1 (render)':'CPU cœur 1 (rendu)','no overlap detected':'aucun chevauchement détecté',
   'GENERAL':'GÉNÉRAL','Frame rate (Hz)':'Cadence (Hz)','Return to home (s)':'Retour accueil (s)',
   'Screen brightness (%)':'Luminosité écran (%)','Dim when idle (%)':'Atténuation en veille (%)','Dim after (s)':'Atténuer après (s)',
@@ -2409,7 +2411,7 @@ function applyFleet(){
     return;
   }
   if(FLEET_TAB===null || (FLEET_TAB!=='all' && !devByKey(FLEET_TAB)))
-    selectFleetTab(FLEET_ALIAS?'all':(selfKey()||'all'));
+    setFleetTab(FLEET_ALIAS?'all':(selfKey()||'all'));
   if(!fleetTimer){ pollFleet(); fleetTimer=setInterval(pollFleet,2000); }
   renderFleetBar(); if(FLEET_TAB==='all') renderHub();
 }
@@ -2433,8 +2435,11 @@ function renderFleetBar(){
   bar.innerHTML=fleetTab('all',t('All pixfrogs'),null)+fleetList().map(function(d){ return fleetTab(devKey(d),fleetLabel(d),fleetDot(d)); }).join('');
   createIcons(bar);
 }
+function setFleetTab(key){ FLEET_TAB=key; showFleetTab(key); renderFleetBar(); }
+// A click on a tab; the bar's own fallbacks (first load, a box gone) use setFleetTab.
 function selectFleetTab(key){
-  FLEET_TAB=key; showFleetTab(key); renderFleetBar();
+  if(key===FLEET_TAB) return;
+  leaveGuard(function(){ setFleetTab(key); });
 }
 // Exactly one view under the bar: the overview, this box's native UI, or a
 // sibling's UI in the full-page frame.
@@ -2831,11 +2836,12 @@ function applyShow(sh){
 function setLive2(id,v){ var e=el(id); if(e) e.textContent=v; }
 function outsText(mask){ var a=[]; for(var o=0;o<8;o++) if((mask>>o)&1) a.push(o+1); return a.length===8?t('all outputs'):(t('out')+' '+a.join(',')); }
 
+// Resolves true once every pending change is on the box, false when one is refused.
 function saveAll(){
-  if(dirty.size===0) return;
+  if(dirty.size===0) return Promise.resolve(true);
   if(curChan>=0 && dirty.has('ch'+curChan)) readChanEditor();
   var bad=CHANS.filter(function(c,i){ return dirty.has('ch'+i) && layHasError(c); });
-  if(bad.length){ toast(t('Channel {n}: the layout list is not valid — fix it before saving').replace('{n}',bad[0].n),true); return; }
+  if(bad.length){ toast(t('Channel {n}: the layout list is not valid — fix it before saving').replace('{n}',bad[0].n),true); return Promise.resolve(false); }
   var ops=[];
   if(['network','artnet','sysgen','sysauth','syslang'].some(function(g){ return dirty.has(g); })) ops.push(api('POST','/api/global',buildGlobalBody()).then(function(r){ if(r&&r.network&&r.network.applied) netReconnect(r.network); return r; }));
   CHANS.forEach(function(c,i){ if(dirty.has('ch'+i)) ops.push(api('POST','/api/channel/'+i,chanBody(c))); });
@@ -2845,7 +2851,17 @@ function saveAll(){
   if(dirty.has('profiles')) ops.push(api('POST','/api/profiles',profilesBody()));
   if(dirty.has('groups')) ops.push(api('POST','/api/groups',{groups:GROUPS}));
   toast(t('Saving…'));
-  Promise.all(ops).then(function(){ dirty.clear(); langDirty=false; updateSaveBar(); toast(t('✓ saved')); return reloadConfig(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
+  return Promise.all(ops).then(function(){ dirty.clear(); langDirty=false; updateSaveBar(); toast(t('✓ saved')); return reloadConfig(); }).then(function(){ return true; }).catch(function(e){ toast(t('Error: ')+e.message,true); return false; });
+}
+function discardAll(){ dirty.clear(); langDirty=false; updateSaveBar(); toast(t('✓ saved')); return reloadConfig(); }
+// Leaving a screen or a box tab with changes not saved: a dialog over the page
+// that only Save or Cancel closes, then the move goes on (not when a save fails).
+function leaveGuard(next){
+  if(dirty.size===0 && !langDirty){ next(); return; }
+  openModal('unsaved',{
+    onConfirm:function(){ saveAll().then(function(ok){ if(ok) next(); }); },
+    onCancel:function(){ Promise.resolve(discardAll()).then(next,next); }
+  });
 }
 
 // The box re-addressed itself on save: this page is on the old address. Say
@@ -2940,14 +2956,22 @@ function applyScene(n,k,hex){
 var md={}, modalT, confirmOn=true, modalCfg={};
 function initModal(){
   md.bd=document.querySelector('[data-modal-backdrop]');
-  document.querySelector('[data-modal-cancel]').addEventListener('click',closeModal);
+  document.querySelector('[data-modal-cancel]').addEventListener('click',modalCancel);
   document.querySelector('[data-modal-confirm]').addEventListener('click',modalConfirm);
   document.querySelector('[data-modal-ackbox]').addEventListener('change',function(e){ setConfirmEnabled(e.target.checked); });
-  md.bd.addEventListener('mousedown',function(e){ if(e.target===md.bd) closeModal(); });
+  md.bd.addEventListener('mousedown',function(e){ if(e.target===md.bd && !modalCfg.sticky) closeModal(); });
 }
 function openModal(kind,opt){
   var reset=kind==='reset';
-  var cfg=(kind==='delscene'||kind==='delfx')?{
+  var n=dirty.size||1;
+  var cfg=kind==='unsaved'?{
+    kind:kind,icon:'triangle-alert',accent:'var(--warn)',bg:'rgba(232,178,58,.14)',bd:'rgba(232,178,58,.32)',
+    title:t('Unsaved changes'),
+    desc:n>1?t('{n} changes are not saved.').replace('{n}',n)+' '+t('Save them or cancel them before you leave this screen.')
+            :t('1 change is not saved.')+' '+t('Save it or cancel it before you leave this screen.'),
+    confirm:t('Save'),confirmIcon:'check',confBg:'var(--accent)',confText:'var(--on-accent)',ack:null,
+    cancel:t('Cancel changes'),sticky:true,onConfirm:opt.onConfirm,onCancel:opt.onCancel
+  }:(kind==='delscene'||kind==='delfx')?{
     kind:kind,icon:'trash-2',accent:'var(--danger)',bg:'rgba(217,83,79,.14)',bd:'rgba(217,83,79,.4)',
     title:t(kind==='delfx'?'Delete effect':'Delete scene')+' « '+(opt.name||'—')+' »',
     desc:t(kind==='delfx'?'Effects after it move up one slot; the scenes follow theirs.':'Scenes after it move up one slot.'),
@@ -2973,6 +2997,7 @@ function openModal(kind,opt){
   var ack=q('[data-modal-ack]'); q('[data-modal-ackbox]').checked=false;
   if(cfg.ack){ ack.style.display='flex'; q('[data-modal-acktext]').textContent=cfg.ack; } else { ack.style.display='none'; }
   var conf=q('[data-modal-confirm]'); conf.innerHTML='<i data-lucide="'+cfg.confirmIcon+'" class="ic16"></i>'+cfg.confirm; conf.style.background=cfg.confBg; conf.style.border='1px solid '+cfg.confBg; conf.style.color=cfg.confText; createIcons(conf);
+  q('[data-modal-cancel]').textContent=cfg.cancel||t('Cancel');
   modalCfg=cfg; setConfirmEnabled(!cfg.ack);
   q('[data-modal-body]').style.display=''; q('[data-modal-progress]').style.display='none';
   md.bd.style.display='flex';
@@ -2991,6 +3016,7 @@ function modalConfirm(){
   clearTimeout(modalT); modalT=setTimeout(function(){ closeModal(); location.reload(); },9000);
 }
 function closeModal(){ if(md.bd) md.bd.style.display='none'; clearTimeout(modalT); }
+function modalCancel(){ var cb=modalCfg.onCancel; closeModal(); if(cb) cb(); }
 
 /* ─────────── actions ─────────── */
 function doAction(a){
@@ -3009,7 +3035,7 @@ function doAction(a){
   else if(a==='show-import'){ el('show-file').click(); }
   else if(a==='sheet-html'){ sheetDownload(); }
   else if(a==='sheet-csv'){ downloadText(fileStem(statusName())+'.patch.csv',sheetCsv(!el('sheet-pixels')||el('sheet-pixels').checked)); }
-  else if(a==='cancel'){ dirty.clear(); langDirty=false; updateSaveBar(); reloadConfig(); toast(t('✓ saved')); }
+  else if(a==='cancel'){ discardAll(); }
   else if(a==='identify'){ api('POST','/api/identify',{}).then(function(r){ var n=[]; for(var i=0;i<8;i++) if((r.outputs>>i)&1) n.push(i+1); toast(n.length?t('Identifying outputs ')+n.join(', '):t('No output configured')); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='identify-chan'){ api('POST','/api/channel/'+curChan+'/identify',{}).then(function(){ toast(t('Identifying channel ')+(curChan+1)); }).catch(function(e){ toast(t('Error: ')+e.message,true); }); }
   else if(a==='blackout'){ api('POST','/api/show',{blackout:'toggle'}).then(applyShow); }
@@ -3113,7 +3139,7 @@ function onClick(e){
   var fpl=e.target.closest('[data-fseq-play]'); if(fpl){ var fn=fpl.getAttribute('data-fseq-play'); api('POST','/api/fseq/play',{filename:fn,loop:el('fseq-loop').checked}).then(function(){ toast(t('Playing: ')+fn); loadFseq(); pollStatus(); }).catch(function(err){ toast(t('Error: ')+err.message,true); }); return; }
   var reboot=e.target.closest('[data-reboot]'); if(reboot){ openModal('reboot'); return; }
   var reset=e.target.closest('[data-reset]'); if(reset){ openModal('reset'); return; }
-  var nav=e.target.closest('[data-nav]'); if(nav){ go(nav.getAttribute('data-nav')); return; }
+  var nav=e.target.closest('[data-nav]'); if(nav){ var to=nav.getAttribute('data-nav'); if(to!==curScreen) leaveGuard(function(){ go(to); }); return; }
   var grow=e.target.closest('[data-grp-row]'); if(grow){ curGroup=+grow.getAttribute('data-grp-row'); renderGroups(); return; }
   if(e.target.closest('[data-grp-new]')){ if(GROUPS.length<MAX_GROUPS){ GROUPS.push({name:t('Group')+' '+(GROUPS.length+1),members:[]}); curGroup=GROUPS.length-1; groupsChanged(); } return; }
   if(e.target.closest('[data-grp-del]')){ if(GROUPS[curGroup]){ GROUPS.splice(curGroup,1); curGroup=Math.min(curGroup,GROUPS.length-1); groupsChanged(); } return; }
@@ -3136,7 +3162,7 @@ function onClick(e){
   var lfill=e.target.closest('[data-lay-fill]'); if(lfill){ var cf=CHANS[curChan]; if(cf){ var iv=function(id){ return parseInt((el(id)||{}).value,10)||0; }; if(layFill(cf,iv('lay-rep-n'),Math.max(1,iv('lay-rep-l')),iv('lay-rep-k'))){ markDirty('ch'+curChan); renderGaps(); readChanEditor(); } } return; }
   var frow=e.target.closest('[data-fx-row]'); if(frow && !e.target.closest('[data-frow-grip]')){ selectEffect(+frow.getAttribute('data-fx-row')); return; }
   var srow=e.target.closest('[data-scene-row]'); if(srow && !e.target.closest('[data-srow-grip]') && !e.target.closest('[data-sc-play]')){ selectScene(+srow.getAttribute('data-scene-row')); return; }
-  var tile=e.target.closest('[data-nav-chan]'); if(tile){ go('channels'); selectChan(+tile.getAttribute('data-nav-chan')); return; }
+  var tile=e.target.closest('[data-nav-chan]'); if(tile){ var tc=+tile.getAttribute('data-nav-chan'); leaveGuard(function(){ go('channels'); selectChan(tc); }); return; }
   var row=e.target.closest('[data-chan]'); if(row){ selectChan(+row.getAttribute('data-chan')); return; }
 }
 function onInput(e){
@@ -3213,7 +3239,7 @@ function init(){
   var ll=el('d-loglevel'); if(ll) ll.addEventListener('change',function(){
     api('POST','/api/loglevel',{level:ll.value}).then(function(){ toast(t('Log level: ')+ll.value); fetchLogs(); }).catch(function(e){ toast(t('Error: ')+e.message,true); });
   });
-  document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closePicker(); closeModal(); } });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closePicker(); if(!modalCfg.sticky) closeModal(); } });
   applyI18n();
   reloadConfig().then(function(){ pollStatus(); loadPeers(); }).catch(function(e){ toast(t('Cannot connect: ')+e.message,true); });
   setInterval(function(){ if(!wsLive()) pollStatus(); },1000);
