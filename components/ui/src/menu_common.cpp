@@ -268,7 +268,7 @@ bool is_enum_kind(ValueKind k) {
 
 bool is_gauge_kind(ValueKind k) {
     return k == ValueKind::Int || k == ValueKind::ClockHz || k == ValueKind::Mask ||
-           k == ValueKind::Tenths;
+           k == ValueKind::Tenths || k == ValueKind::Percent;
 }
 
 // TFT labels of the control functions, indexed by config::CtlFn.
@@ -423,6 +423,7 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
     case ValueKind::Tenths:
         std::snprintf(out, cap, "%ld.%lds", static_cast<long>(v / 10), static_cast<long>(v % 10));
         return;
+    case ValueKind::Percent: std::snprintf(out, cap, "%ld%%", static_cast<long>(v)); return;
     case ValueKind::Packing:
         std::snprintf(out, cap, "%s", packing_label(static_cast<uint8_t>(v)));
         return;

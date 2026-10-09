@@ -333,6 +333,7 @@ enum class ValueKind : uint8_t {
     Preset,      // control-universe preset (Simple / Full)
     Mask,        // outputs bitmask, shown as "1234----"
     Tenths,      // tenths shown as "2.5s"
+    Percent,     // a level shown as "64%"
     IpFallback,  // address without a DHCP server (link-local / Art-Net)
     Packing,     // DMX layout of an output
     FixMode,     // each / strip / chain / mirror
@@ -340,6 +341,15 @@ enum class ValueKind : uint8_t {
     Group,       // "Outputs" or a fixture group, by name
     Profile,     // a fixture DMX profile, by name
 };
+
+// An output's brightness (0..255) as the % the menus show, and back; the
+// round trip keeps every percent.
+inline uint8_t brightness_pct(uint8_t b) {
+    return static_cast<uint8_t>((b * 100u + 127u) / 255u);
+}
+inline uint8_t brightness_from_pct(int32_t pct) {
+    return static_cast<uint8_t>((pct * 255 + 50) / 100);
+}
 
 // Pick-from-a-list kinds (wheel) vs numeric ones (gauge).
 bool is_enum_kind(ValueKind k);

@@ -573,7 +573,7 @@ uint8_t build_settings(ListItem* items, OnClick* fns) {
     items[n] = { "Bright", vbright };
     fns[n++] = [](uint8_t) {
         const auto& g = config::get_global();
-        enter_edit(Field::DisplayBrightness, ValueKind::Int, config::tft_brightness_pct(g),
+        enter_edit(Field::DisplayBrightness, ValueKind::Percent, config::tft_brightness_pct(g),
                    config::kTftBrightnessMin, 100, 5, "Bright", Screen::Menu);
     };
     items[n] = { "Idle dim", vdim };
@@ -800,8 +800,8 @@ OnClick channel_action(ChItem it) {
     case ChItem::Bright:
         return [](uint8_t) {
             const auto& cc = config::get_channel(s.channel_index);
-            enter_edit(Field::ChBrightness, ValueKind::Int, cc.brightness, 0, 255, 1, "Bright",
-                       Screen::Menu, s.channel_index);
+            enter_edit(Field::ChBrightness, ValueKind::Percent, brightness_pct(cc.brightness), 0,
+                       100, 1, "Bright", Screen::Menu, s.channel_index);
         };
     case ChItem::Gamma:
         return [](uint8_t) {
@@ -850,7 +850,7 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
     std::snprintf(vpix, sizeof(vpix), "%u", cc.pixel_count);
     std::snprintf(vorder, sizeof(vorder), "%s", color_order_name(cc.color_order));
-    std::snprintf(vbri, sizeof(vbri), "%u", cc.brightness);
+    std::snprintf(vbri, sizeof(vbri), "%u%%", brightness_pct(cc.brightness));
     std::snprintf(vgrp, sizeof(vgrp), "%u", cc.grouping);
     std::snprintf(vinv, sizeof(vinv), "%s", cc.invert_direction ? "ON" : "OFF");
     format_clock_mhz(static_cast<int32_t>(cc.clock_hz), vclk, sizeof(vclk));
