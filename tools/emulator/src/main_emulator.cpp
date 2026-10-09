@@ -177,6 +177,12 @@ bool exec_cmd(const std::string& line) {
         ui::set_ip(parse_ip(line.c_str() + 7));
     } else if (line.rfind("set fps ", 0) == 0) {
         emu_dmx_set_stats(static_cast<uint32_t>(std::strtoul(line.c_str() + 8, nullptr, 10)), 0);
+    } else if (line.rfind("set cpu ", 0) == 0) {
+        // set cpu <core0> <core1> — fake per-core load in % (HOME).
+        char* end     = nullptr;
+        const long c0 = std::strtol(line.c_str() + 8, &end, 10);
+        const long c1 = std::strtol(end, nullptr, 10);
+        emu_dmx_set_cpu(static_cast<int>(c0), static_cast<int>(c1));
     } else if (line.rfind("set pkts ", 0) == 0) {
         emu_dmx_set_pkts(std::strtoull(line.c_str() + 9, nullptr, 10));
     } else if (line.rfind("set active ", 0) == 0) {

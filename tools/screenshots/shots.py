@@ -65,7 +65,7 @@ DEVICE = [
 DEVICE_SEED = [
     "set chan 0 1 1 300", "set chan 1 1 3 300", "set chan 2 2 5 144", "set chan 3 4 7 120",
     "set chan 4 6 9 240", "set chan 5 3 11 50", "set chan 6 1 13 512", "set chan 7 0 15 10",
-    "set net connected", "set ip 192.168.2.50", "set fps 60", "set pkts 1843200",
+    "set net connected", "set ip 192.168.2.50", "set fps 60", "set cpu 24 41", "set pkts 1843200",
     "set global web 1", "set global sacn 1",
 ] + [f"set active {c}" for c in (0, 1, 2, 3, 6)]
 

@@ -57,6 +57,7 @@ starts at HOME for deterministic runs.
 | `set ip a.b.c.d`   | set the displayed IP (HOME)                        |
 | `set net <state>`  | set the network icon: `disconnected`/`acquiring`/`connected`/`error` (HOME) |
 | `set fps <n>`      | inject a fake FPS counter (HOME)                   |
+| `set cpu <a> <b>`  | inject fake core 0 / core 1 loads in % (HOME)      |
 | `set pkts <n>`     | inject a fake ArtNet RX packet counter (HOME)      |
 | `set active <ch>`  | mark channel `ch` (0–7) active (HOME dot)          |
 | `set chan <i> <proto> <uni> <pix>` | seed channel `i` (protocol enum value) |

@@ -216,6 +216,10 @@ void emu_set_stats(uint32_t fps, uint64_t pkts) {
 void emu_set_pkts(uint64_t pkts) {
     g_stats.artnet_packets_rx = pkts;
 }
+void emu_set_cpu(uint8_t core0, uint8_t core1) {
+    g_stats.cpu_load[0] = core0;
+    g_stats.cpu_load[1] = core1;
+}
 void emu_set_active(size_t ch, bool on) {
     if (ch < config::kNumChannels) g_active[ch] = on;
 }
@@ -228,6 +232,9 @@ void emu_dmx_set_stats(uint32_t fps, uint64_t pkts) {
 }
 void emu_dmx_set_pkts(uint64_t pkts) {
     pixfrog::dmx::emu_set_pkts(pkts);
+}
+void emu_dmx_set_cpu(int core0, int core1) {
+    pixfrog::dmx::emu_set_cpu(static_cast<uint8_t>(core0), static_cast<uint8_t>(core1));
 }
 void emu_dmx_set_active(int ch, bool on) {
     pixfrog::dmx::emu_set_active(static_cast<size_t>(ch), on);
