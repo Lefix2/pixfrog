@@ -2,7 +2,7 @@
 
 The open backlog, grouped by theme. Per [AGENT.md](AGENT.md), features land
 only from this list. Suggested first picks are marked ★. Finished items are
-removed; git history and the PRs keep the record (last cleanup: 2026-10-01).
+removed; git history and the PRs keep the record (last cleanup: 2026-10-09).
 
 DMX512 output left this firmware (PR #100): it lives in a DMX node firmware
 forked at `d4f0f77`. DMX-output work (44 Hz pacing, ArtNzs routing, RDM)
@@ -14,12 +14,6 @@ belongs to that fork.
       up + static IP but no ping/HTTP for about a minute; a UART reset fixed it.
       If it comes back, capture EMAC/PHY state and ARP from the PC before
       resetting.
-
-## Security
-
-The web password stays optional by design: pixfrog targets private show
-networks, and a lighting operator may run without one. Items here harden what
-a password protects once set; none of them may make it mandatory.
 
 ## Show control & scenes
 
@@ -75,9 +69,6 @@ on the one before.
 
 ## Network & protocols
 
-- [ ] **sACN multicast on a real LAN** — only unicast was validated (bench
-      behind a NAT). Drive the board from xLights or a desk on the same LAN,
-      incl. a universe re-config (5 s join refresh) and the control universe.
 - [ ] **Inter-controller frame sync (PTP)** — genlock several boxes (±µs) where
       no ArtSync master exists. The P4 EMAC does IEEE 1588v2 hardware
       timestamping and IDF ships the API + a master/slave example; feed the
@@ -98,13 +89,9 @@ on the one before.
 - [ ] **Buffer sizes for longer lines** — at low refresh the wire allows more
       than the 1024 px cap (WS2815 @20 Hz ≈ 1600 px), but every buffer is
       sized from `kMaxPixelsPerChannel`: SRAM pixel buffers, the three PSRAM
-      frame buffers (3 × 2.6 MB), the universe pool (64, capped by the uint64
-      dirty mask), sACN joins, the UI editors. Pick a target (e.g. 2048 px)
-      first; shrinks a lot with adaptive density.
-- [ ] **Split the encode across both cores** — decode + effects + encode run on
-      core 1 while core 0 idles; encode two halves in parallel if heavy effects
-      × 8 × 1024 px get tight.
-
+      frame buffers (3 × 2.6 MB), the universe pool (`kNumUniverses` = 72),
+      sACN joins, the UI editors. Pick a target (e.g. 2048 px) first; shrinks a
+      lot with adaptive density.
 ## Web UI
 
 - [ ] **More classes** — ~330 inline styles remain (one-off layout, JS-built
@@ -112,9 +99,6 @@ on the one before.
 
 ## Hardware & bench
 
-- [ ] **Multi-board validation** — the aggregated multi-node web UI and
-      PTP/sync work need ≥ 2 boards on one LAN — incl. the pixfrog.local
-      hand-over (holder unplugged → next box within ~45 s) and the hub.
 - [ ] **Physical DMX input** — RS-485 receive on the shield to drive the box
       without a network (hardware work).
 

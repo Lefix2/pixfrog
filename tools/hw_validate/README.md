@@ -27,6 +27,8 @@ PORT=/dev/ttyACM1 BOARD_IP=10.0.0.5 ./run_all.py
 | `auth` | open-by-default, 401s, flat brute-force delay, UART recovery |
 | `webops` | `/api/status` fields, gzipped SPA + ETag/304, mDNS: unique name + `pixfrog.local` alias (log, status, and a unicast query through `powershell.exe` when present), coredump cycle |
 | `network` | the addressing applied without a reboot: a static address set from the console answers HTTP at once, a DHCP lease comes and is advertised, the box comes back to its own addressing (needs a DHCP server on the bench LAN) |
+| `sacn_multicast` *(opt-in)* | E1.31 on the 239.255.x.y groups → decode; a universe re-config moves the join (5 s refresh) and drops the old group; the control universe on its group. `MCAST_FROM` = a sender on the board's LAN (from WSL the packets leave Windows through `mcast_send.ps1`) |
+| `multiboard` *(opt-in)* | two boxes: peers, CORS, one `pixfrog.local` holder; the preferred box takes the alias, the sibling takes it back when the holder vanishes (≤ ~60 s); both `hub_preferred` restored. `OTHER_IP` = the sibling |
 | `ota` | upload → slot swap → confirmation after 30 s of rendering; then a second upload reset before confirming → bootloader rollback, record on console + `/api/status`, web acknowledge (needs `build/pixfrog.bin`, ~3 min) |
 
 Conventions (see `pixfrog_uart.py`):
@@ -39,9 +41,12 @@ Conventions (see `pixfrog_uart.py`):
 - If `/dev/ttyACM0` vanishes after a replug, re-attach it to the test host
   (USB pass-through to a VM/container may need re-attaching).
 
+The *opt-in* validators are not in `run_all`'s default list (they need a
+sender on the LAN or a second box): `./run_all.py sacn_multicast multiboard`
+with their variables set.
+
 Not covered here: wire-level timing/levels (Saleae workflows — see the
-repo skills), sACN **multicast** (needs a sender directly on the board's
-LAN — untestable from behind a NAT).
+repo skills).
 
 ## Wire-level checks (Saleae)
 
