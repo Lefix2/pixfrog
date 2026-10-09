@@ -92,10 +92,6 @@ on the one before.
       frame buffers (3 × 2.6 MB), the universe pool (`kNumUniverses` = 72),
       sACN joins, the UI editors. Pick a target (e.g. 2048 px) first; shrinks a
       lot with adaptive density.
-## Web UI
-
-- [ ] **More classes** — ~330 inline styles remain (one-off layout, JS-built
-      rows); fold further repeats into classes as screens are touched.
 
 ## Hardware & bench
 

@@ -295,8 +295,7 @@ void render_home() {
             std::snprintf(line, sizeof(line), "%u", cc.pixel_count);
             // Red: the stored count is more than this refresh rate can drive.
             draw_text_r(kColPixEnd, ty, line, ok ? color::LightGray : color::Red, row_bg);
-            std::snprintf(line, sizeof(line), "%u%%",
-                          (static_cast<unsigned>(cc.brightness) * 100u + 127u) / 255u);
+            std::snprintf(line, sizeof(line), "%u%%", brightness_pct(cc.brightness));
             draw_text_r(kColBriEnd, ty, line, color::LightGray, row_bg);
         }
 

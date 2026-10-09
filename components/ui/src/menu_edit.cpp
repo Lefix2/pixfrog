@@ -516,7 +516,7 @@ void commit_edit() {
     }
     case Field::ChBrightness: {
         auto c       = config::get_channel(s.edit.channel);
-        c.brightness = static_cast<uint8_t>(v);
+        c.brightness = brightness_from_pct(v);
         config::set_channel(s.edit.channel, c);
         dmx::mark_channel_dirty(s.edit.channel);
         break;

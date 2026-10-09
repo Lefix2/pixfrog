@@ -95,6 +95,38 @@
   .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
   .stack-16{display:flex;flex-direction:column;gap:16px}
   .card{background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:14px}
+  /* Repeated looks folded into classes (one rule, many elements). */
+  .nav-item{display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px}
+  .nav-group{font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px}
+  .uni-in{width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none}
+  .uni-dot{color:var(--fg-6);font:500 13px 'DM Mono'}
+  .uni-box{display:flex;width:100%;align-items:center;gap:5px;background:var(--well);border:1px solid var(--line-3);border-radius:0;padding:7px 9px}
+  .sub-note{font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px}
+  .grow{flex:1;min-width:0}
+  .card-xs{background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px}
+  .split-300{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+  .stack-6{display:flex;flex-direction:column;gap:6px}
+  .icon-btn{width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer}
+  .kv-list{display:flex;flex-direction:column;gap:7px;font:500 12.5px 'DM Mono'}
+  .grip{display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0}
+  .row-9{display:flex;align-items:center;gap:9px}
+  .row-8{display:flex;align-items:center;gap:8px}
+  .row-12{display:flex;align-items:center;gap:12px}
+  .panel{background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px}
+  .panel-flush{background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden}
+  .h-lg{margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em}
+  .tile-3{grid-column:span 3;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px}
+  .mono-12{font:500 12px 'DM Mono';color:var(--fg-3)}
+  .range-grow{flex:1;accent-color:var(--accent)}
+  .check-label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .btn-sm-pri{display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer}
+  .btn-sm-sec{display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer}
+  .flex-8{display:flex;gap:8px}
+  .flex-4{display:flex;gap:4px}
+  .row-end-7{display:flex;align-items:flex-end;gap:7px}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer}
+  .btn-wide-sec{display:flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px 12px;font:500 13px 'DM Mono';cursor:pointer}
+  .meta-row{display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:var(--fg-2)}
   .card-sm{background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px 20px}
   .well{background:var(--well);border:1px solid var(--line);border-radius:0;padding:12px 13px}
   .hint{font:500 11px 'DM Mono';color:var(--fg-4);margin-top:2px}
@@ -126,33 +158,33 @@
 
     <div data-nav="dashboard" data-on style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--accent);background:rgba(63,212,99,.12);font-family:'DM Mono';font-size:13px;font-weight:600;border-left:2px solid var(--accent);margin-top:2px"><i data-lucide="layout-dashboard"></i><span data-i18n="Dashboard">Dashboard</span></div>
 
-    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="RIG">RIG</div>
-    <div data-nav="channels" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Outputs">Outputs</span></div>
-    <div data-nav="groups" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="layers"></i><span data-i18n="Groups">Groups</span></div>
+    <div class="nav-group" data-i18n="RIG">RIG</div>
+    <div class="nav-item" data-nav="channels"><i data-lucide="sliders-horizontal"></i><span data-i18n="Outputs">Outputs</span></div>
+    <div class="nav-item" data-nav="groups"><i data-lucide="layers"></i><span data-i18n="Groups">Groups</span></div>
 
-    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="LOOKS">LOOKS</div>
-    <div data-nav="effects" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="wand-2"></i><span data-i18n="Effects">Effects</span></div>
-    <div data-nav="scenes" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="palette"></i><span data-i18n="Scenes">Scenes</span></div>
+    <div class="nav-group" data-i18n="LOOKS">LOOKS</div>
+    <div class="nav-item" data-nav="effects"><i data-lucide="wand-2"></i><span data-i18n="Effects">Effects</span></div>
+    <div class="nav-item" data-nav="scenes"><i data-lucide="palette"></i><span data-i18n="Scenes">Scenes</span></div>
 
-    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="DMX">DMX</div>
-    <div data-nav="control" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="sliders-horizontal"></i><span data-i18n="Control universe">Control universe</span></div>
-    <div data-nav="profiles" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="cable"></i><span data-i18n="DMX profiles">DMX profiles</span></div>
-    <div data-nav="fixpatch" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="list-plus"></i><span data-i18n="Fixture patch">Fixture patch</span></div>
-    <div data-nav="pixpatch" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="layout-dashboard"></i><span data-i18n="Pixel patch">Pixel patch</span></div>
-    <div data-nav="patch" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
+    <div class="nav-group" data-i18n="DMX">DMX</div>
+    <div class="nav-item" data-nav="control"><i data-lucide="sliders-horizontal"></i><span data-i18n="Control universe">Control universe</span></div>
+    <div class="nav-item" data-nav="profiles"><i data-lucide="cable"></i><span data-i18n="DMX profiles">DMX profiles</span></div>
+    <div class="nav-item" data-nav="fixpatch"><i data-lucide="list-plus"></i><span data-i18n="Fixture patch">Fixture patch</span></div>
+    <div class="nav-item" data-nav="pixpatch"><i data-lucide="layout-dashboard"></i><span data-i18n="Pixel patch">Pixel patch</span></div>
+    <div class="nav-item" data-nav="patch"><i data-lucide="git-fork"></i><span data-i18n="Auto-patch">Auto-patch</span></div>
 
-    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="PLAYBACK">PLAYBACK</div>
-    <div data-nav="fseq" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="film"></i><span data-i18n="Sequences">Sequences</span></div>
-    <div data-nav="auto" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="clock"></i><span data-i18n="Automations">Automations</span></div>
+    <div class="nav-group" data-i18n="PLAYBACK">PLAYBACK</div>
+    <div class="nav-item" data-nav="fseq"><i data-lucide="film"></i><span data-i18n="Sequences">Sequences</span></div>
+    <div class="nav-item" data-nav="auto"><i data-lucide="clock"></i><span data-i18n="Automations">Automations</span></div>
 
-    <div style="font:500 11px 'DM Mono';letter-spacing:.14em;color:var(--fg-6);padding:11px 8px 3px" data-i18n="SETTINGS">SETTINGS</div>
-    <div data-nav="network" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
-    <div data-nav="system" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="settings"></i><span data-i18n="System">System</span></div>
-    <div data-nav="maint" style="display:flex;align-items:center;gap:11px;padding:7px 11px;border-radius:0;cursor:pointer;color:var(--fg-2);background:transparent;font-family:'DM Mono';font-size:13px;font-weight:500;border-left:2px solid transparent;margin-top:2px"><i data-lucide="hard-drive"></i><span data-i18n="Maintenance">Maintenance</span></div>
+    <div class="nav-group" data-i18n="SETTINGS">SETTINGS</div>
+    <div class="nav-item" data-nav="network"><i data-lucide="network"></i><span data-i18n="Network">Network</span></div>
+    <div class="nav-item" data-nav="system"><i data-lucide="settings"></i><span data-i18n="System">System</span></div>
+    <div class="nav-item" data-nav="maint"><i data-lucide="hard-drive"></i><span data-i18n="Maintenance">Maintenance</span></div>
 
     <div style="margin-top:auto;background:rgba(237,238,234,.04);border:1px solid var(--line);border-radius:0;padding:11px 12px">
       <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600"><span data-live="side-dot" style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pf-pulse 2.4s infinite"></span><span data-live="side-link">Network link</span></div>
-      <div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px" data-live="side-ver">esp32-p4</div>
+      <div class="sub-note" data-live="side-ver">esp32-p4</div>
     </div>
   </aside>
 
@@ -176,33 +208,33 @@
       <div data-screen="dashboard">
         <div id="rb-banner" style="display:none;align-items:center;gap:12px;margin-bottom:13px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.35);border-radius:0;padding:12px 16px;color:var(--warn)">
           <i data-lucide="triangle-alert" class="ic20"></i>
-          <div style="flex:1;min-width:0"><div style="font:700 14px 'Figtree';color:var(--fg)" data-i18n="Firmware update rolled back">Firmware update rolled back</div><div id="rb-text" style="font:500 12px 'DM Mono';color:var(--warn);margin-top:3px"></div></div>
+          <div class="grow"><div style="font:700 14px 'Figtree';color:var(--fg)" data-i18n="Firmware update rolled back">Firmware update rolled back</div><div id="rb-text" style="font:500 12px 'DM Mono';color:var(--warn);margin-top:3px"></div></div>
           <button class="btn-sec" data-action="rollback-ack" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 13px;font:500 12.5px 'DM Mono';cursor:pointer;flex:none" data-i18n="Acknowledge">Acknowledge</button>
         </div>
         <div id="nv-banner" style="display:none;align-items:center;gap:12px;margin-bottom:13px;background:rgba(217,83,79,.1);border:1px solid rgba(217,83,79,.4);border-radius:0;padding:12px 16px;color:var(--danger)">
           <i data-lucide="triangle-alert" class="ic20"></i>
-          <div style="flex:1;min-width:0"><div style="font:700 14px 'Figtree';color:var(--fg)" data-i18n="Settings are not being saved">Settings are not being saved</div><div style="font:500 12px 'DM Mono';color:var(--danger);margin-top:3px" data-i18n="The settings memory (NVS) failed at boot: changes apply now but are lost at the next restart.">The settings memory (NVS) failed at boot: changes apply now but are lost at the next restart.</div></div>
+          <div class="grow"><div style="font:700 14px 'Figtree';color:var(--fg)" data-i18n="Settings are not being saved">Settings are not being saved</div><div style="font:500 12px 'DM Mono';color:var(--danger);margin-top:3px" data-i18n="The settings memory (NVS) failed at boot: changes apply now but are lost at the next restart.">The settings memory (NVS) failed at boot: changes apply now but are lost at the next restart.</div></div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:13px">
-          <div style="grid-column:span 3;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
+          <div class="tile-3">
             <div class="row-between-c"><span class="eyebrow" data-i18n="NETWORK LINK">NETWORK LINK</span><span style="color:var(--fg-5);display:flex"><i data-lucide="network" class="ic16"></i></span></div>
             <div style="display:flex;align-items:flex-end;gap:8px"><span class="big-num" data-live="link-big">—</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);margin-bottom:4px"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pf-pulse 2.4s infinite"></span>full-duplex</span></div>
             <span style="font:500 11.5px 'DM Mono';color:var(--fg-3)" data-live="ip-line">—</span>
           </div>
           <div style="grid-column:span 3;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:15px 16px 10px;display:flex;flex-direction:column;gap:7px">
             <div class="row-between-c"><span class="eyebrow" data-i18n="FRAMES / S">FRAMES / S</span><span style="color:var(--fg-5);display:flex"><i data-lucide="activity" class="ic16"></i></span></div>
-            <div style="display:flex;align-items:flex-end;gap:7px"><span style="font:500 27px 'DM Mono';line-height:1;color:var(--accent)" data-live="fps">0</span><span style="font-size:11px;color:var(--fg-3);margin-bottom:4px" data-live="fps-max">/ 60 Hz</span></div>
+            <div class="row-end-7"><span style="font:500 27px 'DM Mono';line-height:1;color:var(--accent)" data-live="fps">0</span><span style="font-size:11px;color:var(--fg-3);margin-bottom:4px" data-live="fps-max">/ 60 Hz</span></div>
             <canvas data-spark="fps" data-color="#3fd463" style="width:100%;height:30px;display:block"></canvas>
           </div>
-          <div style="grid-column:span 3;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
+          <div class="tile-3">
             <div class="row-between-c"><span class="eyebrow" data-i18n="FREE HEAP">FREE HEAP</span><span style="color:var(--fg-5);display:flex"><i data-lucide="cpu" class="ic16"></i></span></div>
-            <div style="display:flex;align-items:flex-end;gap:7px"><span class="big-num" data-live="heap">—</span><span style="font-size:12px;color:var(--fg-3);margin-bottom:4px" data-live="heap-unit"></span></div>
+            <div class="row-end-7"><span class="big-num" data-live="heap">—</span><span style="font-size:12px;color:var(--fg-3);margin-bottom:4px" data-live="heap-unit"></span></div>
             <div style="height:6px;background:var(--well);border:1px solid var(--line);border-radius:0;overflow:hidden;margin-top:auto"><div data-live="heap-bar" style="height:100%;width:0;background:linear-gradient(90deg,var(--accent-deep),var(--accent));border-radius:0"></div></div>
             <span class="mono-11" data-live="heap-min">—</span>
           </div>
-          <div style="grid-column:span 3;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:15px 16px 14px;display:flex;flex-direction:column;gap:9px">
+          <div class="tile-3">
             <div class="row-between-c"><span class="eyebrow">UPTIME</span><span style="color:var(--fg-5);display:flex"><i data-lucide="clock" class="ic16"></i></span></div>
-            <div style="display:flex;align-items:flex-end;gap:7px"><span class="big-num" data-live="uptime-big">—</span></div>
+            <div class="row-end-7"><span class="big-num" data-live="uptime-big">—</span></div>
             <span style="font:500 11.5px 'DM Mono';color:var(--fg-3)" data-live="part-line">—</span>
           </div>
 
@@ -226,17 +258,17 @@
             <span class="eyebrow" data-i18n="QUICK ACTIONS">QUICK ACTIONS</span>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
               <button class="btn-pri" data-action="identify" style="display:flex;align-items:center;gap:8px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:11px 12px;font:500 13px 'DM Mono';cursor:pointer"><i data-lucide="zap" class="ic16"></i><span data-i18n="Identify">Identify</span></button>
-              <button class="btn-sec" data-action="stop-all" style="display:flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px 12px;font:500 13px 'DM Mono';cursor:pointer"><i data-lucide="square" class="ic16"></i><span data-i18n="Stop all">Stop all</span></button>
-              <button class="btn-sec" data-nav="patch" style="display:flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px 12px;font:500 13px 'DM Mono';cursor:pointer"><i data-lucide="git-fork" class="ic16"></i><span data-i18n="Auto-patch">Auto-patch</span></button>
-              <button class="btn-sec" data-action="export" style="display:flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:11px 12px;font:500 13px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic16"></i><span data-i18n="Backup">Backup</span></button>
+              <button class="btn-sec btn-wide-sec" data-action="stop-all"><i data-lucide="square" class="ic16"></i><span data-i18n="Stop all">Stop all</span></button>
+              <button class="btn-sec btn-wide-sec" data-nav="patch"><i data-lucide="git-fork" class="ic16"></i><span data-i18n="Auto-patch">Auto-patch</span></button>
+              <button class="btn-sec btn-wide-sec" data-action="export"><i data-lucide="download" class="ic16"></i><span data-i18n="Backup">Backup</span></button>
             </div>
             <button class="btn-dng" data-reboot style="display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:10px 12px;font:500 13px 'DM Mono';cursor:pointer;margin-top:auto"><i data-lucide="rotate-cw" class="ic16"></i><span data-i18n="Reboot the box">Reboot the box</span></button>
           </div>
 
           <div id="show-card" style="grid-column:span 12;background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:14px 18px;display:grid;grid-template-columns:auto 1fr 1fr auto auto;align-items:center;gap:20px">
             <span class="eyebrow" data-i18n="SHOW">SHOW</span>
-            <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:var(--fg-2)"><span data-i18n="Master">Master</span><input id="sh-master" type="range" min="0" max="100" step="1" value="100" style="flex:1;accent-color:var(--accent)"/><span id="sh-master-val" style="width:46px;text-align:right;color:var(--fg)">100%</span></label>
-            <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:var(--fg-2)"><span data-i18n="Strobe">Strobe</span><input id="sh-strobe" type="range" min="0" max="25" step="1" value="0" style="flex:1;accent-color:var(--warn)"/><span id="sh-strobe-val" style="width:46px;text-align:right;color:var(--fg)">—</span></label>
+            <label class="meta-row"><span data-i18n="Master">Master</span><input class="range-grow" id="sh-master" type="range" min="0" max="100" step="1" value="100"/><span id="sh-master-val" style="width:46px;text-align:right;color:var(--fg)">100%</span></label>
+            <label class="meta-row"><span data-i18n="Strobe">Strobe</span><input id="sh-strobe" type="range" min="0" max="25" step="1" value="0" style="flex:1;accent-color:var(--warn)"/><span id="sh-strobe-val" style="width:46px;text-align:right;color:var(--fg)">—</span></label>
             <span id="sh-ctl" style="display:inline-flex;align-items:center;gap:6px;font:500 11px 'DM Mono';color:var(--fg-4);background:rgba(255,255,255,.04);border:1px solid var(--line-2);padding:5px 9px">DMX ctrl · off</span>
             <button class="btn-dng" id="sh-bo" data-action="blackout" style="display:inline-flex;align-items:center;gap:8px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);border-radius:0;padding:10px 16px;font:700 12.5px 'DM Mono';letter-spacing:.08em;cursor:pointer"><i data-lucide="square" class="ic14"></i><span data-i18n="BLACKOUT">BLACKOUT</span></button>
           </div>
@@ -266,12 +298,12 @@
       <!-- ===== SCENES ===== -->
       <div data-screen="scenes" style="display:none">
         <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
+          <div class="card-xs">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 2px 8px">
               <span class="eyebrow"><span data-i18n="SCENES">SCENES</span> <span class="fg-2" id="scene-count">0 / 30</span></span>
-              <button class="btn-pri" data-action="scene-add" style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New scene">New scene</span></button>
+              <button class="btn-pri btn-sm-pri" data-action="scene-add"><i data-lucide="plus" class="ic14"></i><span data-i18n="New scene">New scene</span></button>
             </div>
-            <div id="scene-list-mount" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div class="stack-6" id="scene-list-mount"></div>
           </div>
           <div id="scenes-mount"></div>
         </div>
@@ -280,17 +312,17 @@
       <!-- ===== EFFECTS ===== -->
       <div data-screen="effects" style="display:none">
         <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
+          <div class="card-xs">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 2px 8px;flex-wrap:wrap">
               <span class="eyebrow" style="white-space:nowrap"><span data-i18n="EFFECTS">EFFECTS</span> <span class="fg-2" id="fx-count">0 / 31</span></span>
               <span style="display:inline-flex;align-items:center;margin-left:auto">
               <button class="btn-sec" data-action="fx-import" data-i18n-title="Import effects from a file (one, a bank, a show)" title="Import effects from a file (one, a bank, a show)" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-right:6px"><i data-lucide="upload" class="ic14"></i></button>
               <button class="btn-sec" data-action="fx-export-all" data-i18n-title="Export the whole bank" title="Export the whole bank" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-right:6px"><i data-lucide="download" class="ic14"></i></button>
               <input id="fx-file" type="file" accept=".json,application/json" style="display:none"/>
-              <button class="btn-pri" data-action="fx-add" style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New effect" style="white-space:nowrap">New effect</span></button>
+              <button class="btn-pri btn-sm-pri" data-action="fx-add"><i data-lucide="plus" class="ic14"></i><span data-i18n="New effect" style="white-space:nowrap">New effect</span></button>
               </span>
             </div>
-            <div id="fx-list-mount" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div class="stack-6" id="fx-list-mount"></div>
           </div>
           <div id="fx-mount"></div>
         </div>
@@ -299,7 +331,7 @@
       <!-- ===== FSEQ ===== -->
       <div data-screen="fseq" style="display:none">
         <div style="display:grid;grid-template-columns:1.7fr 1fr;gap:16px;align-items:start">
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden">
+          <div class="panel-flush">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line)">
               <span style="display:inline-flex;align-items:center;gap:9px;font:600 13px 'Figtree'"><i data-lucide="hard-drive" class="ic16 fg-warn"></i><span data-live="sd-state">microSD</span></span>
               <button class="btn-sec" data-action="fseq-upload" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 12px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="upload" class="ic14"></i><span data-i18n="Upload">Upload</span></button>
@@ -318,14 +350,14 @@
                 <div style="display:flex;justify-content:space-between;margin-top:8px;font:500 12px 'DM Mono';color:var(--fg-2)"><span data-live="fseq-pos">0:00</span><span class="fg-4" data-live="fseq-dur">0:00</span></div>
               </div>
               <div style="display:flex;align-items:center;justify-content:space-between;font:500 12px 'DM Mono';color:var(--fg-2)">
-                <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="fseq-loop" type="checkbox"/><span data-i18n="Loop the file played">Loop the file played</span></label>
+                <label class="check-label"><input id="fseq-loop" type="checkbox"/><span data-i18n="Loop the file played">Loop the file played</span></label>
                 <span class="fg-accent" data-live="fseq-mode"></span>
               </div>
               <div class="row-between-c" style="gap:12px;font:500 12px 'DM Mono';color:var(--fg-2)">
                 <label for="fseq-uni" data-i18n="Universe of the sequence's first channel">Universe of the sequence's first channel</label>
                 <input id="fseq-uni" type="number" min="1" max="32767" value="1" style="width:90px;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 9px;font:500 13px 'DM Mono'"/>
               </div>
-              <div style="display:flex;gap:8px"><button class="btn-sec" data-action="fseq-stop" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:10px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="square" class="ic16"></i><span data-i18n="Stop">Stop</span></button></div>
+              <div class="flex-8"><button class="btn-sec" data-action="fseq-stop" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:10px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="square" class="ic16"></i><span data-i18n="Stop">Stop</span></button></div>
             </div>
 
             <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:18px;display:flex;flex-direction:column;gap:12px">
@@ -333,7 +365,7 @@
                 <button class="btn-pri" data-action="pl-play" style="display:inline-flex;align-items:center;gap:7px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:6px 11px;font:600 12px 'DM Mono';cursor:pointer"><i data-lucide="list-video" class="ic14"></i><span data-i18n="Play">Play</span></button></div>
               <div id="pl-mount"></div>
               <div style="display:flex;flex-direction:column;gap:8px;font:500 12px 'DM Mono';color:var(--fg-2)">
-                <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="pl-loop" type="checkbox"/><span data-i18n="Start over after the last file">Start over after the last file</span></label>
+                <label class="check-label"><input id="pl-loop" type="checkbox"/><span data-i18n="Start over after the last file">Start over after the last file</span></label>
               </div>
             </div>
           </div>
@@ -342,25 +374,25 @@
 
       <!-- ===== GROUPS ===== -->
       <div data-screen="groups" style="display:none">
-        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
+        <div class="split-300">
+          <div class="card-xs">
             <div id="grp-list"></div>
             <button class="btn-sec" data-grp-new style="display:inline-flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New group">New group</span></button>
             <div class="hint" style="margin-top:6px" data-i18n="A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.">A group is an ordered set of fixtures, on any outputs: where a scene plays. Its order is the strip the effect runs along.</div>
           </div>
-          <div id="grp-editor" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px"></div>
+          <div class="card" id="grp-editor" style="gap:16px"></div>
         </div>
       </div>
 
       <!-- ===== DMX PROFILES ===== -->
       <div data-screen="profiles" style="display:none">
-        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px">
-            <div id="pf-list" style="display:flex;flex-direction:column;gap:6px"></div>
+        <div class="split-300">
+          <div class="card-xs">
+            <div class="stack-6" id="pf-list"></div>
             <button class="btn-sec" data-pf-new style="display:inline-flex;align-items:center;justify-content:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="New profile">New profile</span></button>
             <div class="hint" style="margin-top:6px" data-i18n="A profile is the list of DMX channels a fixture answers to, like a conventional luminaire's mode. Each fixture picks one.">A profile is the list of DMX channels a fixture answers to, like a conventional luminaire's mode. Each fixture picks one.</div>
           </div>
-          <div id="pf-editor" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px"></div>
+          <div class="card" id="pf-editor" style="gap:16px"></div>
         </div>
       </div>
 
@@ -371,12 +403,12 @@
           <input class="field" id="s-refresh" type="number" min="20" max="120" step="1" value="60"/>
           <div class="hint" style="margin-top:8px" data-i18n="One frame rate for the eight outputs: it bounds how many LEDs each can drive.">One frame rate for the eight outputs: it bounds how many LEDs each can drive.</div>
         </div>
-        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
-          <div id="chan-list-mount" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px"></div>
+        <div class="split-300">
+          <div class="card-xs" id="chan-list-mount"></div>
 
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px">
+          <div class="panel">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)">
-              <div style="display:flex;align-items:center;gap:12px"><label class="sw" style="cursor:pointer"><input id="cd-on" type="checkbox" aria-label="Enabled"/><span></span></label><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Channel 1</h3></div>
+              <div class="row-12"><label class="sw" style="cursor:pointer"><input id="cd-on" type="checkbox" aria-label="Enabled"/><span></span></label><h3 class="h-lg" data-chan-title>Channel 1</h3></div>
               <button class="btn-sec" data-action="identify-chan" style="display:inline-flex;align-items:center;gap:7px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:8px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="zap" class="ic14 fg-accent"></i><span data-i18n="Identify">Identify</span></button>
             </div>
             <div id="cd-offnote" class="hint" style="display:none" data-i18n="This output is off: switch it on to set it up.">This output is off: switch it on to set it up.</div>
@@ -399,7 +431,7 @@
                   <label class="f-label-caps"><span data-i18n="Fixtures &amp; dead LEDs">Fixtures &amp; dead LEDs</span> <span class="fg-4" data-i18n="in strip order, sizes in LEDs">in strip order, sizes in LEDs</span></label>
                   <div id="cd-lay-viz" style="position:relative;height:30px;background:var(--well);border:1px solid var(--line-3);margin-bottom:8px;overflow:hidden"></div>
                   <div id="cd-lay-warn" style="display:none;margin-bottom:8px;font:500 11.5px 'DM Mono'"></div>
-                  <div id="cd-gaps" style="display:flex;flex-direction:column;gap:6px"></div>
+                  <div class="stack-6" id="cd-gaps"></div>
                 </div>
                 <div id="cd-row-order">
                   <label class="f-label-caps" data-i18n="Color order">Color order</label>
@@ -456,7 +488,7 @@
                 </select></div>
               <div style="display:flex;align-items:center;gap:9px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.2);border-radius:0;padding:11px 13px;font:500 12px 'Figtree';color:var(--warn)"><i data-lucide="info" class="ic16"></i><span data-i18n="Changing IP mode requires a reboot.">Changing IP mode requires a reboot.</span></div>
             </div>
-            <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
+            <div class="card" style="gap:16px">
               <span class="eyebrow" data-i18n="DMX RECEPTION">DMX RECEPTION</span>
               <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px"><div><div class="h-sm">ArtNet 4</div><div class="hint" data-i18n="UDP 6454 · always on">UDP 6454 · always on</div></div><span class="sw"><input type="checkbox" checked disabled/><span></span></span></label>
               <label style="display:flex;align-items:center;justify-content:space-between;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm">sACN E1.31</div><div class="hint">Multicast 239.255.x.x · UDP 5568</div></div><span class="sw"><input id="a-sacn" type="checkbox"/><span></span></span></label>
@@ -473,7 +505,7 @@
                 <div><label class="f-label" data-i18n="Long name">Long name</label><input id="n-long" value="" style="width:100%;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:10px 12px;font:500 12px 'DM Mono'"/></div>
                 <div><label class="f-label" data-i18n="Frame rate">Frame rate</label><input value="" data-live="refresh" style="width:100%;background:var(--well);border:1px solid var(--line-2);color:var(--fg-3);border-radius:0;padding:10px 12px;font:500 12px 'DM Mono'" disabled/></div>
               </div>
-              <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Preferred hub">Preferred hub</div><div class="hint" data-i18n="With several boxes, this one answers pixfrog.local">With several boxes, this one answers pixfrog.local</div><div class="hint" data-live="alias-state"></div></div><span class="sw"><input id="n-hub" type="checkbox"/><span></span></span></label>
+              <label class="toggle-row"><div><div class="h-sm" data-i18n="Preferred hub">Preferred hub</div><div class="hint" data-i18n="With several boxes, this one answers pixfrog.local">With several boxes, this one answers pixfrog.local</div><div class="hint" data-live="alias-state"></div></div><span class="sw"><input id="n-hub" type="checkbox"/><span></span></span></label>
             </div>
             <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:11px">
               <span class="eyebrow" data-i18n="PHYSICAL LINK">PHYSICAL LINK</span>
@@ -491,17 +523,17 @@
             <button class="btn-pri" data-action="autopatch" style="display:inline-flex;align-items:center;gap:8px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:11px 18px;font:500 13px 'DM Mono';cursor:pointer;flex:none"><i data-lucide="wand-2" class="ic16"></i><span data-i18n="Run auto-patch">Run auto-patch</span></button>
           </div>
           <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:16px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
-            <div><label class="f-label-caps"><span data-i18n="FIRST UNIVERSE">FIRST UNIVERSE</span> <span class="fg-4">net · sub · uni</span></label><div style="display:flex;width:100%;align-items:center;gap:5px;background:var(--well);border:1px solid var(--line-3);border-radius:0;padding:7px 9px"><input id="ap-net" type="number" min="0" max="127" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/><span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span><input id="ap-sub" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/><span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span><input id="ap-uni" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/></div><div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="ap-uni-flat">0</span></div></div>
+            <div><label class="f-label-caps"><span data-i18n="FIRST UNIVERSE">FIRST UNIVERSE</span> <span class="fg-4">net · sub · uni</span></label><div class="uni-box"><input class="uni-in" id="ap-net" type="number" min="0" max="127" value="0"/><span class="uni-dot">.</span><input class="uni-in" id="ap-sub" type="number" min="0" max="15" value="0"/><span class="uni-dot">.</span><input class="uni-in" id="ap-uni" type="number" min="0" max="15" value="0"/></div><div class="sub-note"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="ap-uni-flat">0</span></div></div>
             <div><label class="f-label-caps" data-i18n="PLACEMENT">PLACEMENT</label><select class="field field-text" id="ap-place"><option value="aligned" data-i18n="Each output opens a universe">Each output opens a universe</option><option value="compact" data-i18n="Compact: outputs follow each other inside a universe">Compact: outputs follow each other inside a universe</option></select></div>
             <div><label class="f-label-caps" data-i18n="DMX LAYOUT">DMX LAYOUT</label><select class="field field-text" id="ap-pack"><option value="keep" data-i18n="Keep each output's own">Keep each output's own</option><option value="continuous" data-i18n="Continuous (a pixel may straddle two universes)">Continuous (a pixel may straddle two universes)</option><option value="whole" data-i18n="Whole pixels (170 RGB / 128 RGBW per universe)">Whole pixels (170 RGB / 128 RGBW per universe)</option><option value="fixture" data-i18n="One fixture per universe">One fixture per universe</option><option value="colour" data-i18n="One colour per fixture (3 or 4 channels a bar)">One colour per fixture (3 or 4 channels a bar)</option></select></div>
             <div><label class="f-label-caps" data-i18n="PATCH SHEET">PATCH SHEET</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-sec" data-action="sheet-html" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i><span data-i18n="Sheet">Sheet</span></button><button class="btn-sec" data-action="sheet-csv" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i>CSV</button><label style="display:inline-flex;align-items:center;gap:6px;font:500 11.5px 'DM Mono';color:var(--fg-3);cursor:pointer"><input id="sheet-pixels" type="checkbox" checked style="accent-color:var(--accent)"/><span data-i18n="with the pixels">with the pixels</span></label></div></div>
-            <div><label class="f-label-caps" data-i18n="FIXTURES' BLOCK">FIXTURES' BLOCK</label><div style="display:flex;gap:8px"><select class="field field-text" id="ap-fix" style="flex:1;min-width:0"><option value="after" data-i18n="In order, after the control universe">In order, after the control universe</option><option value="base" data-i18n="From universe">From universe</option></select><input class="field" id="ap-fixbase" type="number" min="0" max="32767" value="100" style="width:92px;display:none"/></div></div>
+            <div><label class="f-label-caps" data-i18n="FIXTURES' BLOCK">FIXTURES' BLOCK</label><div class="flex-8"><select class="field field-text grow" id="ap-fix"><option value="after" data-i18n="In order, after the control universe">In order, after the control universe</option><option value="base" data-i18n="From universe">From universe</option></select><input class="field" id="ap-fixbase" type="number" min="0" max="32767" value="100" style="width:92px;display:none"/></div></div>
           </div>
 
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden">
+          <div class="panel-flush">
             <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;font:500 10px 'DM Mono';letter-spacing:.1em;color:var(--fg-4);padding:12px 18px;border-bottom:1px solid var(--line)"><span>CH</span><span data-i18n="PROTOCOL">PROTOCOL</span><span data-i18n="ASSIGNED UNIVERSES">ASSIGNED UNIVERSES</span><span>DMX</span></div>
             <div id="patch-mount"></div>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--well)"><span style="font:500 12px 'DM Mono';color:var(--fg-3)"><span data-i18n="Universes used">Universes used</span>&nbsp;: <span class="fg-2">U<span id="patch-first">0</span> – U<span id="patch-nextfree">0</span></span> · <span id="patch-pool" class="fg-2">0 / 72</span></span><span id="patch-overlap" style="font:500 12px 'DM Mono';color:var(--accent);text-align:right"></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--well)"><span class="mono-12"><span data-i18n="Universes used">Universes used</span>&nbsp;: <span class="fg-2">U<span id="patch-first">0</span> – U<span id="patch-nextfree">0</span></span> · <span id="patch-pool" class="fg-2">0 / 72</span></span><span id="patch-overlap" style="font:500 12px 'DM Mono';color:var(--accent);text-align:right"></span></div>
           </div>
         </div>
       </div>
@@ -516,19 +548,19 @@
             <span id="ct-state" style="display:inline-flex;align-items:center;gap:6px;font:500 11px 'DM Mono';color:var(--fg-4);background:rgba(255,255,255,.04);border:1px solid var(--line-2);padding:8px 10px;margin-bottom:2px">off</span>
           </div>
           <div id="ct-warn" style="display:none;align-items:center;gap:10px;background:rgba(232,178,58,.08);border:1px solid rgba(232,178,58,.35);padding:11px 14px;color:var(--warn);font:500 12px 'DM Mono'"></div>
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;overflow:hidden">
+          <div class="panel-flush">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)">
               <span class="eyebrow"><span data-i18n="CHANNEL MAP">CHANNEL MAP</span> <span class="fg-2" id="ct-foot"></span></span>
-              <span style="display:flex;gap:8px">
-                <button class="btn-sec" data-ct-preset="simple" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Simple preset">Simple preset</button>
-                <button class="btn-sec" data-ct-preset="full" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Full preset">Full preset</button>
+              <span class="flex-8">
+                <button class="btn-sec btn-sm-sec" data-ct-preset="simple" data-i18n="Simple preset">Simple preset</button>
+                <button class="btn-sec btn-sm-sec" data-ct-preset="full" data-i18n="Full preset">Full preset</button>
                 <a id="ct-fixture" href="/api/control/fixture" download="pixfrog-control.json" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer;text-decoration:none"><i data-lucide="download" class="ic14"></i><span data-i18n="Fixture profile">Fixture profile</span></a>
-                <button class="btn-sec" id="ct-chart" style="display:inline-flex;align-items:center;gap:6px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="download" class="ic14"></i><span data-i18n="DMX chart">DMX chart</span></button>
+                <button class="btn-sec btn-sm-sec" id="ct-chart"><i data-lucide="download" class="ic14"></i><span data-i18n="DMX chart">DMX chart</span></button>
               </span>
             </div>
             <div style="display:grid;grid-template-columns:70px 1.3fr 2fr 1fr 70px 70px;gap:10px;font:500 10px 'DM Mono';letter-spacing:.1em;color:var(--fg-4);padding:10px 18px;border-bottom:1px solid var(--line)"><span>DMX</span><span data-i18n="FUNCTION">FUNCTION</span><span data-i18n="OUTPUTS">OUTPUTS</span><span data-i18n="OPTION">OPTION</span><span></span><span></span></div>
             <div id="ct-slots"></div>
-            <div style="padding:12px 18px;background:var(--well)"><button class="btn-pri" data-ct-add style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);border-radius:0;padding:7px 11px;font:500 12px 'DM Mono';cursor:pointer"><i data-lucide="plus" class="ic14"></i><span data-i18n="Add a channel">Add a channel</span></button></div>
+            <div style="padding:12px 18px;background:var(--well)"><button class="btn-pri btn-sm-pri" data-ct-add><i data-lucide="plus" class="ic14"></i><span data-i18n="Add a channel">Add a channel</span></button></div>
           </div>
           <div style="font:500 12px 'DM Mono';color:var(--fg-4);line-height:1.6" data-i18n="Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. The other channels act on the effect an output's scene plays, and keep its own value at 0: speed, parameter, generator, colours, phaser, Block / Groups / Wings — and the effect itself, picked in the bank by bands of 8. A scene channel with a partial output group plays its scene on those outputs only.">Scene and show-file channels use bands of 8 values (0-7 = none, 8-15 = item 1…) and act when the value changes. The other channels act on the effect an output's scene plays, and keep its own value at 0: speed, parameter, generator, colours, phaser, Block / Groups / Wings — and the effect itself, picked in the bank by bands of 8. A scene channel with a partial output group plays its scene on those outputs only.</div>
         </div>
@@ -562,7 +594,7 @@
           <div class="stack-16">
             <div class="card" id="spk-card" style="display:none">
               <span class="eyebrow" data-i18n="SPEAKER">SPEAKER</span>
-              <label style="display:flex;align-items:center;gap:10px;font:500 12px 'DM Mono';color:var(--fg-2)"><span data-i18n="Volume">Volume</span><input id="spk-vol" type="range" min="0" max="100" step="5" value="0" style="flex:1;accent-color:var(--accent)"/><span id="spk-vol-val" style="width:46px;text-align:right;color:var(--fg)">Off</span></label>
+              <label class="meta-row"><span data-i18n="Volume">Volume</span><input class="range-grow" id="spk-vol" type="range" min="0" max="100" step="5" value="0"/><span id="spk-vol-val" style="width:46px;text-align:right;color:var(--fg)">Off</span></label>
               <div class="row-between-c" style="gap:12px"><span class="hint" data-live="audio-state">—</span><button class="btn-sec" data-action="audio-test" style="display:inline-flex;align-items:center;gap:8px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 14px;font:500 12.5px 'DM Mono';cursor:pointer"><i data-lucide="play" class="ic14"></i><span data-i18n="Play test sound">Play test sound</span></button></div>
             </div>
           </div>
@@ -576,16 +608,16 @@
             <div class="card">
               <span class="eyebrow" data-i18n="AT STARTUP">AT STARTUP</span>
               <div><label class="f-label" data-i18n="Boot scene">Boot scene</label><select class="field field-text" id="s-boot"><option value="0" data-i18n="None">None</option><option value="1">Scene 1</option><option value="2">Scene 2</option><option value="3">Scene 3</option><option value="4">Scene 4</option><option value="5">Scene 5</option><option value="6">Scene 6</option><option value="7">Scene 7</option><option value="8">Scene 8</option></select></div>
-              <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input id="pl-auto" type="checkbox"/><span data-i18n="Play the playlist at boot (as soon as the card is mounted)">Play the playlist at boot (as soon as the card is mounted)</span></label>
+              <label class="check-label"><input id="pl-auto" type="checkbox"/><span data-i18n="Play the playlist at boot (as soon as the card is mounted)">Play the playlist at boot (as soon as the card is mounted)</span></label>
             </div>
             <div class="card">
               <span class="eyebrow" data-i18n="BETWEEN SCENES">BETWEEN SCENES</span>
               <div><label class="f-label" data-i18n="Scene fade (s)">Scene fade (s)</label><input class="field" id="s-fade" type="number" min="0" max="25.5" step="0.1" value="0"/></div>
             </div>
           </div>
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
-              <div style="display:flex;align-items:center;gap:9px"><i data-lucide="shield" class="ic20 fg-warn"></i><span style="font-size:14px;font-weight:700" data-i18n="Failsafe (signal loss)">Failsafe (signal loss)</span></div>
-              <div><label class="f-label" data-i18n="Trigger delay">Trigger delay</label><div style="display:flex;align-items:center;gap:9px"><input id="a-fsdelay" type="range" min="0" max="30" value="5" style="flex:1;accent-color:var(--accent)"/><span id="a-fsdelay-val" style="font:500 13px 'DM Mono';color:var(--accent);width:74px;text-align:right">5 s</span></div></div>
+          <div class="card" style="gap:16px">
+              <div class="row-9"><i data-lucide="shield" class="ic20 fg-warn"></i><span style="font-size:14px;font-weight:700" data-i18n="Failsafe (signal loss)">Failsafe (signal loss)</span></div>
+              <div><label class="f-label" data-i18n="Trigger delay">Trigger delay</label><div class="row-9"><input class="range-grow" id="a-fsdelay" type="range" min="0" max="30" value="5"/><span id="a-fsdelay-val" style="font:500 13px 'DM Mono';color:var(--accent);width:74px;text-align:right">5 s</span></div></div>
               <div><label class="f-label" data-i18n="Behavior">Behavior</label><select class="field field-text" id="a-fsmode"><option value="1" data-i18n="Full blackout">Full blackout</option><option value="0" data-i18n="Hold last look">Hold last look</option><option value="2" data-i18n="Solid color">Solid color</option><option value="3" data-i18n="Play a scene">Play a scene</option></select></div>
               <div id="a-fsscene-row" style="display:none"><label class="f-label" data-i18n="Failsafe scene">Failsafe scene</label><select class="field field-text" id="a-fsscene"></select></div>
             </div>
@@ -594,24 +626,24 @@
 
       <!-- ===== OUTPUT PATCH ===== -->
       <div data-screen="fixpatch" style="display:none">
-        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
-          <div id="fixpatch-list-mount" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px"></div>
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)"><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Channel 1</h3><span data-dp-summary style="font:500 12px 'DM Mono';color:var(--fg-3)"></span></div>
+        <div class="split-300">
+          <div class="card-xs" id="fixpatch-list-mount"></div>
+          <div class="panel">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)"><h3 class="h-lg" data-chan-title>Channel 1</h3><span class="mono-12" data-dp-summary></span></div>
             <div data-dp-off class="hint" style="display:none" data-i18n="This output is off: nothing to patch.">This output is off: nothing to patch.</div>
             <div data-dp-fields style="display:grid;grid-template-columns:1fr;gap:14px">
-              <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Fixtures (DMX profiles)">Fixtures (DMX profiles)</div><div class="hint" data-i18n="Each fixture answers to the channels of its DMX profile — dimmer, shutter, effect… — on another address range.">Each fixture answers to the channels of its DMX profile — dimmer, shutter, effect… — on another address range.</div></div><input id="cd-fixctl" type="checkbox" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex:none"/></label>
+              <label class="toggle-row"><div><div class="h-sm" data-i18n="Fixtures (DMX profiles)">Fixtures (DMX profiles)</div><div class="hint" data-i18n="Each fixture answers to the channels of its DMX profile — dimmer, shutter, effect… — on another address range.">Each fixture answers to the channels of its DMX profile — dimmer, shutter, effect… — on another address range.</div></div><input id="cd-fixctl" type="checkbox" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex:none"/></label>
               <div id="dp-fc-fields" style="display:grid;grid-template-columns:1fr;gap:14px;padding:0 0 4px 15px;border-left:2px solid var(--line-2);display:none">
                 <div>
                   <label class="f-label-caps"><span data-i18n="Fixtures' Art-Net address">Fixtures' Art-Net address</span> <span class="fg-4">net · sub · uni</span></label>
-                  <div style="display:flex;width:100%;align-items:center;gap:5px;background:var(--well);border:1px solid var(--line-3);border-radius:0;padding:7px 9px">
-                    <input id="cd-fnet" type="number" min="0" max="127" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
-                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
-                    <input id="cd-fsub" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
-                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
-                    <input id="cd-funi" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
+                  <div class="uni-box">
+                    <input class="uni-in" id="cd-fnet" type="number" min="0" max="127" value="0"/>
+                    <span class="uni-dot">.</span>
+                    <input class="uni-in" id="cd-fsub" type="number" min="0" max="15" value="0"/>
+                    <span class="uni-dot">.</span>
+                    <input class="uni-in" id="cd-funi" type="number" min="0" max="15" value="0"/>
                   </div>
-                  <div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="cd-funi-flat">0</span></div>
+                  <div class="sub-note"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="cd-funi-flat">0</span></div>
                 </div>
                 <div>
                   <label class="f-label-caps" data-i18n="Fixtures' DMX start address">Fixtures' DMX start address</label>
@@ -619,7 +651,7 @@
                 </div>
                 <div id="dp-row-fix">
                   <label class="f-label-caps"><span data-i18n="Fixture profiles">Fixture profiles</span> <span class="fg-4" data-i18n="one after the other from the start address">one after the other from the start address</span></label>
-                  <div id="cd-patchfix" style="display:flex;flex-direction:column;gap:6px"></div>
+                  <div class="stack-6" id="cd-patchfix"></div>
                 </div>
               </div>
               <div data-dp-note class="hint"></div>
@@ -631,13 +663,13 @@
 
       <!-- ===== PIXEL PATCH ===== -->
       <div data-screen="pixpatch" style="display:none">
-        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
-          <div id="pixpatch-list-mount" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:12px;display:flex;flex-direction:column;gap:6px"></div>
-          <div style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:22px 24px">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)"><h3 data-chan-title style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Channel 1</h3><span data-dp-summary style="font:500 12px 'DM Mono';color:var(--fg-3)"></span></div>
+        <div class="split-300">
+          <div class="card-xs" id="pixpatch-list-mount"></div>
+          <div class="panel">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)"><h3 class="h-lg" data-chan-title>Channel 1</h3><span class="mono-12" data-dp-summary></span></div>
             <div data-dp-off class="hint" style="display:none" data-i18n="This output is off: nothing to patch.">This output is off: nothing to patch.</div>
             <div data-dp-fields style="display:grid;grid-template-columns:1fr;gap:14px">
-              <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--well);border:1px solid var(--line);border-radius:0;padding:13px 15px;cursor:pointer"><div><div class="h-sm" data-i18n="Pixel mapping">Pixel mapping</div><div class="hint" data-i18n="Every LED has its own DMX channels, on its own address range.">Every LED has its own DMX channels, on its own address range.</div></div><input id="cd-pixmap" type="checkbox" checked style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex:none"/></label>
+              <label class="toggle-row"><div><div class="h-sm" data-i18n="Pixel mapping">Pixel mapping</div><div class="hint" data-i18n="Every LED has its own DMX channels, on its own address range.">Every LED has its own DMX channels, on its own address range.</div></div><input id="cd-pixmap" type="checkbox" checked style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex:none"/></label>
               <div id="dp-pm-fields" style="display:grid;grid-template-columns:1fr;gap:14px;padding:0 0 4px 15px;border-left:2px solid var(--line-2)">
                 <div id="cd-row-pack">
                   <label class="f-label-caps" data-i18n="DMX layout">DMX layout</label>
@@ -645,14 +677,14 @@
                 </div>
                 <div>
                   <label class="f-label-caps"><span data-i18n="Art-Net address">Art-Net address</span> <span class="fg-4">net · sub · uni</span></label>
-                  <div style="display:flex;width:100%;align-items:center;gap:5px;background:var(--well);border:1px solid var(--line-3);border-radius:0;padding:7px 9px">
-                    <input id="cd-net" type="number" min="0" max="127" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
-                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
-                    <input id="cd-sub" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
-                    <span style="color:var(--fg-6);font:500 13px 'DM Mono'">.</span>
-                    <input id="cd-uni" type="number" min="0" max="15" value="0" style="width:46px;background:transparent;border:none;color:var(--fg);text-align:center;font:500 13px 'DM Mono';outline:none"/>
+                  <div class="uni-box">
+                    <input class="uni-in" id="cd-net" type="number" min="0" max="127" value="0"/>
+                    <span class="uni-dot">.</span>
+                    <input class="uni-in" id="cd-sub" type="number" min="0" max="15" value="0"/>
+                    <span class="uni-dot">.</span>
+                    <input class="uni-in" id="cd-uni" type="number" min="0" max="15" value="0"/>
                   </div>
-                  <div style="font:500 11px 'DM Mono';color:var(--fg-4);margin-top:5px"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="cd-uni-flat">0</span></div>
+                  <div class="sub-note"><span data-i18n="= absolute universe">= absolute universe</span> <span class="fg-accent" id="cd-uni-flat">0</span></div>
                 </div>
                 <div>
                   <label class="f-label-caps" data-i18n="DMX start address">DMX start address</label>
@@ -672,7 +704,7 @@
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:16px">
             <div class="card">
               <span class="eyebrow" data-i18n="RENDER PIPELINE">RENDER PIPELINE</span>
-              <div style="display:flex;flex-direction:column;gap:7px;font:500 12.5px 'DM Mono'">
+              <div class="kv-list">
                 <div class="row-between"><span class="fg-2">fps</span><span class="fg-accent" data-live="d-fps">—</span></div>
                 <div class="row-between"><span class="fg-2" data-i18n="effects">effects</span><span data-live="d-decode">—</span></div>
               <div class="row-between"><span class="fg-2" data-i18n="effects max">effects max</span><span data-live="d-decodemax">—</span></div>
@@ -688,7 +720,7 @@
             </div>
             <div class="card">
               <span class="eyebrow" data-i18n="MEMORY">MEMORY</span>
-              <div style="display:flex;flex-direction:column;gap:7px;font:500 12.5px 'DM Mono'">
+              <div class="kv-list">
                 <div class="row-between"><span class="fg-2" data-i18n="heap free">heap free</span><span data-live="d-heap">—</span></div>
                 <div class="row-between"><span class="fg-2" data-i18n="heap min">heap min</span><span data-live="d-heapmin">—</span></div>
                 <div class="row-between"><span class="fg-2" data-i18n="DMA RAM free">DMA RAM free</span><span data-live="d-dma">—</span></div>
@@ -699,7 +731,7 @@
             </div>
             <div class="card">
               <span class="eyebrow" data-i18n="RECEPTION">RECEPTION</span>
-              <div style="display:flex;flex-direction:column;gap:7px;font:500 12.5px 'DM Mono'">
+              <div class="kv-list">
                 <div class="row-between"><span class="fg-2">ArtNet</span><span data-live="d-art">—</span></div>
                 <div class="row-between"><span class="fg-2" data-i18n="ArtNet ctrl">ArtNet ctrl</span><span data-live="d-artctrl">—</span></div>
                 <div class="row-between"><span class="fg-2">sACN</span><span data-live="d-sacn">—</span></div>
@@ -708,7 +740,7 @@
             </div>
             <div class="card">
               <span class="eyebrow" data-i18n="SYSTEM">SYSTEM</span>
-              <div style="display:flex;flex-direction:column;gap:7px;font:500 12.5px 'DM Mono'">
+              <div class="kv-list">
                 <div class="row-between"><span class="fg-2" data-i18n="uptime">uptime</span><span data-live="d-uptime">—</span></div>
                 <div class="row-between"><span class="fg-2" data-i18n="firmware">firmware</span><span data-live="d-ver">—</span></div>
                 <div class="row-between"><span class="fg-2">IDF</span><span data-live="d-idf">—</span></div>
@@ -726,7 +758,7 @@
           <div class="card">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
               <span class="eyebrow" data-i18n="DEVICE LOGS">DEVICE LOGS</span>
-              <div style="display:flex;align-items:center;gap:8px">
+              <div class="row-8">
                 <select id="d-loglevel" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 9px;font:500 12px 'DM Mono'"><option value="error">error</option><option value="warn">warn</option><option value="info" selected>info</option><option value="debug">debug</option><option value="verbose">verbose</option><option value="none">none</option></select>
                 <label style="display:inline-flex;align-items:center;gap:6px;font:500 12px 'DM Mono';color:var(--fg-2);cursor:pointer"><input id="d-autolog" type="checkbox" checked style="accent-color:var(--accent)"/><span data-i18n="auto">auto</span></label>
                 <button class="btn-sec" data-action="logs-refresh" style="background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:6px 11px;font:500 12px 'DM Mono';cursor:pointer" data-i18n="Refresh">Refresh</button>
@@ -1169,7 +1201,16 @@ function api(method,path,body,retry){
 }
 // Downloads go through here: the GitHub Pages demo (tools/demo/mock.js) has no
 // box to navigate to and builds the file in the page instead.
-function downloadUrl(u){ if(window.pfDemoDownload) return window.pfDemoDownload(u); location.href=u; }
+function downloadUrl(u){ if(window.pfDemoDownload) return window.pfDemoDownload(u); pageLeave(function(){ location.href=u; }); }
+// Closing or reloading the tab with changes not saved: the browser's own
+// warning (its text, not ours). Not when the page itself navigates — a
+// download, the reload after a reboot or a flash, the move to a new address.
+var pageLeaving=false;
+function pageLeave(go){ pageLeaving=true; go(); setTimeout(function(){ pageLeaving=false; },1000); }
+window.addEventListener('beforeunload',function(e){
+  if(pageLeaving || (dirty.size===0 && !langDirty)) return;
+  e.preventDefault(); e.returnValue='';
+});
 function toast(msg,err){ var e=document.querySelector('[data-live="save-state"]'); if(!e) return; e.textContent=msg; e.style.color=err?'var(--danger)':'var(--accent)'; }
 
 /* ─────────── dirty / save bar ─────────── */
@@ -1193,7 +1234,7 @@ function dashTile(c){
 function chanRow(c){
   return '<div data-chan="'+c.idx+'" style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:0;cursor:pointer;background:var(--well);border:1px solid var(--line)">'
     +'<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:0;background:var(--panel);border:1px solid var(--line-3);font:500 12px \'DM Mono\';color:var(--fg-2);flex:none">'+c.n+'</span>'
-    +'<div style="flex:1;min-width:0"><div class="mono-13">'+c.proto+'</div><div class="mono-11">'+c.px+' · '+c.uni+'</div></div>'
+    +'<div class="grow"><div class="mono-13">'+c.proto+'</div><div class="mono-11">'+c.px+' · '+c.uni+'</div></div>'
     +'<span style="width:8px;height:8px;border-radius:50%;background:'+c.dot+';flex:none"></span></div>';
 }
 function chip(on){ return 'width:27px;height:25px;display:flex;align-items:center;justify-content:center;border-radius:0;font:500 11px \'DM Mono\';cursor:pointer;'+(on?'background:rgba(63,212,99,.16);color:var(--accent);border:1px solid rgba(63,212,99,.4)':'background:var(--well);color:var(--fg-6);border:1px solid var(--line)'); }
@@ -1306,7 +1347,7 @@ function scDragEnd(){
 function sqBtn(attr,icon,title){ return '<button class="btn-sec" '+attr+' title="'+esc(t(title))+'" style="width:30px;height:30px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0"><i data-lucide="'+icon+'" class="ic14"></i></button>'; }
 function slider(kind,e,label,max,val,txt){
   return '<div><div class="eyebrow-sm">'+t(label)+'</div>'
-    +'<div style="display:flex;align-items:center;gap:9px"><input type="range" min="0" max="'+max+'" value="'+val+'" data-fx-'+kind+'="'+e.n+'" style="flex:1;accent-color:var(--accent);cursor:pointer"/><span data-fx-'+kind+'val="'+e.n+'" style="font:500 12px \'DM Mono\';color:var(--fg-2);min-width:52px;text-align:right">'+txt+'</span></div></div>';
+    +'<div class="row-9"><input type="range" min="0" max="'+max+'" value="'+val+'" data-fx-'+kind+'="'+e.n+'" style="flex:1;accent-color:var(--accent);cursor:pointer"/><span data-fx-'+kind+'val="'+e.n+'" style="font:500 12px \'DM Mono\';color:var(--fg-2);min-width:52px;text-align:right">'+txt+'</span></div></div>';
 }
 var SEL_STYLE='width:100%;background:var(--well);border:1px solid var(--line-3);color:var(--fg);border-radius:0;padding:9px 12px;font:500 13px \'Figtree\'';
 var NAME_STYLE='width:100%;background:transparent;border:none;color:var(--fg);font:700 16px \'Figtree\';padding:2px 0;outline:none';
@@ -1327,7 +1368,7 @@ var FXP={px:60,fps:30,q:[],f:0,next:0,busy:false,key:'',err:0,timer:null,last:nu
 var FXP_SIZES=[30,60,144];
 function fxPreviewHTML(){
   var opts=FXP_SIZES.map(function(n){ return '<option value="'+n+'"'+(n===FXP.px?' selected':'')+'>'+n+' LED</option>'; }).join('');
-  return '<div><div style="display:flex;align-items:center;gap:8px"><div class="eyebrow-sm" style="flex:1;margin:0">'+t('PREVIEW')+'</div>'
+  return '<div><div class="row-8"><div class="eyebrow-sm" style="flex:1;margin:0">'+t('PREVIEW')+'</div>'
     +'<select data-fx-pvsize title="'+esc(t('LEDs in the preview'))+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg-2);border-radius:0;padding:3px 6px;font:500 11px \'DM Mono\'">'+opts+'</select></div>'
     +'<canvas data-fx-preview width="'+FXP.px+'" height="1" style="display:block;width:100%;height:30px;margin-top:6px;background:#050605;border:1px solid var(--line);image-rendering:pixelated"></canvas>'
     +'<div class="hint" style="margin-top:5px">'+esc(t('Drawn by the box, as on a strip of that many LEDs — unsaved changes included.'))+'</div></div>';
@@ -1377,9 +1418,9 @@ function effectCardHTML(e){
     +(fx.pr?slider('param',e,fx.pr,Math.max(fx.pm,e.param),e.param,paramText(e)):'<div></div>');
   var users=fxUsers(e.n-1);
   return '<div data-fx-card="'+e.n+'" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:17px 18px;display:flex;flex-direction:column;gap:14px">'
-    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<div class="row-12">'
     +'<span data-role="bigsw" style="width:38px;height:38px;border-radius:0;background:'+fxSwatch(e)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div class="eyebrow">'+t('EFFECT')+' '+e.n+'</div>'
+    +'<div class="grow"><div class="eyebrow">'+t('EFFECT')+' '+e.n+'</div>'
     +'<input data-fx-name="'+e.n+'" value="'+esc(e.name)+'" placeholder="'+esc(t('Unnamed effect — click to name'))+'" maxlength="15" style="'+NAME_STYLE+'"/></div></div>'
     +fxPreviewHTML()
     +'<div><div class="eyebrow-sm">'+t('GENERATOR')+'</div><select data-fx-gen="'+e.n+'" style="'+SEL_STYLE+'">'+opts+'</select></div>'
@@ -1394,10 +1435,10 @@ function effectCardHTML(e){
 function effectRowHTML(e,i){
   var on=i===curEffect;
   return '<div data-fx-row="'+i+'" class="pf-row" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:0;cursor:pointer;background:'+(on?'rgba(63,212,99,.07)':'var(--well)')+';border:1px solid '+(on?'rgba(63,212,99,.45)':'var(--line)')+'">'
-    +'<span data-frow-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
+    +'<span class="grip" data-frow-grip title="'+esc(t('Drag to reorder'))+'"><i data-lucide="grip-vertical" class="ic14"></i></span>'
     +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4);width:18px;text-align:right;flex:none">'+(i+1)+'</span>'
     +'<span style="width:22px;height:22px;background:'+fxSwatch(e)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.name||'—')+'</div><div class="mono-11">'+esc(t(fxOf(e).n))+'</div></div></div>';
+    +'<div class="grow"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.name||'—')+'</div><div class="mono-11">'+esc(t(fxOf(e).n))+'</div></div></div>';
 }
 function renderEffectList(){
   var m=el('fx-list-mount'); if(!m) return;
@@ -1428,7 +1469,7 @@ function partRowHTML(sc,k){
   if(p.effect>=EFFECTS.length) fxOpts+='<option value="'+p.effect+'" selected>'+(p.effect+1)+' · '+esc(t('missing effect'))+'</option>';
   var modeOpts=FIX_MODES.map(function(m){ return '<option value="'+m[0]+'"'+((p.mode||'each')===m[0]?' selected':'')+'>'+esc(t(m[1]))+'</option>'; }).join('');
   return '<div data-pt-row="'+k+'" style="background:var(--well);border:1px solid var(--line);padding:10px 11px;display:flex;flex-direction:column;gap:9px">'
-    +'<div style="display:flex;align-items:center;gap:9px">'
+    +'<div class="row-9">'
     +'<span style="width:22px;height:22px;background:'+fxSwatch(EFFECTS[p.effect])+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
     +'<div style="display:flex;gap:5px;flex:1;flex-wrap:wrap">'+chips+'</div>'
     +sqBtn('data-pt-del="'+k+'"','x','Remove this part')+'</div>'
@@ -1443,9 +1484,9 @@ function sceneCardHTML(sc){
   var rows=''; for(var k=0;k<sc.parts.length;k++) rows+=partRowHTML(sc,k);
   var canAdd=sc.parts.length<MAX_PARTS && sceneMask(sc)!==255 && EFFECTS.length>0;
   return '<div data-scene-card="'+sc.n+'" style="background:var(--panel);border:1px solid var(--line-2);border-radius:0;padding:17px 18px;display:flex;flex-direction:column;gap:14px">'
-    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<div class="row-12">'
     +'<span data-role="bigsw" style="width:38px;height:38px;border-radius:0;background:'+sceneSwatch(sc)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div class="eyebrow">'+t('SCENE')+' '+sc.n+'</div>'
+    +'<div class="grow"><div class="eyebrow">'+t('SCENE')+' '+sc.n+'</div>'
     +'<input data-sc-name="'+sc.n+'" value="'+esc(sc.name)+'" placeholder="'+esc(t('Empty scene — click to name'))+'" maxlength="15" style="'+NAME_STYLE+'"/></div>'
     +'<button class="btn-sec" data-sc-play="'+sc.n+'" style="width:32px;height:32px;border-radius:0;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none"><i data-lucide="play" class="ic16"></i></button></div>'
     +'<div><div class="eyebrow-sm">'+t('PARTS')+'</div>'
@@ -1483,10 +1524,10 @@ function playingText(i){ var p=playsText(i); return p?(t('Playing')+' · '+p):''
 function sceneRowHTML(sc,i,active){
   var on=i===curScene;
   return '<div data-scene-row="'+i+'" class="pf-row" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:0;cursor:pointer;background:'+(on?'rgba(63,212,99,.07)':'var(--well)')+';border:1px solid '+(on?'rgba(63,212,99,.45)':'var(--line)')+'">'
-    +'<span data-srow-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
+    +'<span class="grip" data-srow-grip title="'+esc(t('Drag to reorder'))+'"><i data-lucide="grip-vertical" class="ic14"></i></span>'
     +'<span style="font:500 11px \'DM Mono\';color:var(--fg-4);width:18px;text-align:right;flex:none">'+(i+1)+'</span>'
     +'<span style="width:22px;height:22px;background:'+sceneSwatch(sc)+';flex:none;border:1px solid rgba(255,255,255,.12)"></span>'
-    +'<div style="flex:1;min-width:0"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div class="mono-11">'+esc(sceneSummary(sc))+(playsText(i)?'<span class="fg-accent" data-sc-outs="'+i+'"> · '+esc(playsText(i))+'</span>':'')+'</div></div>'
+    +'<div class="grow"><div style="font:600 13px \'Figtree\';color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(sc.name||'—')+'</div><div class="mono-11">'+esc(sceneSummary(sc))+(playsText(i)?'<span class="fg-accent" data-sc-outs="'+i+'"> · '+esc(playsText(i))+'</span>':'')+'</div></div>'
     +'<button class="'+(i===active?'btn-pri':'btn-sec')+'" data-sc-play="'+sc.n+'" style="width:28px;height:28px;border-radius:0;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;'+(i===active?'background:var(--accent);border:1px solid var(--accent);color:var(--on-accent)':'background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2)')+'"><i data-lucide="play" class="ic14"></i></button></div>';
 }
 var lastActiveScene=-1;
@@ -2060,7 +2101,7 @@ function renderGaps(){
   var rows=c.lay.map(function(it,k){
     var tag=it.t==='f'?('F'+(++nf)):it.t==='d'?'✕':'·', from=phys; phys+=it.n;
     return '<div data-lay-row="'+k+'" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-      +'<span data-lay-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
+      +'<span class="grip" data-lay-grip title="'+esc(t('Drag to reorder'))+'"><i data-lucide="grip-vertical" class="ic14"></i></span>'
       +'<span style="font:600 11px \'DM Mono\';color:'+(it.t==='f'?'var(--accent)':it.t==='d'?'var(--danger)':'var(--fg-4)')+';width:28px">'+tag+'</span>'
       +'<select id="cd-lay-t-'+k+'" style="'+inp+';width:190px">'+LAY_TYPES.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===it.t?' selected':'')+'>'+esc(t(o[1]))+'</option>'; }).join('')+'</select>'
       +'<input id="cd-lay-n-'+k+'" type="number" min="1" max="1024" value="'+it.n+'" style="width:80px;'+inp+'"/>'
@@ -2600,7 +2641,7 @@ function renderPlaylist(){
       +'<span class="fg-4">'+(i+1)+'</span>'
       +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)">'+esc(it.name)+'</span>'
       +'<input data-pl-repeat="'+i+'" type="number" min="1" max="255" value="'+it.repeat+'" title="'+esc(t('Plays in a row'))+'" style="width:52px;background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:4px;font:500 12px \'DM Mono\'"/>'
-      +'<span style="display:flex;gap:4px">'+plBtn('data-pl-up',i,'arrow-up','Move up')+plBtn('data-pl-down',i,'arrow-down','Move down')+plBtn('data-pl-del',i,'x','Remove')+'</span></div>';
+      +'<span class="flex-4">'+plBtn('data-pl-up',i,'arrow-up','Move up')+plBtn('data-pl-down',i,'arrow-down','Move down')+plBtn('data-pl-del',i,'x','Remove')+'</span></div>';
   }).join('');
   createIcons(m);
 }
@@ -2665,7 +2706,7 @@ function renderProfileEditor(){
       +'<span style="font:500 13px \'DM Mono\';color:var(--accent)">'+dmx+'</span>'
       +'<select data-pf-fn="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:7px 9px;font:500 13px \'Figtree\'">'+opts+'</select>'
       +'<span>'+opt+'</span>'
-      +'<span style="display:flex;gap:4px"><button class="btn-sec" data-pf-up="'+i+'" title="'+esc(t('Move up'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↑</button><button class="btn-sec" data-pf-down="'+i+'" title="'+esc(t('Move down'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↓</button></span>'
+      +'<span class="flex-4"><button class="btn-sec icon-btn" data-pf-up="'+i+'" title="'+esc(t('Move up'))+'">↑</button><button class="btn-sec icon-btn" data-pf-down="'+i+'" title="'+esc(t('Move down'))+'">↓</button></span>'
       +'<button class="btn-dng" data-pf-del="'+i+'" title="'+esc(t('Delete'))+'" style="width:26px;height:26px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);cursor:pointer;justify-self:end">×</button>'
       +'</div>';
   });
@@ -2713,8 +2754,8 @@ function renderGroupEditor(){
   var chip=function(on,dim){ return 'display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:28px;padding:0 8px;cursor:pointer;font:500 12px \'DM Mono\';border:1px solid '+(on?'var(--accent)':'var(--line-3)')+';background:'+(on?'rgba(63,212,99,.15)':'rgba(237,238,234,.04)')+';color:'+(on?'var(--accent)':dim?'var(--fg-5)':'var(--fg-2)'); };
   var mem=g.members.map(function(m,k){
     var gone=m[1]>=fixtureCount(m[0]);
-    return '<div data-gm-row="'+k+'" style="display:flex;align-items:center;gap:8px">'
-      +'<span data-gm-grip title="'+esc(t('Drag to reorder'))+'" style="display:flex;color:var(--fg-6);cursor:grab;touch-action:none;padding:4px 0"><i data-lucide="grip-vertical" class="ic14"></i></span>'
+    return '<div class="row-8" data-gm-row="'+k+'">'
+      +'<span class="grip" data-gm-grip title="'+esc(t('Drag to reorder'))+'"><i data-lucide="grip-vertical" class="ic14"></i></span>'
       +'<span style="font:500 11px \'DM Mono\';color:var(--fg-5);width:24px">'+(k+1)+'</span>'
       +'<span style="flex:1;font:500 13px \'DM Mono\';color:'+(gone?'var(--warn)':'var(--fg)')+'">'+esc(memberLabel(m))+(gone?' — '+esc(t('no such fixture now')):'')+'</span>'
       +sqBtn('data-gm-del="'+k+'"','x','Remove')+'</div>'; }).join('');
@@ -2797,7 +2838,7 @@ function renderControl(){
       +'<select data-ct-fn="'+i+'" style="background:var(--well);border:1px solid var(--line-3);color:var(--fg);padding:7px 9px;font:500 13px \'Figtree\'">'+opts+'</select>'
       +'<span style="display:flex;gap:4px;align-items:center">'+tgt+outs+'</span>'
       +'<span>'+opt+'</span>'
-      +'<span style="display:flex;gap:4px"><button class="btn-sec" data-ct-up="'+i+'" title="'+esc(t('Move up'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↑</button><button class="btn-sec" data-ct-down="'+i+'" title="'+esc(t('Move down'))+'" style="width:26px;height:26px;background:rgba(237,238,234,.04);border:1px solid var(--line-3);color:var(--fg-2);cursor:pointer">↓</button></span>'
+      +'<span class="flex-4"><button class="btn-sec icon-btn" data-ct-up="'+i+'" title="'+esc(t('Move up'))+'">↑</button><button class="btn-sec icon-btn" data-ct-down="'+i+'" title="'+esc(t('Move down'))+'">↓</button></span>'
       +'<button class="btn-dng" data-ct-del="'+i+'" title="'+esc(t('Delete'))+'" style="width:26px;height:26px;background:transparent;border:1px solid var(--danger-line);color:var(--danger);cursor:pointer;justify-self:end">×</button>'
       +'</div>';
   });
@@ -2886,7 +2927,7 @@ function netReconnect(n){
   var timer=null;
   box.querySelector('[data-netmove-stay]').onclick=function(){ if(timer) clearInterval(timer); box.remove(); };
   if(!target) return;
-  function probe(){ fetch(target+'api/status',{mode:'no-cors',cache:'no-store'}).then(function(){ clearInterval(timer); location.href=target; }).catch(function(){}); }
+  function probe(){ fetch(target+'api/status',{mode:'no-cors',cache:'no-store'}).then(function(){ clearInterval(timer); pageLeave(function(){ location.href=target; }); }).catch(function(){}); }
   timer=setInterval(probe,2000); setTimeout(probe,800);
 }
 
@@ -3013,7 +3054,7 @@ function modalConfirm(){
   var spin=document.querySelector('[data-modal-spin]'); if(spin) spin.style.color=modalCfg.accent;
   var path=modalCfg.kind==='reset'?'/api/factory-reset':'/api/reboot';
   api('POST',path,{}).catch(function(){});
-  clearTimeout(modalT); modalT=setTimeout(function(){ closeModal(); location.reload(); },9000);
+  clearTimeout(modalT); modalT=setTimeout(function(){ closeModal(); pageLeave(function(){ location.reload(); }); },9000);
 }
 function closeModal(){ if(md.bd) md.bd.style.display='none'; clearTimeout(modalT); }
 function modalCancel(){ var cb=modalCfg.onCancel; closeModal(); if(cb) cb(); }
@@ -3067,7 +3108,7 @@ function otaUpload(){
   var f=el('ota-file').files[0]; if(!f) return;
   if(!confirm(t('Flash')+' '+f.name+' ('+Math.round(f.size/1024)+' KB)? '+t('The box reboots on success.'))){ el('ota-file').value=''; return; }
   toast(t('Firmware upload…'));
-  uploadXhr('/api/ota',f,el('ota-bar'),el('ota-prog'),function(){ toast(t('Flashed — rebooting, reload in ~10 s')); setTimeout(function(){ location.reload(); },12000); });
+  uploadXhr('/api/ota',f,el('ota-bar'),el('ota-prog'),function(){ toast(t('Flashed — rebooting, reload in ~10 s')); setTimeout(function(){ pageLeave(function(){ location.reload(); }); },12000); });
 }
 function restoreUpload(){
   var f=el('restore-file').files[0]; if(!f) return;

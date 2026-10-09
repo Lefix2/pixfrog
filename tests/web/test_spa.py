@@ -1429,3 +1429,22 @@ def test_leaving_a_screen_with_unsaved_changes_asks_to_save_or_cancel(page, devi
     nav(page, "network")
     expect(modal).to_be_hidden()
     expect(page.locator('[data-screen="network"]')).to_be_visible()
+
+
+def test_leaving_the_page_with_unsaved_changes_asks_the_browser(page, device):
+    seen = []
+    page.on("dialog", lambda d: (seen.append(d.type), d.dismiss()))
+    nav(page, "channels")
+    page.locator("#cd-bri").click()  # a real gesture: the browser asks only after one
+    page.keyboard.press("End")
+    page.keyboard.type("1")
+    expect(page.locator('[data-live="save-state"]')).to_contain_text("pending")
+    # Leaving (here a navigation): the browser's own "leave site?"; declined, the page stays.
+    with pytest.raises(Exception):
+        page.goto("about:blank", timeout=3000)
+    assert seen == ["beforeunload"]
+    assert page.url.startswith(device.url)
+    # Saved: the page leaves without a word.
+    save(page)
+    page.goto("about:blank")
+    assert seen == ["beforeunload"]
