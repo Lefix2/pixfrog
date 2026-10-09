@@ -69,9 +69,6 @@ on the one before.
 
 ## Network & protocols
 
-- [ ] **sACN multicast on a real LAN** — only unicast was validated (bench
-      behind a NAT). Drive the board from xLights or a desk on the same LAN,
-      incl. a universe re-config (5 s join refresh) and the control universe.
 - [ ] **Inter-controller frame sync (PTP)** — genlock several boxes (±µs) where
       no ArtSync master exists. The P4 EMAC does IEEE 1588v2 hardware
       timestamping and IDF ships the API + a master/slave example; feed the
@@ -102,9 +99,6 @@ on the one before.
 
 ## Hardware & bench
 
-- [ ] **Multi-board validation** — the aggregated multi-node web UI and
-      PTP/sync work need ≥ 2 boards on one LAN — incl. the pixfrog.local
-      hand-over (holder unplugged → next box within ~45 s) and the hub.
 - [ ] **Physical DMX input** — RS-485 receive on the shield to drive the box
       without a network (hardware work).
 

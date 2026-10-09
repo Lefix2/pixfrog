@@ -10,7 +10,8 @@ cd tools/hw_validate && ./run_all.py              # all but OTA (~3 min)
 ```
 Validators: artnet, sacn, failsafe, scenes, show, control_mode, output, identify_gamma, fseq,
 display, webops,
-auth, network (needs a DHCP server on the bench LAN), ota.
+auth, network (needs a DHCP server on the bench LAN), ota. Opt-in (not in the default run):
+`sacn_multicast` (`MCAST_FROM=<sender on the LAN>`), `multiboard` (`OTHER_IP=<sibling>`).
 Env: `PORT` (default /dev/ttyACM0), `BOARD_IP` (default 192.168.1.200),
 `PIXFROG_BIN` for the OTA image (default `build/pixfrog.bin`).
 
