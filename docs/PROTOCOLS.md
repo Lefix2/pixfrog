@@ -19,6 +19,26 @@ Reference for timings, clock formulas and DMA encoding for every protocol pixfro
 | SK9822   | SPI-like   | 1–30 MHz CLOCK       | BGR           | 32         | APA102-compatible timing    |
 | LPD8806  | SPI-like   | 1–20 MHz CLOCK       | GRB           | 24         | MSB of every byte must be 1 |
 
+The 1-wire strips take any colour order: a 3-colour strip one of the six RGB
+permutations, an RGBW strip (SK6812 RGBW, WS2814) one of the twelve with W last
+or first — `RGBW` `RBGW` `GRBW` `GBRW` `BRGW` `BGRW` and `WRGB` `WRBG` `WGRB`
+`WGBR` `WBRG` `WBGR` (`led::kColorOrderNames`, the same list in the web, the
+console and the menus).
+
+**The white LED of an RGBW strip.** The colours the box makes itself — effects,
+scenes, fixtures, the failsafe and identify — are RGB. Per output, the `white`
+setting (web "White LED", TFT `White`, console `ch N white`, API `"white"`) says
+what the W LED does with them:
+
+| Mode | W | R, G, B |
+|---|---|---|
+| `substitute` (default) | the white the three share, min(R,G,B) | minus that white: same colour, a true white LED |
+| `add` | min(R,G,B) as well | unchanged: brighter, pastels whiten |
+| `off` | dark | unchanged: white is an R+G+B mix |
+
+A fixture's own White channel stays on W on top. A desk's pixel data is never
+converted: with pixel mapping on an RGBW strip the desk sends W itself.
+
 ---
 
 ## 2. 1-wire NRZ timings

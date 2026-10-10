@@ -126,6 +126,11 @@ TEST(channel_get_set_and_validation) {
     EXPECT_TRUE(run("ch 2 pixels 300"));
     EXPECT_TRUE(run("ch 2 universe 20"));
     EXPECT_TRUE(run("ch 2 order GRB"));
+    EXPECT_TRUE(run("ch 2 white add"));
+    EXPECT_TRUE(run("ch 2"));
+    EXPECT_TRUE(has("white=add"));
+    EXPECT_FALSE(run("ch 2 white bright"));
+    EXPECT_TRUE(run("ch 2 white substitute"));
     EXPECT_TRUE(run("ch 2 wb ff8000"));
     EXPECT_TRUE(run("ch 2 gaps 1:1,50:2"));
     EXPECT_TRUE(run("ch 2"));
@@ -138,6 +143,16 @@ TEST(channel_get_set_and_validation) {
     EXPECT_FALSE(run("ch 2 protocol 9"));
     EXPECT_FALSE(run("ch 2 pixels 0"));
     EXPECT_FALSE(run("ch 2 gaps 0:1"));
+    // RGBW orders: W last or first, by name or by index; W in the middle is none.
+    EXPECT_TRUE(run("ch 2 order WBGR"));
+    EXPECT_TRUE(run("ch 2"));
+    EXPECT_TRUE(has("order=WBGR"));
+    EXPECT_TRUE(run("ch 2 order 12"));
+    EXPECT_TRUE(run("ch 2"));
+    EXPECT_TRUE(has("order=WRGB"));
+    EXPECT_FALSE(run("ch 2 order RGWB"));
+    EXPECT_FALSE(run("ch 2 order 18"));
+    EXPECT_TRUE(run("ch 2 order GRB"));
     EXPECT_FALSE(run("ch 2 clock_hz 100"));
     EXPECT_TRUE(run("ch 2 gaps -"));
     EXPECT_TRUE(run("ch 2 protocol Off"));

@@ -1448,3 +1448,32 @@ def test_leaving_the_page_with_unsaved_changes_asks_the_browser(page, device):
     save(page)
     page.goto("about:blank")
     assert seen == ["beforeunload"]
+
+
+def test_an_rgbw_strip_takes_every_order_with_w_first_or_last(page, device):
+    device.post("/api/channel/0", {"protocol": "SK6812"})
+    page.reload()
+    nav(page, "channels")
+    opts = page.locator("#cd-order option").all_inner_texts()
+    assert len(opts) == 12 and opts[0] == "RGBW" and "WRGB" in opts and "WBGR" in opts
+    assert all(o[0] == "W" or o[-1] == "W" for o in opts)
+    page.locator("#cd-order").select_option("WRGB")
+    save(page)
+    assert device.get("/api/config")["channels"][0]["color_order"] == "WRGB"
+    device.post("/api/channel/0", {"protocol": "WS2815", "color_order": "GRB"})
+    page.reload()
+    nav(page, "channels")
+    assert len(page.locator("#cd-order option").all_inner_texts()) == 6  # RGB strip: the RGB six
+
+
+def test_the_white_led_of_an_rgbw_output(page, device):
+    nav(page, "channels")
+    expect(page.locator("#cd-row-white")).to_be_hidden()  # an RGB strip has none
+    device.post("/api/channel/0", {"protocol": "SK6812"})
+    page.reload()
+    nav(page, "channels")
+    expect(page.locator("#cd-row-white")).to_be_visible()
+    expect(page.locator("#cd-white")).to_have_value("substitute")  # the default
+    page.locator("#cd-white").select_option("add")
+    save(page)
+    assert device.get("/api/config")["channels"][0]["white"] == "add"

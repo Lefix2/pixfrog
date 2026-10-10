@@ -87,7 +87,6 @@ esp_err_t send_ok(httpd_req_t* req);
 esp_err_t send_err(httpd_req_t* req, int code, const char* msg);
 bool require_auth(httpd_req_t* req);
 extern const char* const kProtoNames[];
-extern const char* const kOrderNames[];
 int lookup(const char* const* names, size_t count, const char* s);
 
 // ── JSON shared between areas ────────────────────────────────────────────────

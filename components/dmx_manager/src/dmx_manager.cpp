@@ -1224,6 +1224,7 @@ void render_source(size_t ch, const config::ChannelConfig& cc, int src, uint8_t*
                                                                        : g.failsafe_mode;
         logic::fill_failsafe_pattern(buf, kMaxBytesPerChan, cc.pixel_count, bpp, mode, g.failsafe_r,
                                      g.failsafe_g, g.failsafe_b);
+        logic::white_from_rgb(buf, cc.pixel_count, bpp, config::white_mode(cc));
         return;
     }
 
@@ -1302,7 +1303,7 @@ void plays_frame_begin(uint64_t t) {
 
 // The plays' slices over output `ch`, then the per-fixture crossfades from
 // what each changed fixture showed.
-void overlay_plays(size_t ch, uint8_t* dst, uint8_t bpp, uint64_t t) {
+void overlay_plays(size_t ch, uint8_t* dst, uint8_t bpp, uint8_t white, uint64_t t) {
     const uint8_t* front = pixel_front_buffer(ch);
     for (size_t f = 0; f < config::kMaxFixtures; ++f) {
         const logic::Span& sp = g_spans_r[ch][f];
@@ -1321,6 +1322,9 @@ void overlay_plays(size_t ch, uint8_t* dst, uint8_t bpp, uint64_t t) {
                 if (g.members[m].output == ch && g.members[m].fixture == f) {
                     logic::put_member(dst, bpp, sp, g_play_strip[p] + g_play_offs[p][m] * 3,
                                       g_play_lens[p][m]);
+                    const uint32_t put = g_play_lens[p][m] < sp.count ? g_play_lens[p][m]
+                                                                      : sp.count;
+                    logic::white_from_rgb(dst + at, put, bpp, white);
                     break;
                 }
         }
@@ -1381,6 +1385,7 @@ bool decode_pixels_for_channel(size_t ch) {
         const uint8_t lvl = identify_lit() ? 255 : 0;  // 2 Hz blink, starting lit
         logic::fill_failsafe_pattern(dst, kMaxBytesPerChan, cc.pixel_count, bpp,
                                      config::kFailsafeColor, lvl, lvl, lvl);
+        logic::white_from_rgb(dst, cc.pixel_count, bpp, config::white_mode(cc));
         return true;
     }
 
@@ -1430,7 +1435,7 @@ bool decode_pixels_for_channel(size_t ch) {
     }
 
     // Scenes on groups: their fixtures, over whatever the output shows.
-    overlay_plays(ch, dst, led::bytes_per_pixel(cc.protocol), t);
+    overlay_plays(ch, dst, led::bytes_per_pixel(cc.protocol), config::white_mode(cc), t);
     dim_groups(ch, dst, led::bytes_per_pixel(cc.protocol));
 
     // Show control last: it dims whatever the output renders.

@@ -514,6 +514,13 @@ void commit_edit() {
         dmx::mark_channel_dirty(s.edit.channel);
         break;
     }
+    case Field::ChWhite: {
+        auto c = config::get_channel(s.edit.channel);
+        config::set_white_mode(c, static_cast<uint8_t>(v));
+        config::set_channel(s.edit.channel, c);
+        dmx::mark_channel_dirty(s.edit.channel);
+        break;
+    }
     case Field::ChBrightness: {
         auto c       = config::get_channel(s.edit.channel);
         c.brightness = brightness_from_pct(v);

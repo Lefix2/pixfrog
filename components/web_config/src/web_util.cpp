@@ -230,10 +230,6 @@ const char* const kProtoNames[] = { "Off",    "WS2815", "WS2812B", "WS2811", "SK
 static_assert(sizeof(kProtoNames) / sizeof(kProtoNames[0]) ==
               static_cast<size_t>(led::Protocol::COUNT));
 
-const char* const kOrderNames[] = { "RGB", "RBG", "GRB", "GBR", "BRG", "BGR", "RGBW", "GRBW" };
-static_assert(sizeof(kOrderNames) / sizeof(kOrderNames[0]) ==
-              static_cast<size_t>(led::ColorOrder::COUNT));
-
 int lookup(const char* const* names, size_t count, const char* s) {
     for (size_t i = 0; i < count; ++i)
         if (strcasecmp(names[i], s) == 0) return static_cast<int>(i);

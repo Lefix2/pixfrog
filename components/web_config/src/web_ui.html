@@ -437,6 +437,11 @@
                   <label class="f-label-caps" data-i18n="Color order">Color order</label>
                   <select class="field field-text" id="cd-order"><option>RGB</option><option>GRB</option><option>BGR</option><option>RGBW</option><option>GRBW</option></select>
                 </div>
+                <div id="cd-row-white" style="display:none">
+                  <label class="f-label-caps" data-i18n="White LED">White LED</label>
+                  <select class="field field-text" id="cd-white"><option value="substitute" data-i18n="Substitute: the shared white on W">Substitute: the shared white on W</option><option value="add" data-i18n="Add: on W as well (brighter)">Add: on W as well (brighter)</option><option value="off" data-i18n="Off: colours from R, G, B only">Off: colours from R, G, B only</option></select>
+                  <div class="hint" data-i18n="For the box's own colours (effects, scenes, fixtures); a desk's pixel data drives W itself.">For the box's own colours (effects, scenes, fixtures); a desk's pixel data drives W itself.</div>
+                </div>
                 <div id="cd-row-bri">
                   <label class="f-label-caps"><span data-i18n="Max brightness">Max brightness</span> <span class="fg-4">(0–255)</span></label>
                   <input class="field" id="cd-bri" type="number" value="255"/>
@@ -923,15 +928,16 @@ var CLOCKED=['APA102','SK9822','LPD8806'];
 var CLK_CHOICES=[1000000,2000000,4000000,8000000];
 function snapClk(hz){ hz=hz||4000000; return CLK_CHOICES.reduce(function(b,c){ return Math.abs(c-hz)<Math.abs(b-hz)?c:b; }); }
 // Colour-order choices depend on the strip's channel count: 3-colour strips get
-// the RGB permutations, RGBW strips get the W-suffixed orders.
+// the RGB permutations, RGBW strips the orders with W last or first.
 var RGBW_PROTOS=['SK6812','WS2814'];
 var ORDERS_RGB=['RGB','RBG','GRB','GBR','BRG','BGR'];
-var ORDERS_RGBW=['RGBW','GRBW'];
+var ORDERS_RGBW=['RGBW','RBGW','GRBW','GBRW','BRGW','BGRW','WRGB','WRBG','WGRB','WGBR','WBRG','WBGR'];
 function setOrderOptions(p){
   var sel=document.getElementById('cd-order'); if(!sel) return;
   var list=RGBW_PROTOS.indexOf(p)>=0?ORDERS_RGBW:ORDERS_RGB, cur=sel.value;
   sel.innerHTML=list.map(function(o){return '<option>'+o+'</option>';}).join('');
   if(list.indexOf(cur)>=0) sel.value=cur;
+  var wr=el('cd-row-white'); if(wr) wr.style.display=RGBW_PROTOS.indexOf(p)>=0?'':'none';
 }
 var ST={
   active:  {dot:'var(--accent)',txt:'var(--accent)',label:'Active',   chip:'rgba(63,212,99,.12)',bd:'rgba(63,212,99,.22)'},
@@ -1082,6 +1088,8 @@ var FR={
   'Contiguous auto-patch':'Auto-patch contigu',
   'Re-addresses everything in three blocks, each opening a universe, by how often they grow: the control universe, then the fixtures\' DMX profiles, then the pixels of every output — no gap, no overlap, from the first universe below. Adding LEDs moves nothing before them.':'Réadresse tout en trois blocs, chacun ouvrant un univers, du plus stable au plus changeant : l’univers de contrôle, puis les profils DMX des fixtures, puis les pixels de chaque sortie — sans trou ni chevauchement, à partir du premier univers ci-dessous. Ajouter des LEDs ne déplace rien avant elles.',
   'Run auto-patch':'Lancer l’auto-patch',
+  'White LED':'LED blanche','Substitute: the shared white on W':'Substitution : le blanc commun sur W','Add: on W as well (brighter)':'Ajout : aussi sur W (plus lumineux)','Off: colours from R, G, B only':'Désactivée : couleurs en R, V, B seulement',
+  'For the box\'s own colours (effects, scenes, fixtures); a desk\'s pixel data drives W itself.':'Pour les couleurs du boîtier (effets, scènes, fixtures) ; les données pixel d’une console pilotent W elles-mêmes.',
   'Unsaved changes':'Modifications non enregistrées','1 change is not saved.':'1 modification n’est pas enregistrée.','{n} changes are not saved.':'{n} modifications ne sont pas enregistrées.',
   'Save them or cancel them before you leave this screen.':'Enregistrez-les ou annulez-les avant de quitter cet écran.','Save it or cancel it before you leave this screen.':'Enregistrez-la ou annulez-la avant de quitter cet écran.','Cancel changes':'Annuler les modifications','PROTOCOL':'PROTOCOLE','ASSIGNED UNIVERSES':'UNIVERS ASSIGNÉS',
   'Universes used':'Univers consommés','effects':'effets','CPU core 0':'CPU cœur 0','CPU core 1 (render)':'CPU cœur 1 (rendu)','no overlap detected':'aucun chevauchement détecté',
@@ -1949,7 +1957,7 @@ function selectChan(i){
   k('cd-on',c.protoRaw!=='Off'); v('cd-proto',c.protoRaw==='Off'?PROTOCOLS[1]:c.protoRaw); setUniFields(c.universe); v('cd-dmx',c.dmx); v('cd-pix',c.pixels);
   var pe=el('cd-pix'); if(pe){ pe.max=1024; pe.min=1; }
   renderGaps(); updatePixWarn();
-  v('cd-order',c.order); k('cd-pixmap',c.pm); k('cd-fixctl',c.fc); v('cd-pack',c.pack||'continuous'); setUniFields(c.fixUni,'cd-f'); v('cd-fdmx',c.fixDmx); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
+  v('cd-order',c.order); v('cd-white',c.white||'substitute'); k('cd-pixmap',c.pm); k('cd-fixctl',c.fc); v('cd-pack',c.pack||'continuous'); setUniFields(c.fixUni,'cd-f'); v('cd-fdmx',c.fixDmx); v('cd-bri',c.bri); v('cd-grp',c.grp); k('cd-inv',c.inv);
   v('cd-clk',snapClk(c.clk)); v('cd-gam',c.gam); v('cd-wb',c.wb);
   var wbsw=el('cd-wb'); if(wbsw){ var prev=wbsw.parentNode.querySelector('span'); if(prev) prev.style.background=c.wb; }
   document.querySelectorAll('[data-chan-title]').forEach(function(ct){ ct.textContent=t('Output')+' '+c.n; });
@@ -2172,7 +2180,7 @@ function readChanEditor(){
   c.universe=readUni(); updateUniFlat(c.universe); c.dmx=nv('cd-dmx');
   c.fixUni=readUni('cd-f'); updateUniFlat(c.fixUni,'cd-f'); c.fixDmx=Math.max(1,Math.min(512,nv('cd-fdmx')||1));
   if(!(c.lay&&c.lay.length)) c.pixels=Math.max(1,Math.min(nv('cd-pix'),1024));
-  c.order=el('cd-order').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
+  c.order=el('cd-order').value; c.white=el('cd-white').value; c.bri=nv('cd-bri'); c.grp=nv('cd-grp');
   var hadFc=c.fc;
   c.pm=el('cd-pixmap').checked; c.fc=el('cd-fixctl').checked; c.pack=el('cd-pack').value;
   // Fixtures switched on at an address inside some output's pixels (a fixture
@@ -2552,7 +2560,7 @@ function buildChrome(){
 function buildChan(c,i){
   var off=c.protocol==='Off';
   var o={idx:i,n:i+1,protoRaw:c.protocol,proto:off?'—':c.protocol,pixels:c.pixel_count,universe:c.universe_start,dmx:c.dmx_start,
-    order:c.color_order,bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),fix:(c.fixtures||[]).map(function(g){ return [g[0],g[1],g[2]||0]; }),lay:layFromWire(c,c.gaps||[],c.fixtures||[]),pack:c.packing==='control'?'continuous':(c.packing||'continuous'),unis:c.universes,
+    order:c.color_order,white:c.white||'substitute',bri:c.brightness,grp:c.grouping,inv:!!c.invert,clk:c.clock_hz,gam:c.gamma_x10,wb:c.wb||'#ffffff',maxpx:c.max_pixels||1024,gaps:(c.gaps||[]).map(function(g){ return [g[0],g[1]]; }),fix:(c.fixtures||[]).map(function(g){ return [g[0],g[1],g[2]||0]; }),lay:layFromWire(c,c.gaps||[],c.fixtures||[]),pack:c.packing==='control'?'continuous':(c.packing||'continuous'),unis:c.universes,
     // "control" is the value of before the two switches: fixtures alone, at the output's address.
     pm:c.packing==='control'?false:c.pixel_map!==false,fc:c.packing==='control'||!!c.fixture_ctl,
     fixUni:c.packing==='control'?c.universe_start:(c.fix_universe||0),fixDmx:c.packing==='control'?c.dmx_start:(c.fix_dmx_start||1),
@@ -2661,7 +2669,7 @@ function buildGlobalBody(){
   if(dirty.has('syslang')){ b.lang=(LANG==='fr'?1:0); }
   return b;
 }
-function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,universe_start:c.universe,dmx_start:c.dmx,pixel_count:layToWire(c).pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:layToWire(c).gaps,fixtures:layToWire(c).fixtures,packing:c.pack||'continuous',pixel_map:!!c.pm,fixture_ctl:!!c.fc,fix_universe:c.fixUni||0,fix_dmx_start:c.fixDmx||1}; }
+function chanBody(c){ return {protocol:c.protoRaw,color_order:c.order,white:c.white||'substitute',universe_start:c.universe,dmx_start:c.dmx,pixel_count:layToWire(c).pixels,brightness:c.bri,grouping:c.grp,invert:c.inv,clock_hz:c.clk,gamma_x10:c.gam,wb:c.wb,gaps:layToWire(c).gaps,fixtures:layToWire(c).fixtures,packing:c.pack||'continuous',pixel_map:!!c.pm,fixture_ctl:!!c.fc,fix_universe:c.fixUni||0,fix_dmx_start:c.fixDmx||1}; }
 function phaserOf(p){ p=p||{}; return {wave:p.wave||'none',rate:p.rate||0,spread:p.spread||0,width:p.width||0,low:p.low||0,attack:p.attack||0,decay:p.decay||0,reverse:!!p.reverse}; }
 function matricksOf(m){ m=m||{}; return {block:m.block||0,groups:m.groups||0,wings:m.wings||0}; }
 function effectBody(e){ return {name:e.name,generator:e.gen,colors:e.colors,speed:e.speed,param:e.param,phaser:e.ph,invert:e.invert,matricks:e.mx}; }

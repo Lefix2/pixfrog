@@ -263,7 +263,7 @@ bool is_enum_kind(ValueKind k) {
     return k == ValueKind::Protocol || k == ValueKind::ColorOrder || k == ValueKind::Failsafe ||
            k == ValueKind::CtlFn || k == ValueKind::Preset || k == ValueKind::IpFallback ||
            k == ValueKind::Packing || k == ValueKind::FixMode || k == ValueKind::Effect ||
-           k == ValueKind::Group || k == ValueKind::Profile;
+           k == ValueKind::Group || k == ValueKind::Profile || k == ValueKind::WhiteMode;
 }
 
 bool is_gauge_kind(ValueKind k) {
@@ -349,20 +349,6 @@ Color badge_color(led::Protocol p) {
     return color::BadgeGreen;
 }
 
-const char* color_order_name(led::ColorOrder o) {
-    switch (o) {
-    case led::ColorOrder::RGB: return "RGB";
-    case led::ColorOrder::RBG: return "RBG";
-    case led::ColorOrder::GRB: return "GRB";
-    case led::ColorOrder::GBR: return "GBR";
-    case led::ColorOrder::BRG: return "BRG";
-    case led::ColorOrder::BGR: return "BGR";
-    case led::ColorOrder::RGBW: return "RGBW";
-    case led::ColorOrder::GRBW: return "GRBW";
-    default: return "?";
-    }
-}
-
 void truncate(char* dst, size_t cap, const char* src) {
     size_t i = 0;
     for (; i + 1 < cap && src[i] != '\0'; ++i)
@@ -424,6 +410,9 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
         std::snprintf(out, cap, "%ld.%lds", static_cast<long>(v / 10), static_cast<long>(v % 10));
         return;
     case ValueKind::Percent: std::snprintf(out, cap, "%ld%%", static_cast<long>(v)); return;
+    case ValueKind::WhiteMode:
+        std::snprintf(out, cap, "%s", white_mode_label(static_cast<uint8_t>(v)));
+        return;
     case ValueKind::Packing:
         std::snprintf(out, cap, "%s", packing_label(static_cast<uint8_t>(v)));
         return;

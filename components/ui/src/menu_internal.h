@@ -277,6 +277,7 @@ enum class Field : uint8_t {
     ChDmx,
     ChPixels,
     ChBrightness,
+    ChWhite,
     ChGamma,
     ChGrouping,
     ChInvert,
@@ -334,6 +335,7 @@ enum class ValueKind : uint8_t {
     Mask,        // outputs bitmask, shown as "1234----"
     Tenths,      // tenths shown as "2.5s"
     Percent,     // a level shown as "64%"
+    WhiteMode,   // an RGBW output's white LED: substitute / off / add
     IpFallback,  // address without a DHCP server (link-local / Art-Net)
     Packing,     // DMX layout of an output
     FixMode,     // each / strip / chain / mirror
@@ -346,6 +348,9 @@ enum class ValueKind : uint8_t {
 // round trip keeps every percent.
 inline uint8_t brightness_pct(uint8_t b) {
     return static_cast<uint8_t>((b * 100u + 127u) / 255u);
+}
+inline const char* white_mode_label(uint8_t m) {
+    return m == config::kWhiteOff ? "Off" : m == config::kWhiteAdd ? "Add" : "Subst";
 }
 inline uint8_t brightness_from_pct(int32_t pct) {
     return static_cast<uint8_t>((pct * 255 + 50) / 100);
@@ -455,8 +460,6 @@ const char* protocol_name(led::Protocol p);
 // Channel badge colour mirrors the wiring family: clocked SPI strips stand out
 // from the common NRZ pixels; a disabled channel is greyed out.
 Color badge_color(led::Protocol p);
-
-const char* color_order_name(led::ColorOrder o);
 
 void truncate(char* dst, size_t cap, const char* src);
 

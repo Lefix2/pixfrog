@@ -357,6 +357,24 @@ static void test_dmx_modes_and_the_fixture_address() {
     old.universe_start = 7;  // its own address now: the pixel address no longer moves it
     EXPECT_EQ(fix_universe(old), 40);
 
+    // The white LED mode rides in packing bits 3-4: 0 (every blob of before)
+    // is substitute; the other switches leave it alone; an unknown value is
+    // substitute again.
+    ChannelConfig wl{};
+    EXPECT_EQ(white_mode(wl), kWhiteSubstitute);
+    set_white_mode(wl, kWhiteAdd);
+    set_dmx_modes(wl, false, true);
+    set_pixel_layout(wl, kPackWholePixels);
+    EXPECT_EQ(white_mode(wl), kWhiteAdd);
+    sanitize_channel(wl);
+    EXPECT_EQ(white_mode(wl), kWhiteAdd);
+    EXPECT_TRUE(!pixel_mapped(wl) && fixture_controlled(wl));
+    wl.packing |= kChanWhiteMask;  // 3: no such mode
+    sanitize_channel(wl);
+    EXPECT_EQ(white_mode(wl), kWhiteSubstitute);
+    EXPECT_EQ(white_mode_from_id("off"), kWhiteOff);
+    EXPECT_EQ(white_mode_from_id("lol"), -1);
+
     // Bits this firmware does not know, a layout past the last: dropped.
     ChannelConfig odd{};
     odd.packing = 0x38 | 6 | kChanFixtureCtl;
