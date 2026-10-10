@@ -1470,3 +1470,42 @@ TEST(output_preview_shrinks_the_front_buffer_to_rgb) {
     EXPECT_EQ(out[1], 255);  // clipped
     EXPECT_EQ(out[2], 20);
 }
+
+// An RGBW output: the box's own colours put their shared white on W
+// (substitute by default, add, off); a desk's pixel data keeps its own W.
+TEST(rgbw_white_led_takes_the_shared_white_of_the_box_colours) {
+    auto c        = config::get_channel(0);
+    c.protocol    = led::Protocol::SK6812;
+    c.color_order = led::ColorOrder::RGBW;
+    config::set_channel(0, c);
+    apply_channels();
+    solid_scene(2, 200, 120, 80);
+    const uint8_t desk[4] = { 90, 90, 90, 0 };  // a desk's RGB white, W at 0
+    dmx::scene_start(2);
+    const uint8_t* px = frame(1, desk, 4);
+    EXPECT_EQ(px[0], 120);  // 200 - 80
+    EXPECT_EQ(px[1], 40);   // 120 - 80
+    EXPECT_EQ(px[2], 0);
+    EXPECT_EQ(px[3], 80);  // the shared white, on W
+    config::set_white_mode(c, config::kWhiteAdd);
+    config::set_channel(0, c);
+    apply_channels();
+    px = frame(1, desk, 4);
+    EXPECT_EQ(px[0], 200);
+    EXPECT_EQ(px[3], 80);
+    config::set_white_mode(c, config::kWhiteOff);
+    config::set_channel(0, c);
+    apply_channels();
+    px = frame(1, desk, 4);
+    EXPECT_EQ(px[0], 200);
+    EXPECT_EQ(px[3], 0);
+    // The desk's pixels: as sent, whatever the mode.
+    dmx::scene_stop();
+    config::set_white_mode(c, config::kWhiteSubstitute);
+    config::set_channel(0, c);
+    apply_channels();
+    px = frame(1, desk, 4);
+    EXPECT_EQ(px[0], 90);
+    EXPECT_EQ(px[3], 0);
+    one_channel();
+}

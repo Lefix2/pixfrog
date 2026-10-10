@@ -491,6 +491,7 @@ void print_channel(size_t ch, const config::ChannelConfig& c) {
     // universe / dmx_start) and fixture control (from fix_universe / fix_dmx).
     printf("pixel_map=%d\n", config::pixel_mapped(c) ? 1 : 0);
     printf("packing=%s\n", config::packing_id(config::pixel_layout(c)));
+    printf("white=%s\n", config::white_mode_id(config::white_mode(c)));
     printf("fixture_ctl=%d\n", config::fixture_controlled(c) ? 1 : 0);
     printf("fix_universe=%u\n", config::fix_universe(c));
     printf("fix_dmx=%u\n", config::fix_dmx_start(c));
@@ -653,6 +654,10 @@ int cmd_ch(int argc, char** argv) {
         } else {
             config::set_pixel_layout(c, static_cast<uint8_t>(p));
         }
+    } else if (strcmp(key, "white") == 0) {
+        const int m = config::white_mode_from_id(val);
+        if (m < 0) return err("white: substitute|off|add");
+        config::set_white_mode(c, static_cast<uint8_t>(m));
     } else if (strcmp(key, "pixel_map") == 0 || strcmp(key, "fixture_ctl") == 0) {
         if (!parse_u32_in(val, 0, 1, u)) return err("pixel_map, fixture_ctl: 0|1");
         if (key[0] == 'p')

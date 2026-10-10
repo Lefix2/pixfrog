@@ -143,6 +143,7 @@ static cJSON* build_channels_json() {
         cJSON_AddBoolToObject(jc, "pixel_map", config::pixel_mapped(c));
         cJSON_AddStringToObject(jc, "packing", config::packing_id(config::pixel_layout(c)));
         cJSON_AddBoolToObject(jc, "fixture_ctl", config::fixture_controlled(c));
+        cJSON_AddStringToObject(jc, "white", config::white_mode_id(config::white_mode(c)));
         cJSON_AddNumberToObject(jc, "fix_universe", config::fix_universe(c));
         cJSON_AddNumberToObject(jc, "fix_dmx_start", config::fix_dmx_start(c));
         cJSON_AddNumberToObject(jc, "universes",
@@ -550,6 +551,13 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         } else {
             refuse(why, "packing: continuous|whole|fixture|colour");
         }
+    }
+    if ((s = json_str(j, "white"))) {
+        const int m = config::white_mode_from_id(s);
+        if (m >= 0)
+            config::set_white_mode(c, static_cast<uint8_t>(m));
+        else
+            refuse(why, "white: substitute|off|add");
     }
     if (json_bool(j, "pixel_map", b)) config::set_dmx_modes(c, b, config::fixture_controlled(c));
     if (json_bool(j, "fixture_ctl", b)) config::set_dmx_modes(c, config::pixel_mapped(c), b);

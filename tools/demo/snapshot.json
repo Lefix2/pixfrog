@@ -24,7 +24,8 @@
     "protocol": "WS2815",
     "universe_start": 1,
     "universes": 2,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    },
    {
     "brightness": 255,
@@ -47,7 +48,8 @@
     "protocol": "WS2815",
     "universe_start": 7,
     "universes": 2,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    },
    {
     "brightness": 255,
@@ -70,7 +72,8 @@
     "protocol": "WS2812B",
     "universe_start": 13,
     "universes": 1,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    },
    {
     "brightness": 255,
@@ -93,7 +96,8 @@
     "protocol": "SK6812",
     "universe_start": 19,
     "universes": 1,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    },
    {
     "brightness": 255,
@@ -116,7 +120,8 @@
     "protocol": "APA102",
     "universe_start": 25,
     "universes": 2,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    },
    {
     "brightness": 255,
@@ -139,7 +144,8 @@
     "protocol": "WS2811",
     "universe_start": 31,
     "universes": 1,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    },
    {
     "brightness": 255,
@@ -211,7 +217,8 @@
     "protocol": "WS2815",
     "universe_start": 37,
     "universes": 2,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    },
    {
     "brightness": 255,
@@ -234,7 +241,8 @@
     "protocol": "Off",
     "universe_start": 43,
     "universes": 0,
-    "wb": "#ffffff"
+    "wb": "#ffffff",
+    "white": "substitute"
    }
   ],
   "control": {
@@ -1442,7 +1450,7 @@
  "status": {
   "active_scene": 2,
   "alias": true,
-  "artnet_rx": 400,
+  "artnet_rx": 375,
   "audio": true,
   "bad_rx": 0,
   "channels": [

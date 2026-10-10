@@ -1295,7 +1295,8 @@ static void test_migrated_effect_matches_v3_scene() {
     cc.fixtures[0] = { 0, 20 };
     cc.fixtures[1] = { 25, 10 | kFixtureReversed };
     cc.fixtures[2] = { 40, 20 };
-    bool same      = true;
+    set_white_mode(cc, kWhiteOff);  // the generators compared, not the white LED
+    bool same = true;
     for (uint8_t fx = 0; fx < kSceneFxCount; ++fx)
         for (uint8_t speed : { 0, 36, 254, 255 }) {
             if (fx != kSceneFxSolid && (speed & 1)) continue;  // odd speeds round up
@@ -3093,7 +3094,26 @@ static void test_scene_clock_has_no_wrap_jump() {
     }
 }
 
+static void test_white_from_rgb() {
+    using namespace pixfrog::config;
+    uint8_t px[8] = { 200, 120, 80, 0, 10, 0, 50, 30 };  // two RGBW pixels
+    white_from_rgb(px, 2, 4, kWhiteSubstitute);
+    const uint8_t sub[8] = { 120, 40, 0, 80, 10, 0, 50, 30 };  // no shared white: as it was
+    EXPECT_TRUE(std::memcmp(px, sub, 8) == 0);
+    uint8_t add[4] = { 200, 120, 80, 200 };  // a W already lit keeps its own on top
+    white_from_rgb(add, 1, 4, kWhiteAdd);
+    EXPECT_EQ(add[0], 200);
+    EXPECT_EQ(add[3], 255);  // clipped
+    uint8_t off[4] = { 200, 120, 80, 0 };
+    white_from_rgb(off, 1, 4, kWhiteOff);
+    EXPECT_EQ(off[3], 0);
+    uint8_t rgb[3] = { 200, 120, 80 };  // not an RGBW buffer: untouched
+    white_from_rgb(rgb, 1, 3, kWhiteSubstitute);
+    EXPECT_EQ(rgb[0], 200);
+}
+
 int main() {
+    test_white_from_rgb();
     test_scene_clock_has_no_wrap_jump();
     test_total_bytes_rgb();
     test_total_bytes_rgbw();

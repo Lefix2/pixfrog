@@ -126,6 +126,11 @@ TEST(channel_get_set_and_validation) {
     EXPECT_TRUE(run("ch 2 pixels 300"));
     EXPECT_TRUE(run("ch 2 universe 20"));
     EXPECT_TRUE(run("ch 2 order GRB"));
+    EXPECT_TRUE(run("ch 2 white add"));
+    EXPECT_TRUE(run("ch 2"));
+    EXPECT_TRUE(has("white=add"));
+    EXPECT_FALSE(run("ch 2 white bright"));
+    EXPECT_TRUE(run("ch 2 white substitute"));
     EXPECT_TRUE(run("ch 2 wb ff8000"));
     EXPECT_TRUE(run("ch 2 gaps 1:1,50:2"));
     EXPECT_TRUE(run("ch 2"));

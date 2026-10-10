@@ -742,6 +742,26 @@ constexpr uint8_t kPackCount   = 5;
 constexpr uint8_t kPackLayoutMask = 0x07;
 constexpr uint8_t kChanFixtureCtl = 0x40;
 constexpr uint8_t kChanNoPixelMap = 0x80;
+// An RGBW output's white LED, for the colours the box makes itself (effects,
+// scenes, fixtures, failsafe, identify) — never the pixels a desk sends:
+// substitute takes the white the three colours share off them and onto W,
+// add puts it on W as well (brighter, pastels whiten), off leaves W dark.
+// Bits 3-4 of packing; 0, every blob of before, is substitute.
+constexpr uint8_t kChanWhiteShift  = 3;
+constexpr uint8_t kChanWhiteMask   = 0x18;
+constexpr uint8_t kWhiteSubstitute = 0;
+constexpr uint8_t kWhiteOff        = 1;
+constexpr uint8_t kWhiteAdd        = 2;
+constexpr uint8_t kWhiteCount      = 3;
+inline const char* white_mode_id(uint8_t m) {
+    static const char* const kIds[] = { "substitute", "off", "add" };
+    return m < kWhiteCount ? kIds[m] : kIds[0];
+}
+inline int white_mode_from_id(const char* s) {
+    for (uint8_t m = 0; m < kWhiteCount; ++m)
+        if (std::strcmp(s, white_mode_id(m)) == 0) return m;
+    return -1;
+}
 // Ids of the layouts ("control" for a backup or a command of before the
 // switches). packing_id() takes the layout bits of a packing byte.
 inline const char* packing_id(uint8_t p) {
@@ -822,10 +842,20 @@ inline void set_pixel_layout(ChannelConfig& c, uint8_t layout) {
     c.packing = static_cast<uint8_t>((c.packing & ~kPackLayoutMask) |
                                      (layout < kPackControl ? layout : kPackContinuous));
 }
-// Which of the two drive the output; the pixel layout and both addresses stay.
+// Which of the two drive the output; the pixel layout, the white mode and both
+// addresses stay.
 inline void set_dmx_modes(ChannelConfig& c, bool pixels, bool fixtures) {
-    c.packing = static_cast<uint8_t>(pixel_layout(c) | (pixels ? 0 : kChanNoPixelMap) |
+    c.packing = static_cast<uint8_t>(pixel_layout(c) | (c.packing & kChanWhiteMask) |
+                                     (pixels ? 0 : kChanNoPixelMap) |
                                      (fixtures ? kChanFixtureCtl : 0));
+}
+inline uint8_t white_mode(const ChannelConfig& c) {
+    const uint8_t m = (c.packing & kChanWhiteMask) >> kChanWhiteShift;
+    return m < kWhiteCount ? m : kWhiteSubstitute;
+}
+inline void set_white_mode(ChannelConfig& c, uint8_t m) {
+    c.packing = static_cast<uint8_t>((c.packing & ~kChanWhiteMask) |
+                                     ((m < kWhiteCount ? m : 0) << kChanWhiteShift));
 }
 
 // Zero-filled tails from pre-gamma NVS blobs must read as identity — a wb of
@@ -851,9 +881,8 @@ inline void sanitize_channel(ChannelConfig& c) {
     if (c.wb_r == 0) c.wb_r = 255;
     if (c.wb_g == 0) c.wb_g = 255;
     if (c.wb_b == 0) c.wb_b = 255;
-    // The dropped RGBWW order (former index 8) survives in old NVS blobs; it was
-    // identical to RGBW, so remap it there and keep color_order in range (the
-    // name tables are indexed by it).
+    // Keep color_order in range (the name table is indexed by it). Index 8 is
+    // RBGW now; the RGBWW order it held until 2026-06 (v0.1.x) was dropped.
     if (static_cast<uint8_t>(c.color_order) >= static_cast<uint8_t>(led::ColorOrder::COUNT))
         c.color_order = led::ColorOrder::RGBW;
     for (auto& g : c.gaps)
@@ -864,9 +893,12 @@ inline void sanitize_channel(ChannelConfig& c) {
     // the fixtures on their profiles where the channel was addressed.
     if (legacy_control(c)) {
         set_fix_address(c, c.universe_start, c.dmx_start);
-        c.packing = kPackContinuous | kChanNoPixelMap | kChanFixtureCtl;
+        c.packing = static_cast<uint8_t>(kPackContinuous | kChanNoPixelMap | kChanFixtureCtl |
+                                         (c.packing & kChanWhiteMask));
     }
-    c.packing &= kPackLayoutMask | kChanNoPixelMap | kChanFixtureCtl;
+    c.packing &= kPackLayoutMask | kChanWhiteMask | kChanNoPixelMap | kChanFixtureCtl;
+    if (((c.packing & kChanWhiteMask) >> kChanWhiteShift) >= kWhiteCount)
+        c.packing = static_cast<uint8_t>(c.packing & ~kChanWhiteMask);
     if ((c.packing & kPackLayoutMask) >= kPackControl)
         c.packing = static_cast<uint8_t>(c.packing & ~kPackLayoutMask);
 }

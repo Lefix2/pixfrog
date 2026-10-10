@@ -263,7 +263,7 @@ bool is_enum_kind(ValueKind k) {
     return k == ValueKind::Protocol || k == ValueKind::ColorOrder || k == ValueKind::Failsafe ||
            k == ValueKind::CtlFn || k == ValueKind::Preset || k == ValueKind::IpFallback ||
            k == ValueKind::Packing || k == ValueKind::FixMode || k == ValueKind::Effect ||
-           k == ValueKind::Group || k == ValueKind::Profile;
+           k == ValueKind::Group || k == ValueKind::Profile || k == ValueKind::WhiteMode;
 }
 
 bool is_gauge_kind(ValueKind k) {
@@ -410,6 +410,9 @@ void format_value(const EditCtx& e, int32_t v, char* out, size_t cap) {
         std::snprintf(out, cap, "%ld.%lds", static_cast<long>(v / 10), static_cast<long>(v % 10));
         return;
     case ValueKind::Percent: std::snprintf(out, cap, "%ld%%", static_cast<long>(v)); return;
+    case ValueKind::WhiteMode:
+        std::snprintf(out, cap, "%s", white_mode_label(static_cast<uint8_t>(v)));
+        return;
     case ValueKind::Packing:
         std::snprintf(out, cap, "%s", packing_label(static_cast<uint8_t>(v)));
         return;

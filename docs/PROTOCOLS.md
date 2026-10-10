@@ -25,6 +25,20 @@ or first — `RGBW` `RBGW` `GRBW` `GBRW` `BRGW` `BGRW` and `WRGB` `WRBG` `WGRB`
 `WGBR` `WBRG` `WBGR` (`led::kColorOrderNames`, the same list in the web, the
 console and the menus).
 
+**The white LED of an RGBW strip.** The colours the box makes itself — effects,
+scenes, fixtures, the failsafe and identify — are RGB. Per output, the `white`
+setting (web "White LED", TFT `White`, console `ch N white`, API `"white"`) says
+what the W LED does with them:
+
+| Mode | W | R, G, B |
+|---|---|---|
+| `substitute` (default) | the white the three share, min(R,G,B) | minus that white: same colour, a true white LED |
+| `add` | min(R,G,B) as well | unchanged: brighter, pastels whiten |
+| `off` | dark | unchanged: white is an R+G+B mix |
+
+A fixture's own White channel stays on W on top. A desk's pixel data is never
+converted: with pixel mapping on an RGBW strip the desk sends W itself.
+
 ---
 
 ## 2. 1-wire NRZ timings

@@ -427,6 +427,27 @@ struct Rgb {
     uint8_t r, g, b;
 };
 
+// The white LED of `n` RGBW pixels for the colours the box made (config::
+// white_mode): the white the three colours share, min(R,G,B), goes on W —
+// taken off them (substitute) or on top (add). A W already lit (a fixture's
+// White channel) keeps its own on top. Not an RGBW buffer, or off: untouched.
+inline void white_from_rgb(uint8_t* d, size_t n, uint8_t bpp, uint8_t mode) {
+    if (bpp != 4 || mode == config::kWhiteOff) return;
+    const bool take = mode == config::kWhiteSubstitute;
+    for (size_t i = 0; i < n; ++i) {
+        uint8_t* p      = d + i * 4;
+        const uint8_t m = p[0] < p[1] ? (p[0] < p[2] ? p[0] : p[2]) : (p[1] < p[2] ? p[1] : p[2]);
+        if (m == 0) continue;
+        if (take) {
+            p[0] = static_cast<uint8_t>(p[0] - m);
+            p[1] = static_cast<uint8_t>(p[1] - m);
+            p[2] = static_cast<uint8_t>(p[2] - m);
+        }
+        const unsigned w = p[3] + m;
+        p[3]             = static_cast<uint8_t>(w > 255 ? 255 : w);
+    }
+}
+
 inline void set_px(uint8_t* dst, uint8_t bpp, uint16_t i, Rgb c) {
     set_px(dst, bpp, i, c.r, c.g, c.b);
 }
@@ -1256,6 +1277,8 @@ inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
     fill_on_channel(dst, dst_capacity, cc, bpp, mode, [&](uint8_t* d, size_t cap, uint16_t n) {
         fill_effect_run(d, cap, n, bpp, effect, t);
     });
+    if (static_cast<size_t>(cc.pixel_count) * bpp <= dst_capacity)
+        white_from_rgb(dst, cc.pixel_count, bpp, config::white_mode(cc));
 }
 
 inline void fill_effect_on_channel(uint8_t* dst, size_t dst_capacity,
@@ -2543,7 +2566,8 @@ inline void decode_fixture(const config::Profile& p, const uint8_t* dmx, Fixture
 template <typename GetEffect>
 inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, const FixtureFrame& f,
                            bool reversed, uint64_t phase_ms, GetEffect get_effect,
-                           bool over_pixels = false, FxClock* clocks = nullptr, uint32_t seed = 0) {
+                           bool over_pixels = false, FxClock* clocks = nullptr, uint32_t seed = 0,
+                           uint8_t white = config::kWhiteOff) {
     const size_t total = static_cast<size_t>(n) * bpp;
     if (total > cap || bpp == 0 || n == 0) return;
     // The dimmer under the shutter and the strobe: a closed or dark fixture
@@ -2586,6 +2610,7 @@ inline void render_fixture(uint8_t* d, size_t cap, uint16_t n, uint8_t bpp, cons
     if (plain && bpp == 4 && f.white)
         for (uint16_t i = 0; i < n; ++i)
             d[static_cast<size_t>(i) * 4 + 3] = f.white;
+    white_from_rgb(d, n, bpp, white);
     if (reversed) {
         const Span whole{ 0, n, true, 0 };
         reverse_fixtures(d, bpp, &whole, 1);
@@ -2647,13 +2672,14 @@ inline void render_fixtures(uint8_t* dst, size_t dst_capacity, const config::Cha
         // Its address on the wire tells it apart: its own random strobe.
         const uint32_t seed = hash32(
             (static_cast<uint32_t>(config::fix_universe(cc) + p.uni_off) << 9) | p.slot);
+        const uint8_t white = config::white_mode(cc);
         render_fixture(d, total - at, n, bpp, frame, p.reversed, phase_ms, get_effect, over_pixels,
-                       clocks, seed);
+                       clocks, seed, white);
         if (!fading) return;
         FixtureFrame old = frame;
         old.bank         = static_cast<int16_t>(st->fade.from);
         render_fixture(scratch, dst_capacity, n, bpp, old, p.reversed, phase_ms, get_effect,
-                       over_pixels, clocks, seed);
+                       over_pixels, clocks, seed, white);
         blend_into(d, scratch, len, fade_weight(now - st->fade.start, st->fade.len));
     });
 }

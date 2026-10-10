@@ -1464,3 +1464,16 @@ def test_an_rgbw_strip_takes_every_order_with_w_first_or_last(page, device):
     page.reload()
     nav(page, "channels")
     assert len(page.locator("#cd-order option").all_inner_texts()) == 6  # RGB strip: the RGB six
+
+
+def test_the_white_led_of_an_rgbw_output(page, device):
+    nav(page, "channels")
+    expect(page.locator("#cd-row-white")).to_be_hidden()  # an RGB strip has none
+    device.post("/api/channel/0", {"protocol": "SK6812"})
+    page.reload()
+    nav(page, "channels")
+    expect(page.locator("#cd-row-white")).to_be_visible()
+    expect(page.locator("#cd-white")).to_have_value("substitute")  # the default
+    page.locator("#cd-white").select_option("add")
+    save(page)
+    assert device.get("/api/config")["channels"][0]["white"] == "add"

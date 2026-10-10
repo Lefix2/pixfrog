@@ -720,6 +720,7 @@ enum class ChItem : uint8_t {
     Gaps,      // dead pixels submenu
     Fixtures,  // fixtures submenu
     Order,
+    White,  // RGBW strips: the white LED for the box's own colours
     Bright,
     Gamma,
     Group,
@@ -743,6 +744,7 @@ uint8_t channel_items(const config::ChannelConfig& cc, ChItem* out) {
     out[n++] = ChItem::Gaps;
     out[n++] = ChItem::Fixtures;
     out[n++] = ChItem::Order;
+    if (led::is_rgbw(cc.protocol)) out[n++] = ChItem::White;
     out[n++] = ChItem::Bright;
     out[n++] = ChItem::Gamma;
     out[n++] = ChItem::Group;
@@ -797,6 +799,12 @@ OnClick channel_action(ChItem it) {
             enter_edit(Field::ChColorOrder, ValueKind::ColorOrder, ocur, omin, omax, 1, "Order",
                        Screen::Menu, s.channel_index);
         };
+    case ChItem::White:
+        return [](uint8_t) {
+            const auto& cc = config::get_channel(s.channel_index);
+            enter_edit(Field::ChWhite, ValueKind::WhiteMode, config::white_mode(cc), 0,
+                       config::kWhiteCount - 1, 1, "White", Screen::Menu, s.channel_index);
+        };
     case ChItem::Bright:
         return [](uint8_t) {
             const auto& cc = config::get_channel(s.channel_index);
@@ -845,6 +853,8 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
     const auto& cc = config::get_channel(s.channel_index);
     std::snprintf(g_channel_title, sizeof(g_channel_title), "OUTPUT %u", s.channel_index + 1);
 
+    static char vwhite[8];
+    std::snprintf(vwhite, sizeof(vwhite), "%s", white_mode_label(config::white_mode(cc)));
     static char vproto[8], vpix[8], vorder[8], vbri[8], vgrp[8], vinv[8], vclk[12], vgam[8],
         vgaps[8], vfix[8];
     std::snprintf(vproto, sizeof(vproto), "%s", protocol_name(cc.protocol));
@@ -876,6 +886,7 @@ uint8_t build_channel(ListItem* items, OnClick* fns) {
         case ChItem::Gaps: items[i] = { "Dead px", vgaps }; break;
         case ChItem::Fixtures: items[i] = { "Fixtures", vfix }; break;
         case ChItem::Order: items[i] = { "Order", vorder }; break;
+        case ChItem::White: items[i] = { "White", vwhite }; break;
         case ChItem::Bright: items[i] = { "Bright", vbri }; break;
         case ChItem::Gamma: items[i] = { "Gamma", vgam }; break;
         case ChItem::Identify: items[i] = { "Identify", "" }; break;
