@@ -349,20 +349,6 @@ Color badge_color(led::Protocol p) {
     return color::BadgeGreen;
 }
 
-const char* color_order_name(led::ColorOrder o) {
-    switch (o) {
-    case led::ColorOrder::RGB: return "RGB";
-    case led::ColorOrder::RBG: return "RBG";
-    case led::ColorOrder::GRB: return "GRB";
-    case led::ColorOrder::GBR: return "GBR";
-    case led::ColorOrder::BRG: return "BRG";
-    case led::ColorOrder::BGR: return "BGR";
-    case led::ColorOrder::RGBW: return "RGBW";
-    case led::ColorOrder::GRBW: return "GRBW";
-    default: return "?";
-    }
-}
-
 void truncate(char* dst, size_t cap, const char* src) {
     size_t i = 0;
     for (; i + 1 < cap && src[i] != '\0'; ++i)

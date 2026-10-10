@@ -923,10 +923,10 @@ var CLOCKED=['APA102','SK9822','LPD8806'];
 var CLK_CHOICES=[1000000,2000000,4000000,8000000];
 function snapClk(hz){ hz=hz||4000000; return CLK_CHOICES.reduce(function(b,c){ return Math.abs(c-hz)<Math.abs(b-hz)?c:b; }); }
 // Colour-order choices depend on the strip's channel count: 3-colour strips get
-// the RGB permutations, RGBW strips get the W-suffixed orders.
+// the RGB permutations, RGBW strips the orders with W last or first.
 var RGBW_PROTOS=['SK6812','WS2814'];
 var ORDERS_RGB=['RGB','RBG','GRB','GBR','BRG','BGR'];
-var ORDERS_RGBW=['RGBW','GRBW'];
+var ORDERS_RGBW=['RGBW','RBGW','GRBW','GBRW','BRGW','BGRW','WRGB','WRBG','WGRB','WGBR','WBRG','WBGR'];
 function setOrderOptions(p){
   var sel=document.getElementById('cd-order'); if(!sel) return;
   var list=RGBW_PROTOS.indexOf(p)>=0?ORDERS_RGBW:ORDERS_RGB, cur=sel.value;

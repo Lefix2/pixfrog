@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <array>
+
 #include "led_protocols.h"
 
 namespace pixfrog::led::detail {
@@ -14,20 +16,35 @@ struct Reorder {
     uint8_t r, g, b, w;
 };
 
+// Per order, the source channel (0 R, 1 G, 2 B, 3 W) of each wire position,
+// read off its name at compile time.
+struct OrderSlots {
+    uint8_t s[4];
+};
+constexpr OrderSlots order_slots_of(const char* name) {
+    OrderSlots o{ { 0, 1, 2, 3 } };
+    for (int k = 0; k < 4 && name[k]; ++k)
+        o.s[k] = name[k] == 'R' ? 0 : name[k] == 'G' ? 1 : name[k] == 'B' ? 2 : 3;
+    return o;
+}
+constexpr std::array<OrderSlots, static_cast<size_t>(ColorOrder::COUNT)> make_order_slots() {
+    std::array<OrderSlots, static_cast<size_t>(ColorOrder::COUNT)> a{};
+    for (size_t i = 0; i < a.size(); ++i)
+        a[i] = order_slots_of(kColorOrderNames[i]);
+    return a;
+}
+inline constexpr auto kOrderSlots = make_order_slots();
+static_assert(kOrderSlots[static_cast<size_t>(ColorOrder::GRB)].s[0] == 1 &&
+                  kOrderSlots[static_cast<size_t>(ColorOrder::WRGB)].s[0] == 3,
+              "slots follow the names");
+
+// The four bytes in wire order (a 3-byte protocol sends the first three).
 inline Reorder apply_order(ColorOrder order, uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
-    Reorder out{};
-    switch (order) {
-    case ColorOrder::RGB: out = { r, g, b, w }; break;
-    case ColorOrder::RBG: out = { r, b, g, w }; break;
-    case ColorOrder::GRB: out = { g, r, b, w }; break;
-    case ColorOrder::GBR: out = { g, b, r, w }; break;
-    case ColorOrder::BRG: out = { b, r, g, w }; break;
-    case ColorOrder::BGR: out = { b, g, r, w }; break;
-    case ColorOrder::RGBW: out = { r, g, b, w }; break;
-    case ColorOrder::GRBW: out = { g, r, b, w }; break;
-    default: out = { r, g, b, w }; break;
-    }
-    return out;
+    const uint8_t src[4] = { r, g, b, w };
+    const auto i         = static_cast<size_t>(order);
+    if (i >= kOrderSlots.size()) return { r, g, b, w };
+    const uint8_t* s = kOrderSlots[i].s;
+    return { src[s[0]], src[s[1]], src[s[2]], src[s[3]] };
 }
 
 inline uint8_t apply_brightness(uint8_t component, uint8_t brightness) {

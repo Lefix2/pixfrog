@@ -71,12 +71,41 @@ enum class ColorOrder : uint8_t {
     GBR,
     BRG,
     BGR,
-    // RGBW strips: RGB sub-order + W last. (A former RGBWW entry was dropped —
-    // it produced {r,g,b,w}, identical to RGBW.)
+    // RGBW strips: W last or first, with the six RGB orders. RGBW and GRBW keep
+    // their stored values (6, 7); the others follow.
     RGBW,
     GRBW,
+    RBGW,
+    GBRW,
+    BRGW,
+    BGRW,
+    WRGB,
+    WRBG,
+    WGRB,
+    WGBR,
+    WBRG,
+    WBGR,
     COUNT,
 };
+
+// Names in ColorOrder order — the web, the console and the menus all read
+// them here. A strip's wire order: position k carries the channel named by
+// its k-th letter (a 3-letter order sends W, if any, last).
+inline constexpr const char* kColorOrderNames[] = {
+    "RGB",  "RBG",  "GRB",  "GBR",  "BRG",  "BGR",  "RGBW", "GRBW", "RBGW",
+    "GBRW", "BRGW", "BGRW", "WRGB", "WRBG", "WGRB", "WGBR", "WBRG", "WBGR",
+};
+static_assert(sizeof(kColorOrderNames) / sizeof(kColorOrderNames[0]) ==
+                  static_cast<size_t>(ColorOrder::COUNT),
+              "one name per colour order");
+
+// The first order that names W: the orders a 4-channel strip takes.
+constexpr ColorOrder kFirstRgbwOrder = ColorOrder::RGBW;
+
+inline const char* color_order_name(ColorOrder o) {
+    const auto i = static_cast<size_t>(o);
+    return i < static_cast<size_t>(ColorOrder::COUNT) ? kColorOrderNames[i] : "?";
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Timing — derived from f_PCLK (cf. docs/PROTOCOLS.md §3)

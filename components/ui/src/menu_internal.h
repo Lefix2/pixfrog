@@ -456,8 +456,6 @@ const char* protocol_name(led::Protocol p);
 // from the common NRZ pixels; a disabled channel is greyed out.
 Color badge_color(led::Protocol p);
 
-const char* color_order_name(led::ColorOrder o);
-
 void truncate(char* dst, size_t cap, const char* src);
 
 const char* failsafe_name(uint8_t m);

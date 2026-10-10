@@ -19,6 +19,12 @@ Reference for timings, clock formulas and DMA encoding for every protocol pixfro
 | SK9822   | SPI-like   | 1–30 MHz CLOCK       | BGR           | 32         | APA102-compatible timing    |
 | LPD8806  | SPI-like   | 1–20 MHz CLOCK       | GRB           | 24         | MSB of every byte must be 1 |
 
+The 1-wire strips take any colour order: a 3-colour strip one of the six RGB
+permutations, an RGBW strip (SK6812 RGBW, WS2814) one of the twelve with W last
+or first — `RGBW` `RBGW` `GRBW` `GBRW` `BRGW` `BGRW` and `WRGB` `WRBG` `WGRB`
+`WGBR` `WBRG` `WBGR` (`led::kColorOrderNames`, the same list in the web, the
+console and the menus).
+
 ---
 
 ## 2. 1-wire NRZ timings

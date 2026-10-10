@@ -784,12 +784,12 @@ OnClick channel_action(ChItem it) {
         };
     case ChItem::Order:
         return [](uint8_t) {
-            // 3-colour strips pick an RGB permutation; RGBW strips a W-suffixed
-            // order. Restrict the cycle to the matching family.
+            // 3-colour strips pick an RGB permutation; RGBW strips an order with
+            // W last or first. Restrict the cycle to the matching family.
             const auto& cc     = config::get_channel(s.channel_index);
             const bool rgbw    = led::is_rgbw(cc.protocol);
-            const int32_t omin = rgbw ? static_cast<int32_t>(led::ColorOrder::RGBW) : 0;
-            const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::GRBW)
+            const int32_t omin = rgbw ? static_cast<int32_t>(led::kFirstRgbwOrder) : 0;
+            const int32_t omax = rgbw ? static_cast<int32_t>(led::ColorOrder::COUNT) - 1
                                       : static_cast<int32_t>(led::ColorOrder::BGR);
             int32_t ocur       = static_cast<int32_t>(cc.color_order);
             if (ocur < omin) ocur = omin;

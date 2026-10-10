@@ -40,10 +40,6 @@ const char* const kProtocolNames[] = { "Off",    "WS2815", "WS2812B", "WS2811", 
 static_assert(sizeof(kProtocolNames) / sizeof(kProtocolNames[0]) ==
               static_cast<size_t>(led::Protocol::COUNT));
 
-const char* const kOrderNames[] = { "RGB", "RBG", "GRB", "GBR", "BRG", "BGR", "RGBW", "GRBW" };
-static_assert(sizeof(kOrderNames) / sizeof(kOrderNames[0]) ==
-              static_cast<size_t>(led::ColorOrder::COUNT));
-
 // ── response helpers ────────────────────────────────────────────────────────
 // Handlers always return 0 (via ok/err) so esp_console never appends its own
 // "command returned non-zero" line and the OK/ERR terminator stays the last
@@ -475,7 +471,7 @@ int cmd_global(int argc, char** argv) {
 void print_channel(size_t ch, const config::ChannelConfig& c) {
     printf("channel=%u\n", static_cast<unsigned>(ch));
     printf("protocol=%s\n", kProtocolNames[static_cast<size_t>(c.protocol)]);
-    printf("order=%s\n", kOrderNames[static_cast<size_t>(c.color_order)]);
+    printf("order=%s\n", led::kColorOrderNames[static_cast<size_t>(c.color_order)]);
     printf("universe=%u\n", c.universe_start);
     printf("dmx_start=%u\n", c.dmx_start);
     printf("pixels=%u\n", c.pixel_count);
@@ -611,8 +607,9 @@ int cmd_ch(int argc, char** argv) {
                        "LPD8806 or 0..8");
         c.protocol = static_cast<led::Protocol>(p);
     } else if (strcmp(key, "order") == 0) {
-        const int o = lookup_name(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), val);
-        if (o < 0) return err("order: RGB|RBG|GRB|GBR|BRG|BGR|RGBW|GRBW or 0..7");
+        const int o = lookup_name(led::kColorOrderNames,
+                                  static_cast<size_t>(led::ColorOrder::COUNT), val);
+        if (o < 0) return err("order: RGB..BGR, RGBW..BGRW, WRGB..WBGR or 0..17");
         c.color_order = static_cast<led::ColorOrder>(o);
     } else if (strcmp(key, "universe") == 0) {
         if (!parse_u32_in(val, 0, 32767, u)) return err("universe: 0..32767");

@@ -114,7 +114,8 @@ static cJSON* build_channels_json() {
         cJSON* jc     = cJSON_CreateObject();
         cJSON_AddNumberToObject(jc, "id", static_cast<double>(i));
         cJSON_AddStringToObject(jc, "protocol", kProtoNames[static_cast<size_t>(c.protocol)]);
-        cJSON_AddStringToObject(jc, "color_order", kOrderNames[static_cast<size_t>(c.color_order)]);
+        cJSON_AddStringToObject(jc, "color_order",
+                                led::kColorOrderNames[static_cast<size_t>(c.color_order)]);
         cJSON_AddNumberToObject(jc, "universe_start", c.universe_start);
         cJSON_AddNumberToObject(jc, "dmx_start", c.dmx_start);
         cJSON_AddNumberToObject(jc, "pixel_count", c.pixel_count);
@@ -508,7 +509,7 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
         }
     }
     if ((s = json_str(j, "color_order"))) {
-        const int o = lookup(kOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), s);
+        const int o = lookup(led::kColorOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), s);
         if (o >= 0)
             c.color_order = static_cast<led::ColorOrder>(o);
         else

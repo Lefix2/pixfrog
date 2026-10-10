@@ -643,8 +643,42 @@ static void test_lut_applied_by_nrz_encoder() {
     EXPECT_EQ(out[2], 50);
 }
 
+// Every order puts R, G, B, W on the wire in the order its name spells; a
+// 3-letter order on an RGBW strip sends W last. Stored values 6/7 stay RGBW/GRBW.
+static void test_color_orders_follow_their_names() {
+    EXPECT_EQ(static_cast<int>(ColorOrder::RGBW), 6);
+    EXPECT_EQ(static_cast<int>(ColorOrder::GRBW), 7);
+    EXPECT_EQ(static_cast<int>(ColorOrder::COUNT), 18);
+    const uint8_t px[4] = { 0x11, 0x22, 0x33, 0x44 };  // R G B W
+    for (size_t i = 0; i < static_cast<size_t>(ColorOrder::COUNT); ++i) {
+        const char* name = kColorOrderNames[i];
+        ChannelDesc d{};
+        d.protocol    = Protocol::SK6812;
+        d.color_order = static_cast<ColorOrder>(i);
+        d.pixel_count = 1;
+        d.brightness  = 255;
+        d.grouping    = 1;
+        uint8_t out[4];
+        detail::transformed_pixel_bytes(d, px, 0, out);
+        const char letters[] = "RGBW";
+        for (int k = 0; k < 4; ++k) {
+            const char want = k < static_cast<int>(std::strlen(name)) ? name[k] : 'W';
+            EXPECT_EQ(out[k], px[std::strchr(letters, want) - letters]);
+        }
+        for (size_t j = 0; j < i; ++j)
+            EXPECT_TRUE(std::strcmp(kColorOrderNames[j], name) != 0);
+        // An RGBW order has W first or last; the RGB ones come before them.
+        const bool four = std::strlen(name) == 4;
+        EXPECT_EQ(four, i >= static_cast<size_t>(kFirstRgbwOrder));
+        if (four) EXPECT_TRUE(name[0] == 'W' || name[3] == 'W');
+    }
+    EXPECT_TRUE(std::strcmp(color_order_name(ColorOrder::WRGB), "WRGB") == 0);
+    EXPECT_TRUE(std::strcmp(color_order_name(ColorOrder::COUNT), "?") == 0);
+}
+
 int main() {
     test_timing_ws2815();
+    test_color_orders_follow_their_names();
     test_timing_ws2812b();
     test_timing_apa102_clock();
     test_bytes_per_pixel();
