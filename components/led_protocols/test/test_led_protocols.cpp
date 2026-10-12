@@ -676,7 +676,35 @@ static void test_color_orders_follow_their_names() {
     EXPECT_TRUE(std::strcmp(color_order_name(ColorOrder::COUNT), "?") == 0);
 }
 
+// An order keeps to the family of its protocol: a 3-channel strip drops W, an
+// RGBW one takes W last after an RGB order; Off keeps whatever it held.
+static void test_order_for_protocol() {
+    using O = ColorOrder;
+    EXPECT_TRUE(order_for_protocol(Protocol::WS2815, O::WRGB) == O::RGB);
+    EXPECT_TRUE(order_for_protocol(Protocol::WS2815, O::GRBW) == O::GRB);
+    EXPECT_TRUE(order_for_protocol(Protocol::APA102, O::WBGR) == O::BGR);
+    EXPECT_TRUE(order_for_protocol(Protocol::WS2815, O::BRG) == O::BRG);
+    EXPECT_TRUE(order_for_protocol(Protocol::SK6812, O::GRB) == O::GRBW);
+    EXPECT_TRUE(order_for_protocol(Protocol::WS2814, O::GBR) == O::GBRW);
+    EXPECT_TRUE(order_for_protocol(Protocol::WS2814, O::WRGB) == O::WRGB);
+    EXPECT_TRUE(order_for_protocol(Protocol::Off, O::WRGB) == O::WRGB);
+    EXPECT_TRUE(order_for_protocol(Protocol::WS2815, O::COUNT) == O::COUNT);
+    // Every order lands in its protocol's family and keeps its colour letters.
+    for (size_t i = 0; i < static_cast<size_t>(O::COUNT); ++i)
+        for (uint8_t p = 1; p < static_cast<uint8_t>(Protocol::COUNT); ++p) {
+            const auto proto = static_cast<Protocol>(p);
+            const O o        = order_for_protocol(proto, static_cast<O>(i));
+            EXPECT_EQ(order_has_white(o), is_rgbw(proto));
+            const char* a = kColorOrderNames[i];
+            const char* b = color_order_name(o);
+            for (const char* c = "RGB"; *c; ++c)
+                EXPECT_EQ(std::strchr(a, *c) - a - (a[0] == 'W'),
+                          std::strchr(b, *c) - b - (b[0] == 'W'));
+        }
+}
+
 int main() {
+    test_order_for_protocol();
     test_timing_ws2815();
     test_color_orders_follow_their_names();
     test_timing_ws2812b();

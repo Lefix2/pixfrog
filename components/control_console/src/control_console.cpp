@@ -611,7 +611,10 @@ int cmd_ch(int argc, char** argv) {
         const int o = lookup_name(led::kColorOrderNames,
                                   static_cast<size_t>(led::ColorOrder::COUNT), val);
         if (o < 0) return err("order: RGB..BGR, RGBW..BGRW, WRGB..WBGR or 0..17");
-        c.color_order = static_cast<led::ColorOrder>(o);
+        const auto order = static_cast<led::ColorOrder>(o);
+        if (led::order_has_white(order) && !led::is_off(c.protocol) && !led::is_rgbw(c.protocol))
+            return err("order: a W order needs an RGBW protocol (SK6812, WS2814)");
+        c.color_order = order;
     } else if (strcmp(key, "universe") == 0) {
         if (!parse_u32_in(val, 0, 32767, u)) return err("universe: 0..32767");
         c.universe_start = static_cast<uint16_t>(u);

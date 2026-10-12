@@ -1568,7 +1568,19 @@ TEST(channel_post_colour_order_and_numeric_bools) {
     EXPECT_TRUE(config::get_channel(4).color_order == led::ColorOrder::BGR);
     EXPECT_TRUE(config::get_channel(4).invert_direction);
     EXPECT_EQ(post("/api/channel/4", "{\"color_order\":\"XYZ\"}").status, 400);
+    // A W order wants a 4-channel protocol, in the same POST or before it.
+    const auto proto = config::get_channel(4).protocol;
+    EXPECT_EQ(post("/api/channel/4", "{\"protocol\":\"WS2815\",\"color_order\":\"WRGB\"}").status,
+              400);
+    EXPECT_EQ(post("/api/channel/4", "{\"protocol\":\"WS2814\",\"color_order\":\"WRGB\"}").status,
+              200);
+    EXPECT_TRUE(config::get_channel(4).color_order == led::ColorOrder::WRGB);
+    EXPECT_EQ(post("/api/channel/4", "{\"protocol\":\"WS2815\"}").status, 200);
+    EXPECT_TRUE(config::get_channel(4).color_order == led::ColorOrder::RGB);
     post("/api/channel/4", "{\"invert\":false}");
+    config::ChannelConfig c = config::get_channel(4);
+    c.protocol              = proto;
+    config::set_channel(4, c);
 }
 
 // A backup taken before the effect bank: each scene carried its look and its

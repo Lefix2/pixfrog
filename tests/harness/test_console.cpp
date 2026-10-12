@@ -143,7 +143,12 @@ TEST(channel_get_set_and_validation) {
     EXPECT_FALSE(run("ch 2 protocol 9"));
     EXPECT_FALSE(run("ch 2 pixels 0"));
     EXPECT_FALSE(run("ch 2 gaps 0:1"));
+    // A W order on a 3-channel strip would put a dark W on a colour wire.
+    EXPECT_FALSE(run("ch 2 order WRGB"));
     // RGBW orders: W last or first, by name or by index; W in the middle is none.
+    EXPECT_TRUE(run("ch 2 protocol SK6812"));
+    EXPECT_TRUE(run("ch 2"));
+    EXPECT_TRUE(has("order=GRBW"));  // GRB took W last: the same wire bytes
     EXPECT_TRUE(run("ch 2 order WBGR"));
     EXPECT_TRUE(run("ch 2"));
     EXPECT_TRUE(has("order=WBGR"));
@@ -152,6 +157,10 @@ TEST(channel_get_set_and_validation) {
     EXPECT_TRUE(has("order=WRGB"));
     EXPECT_FALSE(run("ch 2 order RGWB"));
     EXPECT_FALSE(run("ch 2 order 18"));
+    // Back to a 3-channel protocol: the order drops its W.
+    EXPECT_TRUE(run("ch 2 protocol WS2812B"));
+    EXPECT_TRUE(run("ch 2"));
+    EXPECT_TRUE(has("order=RGB"));
     EXPECT_TRUE(run("ch 2 order GRB"));
     EXPECT_FALSE(run("ch 2 clock_hz 100"));
     EXPECT_TRUE(run("ch 2 gaps -"));

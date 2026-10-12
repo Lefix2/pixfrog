@@ -107,6 +107,33 @@ inline const char* color_order_name(ColorOrder o) {
     return i < static_cast<size_t>(ColorOrder::COUNT) ? kColorOrderNames[i] : "?";
 }
 
+// Whether `o` names W — an order only a 4-channel protocol can send.
+constexpr bool order_has_white(ColorOrder o) {
+    return o >= kFirstRgbwOrder && o < ColorOrder::COUNT;
+}
+
+// `o` in the family of `p`: a 3-channel strip drops the W of an RGBW order
+// (WRGB → RGB: sent as is it would put an always-dark W on the red wire), an
+// RGBW one takes W last after an RGB order (GRB → GRBW, the same wire bytes).
+// An Off output keeps its order for when it is turned back on.
+inline ColorOrder order_for_protocol(Protocol p, ColorOrder o) {
+    if (is_off(p) || o >= ColorOrder::COUNT || order_has_white(o) == is_rgbw(p)) return o;
+    const char* name = kColorOrderNames[static_cast<size_t>(o)];
+    char want[5]     = {};
+    size_t n         = 0;
+    for (const char* c = name; *c; ++c)
+        if (*c != 'W') want[n++] = *c;
+    if (is_rgbw(p)) want[n] = 'W';
+    for (size_t i = 0; i < static_cast<size_t>(ColorOrder::COUNT); ++i) {
+        const char* a = kColorOrderNames[i];
+        size_t k      = 0;
+        while (a[k] && a[k] == want[k])
+            ++k;
+        if (!a[k] && !want[k]) return static_cast<ColorOrder>(i);
+    }
+    return o;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Timing — derived from f_PCLK (cf. docs/PROTOCOLS.md §3)
 // ────────────────────────────────────────────────────────────────────────────
