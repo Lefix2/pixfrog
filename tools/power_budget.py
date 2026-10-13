@@ -152,7 +152,7 @@ def markdown(base):
     # takes the bus straight, so the whole drop reaches the LEDs).
     print("| Bus | Current | Last bar sees | Cable loss |")
     print("|---|---:|---:|---:|")
-    for volts, direct in ((12, True), (24, True), (50, False)):
+    for volts, direct in ((12, True), (24, True), (48, False)):
         a = with_(base, px=60, w_px=0.32, bars=8, home=20.0, volts=float(volts),
                   direct=direct)
         if direct:
@@ -163,7 +163,7 @@ def markdown(base):
             continue
         seen = f"{r['v_end']:.1f} V ({(r['v_end'] - volts) / volts:+.0%})" if direct \
             else f"{r['v_end']:.1f} V → buck → 24 V"
-        label = f"{volts} V direct" if direct else "48 V (50) + buck"
+        label = f"{volts} V direct" if direct else "48 V + buck"
         print(f"| {label} | {r['current']:.1f} A | {seen} | {r['loss']:.0%} |")
 
 
@@ -179,7 +179,7 @@ def max_bars_psu(a, home, psu_w):
     return n
 
 
-def markdown_psu(base, homes=(5, 10, 20, 30), psus=(320, 480, 600)):
+def markdown_psu(base, homes=(5, 10, 20, 30), psus=(320, 480)):
     print("| Bar | PSU | " + " | ".join(f"{h} m" for h in homes) + " |")
     print("|---|---|" + "---:|" * len(homes))
     for tag, label, px, w in (("A", "60 px RGB", 60, 0.24), ("B", "60 px RGBW", 60, 0.32),
@@ -202,10 +202,10 @@ def main():
     p.add_argument("--home", type=float, default=20.0, help="PSU to first node, m")
     p.add_argument("--jumper", type=float, default=1.0, help="node to node, m")
     p.add_argument("--section", type=float, default=1.5, help="mm² per conductor")
-    p.add_argument("--volts", type=float, default=50.0, help="PSU output (48 V trimmed up; Mean Well tops out at 50.4 V)")
+    p.add_argument("--volts", type=float, default=48.0, help="PSU output, V (48: an XLR is rated < 50 V)")
     p.add_argument("--eff", type=float, default=0.95, help="node buck efficiency")
     p.add_argument("--logic", type=float, default=0.5, help="node MCU + link, W")
-    p.add_argument("--imax", type=float, default=10.0, help="per-run current limit, A")
+    p.add_argument("--imax", type=float, default=8.0, help="per-run current limit, A")
     p.add_argument("--loss", type=float, default=0.10, help="max cable loss")
     p.add_argument("--vmin", type=float, default=36.0, help="min node input, V")
     p.add_argument("--hot", action="store_true", help="cable at 60 °C (+16 %%)")
