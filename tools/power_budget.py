@@ -152,7 +152,7 @@ def markdown(base):
     # takes the bus straight, so the whole drop reaches the LEDs).
     print("| Bus | Current | Last bar sees | Cable loss |")
     print("|---|---:|---:|---:|")
-    for volts, direct in ((12, True), (24, True), (52, False)):
+    for volts, direct in ((12, True), (24, True), (50, False)):
         a = with_(base, px=60, w_px=0.32, bars=8, home=20.0, volts=float(volts),
                   direct=direct)
         if direct:
@@ -163,8 +163,33 @@ def markdown(base):
             continue
         seen = f"{r['v_end']:.1f} V ({(r['v_end'] - volts) / volts:+.0%})" if direct \
             else f"{r['v_end']:.1f} V → buck → 24 V"
-        label = f"{volts} V direct" if direct else "48 V (52) + buck"
+        label = f"{volts} V direct" if direct else "48 V (50) + buck"
         print(f"| {label} | {r['current']:.1f} A | {seen} | {r['loss']:.0%} |")
+
+
+def max_bars_psu(a, home, psu_w):
+    """Bars one PSU of `psu_w` feeds at 80 % load, every limit applied."""
+    n = 0
+    while n < 500:
+        b = with_(a, bars=n + 1, home=home)
+        r = solve(b)
+        if verdict(b, r) != "ok" or r["p_supply"] > 0.8 * psu_w:
+            break
+        n += 1
+    return n
+
+
+def markdown_psu(base, homes=(5, 10, 20, 30), psus=(320, 480, 600)):
+    print("| Bar | PSU | " + " | ".join(f"{h} m" for h in homes) + " |")
+    print("|---|---|" + "---:|" * len(homes))
+    for tag, label, px, w in (("A", "60 px RGB", 60, 0.24), ("B", "60 px RGBW", 60, 0.32),
+                              ("C", "144 px RGB", 144, 0.24)):
+        a = with_(base, px=px, w_px=w)
+        for k, psu in enumerate(psus):
+            bold = "**" if psu == 480 else ""
+            cells = [f"{bold}{max_bars_psu(a, h, psu)}{bold}" for h in homes]
+            head = f"{tag} — {label}" if k == 0 else ""
+            print(f"| {head} | {bold}{psu} W{bold} | " + " | ".join(cells) + " |")
 
 
 def main():
@@ -177,7 +202,7 @@ def main():
     p.add_argument("--home", type=float, default=20.0, help="PSU to first node, m")
     p.add_argument("--jumper", type=float, default=1.0, help="node to node, m")
     p.add_argument("--section", type=float, default=1.5, help="mm² per conductor")
-    p.add_argument("--volts", type=float, default=52.0, help="PSU output (48 V trimmed up)")
+    p.add_argument("--volts", type=float, default=50.0, help="PSU output (48 V trimmed up; Mean Well tops out at 50.4 V)")
     p.add_argument("--eff", type=float, default=0.95, help="node buck efficiency")
     p.add_argument("--logic", type=float, default=0.5, help="node MCU + link, W")
     p.add_argument("--imax", type=float, default=10.0, help="per-run current limit, A")
@@ -189,6 +214,8 @@ def main():
     a = p.parse_args()
     if a.markdown:
         markdown(a)
+        print()
+        markdown_psu(a)
     elif a.table:
         table(a)
     else:

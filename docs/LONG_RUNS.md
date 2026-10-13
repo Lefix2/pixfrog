@@ -135,6 +135,29 @@ Three layers, one per threat:
 The 5 V TVS of the current shield would also clip the RS-485 common-mode
 range: the differential path gets RS-485-rated TVS instead.
 
+### The 48 V connector — not XLR4
+
+XLR4 looks natural (4 pins: 48 V, GND, D+, D−) but is the wrong choice:
+
+- **Out of rating.** A Neutrik XLR is rated **< 50 V** and 10 A per contact
+  (NC4FX); a 48 V PSU trimmed to 50 V sits at the limit, and the 10 A run at
+  100 % of the contact.
+- **Mates with the 12/24 V XLR4 already in use** (`HARDWARE.md` §8: pin 4 =
+  strip VCC). One 48 V cable into an old satellite or a direct strip and the
+  strip is gone at once — the most likely accident.
+- **No breaking under load.** An XLR is not made to be pulled under current:
+  a DC arc at 48 V and 5–10 A does not die out by itself as an AC one does;
+  the contacts pit, their resistance rises, they heat. Pin 1 mates first
+  (GND), which helps on plug-in only.
+- **Thin cables around.** XLR4 leads are often 0.25–0.5 mm² (audio, DMX,
+  camera power): one of them in a 10 A run overheats.
+
+Instead, a family that **cannot mate** with anything else on the rig and is
+rated for it, e.g. **M12 L-coded** (5 poles, DC up to 63 V and 16 A per pin,
+IP67, screw lock, up to 2.5 mm²): 48 V, GND, D+, D−, and the fifth pole free
+(or shield). The screw lock also makes an unplug under load deliberate.
+Whatever the connector: **switch the PSU off before (un)plugging a segment**.
+
 ---
 
 ## 5. Strip node
@@ -187,7 +210,7 @@ tables; `--bars --px --w-px --home …` checks one run of yours).
 | Item | Value | Why |
 |---|---|---|
 | Cable | **1.5 mm²** flexible copper, 13.3 Ω/km per conductor (IEC 60228 class 5, 20 °C) → **26.6 mΩ per metre of cable** (loop) | `--hot` adds 16 % for a cable at 60 °C |
-| PSU | 48 V model **trimmed to 52 V** | still SELV (< 60 V); 8 % more headroom for free |
+| PSU | 48 V model **trimmed to 50 V** | the top of the Mean Well trim range (50.4 V, §6 references); still SELV |
 | Bar | 1 m; full white **0.24 W/px RGB, 0.32 W/px RGBW** (all four on) | WS2815 / WS2814 class datasheet figures; size for full white — a blackout to full white flash happens |
 | Node | buck **95 %** + 0.5 W (MCU, link) | constant-power load: a lower input voltage draws more current |
 | Run | PSU → home run → first node, then **1 m jumpers** node to node | the ladder is solved exactly, every segment's drop counted |
@@ -203,11 +226,11 @@ Power per bar and node input:
 
 | Bar | Bar W | Node in W | 5 m | 10 m | 20 m | 30 m | 50 m |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| A — 1 m · 60 px RGB, 12 V class | 14.4 | 15.7 | 30 | 29 | 21 | 16 | 10 |
-| B — 1 m · 60 px RGBW, 24 V class | 19.2 | 20.7 | 23 | 22 | 17 | 13 | 8 |
-| C — 1 m · 144 px RGB | 34.6 | 36.9 | 13 | 13 | 10 | 7 | 4 |
+| A — 1 m · 60 px RGB, 12 V class | 14.4 | 15.7 | 29 | 28 | 20 | 15 | 10 |
+| B — 1 m · 60 px RGBW, 24 V class | 19.2 | 20.7 | 22 | 21 | 16 | 12 | 7 |
+| C — 1 m · 144 px RGB | 34.6 | 36.9 | 12 | 12 | 10 | 7 | 4 |
 
-Up to ~10 m the **10 A** limit sets the count (about 480 W per run); beyond,
+Up to ~10 m the **10 A** limit sets the count (about 470 W per run); beyond,
 the **10 % loss** does. A run gets ~10–15 % shorter with a hot cable
 (`--hot`).
 
@@ -215,9 +238,9 @@ the **10 % loss** does. A run gets ~10–15 % shorter with a hot cable
 
 | Bar | 1 bars | 2 bars | 4 bars | 8 bars | 16 bars |
 |---|---:|---:|---:|---:|---:|
-| A | 584 m | 292 m | 145 m | 71 m | 32 m |
-| B | 442 m | 221 m | 110 m | 53 m | 23 m |
-| C | 248 m | 124 m | 61 m | 29 m | — |
+| A | 540 m | 270 m | 134 m | 65 m | 29 m |
+| B | 408 m | 204 m | 101 m | 49 m | 21 m |
+| C | 229 m | 114 m | 56 m | 26 m | — |
 
 Few bars go very far: the 36 V floor of the node is reached only past several
 hundred metres, where the loss criterion has long stopped the run. In
@@ -229,11 +252,11 @@ practice **the length is bounded by the loss you accept, not by the node.**
 |---|---:|---:|---:|
 | 12 V direct | — | drop over 12 V: impossible | — |
 | 24 V direct | 6.4 A | 20.0 V (-17%) | 16% |
-| 48 V (52) + buck | 3.3 A | 49.9 V → buck → 24 V | 4% |
+| 48 V (50) + buck | 3.5 A | 47.8 V → buck → 24 V | 4% |
 
 At 12 V the cable alone would need to drop more than the supply. At 24 V the
 last bar is 17 % under its rating (colour shift). At 48 V the node still has
-50 V and its buck hands the bar exactly 24 V.
+~48 V and its buck hands the bar exactly 24 V.
 
 ### The link is not the limit
 
@@ -266,7 +289,7 @@ and its connectors, so:
   segment first (table below);
 - 480 W / 48 V is a common rating, fanless and sealed (IP67) for stage use.
 
-Load it to **80 %**: trimmed to 52 V a 480 W PSU gives ~9.2 A, so a segment
+Load it to **80 %**: trimmed to 50 V a 480 W PSU gives ~9.6 A, so a segment
 is designed for **≤ 384 W** (node inputs at full white + cable loss).
 
 Bars per segment, PSU at 80 % and every limit of the assumptions applied:
@@ -274,18 +297,29 @@ Bars per segment, PSU at 80 % and every limit of the assumptions applied:
 | Bar | PSU | 5 m | 10 m | 20 m | 30 m |
 |---|---|---:|---:|---:|---:|
 | A — 60 px RGB | 320 W | 15 | 15 | 15 | 14 |
-| | **480 W** | **23** | **22** | **21** | **16** |
-| | 600 W | 28 | 27 | 21 | 16 |
+|  | **480 W** | **23** | **22** | **20** | **15** |
+|  | 600 W | 28 | 27 | 20 | 15 |
 | B — 60 px RGBW | 320 W | 12 | 11 | 11 | 11 |
-| | **480 W** | **17** | **17** | **16** | **13** |
-| | 600 W | 21 | 21 | 17 | 13 |
+|  | **480 W** | **17** | **17** | **16** | **12** |
+|  | 600 W | 21 | 21 | 16 | 12 |
 | C — 144 px RGB | 320 W | 6 | 6 | 6 | 6 |
-| | **480 W** | **10** | **9** | **9** | **7** |
-| | 600 W | 12 | 12 | 10 | 7 |
+|  | **480 W** | **10** | **9** | **9** | **7** |
+|  | 600 W | 12 | 12 | 10 | 7 |
 
 600 W only helps on short home runs; from 20 m the cable sets the count.
 320 W fits short or light segments (cheaper, lighter, a smaller short-circuit
 current).
+
+Reference PSUs (prices seen 2026-10, single unit, excl. VAT):
+
+| Model | Rating | Trim | Cooling, case | Warranty | Price | Use |
+|---|---|---|---|---|---|---|
+| **Mean Well UHP-500-48** | 501 W, 10.45 A | 45.6–50.4 V | fanless, slim open case (needs a box), PFC, 95 % | 3 years | ~$105 (TRC), ~€133 (RS) | **best price per watt** in the 480 W class, in a rack or a vented case |
+| **Mean Well HLG-480H-48A** | 480 W, 10 A | 40.8–50.4 V | fanless, IP65 aluminium, −40…+90 °C, PFC | 7 years | ~$143 (DigiKey), ~€148 (TME) | exposed on the rig, touring |
+| Mean Well LRS-350-48 | 350 W, 7.3 A | — | **fan**, open frame | 3 years | ~$36 (TRC) | cheapest; workshop or tests, not on stage |
+
+Both 480 W-class models stop at **50.4 V**, hence the 50 V of the
+assumptions.
 
 Per segment, also:
 
@@ -297,8 +331,8 @@ Per segment, also:
   segments can then be sized on that cap instead of full white.
 
 Example — 24 bars B, three segments of 8, home runs of 20 m: each segment
-draws 172 W (3.3 A) at full white, so three 320 W PSUs suffice; with
-480 W PSUs, two segments of 12 bars (265 W each) do the same job.
+draws 173 W (3.5 A) at full white, so three 320 W PSUs suffice; with
+480 W PSUs, two segments of 12 bars (266 W each) do the same job.
 
 ---
 
@@ -362,8 +396,8 @@ link is for.
 
 ## 10. Open questions
 
-- The 48 V connector (hybrid power + pair, or powerCON + etherCON): rating,
-  keying, hot-plug arcing at the current wanted.
+- The 48 V connector: M12 L-coded (§4) or another family rated > 60 V, keyed
+  against every XLR; cable assemblies with a twisted pair inside.
 - Cable: one 4-conductor cable with a twisted 120 Ω pair, or DMX cable for the
   data beside a power cable.
 - 4 vs 8 Mb/s on the longest hop with the chosen transceiver.
