@@ -177,7 +177,106 @@ Design choices:
 
 ---
 
-## 6. The pixfrog link — frame format (draft)
+## 6. Sizing — cables, bars per run, power supplies
+
+All figures come from `tools/power_budget.py` (`--markdown` prints these
+tables; `--bars --px --w-px --home …` checks one run of yours).
+
+### Assumptions
+
+| Item | Value | Why |
+|---|---|---|
+| Cable | **1.5 mm²** flexible copper, 13.3 Ω/km per conductor (IEC 60228 class 5, 20 °C) → **26.6 mΩ per metre of cable** (loop) | `--hot` adds 16 % for a cable at 60 °C |
+| PSU | 48 V model **trimmed to 52 V** | still SELV (< 60 V); 8 % more headroom for free |
+| Bar | 1 m; full white **0.24 W/px RGB, 0.32 W/px RGBW** (all four on) | WS2815 / WS2814 class datasheet figures; size for full white — a blackout to full white flash happens |
+| Node | buck **95 %** + 0.5 W (MCU, link) | constant-power load: a lower input voltage draws more current |
+| Run | PSU → home run → first node, then **1 m jumpers** node to node | the ladder is solved exactly, every segment's drop counted |
+| Limits | ≤ **10 A** per run, ≤ **10 %** cable loss, last node ≥ **36 V** | 10 A: connector pins and margin under the ~16 A thermal rating of 1.5 mm²; 10 % loss = 10 % of the power heating the cable |
+
+Power per bar and node input:
+
+- **A** — 1 m · 60 px RGB (12 V class): 14.4 W → 15.7 W at the node input
+- **B** — 1 m · 60 px RGBW (24 V class): 19.2 W → 20.7 W
+- **C** — 1 m · 144 px RGB: 34.6 W → 36.9 W
+
+### Max bars on one 1.5 mm² run, by home-run length
+
+| Bar | Bar W | Node in W | 5 m | 10 m | 20 m | 30 m | 50 m |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A — 1 m · 60 px RGB, 12 V class | 14.4 | 15.7 | 30 | 29 | 21 | 16 | 10 |
+| B — 1 m · 60 px RGBW, 24 V class | 19.2 | 20.7 | 23 | 22 | 17 | 13 | 8 |
+| C — 1 m · 144 px RGB | 34.6 | 36.9 | 13 | 13 | 10 | 7 | 4 |
+
+Up to ~10 m the **10 A** limit sets the count (about 480 W per run); beyond,
+the **10 % loss** does. A run gets ~10–15 % shorter with a hot cable
+(`--hot`).
+
+### Max home-run length, by number of bars
+
+| Bar | 1 bars | 2 bars | 4 bars | 8 bars | 16 bars |
+|---|---:|---:|---:|---:|---:|
+| A | 584 m | 292 m | 145 m | 71 m | 32 m |
+| B | 442 m | 221 m | 110 m | 53 m | 23 m |
+| C | 248 m | 124 m | 61 m | 29 m | — |
+
+Few bars go very far: the 36 V floor of the node is reached only past several
+hundred metres, where the loss criterion has long stopped the run. In
+practice **the length is bounded by the loss you accept, not by the node.**
+
+### Why 48 V — the same 8 × 19.2 W (154 W) at 20 m
+
+| Bus | Current | Last bar sees | Cable loss |
+|---|---:|---:|---:|
+| 12 V direct | — | drop over 12 V: impossible | — |
+| 24 V direct | 6.4 A | 20.0 V (-17%) | 16% |
+| 48 V (52) + buck | 3.3 A | 49.9 V → buck → 24 V | 4% |
+
+At 12 V the cable alone would need to drop more than the supply. At 24 V the
+last bar is 17 % under its rating (colour shift). At 48 V the node still has
+50 V and its buck hands the bar exactly 24 V.
+
+### The link is not the limit
+
+At 8 Mb/s (UART, 10 bits a byte, 14 bytes of frame overhead), a 60 fps frame
+leaves ~15 ms after the latch and margins:
+
+| Bar | Link time per bar | Bars per link at 60 fps | Bars per run by power (20 m) |
+|---|---:|---:|---:|
+| A — 60 px RGB | 0.24 ms | 61 | 21 |
+| B — 60 px RGBW | 0.32 ms | 47 | 17 |
+| C — 144 px RGB | 0.56 ms | 26 | 10 |
+
+Power ends a run well before data does: one output can feed **two or three
+power runs** (the chain passes a power injection point; the pair goes on, the
+48 V of each run comes from its own feed).
+
+### Sizing the supplies
+
+1. **Per run**: add the node inputs at full white plus the cable loss —
+   `power_budget.py` prints it as "PSU".
+2. **Per PSU**: sum its runs and keep **20 % headroom** (continuous load
+   ≤ 80 % of the rating): `P_psu ≥ Σ P_run / 0.8`.
+3. **Per run, a 10 A fuse** at the PSU (a 48 V PSU feeds a short with a lot
+   of current); the node's eFuse only protects the node.
+4. **Inrush**: every node's bulk capacitor charges at power-on. The eFuse
+   soft-start spreads it; check the PSU's capacitive-load rating all the same.
+5. A **local current limit** in the node (§5) caps each bar at a chosen
+   power: the PSU can then be sized on that cap instead of full white.
+
+Example — 24 bars B on three runs of 8, home runs of 20 m:
+
+| | Value |
+|---|---:|
+| One run (8 × 20.7 W + 3.8 % loss) | 172 W, 3.3 A |
+| Three runs | 516 W |
+| PSU, 20 % headroom | **≥ 645 W** → one 750 W 48 V PSU trimmed to 52 V, three 10 A fused outputs |
+
+Bar C at full density changes the picture: 10 bars at 20 m already reach
+~406 W and 7.8 A for one run, 9 % of it lost in the cable.
+
+---
+
+## 7. The pixfrog link — frame format (draft)
 
 Line: UART 8N1 at **8 Mb/s** (4 Mb/s fallback for very long hops). On the
 16 MHz PARLIO bus a bit is 2 samples (4 at 4 Mb/s), against 20 for an
@@ -211,7 +310,7 @@ offset  size  field
 
 ---
 
-## 7. Controller firmware
+## 8. Controller firmware
 
 - A per-output **Link** setting: *Direct* or *Differential*. It drives the
   expander bit and picks the encoder: NRZ / SPI samples, or link frames.
@@ -223,17 +322,19 @@ offset  size  field
 
 ---
 
-## 8. Plan
+## 9. Plan
 
-1. **Node v1, "dumb"**: 48 V eFuse + buck + fault-protected RS-485 receiver
-   carrying NRZ as is, no MCU. Validates power, connectors, thermal and the
-   differential path with today's firmware (WS281x only).
-2. **Bi-mode shield**: 74HCT125 + RS-485 drivers + expander; the Link setting
-   in the firmware.
-3. **Node v2, "smart"**: RP2040, framed link with CRC, latch, chain, local
-   current limit, update over the link.
+1. **Bi-mode shield**: 74HCT125 + RS-485 drivers + expander; the Link setting
+   and the frame encoder in the firmware, testable on the bench with a
+   receiver before any node exists.
+2. **Strip node**: RP2040, framed link with CRC, latch, chain, local current
+   limit, update over the link; 48 V eFuse + buck sized with §6.
 
-## 9. Open questions
+There is no intermediate "dumb" node carrying NRZ as is: it would not carry
+clocked strips on one pair and would show corrupted frames, the two things the
+link is for.
+
+## 10. Open questions
 
 - The 48 V connector (hybrid power + pair, or powerCON + etherCON): rating,
   keying, hot-plug arcing at the current wanted.
