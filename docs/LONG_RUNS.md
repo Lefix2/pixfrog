@@ -65,6 +65,9 @@ stays SELV (< 60 V DC), like PoE.
 - The 48 V is injected at a power point, **never on the shield's XLR**.
 - This is the architecture of Martin's first-generation VDO Sceptron, sold
   for years (§11).
+- **Alternative**: a shared 10BASE-T1S segment in place of the chain, with
+  bars that identify themselves to pixfrog; a dead bar no longer blacks out
+  the bars after it (§12).
 
 ### Why a framed protocol rather than NRZ over RS-485
 
@@ -429,6 +432,8 @@ link is for.
   data beside a power cable.
 - 4 vs 8 Mb/s on the longest hop with the chosen transceiver.
 - Exact transceiver and buck part numbers, against stock and price.
+- RS-485 chain (§2–§7) or 10BASE-T1S bus (§12): settled by the bench checks
+  of §12.
 
 ---
 
@@ -496,3 +501,178 @@ inference, not a published figure: the bar regulates internally down to
 Sources: [VDO Sceptron family user manual, rev. E](https://adn.harmanpro.com/site_elements/executables/7220_1526701101/35000284e_UM_VDO-Sceptron_EN_E_original.pdf);
 [VDO Sceptron XB spec sheet](https://adn.harmanpro.com/site_elements/resources/26178_1767652336/Martin_VDO_SceptronXB_SpecSheet_Rev3_01_26_original.pdf);
 [VDO Sceptron XB user manual (FR), rev. B](https://adn.harmanpro.com/site_elements/resources/25700_1744142321/UM-SFTY_VDO-Sceptron-XB_FR_B_original.pdf).
+
+---
+
+## 12. Alternative link — 10BASE-T1S bus with self-identifying bars
+
+**Status: alternative to §2–§7, to settle on the bench.** Same 48 V
+distribution, same sizing (§6), same node power stage (§5). Only the data
+link changes: a shared 10BASE-T1S segment instead of the RS-485 chain.
+
+### Why look at it
+
+In the RS-485 chain every node repeats the link: **a dead MCU blacks out every
+bar downstream** of it. On a bus, the pair runs past every bar; a dead bar is
+the only bar lost.
+
+### 10BASE-T1S in short
+
+- Ethernet at 10 Mb/s over **one pair**, half duplex, **true multidrop**: every
+  node on the same pair, no switch.
+- IEEE 802.3cg (2019): ≥ **8 nodes on 25 m**. IEEE 802.3da (published
+  2026-03): ≥ **16 nodes on 50 m** on 18 AWG, stubs up to 30 cm, dynamic PLCA
+  node IDs, optional power on the pair. onsemi states **40 nodes on 25 m**
+  and 50 m+ for the NCN26010.
+- Access by turns (**PLCA**) instead of collisions: each node owns a transmit
+  opportunity, so a babbling node cannot take the bus from the controller.
+- **AC-coupled** to the pair (capacitors + common-mode choke): 48 V landing on
+  the pair is stopped by ≥ 100 V coupling capacitors.
+- Each node checks the Ethernet FCS for itself: a corrupted frame is lost
+  **only by the node that received it badly** (no global error frame as on CAN).
+
+### Architecture
+
+```
+FOH ── Ethernet 100 Mb/s (Art-Net / sACN) ──► pixfrog (beside the rig)
+                                               │ T1S out 1 ─ pair ─ bar 1 ─ bar 2 ─ … ─ bar 15 ─ [T]
+                                               │ T1S out 2 ─ …
+                              48 V PSU per run ┴─ (48 V on its own conductors, §6)
+```
+
+- **One T1S output = one segment = one power run.** A run is ~15 bars B at
+  20 m (§6): 802.3da's 16 nodes, pixfrog included.
+- **pixfrog sits beside the rig, not at FOH.** Art-Net already reaches it over
+  standard Ethernet (100 m of Cat5): the T1S segment only spans the rig and
+  stays within the 25 m every 802.3cg part guarantees.
+- pixfrog keeps its role: **Art-Net interface and fixture / show
+  configurator**.
+
+| | pixfrog | Bar |
+|---|---|---|
+| Show | Receives Art-Net / sACN, applies patch and effects, renders wire-ready pixels (§7), sends one frame per bar, then a broadcast latch | Takes **its** frame (MAC filtering in the MAC-PHY), drives the strip on the latch. **Sends nothing.** |
+| Setup | Discovers the bars, identifies (blink), orders them, updates their firmware | Answers discovery with its descriptor |
+| Stores | The whole show: patch, fixtures, groups, looks | Its UID, its model, its last segment and position |
+
+### Identification and order
+
+1. **Discovery.** pixfrog asks each T1S output who is there; each bar answers
+   with a **descriptor**: UID (MCU unique ID → MAC), pixel count, LED protocol,
+   colour order, W per pixel, firmware version. pixfrog knows the segment from
+   the output that heard the answer.
+2. **The bar becomes a fixture.** The descriptor maps to a fixture of the
+   existing fixtures / groups model; autopatch assigns its universes.
+3. **Ordering in the UI.** The bus does not give the physical order. An
+   *order mode* lights on every bar as many pixels as its rank in the list:
+   misplaced bars show on stage at once, and are dragged into place in the UI
+   until the ramp is smooth. **Identify** (blink) stays for doubtful cases.
+   About a minute for 15 bars, once per rig.
+4. **Memory.** The order lives in the show and in each bar: the same rig
+   rebuilt needs nothing.
+5. **Swap.** One bar missing and a new one of the same model present: pixfrog
+   offers to put the new bar in the old one's place (one click).
+6. **Diagnostics on request.** A bar can report its minimum input voltage and
+   its frame error count when asked: the voltage drop and the bad link of the
+   show that started this study, visible in the UI. Never a stream during the
+   show.
+
+**Power-up sequencing was considered and dropped.** A delayed MOSFET on each
+bar's 48 V output would make bars appear in physical order, giving positions
+automatically. It costs a MOSFET carrying the whole run current in every bar
+and a hardware timer, for a minute saved at setup. To revisit if ordering by
+hand becomes a burden on tour.
+
+### Termination
+
+A bus is terminated at **both ends** by its impedance (~100 Ω): otherwise the
+signal bounces off the far end and lands on the following bits. At 10 Mb/s a
+bit is 100 ns and a round trip on 35 m ~350 ns: an unterminated segment means
+corrupted or intermittent frames.
+
+- **pixfrog end**: fixed on the board.
+- **Far end**: any bar can be the last one, and 15 terminations in parallel
+  would crush the signal.
+
+| Option | How | For / against |
+|---|---|---|
+| Terminator plug | Male connector with the resistor, on the last bar's output (as on DMX) | Simple; gets forgotten or lost |
+| **Commanded termination** | Each bar has its resistor behind an analog switch; once the order is set, pixfrog **tells the last bar to switch it in** | Nothing to plug; discovery must work before the segment is terminated (expected on a short rig, with retries — to check) |
+| Connector sense | The bar sees nothing plugged into its output and switches its resistor in | Most transparent; needs a fifth contact, XLR4 has none left |
+
+**Commanded termination**, with a terminator plug as the fallback. The RS-485
+chain does not have the issue: every hop is point to point and terminated in
+the receiving node.
+
+### Throughput
+
+Ethernet costs 38 bytes per frame (preamble, header, FCS, inter-frame gap);
+the §7 header (10 bytes, CRC32 dropped: the FCS does the job) rides under a
+private EtherType. With only pixfrog sending during the show there is never a
+collision.
+
+| Bar | Link time per bar | Bars per segment at 60 fps (data) | Bars per run by power (20 m) |
+|---|---:|---:|---:|
+| A — 60 px RGB | 0.18 ms | 82 | 19 |
+| B — 60 px RGBW | 0.23 ms | 65 | 15 |
+| C — 144 px RGB | 0.38 ms | 39 | 9 |
+
+The limit is the **node count per segment**, not the data rate. 15 bars B
+take ~3.5 ms of the ~15 ms a 60 fps frame leaves. Firmware update: ~1.2 MB/s
+in **multicast**, all bars of a segment at once.
+
+### Hardware
+
+| | Change from §3 / §5 |
+|---|---|
+| Bar | onsemi **NCN26010** or Microchip **LAN8651** MAC-PHY (OPEN Alliance TC6 SPI) on the RP2040 + common-mode choke + coupling capacitors + termination switch, instead of the two RS-485 transceivers: **~+2–3 € per bar** (NCN26010 ~4.8 € by 10, ~2.7 € by 500) |
+| pixfrog | A shield with N × MAC-PHY on SPI and the fixed terminations. A segment uses ~260 kB/s: **4 T1S outputs per SPI bus**, 8 on the P4's two free buses. Classic WS281x outputs stay on PARLIO, on their own connectors (the §3 bi-mode on one pair does not carry over) |
+| pixfrog firmware | Espressif's ESP-IDF driver (`espressif/lan865x`); discovery, a *Bars* view, order mode, termination command, multicast OTA |
+| Bar firmware | A TC6 SPI driver for the RP2040, from Microchip's open-source TC6 framework |
+
+### Failures — RS-485 chain vs T1S bus
+
+| Failure | RS-485 chain (§2) | T1S bus |
+|---|---|---|
+| Bar MCU dead | **Everything downstream dark** | That bar only |
+| MCU babbling | n/a (receive only) | Confined to its PLCA slot: pixfrog keeps the bus |
+| 48 V on the data pair | ±60 V transceiver, DC | Stopped by the coupling capacitors |
+| Transceiver / PHY shorting the pair | Downstream dark | **The whole segment dark** (the remaining risk) |
+| Noise at one node | Lost by that node and downstream | Lost by that node only |
+| Cable cut | Downstream dark | Downstream dark, and the segment loses its termination |
+| Voltage drop | Seen only on stage | Reported on request |
+| Position of a bar | Automatic (hop count) | Set once in the UI, kept by the bar |
+| Termination | Built in every node | Commanded on the last bar |
+
+### CAN, considered and rejected
+
+Classic CAN (1 Mb/s, 8-byte frames) carries ~4 bars B at 60 fps. CAN FD at
+1 / 5 Mb/s carries ~24, but the arbitration ties the whole bus to ~40 m at
+1 Mb/s, every frame needs an ACK, and **one node receiving badly destroys the
+frame for all** with an error frame. The P4's TWAI is CAN 2.0 only. 10BASE-T1S
+is better on every point but price.
+
+### 10BASE-T1L, for the record
+
+Point to point, 10 Mb/s full duplex, up to 1 km per hop. An **ADIN2111**
+(2-port T1L switch, cut-through) in each bar gives the chain topology of §2 in
+standard Ethernet, but a dead bar still breaks the chain and the part costs
+~£8 by 500 (£14 each).
+
+### To check on the bench before choosing
+
+1. **Reach on our cable**: DMX cable (24 AWG, 110–120 Ω) instead of the 18 AWG
+   100 Ω pair of the standard, with 16 nodes.
+2. **PLCA bootstrap**: a new bar has no PLCA ID yet — CSMA/CD until pixfrog
+   gives it one, or an ID derived at discovery; check on the parts.
+3. **Discovery on an unterminated segment**, before the commanded termination
+   is set.
+4. **Hot plug** of a bar mid-segment: what the other bars see.
+
+Sources: [IEEE 802.3da-2026](https://webstore.ansi.org/standards/ieee/ieee8023da2026);
+[802.3da mixing segment](https://ieee802.org/3/da/public/1124/zimmerman_01_da_202411071.pdf);
+[Microchip mixed segment evaluation](https://www.ieee802.org/3/da/public/0522/20220523_MCHP_10BaseT1S_Mixed_Segment_Evaluation.pdf);
+[Microchip LAN8651](https://microchip.com/en-us/product/lan8651);
+[ESP-IDF lan865x component](https://components.espressif.com/components/espressif/lan865x);
+[onsemi NCN26010 (Farnell)](https://fr.farnell.com/onsemi/ncn26010xmntxg/commutateur-ethernet-10mbps-40/dp/4036809RL);
+[NCN26010: 40 nodes, 50 m+](https://components101.com/news/ieee-8023cg-compliant-ethernet-transceiver-includes-media-access-controller-and-plca-reconciliation-sublayer-designed-for-industrial-multi-drop);
+[ADIN2111 (Farnell)](https://uk.farnell.com/analog-devices/adin2111ccpz/ethernet-switch-802-3cg-10mbps/dp/4026136).
