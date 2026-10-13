@@ -207,6 +207,21 @@ Design choices:
 - Rough parts cost, to confirm with a real BOM: **€20–40 per node** in small
   series, dominated by the 48 V connectors and the power stage.
 
+### Bar mechanics — candidate profiles
+
+The node lives inside the bar's aluminium profile, which is also its
+heatsink (§11: Martin's is 27 × 37 mm, M6 captive-nut channel on the back,
+clip-on diffusers and lenses, electronics and LEDs in resin).
+
+| Candidate | Section | Material, finish | Weight | Status |
+|---|---|---|---|---|
+| **OneEightyOne LED Profile 3535** — art. 9310210 (2 m, black); 3 m also listed | 35 × 35 mm | 6063-T5, anodised | 870 g / 2 m (≈ 0.44 kg/m); 1300 g / 3 m | retained candidate. To confirm with the supplier: inner width (node PCB ≤ 22 mm next to the strip), diffusers, end caps, mounting |
+| Custom extrusion, own section ~27 × 37 mm | to draw | 6063-T5 | — | for a series: die ~$300–800, minimum ~500–1000 m |
+
+OneEightyOne, Valschermkade 27-28, 1059 CD Amsterdam —
+[oneeightyone.com](https://www.oneeightyone.com),
+[datasheet 9310210](https://att.2ba.nl/8718969960007/CHR/42/4250/4250a11ead66a88c8f9d03a3337b4f70.pdf).
+
 ---
 
 ## 6. Sizing — cables, bars per run, power supplies
