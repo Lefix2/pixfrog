@@ -203,6 +203,47 @@ TEST(encoder_init_sets_the_switch_pin_up_as_a_pulled_up_input) {
     EXPECT_TRUE(poll_all().empty());  // the start position is not a rotation
 }
 
+TEST(no_encoder_at_boot_is_looked_for_every_two_seconds) {
+    g_enc.nack = true;  // unplugged
+    EXPECT_FALSE(ui::detail::encoder_init(new_bus(), kEncAddr));
+    EXPECT_TRUE(poll_all().empty());
+    g_enc.nack = false;  // plugged in
+    g_enc.writes.clear();
+    g_enc.pos = 7;
+    shim::advance_ms(1000);
+    EXPECT_TRUE(poll_all().empty());
+    EXPECT_TRUE(g_enc.writes.empty());  // not looked for yet
+    shim::advance_ms(1100);
+    EXPECT_TRUE(poll_all().empty());       // found: its position is the start, not a turn
+    EXPECT_TRUE(g_enc.wrote(0x01, 0x0B));  // the switch pin set up
+    EXPECT_TRUE(g_enc.wrote(0x0E, 0x01));  // and the NeoPixel
+    g_enc.pos += 2;
+    EXPECT_EQ(count(poll_all(), Event::RotateRight), 2u);
+}
+
+TEST(an_encoder_unplugged_then_back_is_set_up_again) {
+    EXPECT_TRUE(ui::detail::encoder_init(new_bus(), kEncAddr));
+    g_enc.nack = true;
+    for (int i = 0; i < 14; ++i)
+        EXPECT_TRUE(poll_all().empty());
+    g_enc.nack  = false;  // a glitch, not an unplug: still there
+    g_enc.pos  += 1;
+    EXPECT_EQ(count(poll_all(), Event::RotateRight), 1u);
+    g_enc.nack = true;
+    for (int i = 0; i < 15; ++i)
+        EXPECT_TRUE(poll_all().empty());  // lost
+    g_enc.nack = false;
+    g_enc.writes.clear();
+    g_enc.pos += 5;  // turned while away
+    EXPECT_TRUE(poll_all().empty());
+    EXPECT_TRUE(g_enc.writes.empty());  // waits its 2 s
+    shim::advance_ms(2100);
+    EXPECT_TRUE(poll_all().empty());       // set up again, the turn while away dropped
+    EXPECT_TRUE(g_enc.wrote(0x01, 0x03));  // DIRCLR: the pin setup a power cycle lost
+    g_enc.pos -= 1;
+    EXPECT_EQ(count(poll_all(), Event::RotateLeft), 1u);
+}
+
 TEST(rotation_becomes_one_event_per_detent) {
     EXPECT_TRUE(ui::detail::encoder_init(new_bus(), kEncAddr));
     g_enc.pos += 3;
@@ -674,9 +715,7 @@ TEST(start_fails_cleanly_on_each_missing_piece) {
     EXPECT_FALSE(ui::start(ui_cfg()));
     shim::i2c_attach(kOledAddr, &g_oled);
     shim::lcd_reset();
-    g_enc.nack = true;
-    EXPECT_FALSE(ui::start(ui_cfg()));
-    EXPECT_FALSE(shim::task_created("ui"));
+    EXPECT_FALSE(shim::task_created("ui"));  // (no encoder is not a missing piece)
 }
 
 namespace {

@@ -212,11 +212,9 @@ bool start(const InitConfig& cfg) {
         return false;
     }
 #endif
-    if (!detail::encoder_init(g_bus, cfg.encoder_addr)) {
-        ESP_LOGE(TAG, "encoder init failed");
-        return false;
-    }
-    detail::encoder_led_init();
+    // No knob is no reason for a black screen: the display, sounds and web UI
+    // run without it, and encoder_poll() picks it up once it answers.
+    if (detail::encoder_init(g_bus, cfg.encoder_addr)) detail::encoder_led_init();
 
     xTaskCreatePinnedToCore(task_main, "ui", 4096, nullptr, 4, &g_task, 0);
     ESP_LOGI(TAG, "started");
