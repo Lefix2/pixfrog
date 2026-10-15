@@ -95,6 +95,10 @@ on the one before.
 
 ## Hardware & bench
 
+- [ ] **Shield: pull-up on GPIO 36** — 1 kΩ … 4.7 kΩ to 3V3 at J13. GPIO 36
+      carries the backlight and must read high at reset for a serial flash;
+      today the resistor is fitted by hand (`docs/HARDWARE.md` §5.1).
+
 - [ ] **Physical DMX input** — RS-485 receive on the shield to drive the box
       without a network (hardware work).
 

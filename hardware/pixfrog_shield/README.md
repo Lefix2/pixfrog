@@ -32,8 +32,12 @@ XLR4 panel carries strip VCC and comes from the injection point, never from the
 shield.
 
 The SPI TFT display is wired to J13: **CLK=GPIO0, MOSI=GPIO6, CS=GPIO20,
-DC=GPIO21, RST=GPIO27** (+3V3/GND). GPIO36 (boot strapping, must read HIGH at
-reset) and GPIO45 (VDD_IO_5/LDO-VO4 domain) stay free for other use.
+DC=GPIO21, RST=GPIO27** (+3V3/GND). GPIO45 (VDD_IO_5/LDO-VO4 domain) stays
+free for other use. GPIO36 carries the panel backlight
+([`docs/HARDWARE.md`](../../docs/HARDWARE.md) §5.1) and is a boot strapping
+pin: it must read HIGH at reset or the board cannot be flashed over serial.
+**This revision has no pull-up on it — add 1 kΩ … 4.7 kΩ from GPIO36 to 3V3 by
+hand**; the next revision puts it on the board.
 
 ## Production
 
