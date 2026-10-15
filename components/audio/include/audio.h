@@ -31,6 +31,8 @@ constexpr uint32_t kSampleRate = 16000;  // MCLK = 256 × fs = 4.096 MHz
 // down on any failure: a board without the codec simply has no sound.
 bool init(const InitConfig& cfg);
 bool ready();
+// Logs every codec register and the bus errors retried so far (false: no codec).
+bool dump_regs();
 
 // Everything plays from the audio task, in order; these only queue (a full
 // queue drops the sound) and return at once, so the UI never waits on the

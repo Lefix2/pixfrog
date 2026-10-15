@@ -134,7 +134,7 @@ enum class Fault {
     I2cBus,          // i2c_new_master_bus → ESP_FAIL
     I2cAddDevice,    // i2c_master_bus_add_device → ESP_FAIL
     I2cTransmit,     // i2c_master_transmit → ESP_FAIL
-    I2cReceive,      // i2c_master_receive → ESP_FAIL
+    I2cReceive,      // i2c_master_receive / _transmit_receive → ESP_FAIL
     QueueCreate,     // xQueueCreate → nullptr
     I2sNew,          // i2s_new_channel → ESP_FAIL
     I2sWrite,        // i2s_channel_write → ESP_FAIL

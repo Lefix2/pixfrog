@@ -155,6 +155,15 @@ clicks, a frog croak at the end of the splash, a test chime. Volume
 sound normalized to 0.6 of full scale (the amp clipped above). One request
 waits at most: a newer one cuts the playing sound short (2 ms fade).
 
+**The I2C bus garbles a transfer now and then** (bench, 2026-10: about one in
+a hundred codec reads came back with a flipped bit or NACKed, worse on a 5 V
+supply than on the PC's USB). A garbled write still ACKs, and a codec left with
+one wrong register stays silent although the Volume menu is there. So every
+codec write is read back and sent again (5 tries), and init ends with one more
+pass over every register's final value. The boot log counts the retries
+(`ES8311 ready, 16000 Hz (N bus errors retried)`); `audio regs` on the console
+logs every register and the count since boot.
+
 ---
 
 ## 3. Level shifters

@@ -67,6 +67,17 @@ esp_err_t i2c_master_receive(i2c_master_dev_handle_t dev, uint8_t* data, size_t 
     if (it == g_devices.end() || !it->second->read(data, len)) return ESP_FAIL;
     return ESP_OK;
 }
+// A write then a read under one repeated START: the device sees both, in order.
+esp_err_t i2c_master_transmit_receive(i2c_master_dev_handle_t dev, const uint8_t* write_buf,
+                                      size_t write_len, uint8_t* read_buf, size_t read_len, int) {
+    if (shim::should_fail(shim::Fault::I2cReceive)) return ESP_FAIL;
+    if (!dev || !write_buf || !write_len || !read_buf || !read_len) return ESP_ERR_INVALID_ARG;
+    auto it = g_devices.find(dev->addr);
+    if (it == g_devices.end() || !it->second->write(write_buf, write_len) ||
+        !it->second->read(read_buf, read_len))
+        return ESP_FAIL;
+    return ESP_OK;
+}
 esp_err_t i2c_master_probe(i2c_master_bus_handle_t bus, uint16_t addr, int) {
     if (!bus) return ESP_ERR_INVALID_ARG;
     if (g_probe_nacks > 0) {

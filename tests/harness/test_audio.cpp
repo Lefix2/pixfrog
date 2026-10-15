@@ -17,16 +17,35 @@ namespace synth = pixfrog::audio::synth;
 
 namespace {
 
+// A codec on a bus that corrupts a transfer now and then (seen on the board):
+// a write can land with a flipped bit, or on another register, and still ACK.
 struct Es8311 : shim::I2cDevice {
     std::vector<std::pair<uint8_t, uint8_t>> writes;
     uint8_t regs[256]{};
+    uint8_t ptr          = 0;
+    int flip_once        = -1;  // the next write to this register lands with bit 0 flipped
+    int misdirect        = -1;  // the next write to this register lands on misdirect_to
+    uint8_t misdirect_to = 0;
+    int stuck            = -1;  // this register never holds what is written
     bool write(const uint8_t* d, size_t n) override {
+        if (n == 1) {  // the register a read starts at
+            ptr = d[0];
+            return true;
+        }
         if (n != 2) return false;
         writes.emplace_back(d[0], d[1]);
-        regs[d[0]] = d[1];
+        uint8_t r = d[0], v = d[1];
+        if (r == flip_once) v ^= 0x01, flip_once = -1;
+        if (r == misdirect) r = misdirect_to, misdirect = -1;
+        if (r == stuck) v = static_cast<uint8_t>(~v);
+        regs[r] = v;
         return true;
     }
-    bool read(uint8_t*, size_t) override { return true; }
+    bool read(uint8_t* d, size_t n) override {
+        for (size_t i = 0; i < n; ++i)
+            d[i] = regs[static_cast<uint8_t>(ptr + i)];
+        return true;
+    }
     bool wrote(uint8_t reg, uint8_t val) const {
         for (const auto& w : writes)
             if (w.first == reg && w.second == val) return true;
@@ -99,7 +118,13 @@ TEST(failures_leave_the_box_without_sound) {
     EXPECT_FALSE(audio::init(cfg()));
     shim::fail_next(shim::Fault::QueueCreate);
     EXPECT_FALSE(audio::init(cfg()));
+    g_codec.stuck     = 0x09;  // a register that never reads back right: given up on
+    const int deleted = shim::i2s_log().deleted;
+    EXPECT_FALSE(audio::init(cfg()));
+    EXPECT_EQ(shim::i2s_log().deleted, deleted + 1);
+    g_codec.stuck = -1;
     EXPECT_FALSE(audio::ready());
+    EXPECT_FALSE(audio::dump_regs());
     EXPECT_FALSE(audio::play_tone(440, 100));
     EXPECT_FALSE(audio::start_test());
     audio::feedback(audio::Feedback::Tick);  // no audio: silently nothing
@@ -108,8 +133,16 @@ TEST(failures_leave_the_box_without_sound) {
 TEST(init_starts_i2s_then_brings_the_codec_up_muted) {
     shim::i2s_reset();
     g_codec.writes.clear();
+    // The bus garbles two writes: the DAC format lands with a bit flipped, and
+    // a later write lands on the clock register instead of its own.
+    g_codec.flip_once    = 0x09;
+    g_codec.misdirect    = 0x13;
+    g_codec.misdirect_to = 0x01;
     EXPECT_TRUE(audio::init(cfg()));
     EXPECT_TRUE(audio::ready());
+    EXPECT_TRUE(g_codec.flip_once == -1 && g_codec.misdirect == -1);  // both happened
+    EXPECT_EQ(g_codec.regs[0x13], 0x10);  // sent again, now where it belongs
+    EXPECT_TRUE(audio::dump_regs());
     EXPECT_TRUE(audio::init(cfg()));  // once only
     EXPECT_TRUE(shim::task_created("audio"));
     const auto& l = shim::i2s_log();

@@ -1,6 +1,7 @@
 #include "audio.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 #include "driver/i2s_std.h"
@@ -17,6 +18,7 @@ namespace {
 
 constexpr const char* TAG       = "AUDIO";
 constexpr int kI2cTimeoutMs     = 50;
+constexpr int kRegTries         = 5;   // per register write, see reg()
 constexpr size_t kChunk         = 64;  // stereo frames per i2s write (4 ms)
 constexpr size_t kDmaBuffers    = 4;   // 16 ms queued: a new sound is heard at once
 constexpr uint32_t kMuteAfterMs = 10000;
@@ -35,6 +37,7 @@ i2c_master_dev_handle_t g_codec = nullptr;
 i2s_chan_handle_t g_tx          = nullptr;
 QueueHandle_t g_queue           = nullptr;  // a mailbox: the latest request only
 uint8_t (*g_volume)()           = nullptr;
+uint32_t g_bus_errors           = 0;                     // codec transfers that went wrong, retried
 float g_norm[static_cast<size_t>(synth::Sound::Count)];  // per sound: to kPeak
 
 uint8_t volume_now() {
@@ -61,9 +64,42 @@ void measure_sounds() {
     }
 }
 
+bool read_reg(uint8_t r, uint8_t& v) {
+    return i2c_master_transmit_receive(g_codec, &r, 1, &v, 1, kI2cTimeoutMs) == ESP_OK;
+}
+
+// The shared I2C bus corrupts a transfer now and then (a flipped bit, a NACK),
+// and a write that landed wrong still ACKs: the codec then sits misconfigured
+// and silent. So every write is read back and sent again until it reads right.
+// (The soft reset, 0x00 = 0x1F, is not a value to read back.)
 bool reg(uint8_t r, uint8_t v) {
     const uint8_t buf[2] = { r, v };
-    return i2c_master_transmit(g_codec, buf, sizeof(buf), kI2cTimeoutMs) == ESP_OK;
+    const bool check     = !(r == es8311::kRegReset && v != es8311::kResetDone);
+    for (int i = 0; i < kRegTries; ++i) {
+        uint8_t got = 0;
+        if (i2c_master_transmit(g_codec, buf, sizeof(buf), kI2cTimeoutMs) == ESP_OK &&
+            (!check || (read_reg(r, got) && got == v)))
+            return true;
+        ++g_bus_errors;
+    }
+    return false;
+}
+
+// Every register, 0x00-0x45 + chip ID 0xFD-0xFF (console: audio regs).
+void log_regs(const char* when) {
+    char line[16 * 3 + 1];
+    for (unsigned base = 0; base <= 0x40; base += 16) {
+        size_t o = 0;
+        for (unsigned r = base; r < base + 16 && r <= 0x45; ++r) {
+            uint8_t v  = 0;
+            o         += snprintf(line + o, sizeof(line) - o, read_reg(r, v) ? "%02x " : "-- ", v);
+        }
+        ESP_LOGI(TAG, "regs %s %02x: %s", when, base, line);
+    }
+    uint8_t id[3] = {};
+    for (unsigned i = 0; i < 3; ++i)
+        read_reg(static_cast<uint8_t>(0xFD + i), id[i]);
+    ESP_LOGI(TAG, "regs %s fd: %02x %02x %02x", when, id[0], id[1], id[2]);
 }
 
 bool open_i2s(const InitConfig& cfg) {
@@ -201,6 +237,20 @@ bool init(const InitConfig& cfg) {
         }
         if (seq[i].delay_ms) vTaskDelay(pdMS_TO_TICKS(seq[i].delay_ms));
     }
+    // A corrupted register address puts its value somewhere else: one more
+    // pass over every register's final value catches what that overwrote.
+    for (size_t i = n; i-- > 0;) {
+        bool later = false;  // only a register's last write counts
+        for (size_t j = i + 1; j < n && !later; ++j)
+            later = seq[j].reg == seq[i].reg;
+        uint8_t got = 0;
+        if (later || seq[i].reg == es8311::kRegReset) continue;
+        if ((!read_reg(seq[i].reg, got) || got != seq[i].value) && !reg(seq[i].reg, seq[i].value)) {
+            ESP_LOGW(TAG, "ES8311 register 0x%02x will not hold: no audio", seq[i].reg);
+            close_i2s();
+            return false;
+        }
+    }
     measure_sounds();
     g_queue = xQueueCreate(1, sizeof(Cmd));
     // Above ui_task (4) and httpd (5), below the network receivers (10): a
@@ -211,7 +261,15 @@ bool init(const InitConfig& cfg) {
         close_i2s();
         return false;
     }
-    ESP_LOGI(TAG, "ES8311 ready, %u Hz", static_cast<unsigned>(kSampleRate));
+    ESP_LOGI(TAG, "ES8311 ready, %u Hz (%u bus errors retried)", static_cast<unsigned>(kSampleRate),
+             static_cast<unsigned>(g_bus_errors));
+    return true;
+}
+
+bool dump_regs() {
+    if (!g_queue) return false;
+    log_regs("now");
+    ESP_LOGI(TAG, "%u bus errors retried since boot", static_cast<unsigned>(g_bus_errors));
     return true;
 }
 

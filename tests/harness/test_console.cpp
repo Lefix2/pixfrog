@@ -618,7 +618,9 @@ TEST(audio_test_and_tone) {
     EXPECT_FALSE(run("audio tone 5"));
     EXPECT_FALSE(run("audio tone 440 1"));
     EXPECT_FALSE(run("audio loud"));
+    EXPECT_TRUE(run("audio regs"));
     fake::modules().audio_ready = false;
+    EXPECT_FALSE(run("audio regs"));
     EXPECT_FALSE(run("audio test"));
     EXPECT_FALSE(run("audio tone 440"));
     fake::modules().audio_ready = true;
