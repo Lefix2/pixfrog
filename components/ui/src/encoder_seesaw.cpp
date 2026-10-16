@@ -59,6 +59,19 @@ i2c_master_dev_handle_t g_dev = nullptr;
 int32_t g_last_pos            = 0;
 bool g_last_btn               = false;
 
+// The box runs without the knob (unplugged, or a harness fault): the UI still
+// draws, and the encoder is looked for again every kRetryUs. One that stops
+// answering for kLostPolls polls in a row (~0.5 s at 30 Hz) counts as
+// unplugged; a seesaw that comes back has lost its pin setup, so it is
+// configured again from scratch.
+constexpr int64_t kRetryUs    = 2'000'000;
+constexpr int kLostPolls      = 15;
+i2c_master_bus_handle_t g_bus = nullptr;
+uint8_t g_addr                = 0;
+bool g_ready                  = false;
+int64_t g_next_try_us         = 0;
+int g_failed_polls            = 0;
+
 // Debounce for the push button. Any transition closer than this
 // to the previous one is silently ignored, suppressing the multi-click
 // echoes the seesaw can emit on a noisy mechanical switch contact.
@@ -221,21 +234,13 @@ void led_render() {
     neopixel_show(r, g, b);
 }
 
-}  // namespace
-
-bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr) {
-    if (!bus) return false;
-
-    i2c_device_config_t dev_cfg{};
-    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-    dev_cfg.device_address  = addr;
-    dev_cfg.scl_speed_hz    = 400'000;
-    esp_err_t err           = i2c_master_bus_add_device(bus, &dev_cfg, &g_dev);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "bus_add_device: %s", esp_err_to_name(err));
-        return false;
-    }
-
+// Sets the switch pin up and reads the starting state: true = the encoder is
+// there and ready.
+bool configure() {
+    g_ready    = false;
+    g_led_ok   = false;  // a (re)set-up seesaw needs its NeoPixel set up again too
+    g_led_wr_r = g_led_wr_g = g_led_wr_b = 1;  // and its colour sent again
+    g_failed_polls                       = 0;
     // Configure the switch pin (input + pull-up, no interrupts — polled).
     uint8_t mask_be[4];
     be32(kSeeSwitchMask, mask_be);
@@ -247,23 +252,74 @@ bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr) {
     // 3. Set the pin high to bias the pull-up (some seesaws need this explicit step)
     if (!seesaw_write(kSeeBaseGpio, kSeeGpioBulkSet, mask_be, 4)) return false;
 
-    // Read initial state.
+    // Read initial state: a knob turned while unplugged is not a rotation.
     seesaw_read_position(g_last_pos);
     seesaw_read_button(g_last_btn);
+    g_ready = true;
 
-    ESP_LOGI(TAG, "seesaw init OK at 0x%02X (polled, INT_N unused), start pos=%ld", addr,
+    ESP_LOGI(TAG, "seesaw init OK at 0x%02X (polled, INT_N unused), start pos=%ld", g_addr,
              static_cast<long>(g_last_pos));
     return true;
+}
+
+// Not there (yet): a quiet probe every kRetryUs, the full setup once it ACKs.
+void look_for_encoder() {
+    const int64_t now = esp_timer_get_time();
+    if (now < g_next_try_us) return;
+    g_next_try_us = now + kRetryUs;
+    if (i2c_master_probe(g_bus, g_addr, kI2cTimeoutMs) != ESP_OK || !configure()) return;
+    encoder_led_init();
+}
+
+}  // namespace
+
+bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr) {
+    if (!bus) return false;
+
+    i2c_device_config_t dev_cfg{};
+    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_cfg.device_address  = addr;
+    dev_cfg.scl_speed_hz    = 400'000;
+    esp_err_t err           = i2c_master_bus_add_device(bus, &dev_cfg, &g_dev);
+    if (err != ESP_OK) {
+        g_dev   = nullptr;
+        g_ready = false;
+        ESP_LOGE(TAG, "bus_add_device: %s", esp_err_to_name(err));
+        return false;
+    }
+    g_bus  = bus;
+    g_addr = addr;
+    if (configure()) return true;
+    g_next_try_us = esp_timer_get_time() + kRetryUs;
+    ESP_LOGW(TAG, "no encoder at 0x%02X: display only, looked for every %d s", addr,
+             static_cast<int>(kRetryUs / 1'000'000));
+    return false;
 }
 
 Event encoder_poll() {
     Event e = pop_evt();
     if (e != Event::None) return e;
+    if (!g_ready) {
+        if (g_dev) look_for_encoder();
+        return Event::None;
+    }
 
     int32_t pos = g_last_pos;
     bool btn    = g_last_btn;
 
-    if (seesaw_read_position(pos)) {
+    const bool pos_ok = seesaw_read_position(pos);
+    const bool btn_ok = seesaw_read_button(btn);
+    g_failed_polls    = pos_ok || btn_ok ? 0 : g_failed_polls + 1;
+    if (g_failed_polls >= kLostPolls) {
+        g_ready       = false;
+        g_led_ok      = false;
+        g_next_try_us = esp_timer_get_time() + kRetryUs;
+        ESP_LOGW(TAG, "encoder lost: looking for it every %d s",
+                 static_cast<int>(kRetryUs / 1'000'000));
+        return Event::None;
+    }
+
+    if (pos_ok) {
         const int32_t delta = pos - g_last_pos;
         g_last_pos          = pos;
         // Adafruit 4991 issues one tick per detent, but reads can occasionally
@@ -278,7 +334,7 @@ Event encoder_poll() {
             push_evt(Event::RotateLeft);
     }
 
-    if (seesaw_read_button(btn)) {
+    if (btn_ok) {
         const int64_t now = esp_timer_get_time();
         if (btn != g_last_btn) {
             if (now - g_last_btn_change_us >= kBtnDebounceUs) {

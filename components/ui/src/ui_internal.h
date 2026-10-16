@@ -180,6 +180,8 @@ void backlight_preview_end();
 
 // ── Encoder driver ────────────────────────────────────────────────────────────
 
+// False = no encoder answered (unplugged): the UI runs without it, and
+// encoder_poll() looks for it every 2 s, the same as for one unplugged later.
 bool encoder_init(i2c_master_bus_handle_t bus, uint8_t addr);
 Event encoder_poll();
 
