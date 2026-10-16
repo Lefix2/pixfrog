@@ -511,10 +511,14 @@ void apply_channel_json(const cJSON* j, config::ChannelConfig& c, const char** w
     }
     if ((s = json_str(j, "color_order"))) {
         const int o = lookup(led::kColorOrderNames, static_cast<size_t>(led::ColorOrder::COUNT), s);
-        if (o >= 0)
-            c.color_order = static_cast<led::ColorOrder>(o);
-        else
+        const auto order = static_cast<led::ColorOrder>(o);
+        if (o < 0)
             refuse(why, "bad color_order");
+        else if (led::order_has_white(order) && !led::is_off(c.protocol) &&
+                 !led::is_rgbw(c.protocol))
+            refuse(why, "color_order: a W order needs an RGBW protocol");
+        else
+            c.color_order = order;
     }
     if (json_u32(j, "universe_start", 0, 32767, u)) c.universe_start = static_cast<uint16_t>(u);
     if (json_u32(j, "dmx_start", 1, 512, u)) c.dmx_start = static_cast<uint16_t>(u);

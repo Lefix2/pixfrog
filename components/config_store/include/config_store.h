@@ -885,6 +885,9 @@ inline void sanitize_channel(ChannelConfig& c) {
     // RBGW now; the RGBWW order it held until 2026-06 (v0.1.x) was dropped.
     if (static_cast<uint8_t>(c.color_order) >= static_cast<uint8_t>(led::ColorOrder::COUNT))
         c.color_order = led::ColorOrder::RGBW;
+    // An order of the other family (a protocol changed, a console or API set)
+    // would send a dark W on a colour wire, or no W at all.
+    c.color_order = led::order_for_protocol(c.protocol, c.color_order);
     for (auto& g : c.gaps)
         if (g.pos >= led::kMaxPixelsPerChannel) g.len = 0;
     led::normalize_gaps(c.gaps, led::kMaxPixelGaps);

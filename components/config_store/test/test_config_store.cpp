@@ -280,6 +280,23 @@ static void test_channel_migration_sanitizes_to_identity() {
 // kMaxSamplesPerFrame; the output backend then refuses every frame and the
 // channel goes dark. sanitize_channel is the last line of defence for values
 // that reached NVS before the write paths were bounded.
+// A W order on a 3-channel protocol (a protocol changed under it) drops W; an
+// RGB order on an RGBW protocol takes W last — the wire bytes it already sent.
+static void test_sanitize_keeps_order_in_protocol_family() {
+    ChannelConfig c = {};
+    c.protocol      = Protocol::WS2815;
+    c.color_order   = ColorOrder::WGRB;
+    sanitize_channel(c);
+    EXPECT_TRUE(c.color_order == ColorOrder::GRB);
+    c.protocol = Protocol::SK6812;
+    sanitize_channel(c);
+    EXPECT_TRUE(c.color_order == ColorOrder::GRBW);
+    c.color_order = static_cast<ColorOrder>(200);
+    c.protocol    = Protocol::WS2812B;
+    sanitize_channel(c);
+    EXPECT_TRUE(c.color_order == ColorOrder::RGB);
+}
+
 static void test_sanitize_clamps_clock_hz() {
     ChannelConfig c{};
 
@@ -818,6 +835,7 @@ int main() {
     test_migrate_rejects_downgrade();
     test_migrate_zero_size_blob_all_zero();
     test_channel_migration_sanitizes_to_identity();
+    test_sanitize_keeps_order_in_protocol_family();
     test_sanitize_clamps_clock_hz();
     test_dmx_modes_and_the_fixture_address();
     test_scene_v1_migration();
