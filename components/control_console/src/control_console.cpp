@@ -888,6 +888,8 @@ int cmd_crash(int argc, char** argv) {
 // ── channel identify ────────────────────────────────────────────────────────
 
 int cmd_audio(int argc, char** argv) {
+    if (argc == 2 && strcmp(argv[1], "regs") == 0)  // in the log: the codec, the bus errors
+        return audio::dump_regs() ? ok() : err("no speaker");
     if (argc == 2 && strcmp(argv[1], "test") == 0)
         return audio::start_test() ? ok() : err("no sound: no speaker, volume off, or busy");
     uint32_t hz = 0, ms = 500;
@@ -896,7 +898,7 @@ int cmd_audio(int argc, char** argv) {
         return audio::play_tone(static_cast<uint16_t>(hz), static_cast<uint16_t>(ms))
                  ? ok()
                  : err("no sound: no speaker, volume off, or busy");
-    return err("usage: audio test | audio tone <20..8000 Hz> [10..5000 ms]");
+    return err("usage: audio test | audio tone <20..8000 Hz> [10..5000 ms] | audio regs");
 }
 
 int cmd_identify(int argc, char** argv) {
@@ -1693,7 +1695,8 @@ void start() {
     register_cmd("pixr", "pixr <ch> [start len] — read decoded pixel buffer", cmd_pixr);
     register_cmd("identify", "identify <ch>|all [blinks] — blink strips white to locate them",
                  cmd_identify);
-    register_cmd("audio", "audio test | audio tone <Hz> [ms] — the speaker", cmd_audio);
+    register_cmd("audio", "audio test | audio tone <Hz> [ms] | audio regs — the speaker",
+                 cmd_audio);
     register_cmd("fx", "fx [name|set|phaser|invert|matricks|add|del|move] — the effect bank",
                  cmd_fx);
     register_cmd(

@@ -80,6 +80,9 @@ bool start_test() {
     ++::fake::modules().audio_tests;
     return true;
 }
+bool dump_regs() {
+    return ::fake::modules().audio_ready;
+}
 }  // namespace audio
 namespace ui {
 uint32_t get_ip() {

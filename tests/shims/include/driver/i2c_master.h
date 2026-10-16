@@ -44,4 +44,7 @@ esp_err_t i2c_master_transmit(i2c_master_dev_handle_t dev, const uint8_t* data, 
                               int timeout_ms);
 esp_err_t i2c_master_receive(i2c_master_dev_handle_t dev, uint8_t* data, size_t len,
                              int timeout_ms);
+esp_err_t i2c_master_transmit_receive(i2c_master_dev_handle_t dev, const uint8_t* write_buf,
+                                      size_t write_len, uint8_t* read_buf, size_t read_len,
+                                      int timeout_ms);
 esp_err_t i2c_master_probe(i2c_master_bus_handle_t bus, uint16_t addr, int timeout_ms);
