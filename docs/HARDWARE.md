@@ -400,6 +400,11 @@ Pin 1 returns both the data pair and, on XLR4, the full strip current, so the
 conductor and the crimp must be sized for the injected current — not for a
 signal ground (§7).
 
+That shared conductor is also the limit of the scheme on long runs: its drop
+lifts the strip's ground under a single-ended signal. The study of a 48 V
+distribution with a differential link per output is in
+[`LONG_RUNS.md`](LONG_RUNS.md).
+
 ---
 
 ## 9. pixfrog_rack
