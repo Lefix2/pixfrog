@@ -35,7 +35,7 @@ External components added for pixfrog:
 
 ![Waveshare ESP32-P4 Module DEV-KIT — labelled header and interfaces](img/hardware-pinout.jpg)
 
-Validated against the Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin header). Strapping pins latched at reset (ESP32-P4 datasheet §3.3): **GPIO 35** (boot/download select, driven by the on-board BOOT button — also doubles as RMII TXD1), **GPIO 36** (must read HIGH for a reliable serial-download boot — exposed on P6 pin 21, keep it free), **GPIO 34** (JTAG source select). None of the LED pins below land on a strapping pin. GPIO 16 is not exposed on P6 and must not be used.
+Validated against the Waveshare ESP32-P4 Module DEV-KIT schematic (P6 40-pin header). Strapping pins latched at reset (ESP32-P4 datasheet §3.3): **GPIO 35** (boot/download select, driven by the on-board BOOT button — also doubles as RMII TXD1), **GPIO 36** (must read HIGH for a serial-download boot — exposed on P6 pin 21; it carries the backlight, so it needs the pull-up of §5.1), **GPIO 34** (JTAG source select). None of the LED pins below land on a strapping pin. GPIO 16 is not exposed on P6 and must not be used.
 
 ### 2.1 LED 16-bit parallel bus (PARLIO TX / LCD_CAM)
 
@@ -256,9 +256,9 @@ are free, 3.3 V-direct and non-strapping; every signal routes through the GPIO
 matrix, so the assignment is arbitrary among the free pins. J13 also exposes
 GPIO 36, used as the backlight control pin (§5.1), and GPIO 45, which is
 *not* free: it switches the microSD supply (§2.5). GPIO 36 is a boot strapping
-pin, harmless here — the boot mode follows GPIO 35 (the BOOT button, pulled
-high); GPIO 36 only matters with BOOT held, for the download modes. There is no
-MISO — the panel is write-only.
+pin: a normal boot follows GPIO 35 (the BOOT button, pulled high), but a
+serial download (flashing) also needs GPIO 36 high at reset — hence the
+pull-up of §5.1. There is no MISO — the panel is write-only.
 
 SPI host: `SPI2_HOST`, **20 MHz** (`kDisplaySpiFreqHz`). 40 MHz is rejected by
 the P4 SPI driver (`invalid sclk speed` — the default clock source can't derive
@@ -277,6 +277,19 @@ Panel LEDA ───► GPIO 36          LEDK ───► GND
 
 (It was on GPIO 45 until the microSD was brought up: GPIO 45 gates the card
 supply, §2.5. Move the BL wire to J13's GPIO 36 with this firmware.)
+
+**Pull-up required: 1 kΩ … 4.7 kΩ from GPIO 36 to 3V3.** GPIO 36 is a
+strapping pin, and serial download (`esptool` / `idf.py flash`) only starts
+with it high at reset. Without the pull-up it reads low whatever is plugged in
+— measured on the bench (2026-10) while holding RESET: **0.1 V** with the
+panel unplugged (the dev-kit pulls it down), **2.2 V** with the panel (under
+the ~2.5 V input-high threshold at 3.3 V). The symptom: the app boots fine, but
+every flash fails with `Failed to connect to ESP32-P4: No serial data
+received`, auto-reset or BOOT button alike, and the ROM prints nothing; the
+boot line reads `boot:0x30b` without the pull-up, `boot:0x30f` with it. The
+resistor costs the pad ≤ 3.3 mA when PWM drives it low and lets ≤ 0.3 mA into
+the LED string during reset — no visible glow, no change to "100 %". Fitted
+by hand on the bench box; the next shield revision puts it on J13.
 
 The ER-TFT2.79-1 (NV3007 variant) brings out the **bare LED string**: 5 chips in
 parallel, **Vf ≈ 3.0 V, If typ 75 mA / max 100 mA** (datasheet §4.4). The pad
